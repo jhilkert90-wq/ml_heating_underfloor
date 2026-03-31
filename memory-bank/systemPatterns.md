@@ -326,6 +326,48 @@ if self.pv_power > 100: # PV is active
 - Adapts to device upgrades (e.g., new TV) or degradation (e.g., dirty solar panels)
 - Improves prediction accuracy during multi-source events
 
+### 8. Heat Source Channel Decomposition Pattern (Phase 2-4)
+
+**Principle**: Decompose total heat into independent learning channels to prevent cross-contamination
+
+**Problem**: Single-model gradient descent contaminates HP parameters (OE, HLC) when uncontrollable heat sources (fireplace, solar) are active — cannot distinguish which source caused a prediction error.
+
+**Architecture** (`src/heat_source_channels.py`):
+```python
+# Each heat source has its own channel with isolated parameters
+orchestrator = HeatSourceChannelOrchestrator()
+# channels: heat_pump, pv, fireplace, tv
+
+# Learning is routed to the correct channel
+orchestrator.route_learning(error, context)
+# → If fireplace ON: only fireplace channel learns
+# → If PV > 500W: only PV channel learns
+# → If clean signal: only HP channel learns
+
+# Total heat combines all channels
+total_heat = orchestrator.total_heat(context)
+
+# Solar forecast enables proactive sunset handling
+future_heat = orchestrator.predict_future_heat(horizon_hours=4, context=ctx)
+
+# Proportional error attribution
+attributed = orchestrator.attribute_error(error, context)
+# → {"heat_pump": 0.6, "pv": 0.4}  (proportional to Q contribution)
+```
+
+**Channel Types**:
+- `HeatPumpChannel` — Slab model with outlet effectiveness, decay via Euler integration
+- `SolarChannel` — Forecast-aware, no decay (immediate drop at sunset)
+- `FireplaceChannel` — Exponential decay τ ~ 45 min after fireplace off
+- `TVChannel` — Simple additive heat weight
+
+**Benefits**:
+- HP parameters no longer contaminated by fireplace/PV heat
+- Each source learns from its own data only
+- Solar transition forecasting enables proactive pre-sunset outlet increase
+- Per-channel prediction history enables monitoring which channel is accurate
+- Config flag `ENABLE_HEAT_SOURCE_CHANNELS` for safe rollout
+
 ## Critical Implementation Patterns
 
 ### 7-Stage Prediction Pipeline

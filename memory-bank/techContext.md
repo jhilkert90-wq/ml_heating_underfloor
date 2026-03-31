@@ -106,6 +106,42 @@ jupyter>=1.0.0          # Notebook environment
 - **Memory Efficiency**: Incremental updates, no large datasets
 - **Maintainable**: Custom metrics implementation is transparent and modifiable
 
+### Heat Source Channel Architecture (Phase 2-4)
+
+**Module**: `src/heat_source_channels.py`
+
+**Problem Solved**: The single-model gradient descent contaminates HP parameters (OE, HLC) when uncontrollable heat sources (fireplace, solar) are active — it cannot distinguish which source caused a prediction error.
+
+**Architecture**:
+```
+  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+  │  HP Channel   │   │ Solar Channel │   │  FP Channel   │   │  TV Channel   │
+  │  (controlled) │   │ (forecast)   │   │ (observed)    │   │ (minor)       │
+  └──────┬───────┘   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
+         │                   │                   │                   │
+         └───────────┬───────┘───────────────────┘───────────────────┘
+                     ▼
+              HeatSourceChannelOrchestrator
+              Q_total = Q_hp + Q_solar + Q_fireplace + Q_tv
+```
+
+**Channel Isolation Rules** (via `route_learning()`):
+- HP learns only from clean cycles (no fireplace, PV < 500W)
+- Solar learns only during daytime (PV > 500W)
+- Fireplace learns only when fireplace active
+- TV learns only when TV on
+- When multiple external sources active, each gets learning; HP never learns
+
+**Key Classes**:
+- `HeatSourceChannel` — ABC with `estimate_heat_contribution()`, `estimate_decay_contribution()`, `get_learnable_parameters()`, `apply_gradient_update()`
+- `HeatPumpChannel` — Outlet effectiveness, slab time constant, delta-T floor
+- `SolarChannel` — PV weight, solar lag, cloud factor; `predict_future_contribution()` for sunset pre-heating
+- `FireplaceChannel` — Heat output kW, exponential decay τ (~45 min), room spread delay
+- `TVChannel` — Simple additive heat weight
+- `HeatSourceChannelOrchestrator` — Routes learning, combines channels, proportional error attribution
+
+**Config**: `ENABLE_HEAT_SOURCE_CHANNELS=true` (env var, default true)
+
 ### Physics-Based Model Design
 
 **Hybrid Approach**:
