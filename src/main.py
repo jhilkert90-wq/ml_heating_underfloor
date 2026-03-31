@@ -1174,13 +1174,13 @@ def main():
                         # Create test contexts for floor and ceiling
                         # temperatures
                         pv_hist = (
-                            features.get("pv_power_history", [])
-                            if hasattr(features, "get")
+                            features_dict.get("pv_power_history", [])
+                            if isinstance(features_dict, dict)
                             else []
                         )
                         pv_now_test = (
-                            features.get("pv_now", 0.0)
-                            if hasattr(features, "get")
+                            features_dict.get("pv_now", 0.0)
+                            if isinstance(features_dict, dict)
                             else 0.0
                         )
                         # If actual PV is zero (sun has set), use zero instead of lagged values
@@ -1195,8 +1195,8 @@ def main():
                             "pv_power_history": pv_hist,
                             "fireplace_on": fireplace_on,
                             "tv_on": (
-                                features.get("tv_on", 0.0)
-                                if hasattr(features, "get")
+                                features_dict.get("tv_on", 0.0)
+                                if isinstance(features_dict, dict)
                                 else 0.0
                             ),
                         }

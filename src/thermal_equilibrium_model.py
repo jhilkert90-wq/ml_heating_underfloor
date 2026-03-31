@@ -1397,6 +1397,13 @@ class ThermalEquilibriumModel:
                 effective_outlet = context.get(
                     "inlet_temp", context["outlet_temp"]
                 )
+            # Defensive fallback: if effective_outlet is None after the
+            # pump-off fallback (e.g. both outlet_temp and inlet_temp are
+            # missing from a legacy context), use current_indoor so the
+            # gradient still contributes instead of crashing or silently
+            # dropping the record.
+            if effective_outlet is None:
+                effective_outlet = context["current_indoor"]
 
             # Build forecast-aware outdoor array matching the optimization
             # horizon (TRAJECTORY_STEPS).  Fall back to scalar if the context
