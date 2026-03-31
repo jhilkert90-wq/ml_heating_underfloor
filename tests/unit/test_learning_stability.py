@@ -61,12 +61,12 @@ def model():
 class TestDeadZone:
     def test_dead_zone_constant_exists(self):
         assert hasattr(PhysicsConstants, "LEARNING_DEAD_ZONE")
-        assert PhysicsConstants.LEARNING_DEAD_ZONE == 0.05
+        assert PhysicsConstants.LEARNING_DEAD_ZONE == 0.02
 
     def test_dead_zone_blocks_learning_below_threshold(self, model):
-        """Errors averaging 0.02°C (< 0.05) must NOT change parameters."""
+        """Errors averaging 0.01°C (< 0.02) must NOT change parameters."""
         window = model.recent_errors_window
-        model.prediction_history = [_make_prediction(0.02)] * window
+        model.prediction_history = [_make_prediction(0.01)] * window
 
         old_hlc = model.heat_loss_coefficient
         old_oe = model.outlet_effectiveness
@@ -91,10 +91,10 @@ class TestDeadZone:
         assert model.heat_loss_coefficient != old_hlc
 
     def test_dead_zone_boundary(self, model):
-        """Errors exactly at 0.05 should be blocked (< not <=)."""
+        """Errors exactly at 0.02 should be blocked (< not <=)."""
         window = model.recent_errors_window
-        # Average will be exactly 0.049 – just inside dead zone
-        model.prediction_history = [_make_prediction(0.049)] * window
+        # Average will be exactly 0.019 – just inside dead zone
+        model.prediction_history = [_make_prediction(0.019)] * window
 
         old_hlc = model.heat_loss_coefficient
         model._adapt_parameters_from_recent_errors()

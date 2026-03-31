@@ -595,17 +595,17 @@ def filter_transient_periods(df, sequence_length_steps=12, min_temp_change=0.3):
                     and not np.isnan(actual_outlet_vals[k])
                     and not np.isnan(inlet_vals[k])):
                 eff_temp = (
-                    float(actual_outlet_vals[k]) + float(inlet_vals[k])
+                    float(np.asarray(actual_outlet_vals[k]).item()) + float(np.asarray(inlet_vals[k]).item())
                 ) / 2.0
             else:
-                eff_temp = float(outlet_vals[k])
+                eff_temp = float(np.asarray(outlet_vals[k]).item())
 
             steps.append({
-                'current_indoor': float(indoor_vals[k]),
-                'next_indoor': float(indoor_vals[k + 1]),
-                'outlet_temp': float(outlet_vals[k]),
+                'current_indoor': float(np.asarray(indoor_vals[k]).item()),
+                'next_indoor': float(np.asarray(indoor_vals[k + 1]).item()),
+                'outlet_temp': float(np.asarray(outlet_vals[k]).item()),
                 'effective_temp': eff_temp,
-                'outdoor_temp': float(outdoor_vals[k]),
+                'outdoor_temp': float(np.asarray(outdoor_vals[k]).item()),
                 'pv_power': float(window.iloc[k].get(pv_col, 0) or 0),
                 'fireplace_on': float(window.iloc[k].get(fireplace_col, 0) or 0),
                 'tv_on': float(window.iloc[k].get(tv_col, 0) or 0),
@@ -615,8 +615,8 @@ def filter_transient_periods(df, sequence_length_steps=12, min_temp_change=0.3):
         sequences.append({
             'steps': steps,
             'total_change': total_change,
-            'start_indoor': float(indoor_vals[0]),
-            'end_indoor': float(indoor_vals[-1]),
+            'start_indoor': float(np.asarray(indoor_vals[0]).item()),
+            'end_indoor': float(np.asarray(indoor_vals[-1]).item()),
         })
 
     # Deduplicate overlapping windows: keep only every nth sequence so no two

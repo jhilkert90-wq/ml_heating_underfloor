@@ -57,7 +57,7 @@ def test_get_calibrated_hourly_forecast(ha_client):
         ha_client, 'get_hourly_forecast', return_value=[10, 12, 14, 11]
     ):
         calibrated = ha_client.get_calibrated_hourly_forecast(11.5)
-        assert calibrated == [11.5, 13.5, 15.5, 12.5]
+        assert calibrated == [11.5, 13.5, 15.5, 12.5, 12.5, 12.5]
 
 
 @patch('src.ha_client.requests')

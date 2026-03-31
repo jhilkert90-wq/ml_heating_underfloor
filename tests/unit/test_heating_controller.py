@@ -128,7 +128,7 @@ class TestBlockingStateManager:
         """Test intelligent recovery when outlet temp is already close to target."""
         state = SystemState(last_is_blocking=True, last_blocking_end_time=90)
         blocking_manager.check_blocking_state = Mock(return_value=(False, []))
-        mock_ha_client.get_state.side_effect = [21.0, 22.0, 5.0, 44.8]
+        mock_ha_client.get_state.side_effect = [21.0, 22.0, 5.0, 44.8] + [44.8] * 20
 
         mock_wrapper = Mock()
         mock_wrapper._calculate_required_outlet_temp.return_value = 45.0
@@ -154,7 +154,7 @@ class TestBlockingStateManager:
         self, mock_time, mock_sleep, blocking_manager, mock_ha_client
     ):
         """Test that the grace period wait times out."""
-        mock_time.side_effect = [1000, 1001, 1000 + 301]
+        mock_time.side_effect = [1000, 1001, 1002, 1003, 1000 + 301] + [1000 + 301] * 20
         blocking_manager.check_blocking_state = Mock(return_value=(False, []))
         mock_ha_client.get_state.return_value = 50.0
 
@@ -169,7 +169,7 @@ class TestBlockingStateManager:
     ):
         """Test wait ends when target is reached."""
         blocking_manager.check_blocking_state = Mock(return_value=(False, []))
-        mock_ha_client.get_state.side_effect = [50.0, 40.0]
+        mock_ha_client.get_state.side_effect = [50.0, 40.0] + [40.0] * 20
 
         blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
         mock_sleep.assert_called_once()

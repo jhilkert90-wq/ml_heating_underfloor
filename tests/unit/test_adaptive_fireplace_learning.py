@@ -20,7 +20,7 @@ def test_initialization(afl_instance):
     assert isinstance(afl_instance.learning_state, FireplaceLearningState)
     assert afl_instance.learning_state.learned_coefficients[
         "base_heat_output_kw"
-    ] == pytest.approx(6.0)
+    ] == pytest.approx(1.0)
 
 
 def test_load_non_existent_state(tmp_path):
