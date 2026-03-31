@@ -1,0 +1,148 @@
+2026-03-31 07:27:45,384 - DEBUG - ⏰ POLLING END: Waited 10.0min, starting next cycle...
+2026-03-31 07:27:45,384 - DEBUG - 🔄 CYCLE 70 START: 07:27:45 (interval: 10.0min since last cycle)
+2026-03-31 07:27:45,385 - INFO - Successfully loaded operational state from unified JSON
+2026-03-31 07:27:45,458 - DEBUG - Setting HA state for sensor.ml_heating_cop_realtime: {'state': '4.15', 'attributes': {'friendly_name': 'ML Heating COP (Realtime)', 'unit_of_measurement': 'COP', 'icon': 'mdi:heat-pump', 'device_class': 'power_factor', 'state_class': 'measurement'}}
+2026-03-31 07:27:45,484 - DEBUG - Setting HA state for sensor.ml_heating_thermal_power: {'state': '1.702', 'attributes': {'friendly_name': 'ML Heating Thermal Power', 'unit_of_measurement': 'kW', 'icon': 'mdi:flash', 'device_class': 'power', 'state_class': 'measurement'}}
+2026-03-31 07:27:45,502 - DEBUG - Thermodynamic sensors updated: COP=4.15, Power=1.702kW
+2026-03-31 07:27:45,503 - DEBUG - ♻️ Reusing existing Model Wrapper instance
+2026-03-31 07:27:45,503 - DEBUG - 🎯 ACTIVE MODE LEARNING (trajectory): Verifying ML prediction accuracy for 26.1°C outlet setting
+2026-03-31 07:27:45,558 - ERROR - Learning from feedback failed: float() argument must be a string or a real number, not 'NoneType'
+Traceback (most recent call last):
+  File "/app/src/model_wrapper.py", line 1696, in learn_from_prediction_feedback
+    prediction_error = self.thermal_model.update_prediction_feedback(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/thermal_equilibrium_model.py", line 801, in update_prediction_feedback
+    self._adapt_parameters_from_recent_errors()
+  File "/app/src/thermal_equilibrium_model.py", line 899, in _adapt_parameters_from_recent_errors
+    self._calculate_pv_heat_weight_gradient(recent_predictions)
+  File "/app/src/thermal_equilibrium_model.py", line 1541, in _calculate_pv_heat_weight_gradient
+    return self._calculate_parameter_gradient(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/thermal_equilibrium_model.py", line 1415, in _calculate_parameter_gradient
+    pred_plus_trajectory = self.predict_thermal_trajectory(
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/thermal_equilibrium_model.py", line 1808, in predict_thermal_trajectory
+    else float(outlet_temp)
+         ^^^^^^^^^^^^^^^^^^
+TypeError: float() argument must be a string or a real number, not 'NoneType'
+2026-03-31 07:27:45,560 - DEBUG - ✅ Online learning: applied_temp=26.1°C, actual_change=0.020°C, cycle=3602
+2026-03-31 07:27:45,561 - DEBUG - Skipping online learning: current indoor temp unavailable
+2026-03-31 07:27:45,626 - DEBUG - Fireplace is OFF. Using main indoor temp for prediction.
+2026-03-31 07:27:45,825 - DEBUG - PV forecast parsed successfully: [1717.5, 1685.2, 1883.5, 2250.2, 2359.5, 2294.8]W
+2026-03-31 07:27:45,826 - DEBUG - Solar correction: enabled=True, percent=100.0%, factor=1.000
+2026-03-31 07:27:45,873 - DEBUG - ☁️ Cloud cover forecast fetched: ['100%', '74%', '94%', '98%', '100%', '94%'] (avg=93.3%, min=74%, max=100%)
+2026-03-31 07:27:45,874 - DEBUG - ☁️ Cloud cover features: 1h=100% 2h=74% 3h=94% 4h=98% 5h=100% 6h=94% (avg=93.3%)
+2026-03-31 07:27:45,879 - DEBUG - ♻️ Reusing existing Model Wrapper instance
+2026-03-31 07:27:45,889 - INFO - DEBUG: Wrapper params: U=0.1463057167895915, eff=0.9359837991404956, tau=5.830586942311848
+2026-03-31 07:27:45,889 - DEBUG - 🔧 Using natural bounds: outlet_min=18.0°C, outlet_max=35.0°C
+2026-03-31 07:27:45,889 - INFO - 🌡️ Using cycle-aligned forecast (10min): outdoor=1.7°C (vs current 1.7°C), PV=1364W (vs current 1332W)
+2026-03-31 07:27:45,889 - DEBUG - DEBUG: Using PV history (len=18) instead of scalar 1364.3541666666665
+2026-03-31 07:27:45,892 - DEBUG - 🎯 Heating (0.2°C deviation): Target 22.6°C achievable (range: 22.4-26.0°C), proceeding to binary search
+2026-03-31 07:27:45,892 - DEBUG - 🎯 Binary search start: target=22.6°C, current=22.4°C, range=18.0-35.0°C
+2026-03-31 07:27:45,893 - DEBUG -    Iteration 1: outlet=26.5°C → predicted=23.04°C, error=0.445°C (range: 18.0-35.0°C)
+2026-03-31 07:27:45,894 - DEBUG -      → Heating: Predicted too high, lowering maximum to 26.5°C
+2026-03-31 07:27:45,895 - DEBUG -    Iteration 2: outlet=22.2°C → predicted=22.44°C, error=-0.164°C (range: 18.0-26.5°C)
+2026-03-31 07:27:45,896 - DEBUG -      → Heating: Predicted too low, raising minimum to 22.2°C
+2026-03-31 07:27:45,897 - DEBUG -    Iteration 3: outlet=24.4°C → predicted=22.36°C, error=-0.242°C (range: 22.2-26.5°C)
+2026-03-31 07:27:45,897 - DEBUG -      → Heating: Predicted too low, raising minimum to 24.4°C
+2026-03-31 07:27:45,899 - DEBUG -    Iteration 4: outlet=25.4°C → predicted=22.68°C, error=0.078°C (range: 24.4-26.5°C)
+2026-03-31 07:27:45,899 - DEBUG -      → Heating: Predicted too high, lowering maximum to 25.4°C
+2026-03-31 07:27:45,901 - DEBUG -    Iteration 5: outlet=24.9°C → predicted=22.49°C, error=-0.106°C (range: 24.4-25.4°C)
+2026-03-31 07:27:45,901 - DEBUG -      → Heating: Predicted too low, raising minimum to 24.9°C
+2026-03-31 07:27:45,903 - DEBUG -    Iteration 6: outlet=25.2°C → predicted=22.59°C, error=-0.014°C (range: 24.9-25.4°C)
+2026-03-31 07:27:45,903 - DEBUG -      → Heating: Predicted too low, raising minimum to 25.2°C
+2026-03-31 07:27:45,905 - DEBUG -    Iteration 7: outlet=25.3°C → predicted=22.63°C, error=0.032°C (range: 25.2-25.4°C)
+2026-03-31 07:27:45,906 - DEBUG -      → Heating: Predicted too high, lowering maximum to 25.3°C
+2026-03-31 07:27:45,907 - DEBUG -    Iteration 8: outlet=25.2°C → predicted=22.61°C, error=0.009°C (range: 25.2-25.3°C)
+2026-03-31 07:27:45,908 - INFO - ✅ Binary search converged after 8 iterations: 25.2°C → 22.61°C (target: 22.6°C, error: 0.009°C)
+2026-03-31 07:27:45,908 - DEBUG - ☁️ Cloud cover=100%, factor=0.100, PV weight 0.00816 → 0.00082, heat_from_pv=1.1128 kW (effective_pv=1364W)
+2026-03-31 07:27:45,909 - DEBUG - 🔬 Equilibrium physics: outlet=25.2°C, outdoor=1.7°C, heat_loss_coeff=0.146, outlet_eff=0.936, equilibrium=23.08°C
+2026-03-31 07:27:45,910 - DEBUG - 🔍 Multi-horizon predictions for target 22.6°C:
+2026-03-31 07:27:45,910 - DEBUG -         current: 24.6°C → 22.5°C (error: -0.06°C, outdoor: 1.7°C, PV: 1332W)
+2026-03-31 07:27:45,910 - DEBUG -    cycle(10min): 24.6°C → 22.6°C (error: -0.03°C, outdoor: 1.7°C, PV: 1364W) ← NEW: Cycle-aligned
+2026-03-31 07:27:45,911 - DEBUG -              1h: 24.4°C → 22.6°C (error: +0.03°C, outdoor: 1.9°C, PV: 1718W)
+2026-03-31 07:27:45,911 - DEBUG -              2h: 24.1°C → 22.6°C (error: -0.05°C, outdoor: 3.2°C, PV: 1685W)
+2026-03-31 07:27:45,912 - DEBUG -              3h: 23.8°C → 22.6°C (error: -0.05°C, outdoor: 3.8°C, PV: 1884W)
+2026-03-31 07:27:45,912 - DEBUG -              4h: 23.6°C → 22.7°C (error: +0.08°C, outdoor: 4.4°C, PV: 2250W)
+2026-03-31 07:27:45,912 - DEBUG -             avg: 23.8°C → 22.7°C (error: +0.10°C, outdoor: 4.0°C, PV: 2032W)
+2026-03-31 07:27:45,914 - DEBUG - Slab: inlet=24.6°C, outlet=25.2°C, Δ=+0.6°C, τ=1.00h
+2026-03-31 07:27:45,915 - DEBUG - 🔍 Trajectory prediction using forecast arrays: outdoor=[1.6812499999999992, 1.9, 3.2, 3.8, 4.4], PV=[1332.25, 1717.5, 1685.2, 1883.5, 2250.2]
+2026-03-31 07:27:45,915 - DEBUG - 🔍 Trajectory DEBUG: outlet=25.2°C → 0.2h_prediction=22.44°C (vs target 22.6°C, error: -0.161°C), reaches_target_at=2.333333333333333h, cycle_time=0.2h
+2026-03-31 07:27:45,915 - DEBUG - 🔍 Trajectory predictions for target 22.6°C:
+2026-03-31 07:27:45,916 - DEBUG -     0.2h: 22.44°C → target 22.60°C (error: -0.16°C)
+2026-03-31 07:27:45,916 - DEBUG -     0.3h: 22.44°C → target 22.60°C (error: -0.16°C)
+2026-03-31 07:27:45,917 - DEBUG -     0.5h: 22.45°C → target 22.60°C (error: -0.15°C)
+2026-03-31 07:27:45,917 - DEBUG -     0.7h: 22.45°C → target 22.60°C (error: -0.15°C)
+2026-03-31 07:27:45,917 - DEBUG -     0.8h: 22.45°C → target 22.60°C (error: -0.15°C)
+2026-03-31 07:27:45,918 - DEBUG -     1.0h: 22.46°C → target 22.60°C (error: -0.14°C)
+2026-03-31 07:27:45,919 - DEBUG -     1.2h: 22.46°C → target 22.60°C (error: -0.14°C)
+2026-03-31 07:27:45,919 - DEBUG -     1.3h: 22.47°C → target 22.60°C (error: -0.13°C)
+2026-03-31 07:27:45,919 - DEBUG -     1.5h: 22.47°C → target 22.60°C (error: -0.13°C)
+2026-03-31 07:27:45,920 - DEBUG -     1.7h: 22.48°C → target 22.60°C (error: -0.12°C)
+2026-03-31 07:27:45,920 - DEBUG -     1.8h: 22.48°C → target 22.60°C (error: -0.12°C)
+2026-03-31 07:27:45,921 - DEBUG -     2.0h: 22.49°C → target 22.60°C (error: -0.11°C)
+2026-03-31 07:27:45,921 - DEBUG -     2.2h: 22.50°C → target 22.60°C (error: -0.10°C)
+2026-03-31 07:27:45,921 - DEBUG -     2.3h: 22.50°C → target 22.60°C (error: -0.10°C)
+2026-03-31 07:27:45,921 - DEBUG -     2.5h: 22.51°C → target 22.60°C (error: -0.09°C)
+2026-03-31 07:27:45,922 - DEBUG -     2.7h: 22.52°C → target 22.60°C (error: -0.08°C)
+2026-03-31 07:27:45,922 - DEBUG -     2.8h: 22.53°C → target 22.60°C (error: -0.07°C)
+2026-03-31 07:27:45,922 - DEBUG -     3.0h: 22.53°C → target 22.60°C (error: -0.07°C)
+2026-03-31 07:27:45,923 - DEBUG -     3.2h: 22.54°C → target 22.60°C (error: -0.06°C)
+2026-03-31 07:27:45,923 - DEBUG -     3.3h: 22.56°C → target 22.60°C (error: -0.04°C)
+2026-03-31 07:27:45,924 - DEBUG -     3.5h: 22.57°C → target 22.60°C (error: -0.03°C)
+2026-03-31 07:27:45,924 - DEBUG -     3.7h: 22.58°C → target 22.60°C (error: -0.02°C)
+2026-03-31 07:27:45,925 - DEBUG -     3.8h: 22.59°C → target 22.60°C (error: -0.01°C)
+2026-03-31 07:27:45,925 - DEBUG -     4.0h: 22.61°C → target 22.60°C (error: +0.01°C)
+2026-03-31 07:27:45,925 - INFO - ⚠️ Target will NOT be reached within 0.2h cycle (+tolerance) - applying physics-based correction
+2026-03-31 07:27:45,925 - INFO -    Exponential Correction for undershoot: aggression_factor=1.29x
+2026-03-31 07:27:45,925 - INFO - 🎯 Corrected outlet: 26.0°C (25.2°C + +0.7°C) (deviation: 0.2°C, temp_error: +0.16°C)
+2026-03-31 07:27:45,925 - DEBUG - 🧠 Smart rounding is using cycle-aligned forecast: PV=1364W (caller sent PV=1332W)
+2026-03-31 07:27:45,925 - INFO - 🎯 Prediction: Current 22.44°C → Target 22.6°C | Calculated outlet: 26.0°C (before smart rounding) (confidence: 5.000)
+2026-03-31 07:27:45,926 - DEBUG - Model Wrapper: temp=26.0°C, error=0.160°C, confidence=5.000
+2026-03-31 07:27:45,927 - DEBUG - ♻️ Reusing existing Model Wrapper instance
+2026-03-31 07:27:45,928 - WARNING - Smart rounding failed (The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().), using regular rounding: 25.97°C → 26°C
+2026-03-31 07:27:45,929 - DEBUG - Setting target outlet temp
+2026-03-31 07:27:45,929 - DEBUG - Setting HA state for sensor.ml_vorlauftemperatur: {'state': '26.0', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_target_outlet_temp', 'friendly_name': 'ML Target Outlet Temp', 'unit_of_measurement': '°C', 'device_class': 'temperature', 'icon': 'mdi:thermometer-water'}}
+2026-03-31 07:27:45,956 - DEBUG - Logging thermal model metrics
+2026-03-31 07:27:45,969 - DEBUG - Wrote thermodynamic metrics to InfluxDB
+2026-03-31 07:27:45,970 - DEBUG - Setting HA state for sensor.ml_heating_state: {'state': '0', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_state', 'friendly_name': 'ML Heating State', 'unit_of_measurement': 'state', 'icon': 'mdi:information-outline', 'state_description': 'OK - Prediction done', 'confidence': 5.0, 'suggested_temp': np.float64(25.97), 'final_temp': np.float64(25.97), 'predicted_indoor': 22.46, 'last_prediction_time': '2026-03-31T07:27:45.970579+00:00', 'temperature_error': 0.16}}
+2026-03-31 07:27:45,991 - DEBUG - ✅ ACTIVE MODE: ML controlling heating via input_boolean.ml_heating
+2026-03-31 07:27:45,994 - DEBUG - 🧠 Smart rounding is using cycle-aligned forecast: PV=1364W (caller sent PV=489W)
+2026-03-31 07:27:45,994 - DEBUG - Target: 22.6°C | Suggested: 26.0°C | Applied: 26.0°C | Actual Indoor: 22.44°C | Predicted Indoor: 22.47°C | Confidence: 5.000
+2026-03-31 07:27:45,995 - INFO - Target: 22.6°C | Suggested: 26.0°C | Applied: 26.0°C | Actual Indoor: 22.44°C | Predicted Indoor: 22.47°C | Confidence: 5.000
+2026-03-31 07:27:46,283 - DEBUG - 💾 Saved unified thermal state to /opt/ml_heating/unified_thermal_state.json
+2026-03-31 07:27:46,285 - DEBUG - Operational state saved; updated keys: ['last_run_features', 'last_indoor_temp', 'last_avg_other_rooms_temp', 'last_fireplace_on', 'last_final_temp', 'last_is_blocking', 'last_blocking_reasons']
+2026-03-31 07:27:46,285 - DEBUG - ✅ CYCLE 70 END: 07:27:46 (duration: 0.9s)
+2026-03-31 07:27:46,286 - DEBUG - 💤 POLLING START: Waiting 30min until next cycle...
+2026-03-31 07:27:46,357 - DEBUG - Active sampling: buffered 6 readings
+2026-03-31 07:28:46,449 - DEBUG - Active sampling: buffered 6 readings
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
