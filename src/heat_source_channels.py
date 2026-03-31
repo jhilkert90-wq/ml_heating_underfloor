@@ -24,6 +24,13 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Minimum number of learning records before a channel adapts parameters
+_MIN_RECORDS_FOR_LEARNING = 5
+# Default channel learning rate (conservative to avoid over-correction)
+_CHANNEL_LEARNING_RATE = 0.01
+# Dead zone: skip learning when average error is below sensor noise
+_LEARNING_DEAD_ZONE = 0.05  # °C
+
 
 class HeatSourceChannel(ABC):
     """
@@ -31,6 +38,9 @@ class HeatSourceChannel(ABC):
 
     Each channel independently tracks its own prediction history and
     learnable parameters, preventing cross-contamination between sources.
+    Channels learn from their own history via ``_learn_from_recent()``,
+    which is called automatically after each ``record_learning()`` call
+    once enough observations have accumulated.
     """
 
     def __init__(self, name: str):
@@ -59,7 +69,7 @@ class HeatSourceChannel(ABC):
         """Apply gradient-based parameter update."""
 
     def record_learning(self, error: float, context: Dict) -> None:
-        """Record a learning observation for this channel."""
+        """Record a learning observation and trigger self-learning."""
         record = {
             "error": error,
             "context": context.copy(),
@@ -68,6 +78,15 @@ class HeatSourceChannel(ABC):
         self.history.append(record)
         if len(self.history) > self._max_history:
             self.history = self.history[-self._max_history:]
+        # Trigger independent gradient learning
+        self._learn_from_recent()
+
+    def _learn_from_recent(self) -> None:
+        """Compute gradients from recent observations and update parameters.
+
+        Default is a no-op; subclasses override for channel-specific
+        gradient logic.
+        """
 
     def predict_future_contribution(
         self, horizon_hours: float, context: Dict
@@ -127,7 +146,9 @@ class HeatPumpChannel(HeatSourceChannel):
         if "outlet_effectiveness" in gradients:
             delta = gradients["outlet_effectiveness"] * learning_rate
             self.outlet_effectiveness += max(-0.005, min(0.005, delta))
-            self.outlet_effectiveness = max(0.01, min(1.0, self.outlet_effectiveness))
+            self.outlet_effectiveness = max(
+                0.01, min(1.0, self.outlet_effectiveness)
+            )
         if "slab_time_constant_hours" in gradients:
             delta = gradients["slab_time_constant_hours"] * learning_rate
             self.slab_time_constant_hours += max(-0.1, min(0.1, delta))
@@ -141,7 +162,8 @@ class SolarChannel(HeatSourceChannel):
     Solar/PV channel — uncontrollable, forecast-aware.
 
     Parameters learned only from daytime cycles (PV > threshold).
-    Decay: none (immediate drop when sun sets).
+    Decay: small τ (default 0.5 h ≈ 30 min) models residual heat from
+    sun-warmed surfaces (floors, walls near windows) after PV drops.
     """
 
     # PV must exceed this threshold for the channel to learn
@@ -152,26 +174,40 @@ class SolarChannel(HeatSourceChannel):
         self.pv_heat_weight = 0.002
         self.solar_lag_minutes = 45.0
         self.cloud_factor_exponent = 1.0
+        # Thermal mass of sun-warmed surfaces (floors, walls near windows).
+        # After PV drops, these surfaces continue emitting heat with this τ.
+        self.solar_decay_tau_hours = 0.5  # 30 minutes default
 
     def estimate_heat_contribution(self, context: Dict) -> float:
         pv_power = context.get("pv_power", 0)
         if isinstance(pv_power, list):
             pv_power = pv_power[-1] if pv_power else 0
         cloud = context.get("avg_cloud_cover", 50.0)
-        cloud_factor = max(0.1, 1.0 - (cloud / 100.0) ** self.cloud_factor_exponent)
+        cloud_factor = max(
+            0.1, 1.0 - (cloud / 100.0) ** self.cloud_factor_exponent
+        )
         return float(pv_power) * self.pv_heat_weight * cloud_factor
 
     def estimate_decay_contribution(
         self, time_since_off: float, context: Dict
     ) -> float:
-        # Solar has no thermal mass — immediate drop
-        return 0.0
+        """Residual heat from sun-warmed surfaces after PV drops."""
+        if time_since_off <= 0 or self.solar_decay_tau_hours <= 0:
+            return 0.0
+        last_pv = context.get("last_pv_power", 0)
+        if not last_pv or float(last_pv) <= 0:
+            return 0.0
+        peak_heat = float(last_pv) * self.pv_heat_weight
+        return peak_heat * math.exp(
+            -time_since_off / self.solar_decay_tau_hours
+        )
 
     def get_learnable_parameters(self) -> Dict[str, float]:
         return {
             "pv_heat_weight": self.pv_heat_weight,
             "solar_lag_minutes": self.solar_lag_minutes,
             "cloud_factor_exponent": self.cloud_factor_exponent,
+            "solar_decay_tau_hours": self.solar_decay_tau_hours,
         }
 
     def apply_gradient_update(
@@ -185,32 +221,70 @@ class SolarChannel(HeatSourceChannel):
             delta = gradients["solar_lag_minutes"] * learning_rate
             self.solar_lag_minutes += max(-5.0, min(5.0, delta))
             self.solar_lag_minutes = max(0.0, min(120.0, self.solar_lag_minutes))
+        if "solar_decay_tau_hours" in gradients:
+            delta = gradients["solar_decay_tau_hours"] * learning_rate
+            self.solar_decay_tau_hours += max(-0.05, min(0.05, delta))
+            self.solar_decay_tau_hours = max(
+                0.0, min(2.0, self.solar_decay_tau_hours)
+            )
 
     def predict_future_contribution(
         self, horizon_hours: float, context: Dict
     ) -> List[float]:
-        """Use PV forecast to predict future solar heat contribution."""
+        """Use PV forecast to predict future solar heat, smoothed by decay τ.
+
+        When PV increases, heat rises immediately (sunshine warms fast).
+        When PV decreases, residual heat from sun-warmed surfaces decays
+        exponentially with ``solar_decay_tau_hours``.
+        """
         pv_forecast = context.get("pv_forecast")
         cloud = context.get("avg_cloud_cover", 50.0)
-        cloud_factor = max(0.1, 1.0 - (cloud / 100.0) ** self.cloud_factor_exponent)
+        cloud_factor = max(
+            0.1, 1.0 - (cloud / 100.0) ** self.cloud_factor_exponent
+        )
         steps = max(1, int(horizon_hours * 6))
+        step_hours = 1.0 / 6.0  # 10 minutes
 
         if not pv_forecast:
             current = self.estimate_heat_contribution(context)
             return [current] * steps
 
-        result = []
+        # Compute raw heat per step from forecast
+        raw_heat: List[float] = []
         for i in range(steps):
-            # pv_forecast is assumed hourly; map 10-min steps to hourly index
             hour_idx = min(i // 6, len(pv_forecast) - 1)
             pv_val = float(pv_forecast[hour_idx])
-            result.append(pv_val * self.pv_heat_weight * cloud_factor)
-        return result
+            raw_heat.append(pv_val * self.pv_heat_weight * cloud_factor)
+
+        # Apply exponential decay smoothing when PV drops.
+        # Rising PV → immediate heat increase (no lag on increase).
+        # Falling PV → smooth decay from sun-warmed thermal mass.
+        if self.solar_decay_tau_hours > 0:
+            decay_factor = math.exp(
+                -step_hours / self.solar_decay_tau_hours
+            )
+        else:
+            decay_factor = 0.0
+
+        smoothed: List[float] = []
+        prev = raw_heat[0]
+        for direct in raw_heat:
+            if direct >= prev:
+                smoothed.append(direct)
+            else:
+                decayed = prev * decay_factor
+                smoothed.append(max(direct, decayed))
+            prev = smoothed[-1]
+        return smoothed
 
 
 class FireplaceChannel(HeatSourceChannel):
     """
     Fireplace channel — uncontrollable, observed via binary sensor.
+
+    Learns independently from prediction errors during fireplace-active
+    periods via its own gradient-based parameter updates (no external
+    learning module dependency).
 
     Decay: exponential after fireplace turned off (τ ~ 30-60 min).
     Room spread: living room heat distributes to house average with delay.
@@ -250,13 +324,45 @@ class FireplaceChannel(HeatSourceChannel):
         if "fp_heat_output_kw" in gradients:
             delta = gradients["fp_heat_output_kw"] * learning_rate
             self.fp_heat_output_kw += max(-0.5, min(0.5, delta))
-            self.fp_heat_output_kw = max(0.5, min(15.0, self.fp_heat_output_kw))
+            self.fp_heat_output_kw = max(
+                0.5, min(15.0, self.fp_heat_output_kw)
+            )
         if "fp_decay_time_constant" in gradients:
             delta = gradients["fp_decay_time_constant"] * learning_rate
             self.fp_decay_time_constant += max(-0.1, min(0.1, delta))
             self.fp_decay_time_constant = max(
                 0.1, min(2.0, self.fp_decay_time_constant)
             )
+
+    def _learn_from_recent(self) -> None:
+        """Independent gradient learning from fireplace-active observations.
+
+        Computes a simple gradient for ``fp_heat_output_kw`` from the
+        average recent prediction error:
+        - positive error (actual > predicted) → fireplace provides more
+          heat than modelled → increase ``fp_heat_output_kw``
+        - negative error (actual < predicted) → decrease
+        """
+        if len(self.history) < _MIN_RECORDS_FOR_LEARNING:
+            return
+
+        recent = self.history[-_MIN_RECORDS_FOR_LEARNING:]
+        avg_error = sum(r["error"] for r in recent) / len(recent)
+
+        if abs(avg_error) < _LEARNING_DEAD_ZONE:
+            return
+
+        # Positive error = actual hotter → underestimated FP heat
+        gradients: Dict[str, float] = {
+            "fp_heat_output_kw": avg_error,
+        }
+        self.apply_gradient_update(gradients, _CHANNEL_LEARNING_RATE)
+        logger.debug(
+            "🔥 FireplaceChannel self-learned: avg_error=%.3f, "
+            "fp_heat_output_kw=%.2f",
+            avg_error,
+            self.fp_heat_output_kw,
+        )
 
 
 class TVChannel(HeatSourceChannel):
@@ -312,7 +418,10 @@ class HeatSourceChannelOrchestrator:
 
     def total_heat(self, context: Dict) -> float:
         """Calculate total heat contribution from all active sources."""
-        return sum(ch.estimate_heat_contribution(context) for ch in self.channels.values())
+        return sum(
+            ch.estimate_heat_contribution(context)
+            for ch in self.channels.values()
+        )
 
     def route_learning(self, error: float, context: Dict) -> None:
         """
@@ -327,6 +436,9 @@ class HeatSourceChannelOrchestrator:
         When multiple external sources are active, each active external
         source channel gets the learning record.  HP never learns when
         any external source is active (to keep OE/HLC clean).
+
+        Each channel's ``record_learning`` triggers its own independent
+        ``_learn_from_recent()`` gradient update.
         """
         fp_on_val = context.get("fireplace_on", 0)
         fireplace_on = bool(fp_on_val) and fp_on_val > 0
@@ -362,7 +474,9 @@ class HeatSourceChannelOrchestrator:
         steps = max(1, int(horizon_hours * 6))
         total = [0.0] * steps
         for ch in self.channels.values():
-            contribution = ch.predict_future_contribution(horizon_hours, context)
+            contribution = ch.predict_future_contribution(
+                horizon_hours, context
+            )
             for i in range(min(steps, len(contribution))):
                 total[i] += contribution[i]
         return total
