@@ -1,4 +1,0 @@
-# file: /home/runner/work/ml_heating_underfloor/ml_heating_underfloor/src/heating_controller.py
-# hypothesis_version: 6.151.10
-
-[0.1, 0.5, 1.0, 60.0, ', ', 'MISSING', 'OK', 'SensorBuffer', 'actual <= target', 'actual >= target', 'actual_indoor', 'actual_outlet_temp', 'auto', 'avg_other_rooms_temp', 'blocking_reasons', 'cool to', 'cool-down', 'fireplace_on', 'heat', 'heating_state', 'last_final_temp', 'last_updated', 'missing_sensors', 'outdoor_temp', 'owm_temp', 'state_description', 'target_indoor_temp', 'to_dict', 'warm to', 'warm-up', '❌ RETRY FAILED: %s', '📊 SENSOR DEBUG:']

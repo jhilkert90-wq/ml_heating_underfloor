@@ -1,4 +1,0 @@
-# file: /home/runner/work/ml_heating_underfloor/ml_heating_underfloor/src/adaptive_learning_metrics_schema.py
-# hypothesis_version: 6.151.10
-
-[0.25, 0.31, 0.33, 78.5, 150, '2.0', '__main__', 'accuracy_good_pct', 'boolean', 'correction_stability', 'fields', 'float', 'int', 'invalid_float', 'is_improving', 'learning_confidence', 'learning_phase', 'mae_1h', 'mae_24h', 'mae_6h', 'mae_improvement_pct', 'measurement', 'ml_heating', 'ml_learning_phase', 'not_an_int', 'outlet_effectiveness', 'overshoot_predicted', 'parameter_type', 'prediction_horizon', 'predictions_24h', 'rmse_1h', 'rmse_24h', 'rmse_6h', 'skipped_updates_24h', 'source', 'stability_score', 'string', 'tags', 'total_predictions', 'trajectory_mae_1h', 'trajectory_mae_2h', 'trajectory_mae_4h', 'version']

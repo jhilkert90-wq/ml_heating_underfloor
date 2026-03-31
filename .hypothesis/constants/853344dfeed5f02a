@@ -1,4 +1,0 @@
-# file: /home/runner/work/ml_heating_underfloor/ml_heating_underfloor/src/prediction_context.py
-# hypothesis_version: 6.151.10
-
-[0.0, 1.0, 1.51, 2.0, 2.5, 3.5, 4.5, 5.5, 50.0, 60.0, 180, 'avg_cloud_cover', 'avg_outdoor', 'avg_pv', 'cloud_cover_forecast', 'current_outdoor', 'current_pv', 'current_temp', 'fireplace_on', 'outdoor_forecast', 'outdoor_temp', 'pv_forecast', 'pv_forecast_1h', 'pv_forecast_2h', 'pv_forecast_3h', 'pv_forecast_4h', 'pv_forecast_5h', 'pv_forecast_6h', 'pv_power', 'target_temp', 'temp_forecast_1h', 'temp_forecast_2h', 'temp_forecast_3h', 'temp_forecast_4h', 'temp_forecast_5h', 'temp_forecast_6h', 'tv_on', 'use_forecasts']

@@ -1,4 +1,0 @@
-# file: /home/runner/work/ml_heating_underfloor/ml_heating_underfloor/src/temperature_control.py
-# hypothesis_version: 6.151.10
-
-[0.0, 10.0, 40.0, 'ceiling', 'efficiency_advantage', 'fireplace_on', 'floor', 'indoor_temp_gradient', 'last_final_temp', 'last_indoor_temp', 'last_run_features', 'ml_outlet_prediction', 'optimal_outlet_temp', 'outdoor_temp', 'outlet_temp', 'outlet_temp_cub', 'outlet_temp_sq', 'pv_now', 'pv_power', 'records', 'timestamp', 'to_dict', 'tv_on']

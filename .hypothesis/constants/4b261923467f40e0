@@ -1,4 +1,0 @@
-# file: /home/runner/work/ml_heating_underfloor/ml_heating_underfloor/src/thermal_config.py
-# hypothesis_version: 6.151.10
-
-[0.0, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.17, 0.2, 0.3, 0.35, 0.5, 0.55, 0.8, 0.9, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 6.0, 30.0, 35.0, 45.0, 70.0, 100.0, 180.0, '1/hour', '1/°C', 'W/°C', 'bounds', 'default', 'description', 'dimensionless', 'equilibrium_ratio', 'hours', 'learning_confidence', 'max_learning_rate', 'min_learning_rate', 'minutes', 'outlet_effectiveness', 'outlet_temp_max', 'outlet_temp_min', 'pv_heat_weight', 'solar_lag_minutes', 'total_conductance', 'tv_heat_weight', 'unit', '°C']
