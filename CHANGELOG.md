@@ -9,16 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Heat Source Channel Architecture (Phase 2-4)**: Decomposed heat-source learning with independent channels for heat pump, solar/PV, fireplace, and TV/electronics. Each channel has its own learnable parameters and prediction history, preventing cross-contamination of learned parameters.
-  - `HeatSourceChannel` abstract base class with `estimate_heat_contribution()`, `estimate_decay_contribution()`, `get_learnable_parameters()`, and `apply_gradient_update()` methods.
+  - `HeatSourceChannel` abstract base class with `estimate_heat_contribution()`, `estimate_decay_contribution()`, `get_learnable_parameters()`, and `apply_gradient_update()` methods. Channels self-learn via `_learn_from_recent()` triggered on each `record_learning()` call.
   - `HeatPumpChannel`: wraps existing slab model (outlet effectiveness, slab time constant, delta-T floor).
-  - `SolarChannel`: forecast-aware PV heat estimation with cloud factor, solar lag, and `predict_future_contribution()` for proactive pre-sunset outlet increases.
-  - `FireplaceChannel`: exponential decay model after fireplace off (τ ~ 45 min) with room spread delay.
+  - `SolarChannel`: forecast-aware PV heat estimation with cloud factor, solar lag, solar decay τ (0.5 h default for sun-warmed surface residual heat), and `predict_future_contribution()` with decay-smoothed evening transitions.
+  - `FireplaceChannel`: exponential decay model after fireplace off (τ ~ 45 min) with room spread delay. **Learns independently** via gradient descent from prediction errors — no dependency on `adaptive_fireplace_learning.py`.
   - `TVChannel`: simple additive heat source for TV/electronics (~0.25 kW).
   - `HeatSourceChannelOrchestrator`: routes learning updates to correct channel, combines all channels for total heat prediction, proportional error attribution across active channels.
 - **`ENABLE_HEAT_SOURCE_CHANNELS` config variable**: Enable/disable decomposed heat-source learning (default: `true`). Existing Phase 1 guards (fireplace, PV, pump-OFF) remain active independently.
 - **Channel-isolated gradient descent (Phase 3)**: HP channel learns only from clean cycles (no fireplace, low PV); solar channel only from PV > 500 W; fireplace channel only when fireplace active.
-- **Solar transition forecasting (Phase 4)**: `SolarChannel.predict_future_contribution()` uses PV forecast array to predict future solar heat per 10-min step, enabling proactive outlet temperature increase before sunset.
+- **Solar transition forecasting (Phase 4)**: `SolarChannel.predict_future_contribution()` uses PV forecast array to predict future solar heat per 10-min step, with exponential decay smoothing when PV drops (solar_decay_tau_hours). Enables proactive outlet temperature increase before sunset.
+- **Orchestrator integration (Steps 10-11)**: `ThermalEquilibriumModel` initializes orchestrator when `ENABLE_HEAT_SOURCE_CHANNELS` is true and routes learning through it in `update_prediction_feedback()`.
 - **New module**: `src/heat_source_channels.py` — 4 channel implementations + orchestrator.
+- **Comprehensive scenario tests**: Evening (Step 17: PV 3000→0 W), morning (PV 0→3000 W with slab residual heat), solar decay τ, fireplace independent learning, and orchestrator integration — 36 tests total.
 
 ### Fixed
 - **Test `test_learning_isolation`**: Fixed `test_hp_params_update_when_no_contamination` to provide enough prediction feedback records (≥ `RECENT_ERRORS_WINDOW`) and use pump-ON context (`delta_t=5.0`) so gradient adaptation is actually triggered.
