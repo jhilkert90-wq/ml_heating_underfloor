@@ -1390,6 +1390,8 @@ class ThermalEquilibriumModel:
             # PUMP-OFF FIX: when pump was off, use inlet_temp instead of
             # stale Sollwert so the slab model correctly simulates pump-OFF.
             effective_outlet = context["outlet_temp"]
+            if effective_outlet is None:
+                continue
             if (
                 context.get("delta_t", 999) < 1.0
                 or context.get("thermal_power_kw", 999) < 0.2
@@ -1397,6 +1399,8 @@ class ThermalEquilibriumModel:
                 effective_outlet = context.get(
                     "inlet_temp", context["outlet_temp"]
                 )
+            if effective_outlet is None:
+                continue
 
             # Build forecast-aware outdoor array matching the optimization
             # horizon (TRAJECTORY_STEPS).  Fall back to scalar if the context

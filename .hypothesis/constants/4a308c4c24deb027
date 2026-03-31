@@ -1,0 +1,4 @@
+# file: /home/runner/work/ml_heating_underfloor/ml_heating_underfloor/src/thermal_state_validator.py
+# hypothesis_version: 6.151.10
+
+[0.0, 0.001, 0.1, 0.9, 1.1, 1.2, 2.0, 5.0, 50.0, 100.0, '__main__', 'adaptive', 'baseline_parameters', 'calibrated', 'config', 'learning_state', 'metadata', 'operational_state', 'outlet_effectiveness', 'prediction_metrics', 'pv_heat_weight', 'r', 'source', 'tv_heat_weight']

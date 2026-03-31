@@ -1,0 +1,4 @@
+# file: /home/runner/work/ml_heating_underfloor/ml_heating_underfloor/src/thermal_parameters.py
+# hypothesis_version: 6.151.10
+
+['ParameterInfo', 'bounds', 'default', 'description', 'thermal_params', 'unit']

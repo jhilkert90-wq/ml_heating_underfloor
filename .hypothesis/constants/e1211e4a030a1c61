@@ -1,0 +1,4 @@
+# file: /home/runner/work/ml_heating_underfloor/ml_heating_underfloor/src/prediction_metrics.py
+# hypothesis_version: 6.151.10
+
+[-100.0, 0.0, 0.5, 1.0, 5.0, 20.5, 45.0, 100.0, -200, 100, 200, 1000, '+00:00', '1h', '24h', '6h', 'Z', '__main__', 'abs_error', 'acceptable', 'accuracy_breakdown', 'actual', 'all', 'context', 'count', 'error', 'excellent', 'first_half_mae', 'good', 'inf', 'insufficient_data', 'is_improving', 'learning_state', 'mae', 'mae_improvement', 'max_error', 'max_history_size', 'mean_error', 'min_error', 'no_data', 'outdoor_temp', 'outlet_temp', 'percentage', 'perfect', 'poor', 'predicted', 'prediction_history', 'prediction_metrics', 'predictions', 'r', 'rmse', 'saved_at', 'second_half_mae', 'squared_error', 'std_error', 'step', 'timestamp', 'tolerable', 'total_predictions', 'trends', 'very_good', 'w']
