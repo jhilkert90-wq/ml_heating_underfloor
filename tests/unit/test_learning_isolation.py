@@ -18,7 +18,7 @@ def make_context(fireplace_on=0, pv_power=0):
         "tv_on": 0,
         "avg_cloud_cover": 50.0,
         "inlet_temp": 30.0,
-        "delta_t": 0.0,
+        "delta_t": 5.0,
     }
 
 @pytest.fixture
@@ -56,12 +56,21 @@ def test_hp_params_unchanged_when_high_pv(model_with_guards):
 def test_hp_params_update_when_no_contamination(model_with_guards):
     model = model_with_guards
     model.learning_confidence = 1.0
+    # Feed enough records to exceed the recent_errors_window threshold
+    # so that gradient adaptation is actually triggered.
+    ctx = make_context()
+    for _ in range(config.RECENT_ERRORS_WINDOW + 1):
+        model.update_prediction_feedback(
+            predicted_temp=20.0,
+            actual_temp=21.0,
+            prediction_context=ctx,
+        )
     old_hlc = model.heat_loss_coefficient
     old_oe = model.outlet_effectiveness
     model.update_prediction_feedback(
         predicted_temp=20.0,
         actual_temp=21.0,
-        prediction_context=make_context(),
+        prediction_context=ctx,
     )
     # At least one parameter should change
     assert (model.heat_loss_coefficient != old_hlc) or (model.outlet_effectiveness != old_oe)

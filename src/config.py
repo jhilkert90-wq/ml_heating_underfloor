@@ -408,3 +408,11 @@ INDOOR_COOLING_TREND_THRESHOLD: float = float(os.getenv("INDOOR_COOLING_TREND_TH
 INDOOR_COOLING_DAMPING_FACTOR: float = float(os.getenv("INDOOR_COOLING_DAMPING_FACTOR", "0.3"))
 INDOOR_WARMING_TREND_THRESHOLD: float = float(os.getenv("INDOOR_WARMING_TREND_THRESHOLD", "0.10"))
 INDOOR_WARMING_DAMPING_FACTOR: float = float(os.getenv("INDOOR_WARMING_DAMPING_FACTOR", "0.3"))
+
+# --- Heat Source Channel Architecture (Phase 2) ---
+# Enable decomposed heat-source learning with independent channels for
+# heat pump, solar, fireplace, and TV.  When enabled, learning guards
+# prevent cross-contamination between heat sources.
+ENABLE_HEAT_SOURCE_CHANNELS: bool = (
+    os.getenv("ENABLE_HEAT_SOURCE_CHANNELS", "true").lower() == "true"
+)
