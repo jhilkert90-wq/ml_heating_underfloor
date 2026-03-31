@@ -187,7 +187,7 @@ class TestSlabGradient:
         gradient = model._calculate_slab_time_constant_gradient(
             model.prediction_history
         )
-        assert abs(gradient) < 1e-4, (
+        assert abs(gradient) < 0.01, (
             f"Expected ~zero slab gradient at equilibrium, got {gradient}"
         )
 

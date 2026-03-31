@@ -1,6 +1,25 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - February 11, 2026
+## 🎯 CURRENT STATUS - March 31, 2026
+
+### ✅ **HEAT SOURCE CHANNEL ARCHITECTURE (PHASE 2-4) IMPLEMENTED**
+
+**System Status**: **OPERATIONAL WITH DECOMPOSED LEARNING** — Each heat source has its own independent learning channel with isolated parameters and prediction history. Phase 1 guards continue to protect the main control loop.
+
+**Implementation Status**:
+- ✅ `src/heat_source_channels.py` — `HeatSourceChannel` ABC + 4 implementations + `HeatSourceChannelOrchestrator`
+- ✅ `src/config.py` — `ENABLE_HEAT_SOURCE_CHANNELS` config variable (default: `true`)
+- ✅ `.env_sample` — Documented with usage description
+- ✅ Channel learning isolation: HP, PV, FP, TV learn from their own active periods only
+- ✅ Proportional error attribution across active channels
+- ✅ Solar transition forecasting via PV forecast array
+- ✅ Per-channel state persistence (`get_channel_state()` / `load_channel_state()`)
+- ✅ 8 new tests passing (test_heat_source_channels, test_solar_transition, test_learning_isolation)
+- ⏳ Orchestrator integration into main control loop deferred (Phase 1 guards active)
+
+---
+
+## Previous Status - February 11, 2026
 
 ### ✅ **PHASE 2: ADVANCED TESTING IMPLEMENTATION COMPLETE**
 

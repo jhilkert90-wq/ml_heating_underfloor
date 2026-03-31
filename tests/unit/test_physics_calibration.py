@@ -146,7 +146,8 @@ def test_calculate_mae_for_params(stable_periods_fixture):
         'outlet_effectiveness': 0.8,
         'pv_heat_weight': 0.001,
         'fireplace_heat_weight': 2.0,
-        'tv_heat_weight': 0.2
+        'tv_heat_weight': 0.2,
+        'solar_lag_minutes': 30.0
     }
 
     with patch('src.physics_calibration.ThermalEquilibriumModel') as mock_cls:
@@ -212,7 +213,8 @@ def test_build_optimization_params():
         'outlet_effectiveness': 0.5,
         'pv_heat_weight': 0.001,
         'fireplace_heat_weight': 2.0,
-        'tv_heat_weight': 0.5
+        'tv_heat_weight': 0.5,
+        'solar_lag_minutes': 30.0
     }
     excluded_params = ['fireplace_heat_weight']
 
@@ -228,10 +230,10 @@ def test_build_optimization_params():
 
         assert 'fireplace_heat_weight' not in names
         assert 'pv_heat_weight' in names
-        # Expected params: heat_loss_coefficient, outlet_effectiveness, pv_heat_weight, tv_heat_weight
-        assert len(names) == 4
-        assert len(values) == 4
-        assert len(bounds) == 4
+        # Expected params: heat_loss_coefficient, outlet_effectiveness, pv_heat_weight, tv_heat_weight, solar_lag_minutes
+        assert len(names) == 5
+        assert len(values) == 5
+        assert len(bounds) == 5
         assert names[2] == 'pv_heat_weight'
         assert values[2] == 0.001
 

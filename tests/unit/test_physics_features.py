@@ -11,9 +11,11 @@ def mock_ha_client():
     client = MagicMock()
     client.get_all_states.return_value = {}
     # Updated side_effect to include new sensors
-    # Order: Indoor, Outdoor, Outlet, Target, Inlet, Flow, Power, DHW, Disinfection, Boost, Defrost, PV, Fireplace, TV
+    # Order: Indoor, LivingRoom, Outdoor, Outlet, Target, Inlet, Flow, Power,
+    # DHW, Disinfection, Boost, Defrost, PV, SolarCorrection, Fireplace, TV
     client.get_state.side_effect = [
         20.0,  # Indoor
+        20.0,  # Living Room
         5.0,   # Outdoor
         40.0,  # Outlet
         21.0,  # Target
@@ -25,6 +27,7 @@ def mock_ha_client():
         False, # Boost
         True,  # Defrost
         500.0, # PV
+        0.0,   # Solar Correction
         True,  # Fireplace
         False  # TV
     ]
@@ -45,8 +48,8 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
     assert isinstance(features_df, pd.DataFrame)
     
-    # Verify column count (Original 37 + 6 new thermodynamic = 43)
-    assert len(features_df.columns) == 43
+    # Verify column count
+    assert len(features_df.columns) == 58
     
     # Verify original features
     assert features_df['indoor_temp_lag_30m'][0] == 19.6
@@ -77,6 +80,7 @@ def test_build_physics_features_missing_data(mock_ha_client, mock_influx_service
     # Fail on first critical sensor (Indoor Temp)
     mock_ha_client.get_state.side_effect = [
         None, # Indoor (Missing)
+        20.0, # Living Room
         5.0, 40.0, 21.0, # Criticals
         35.0, 1000.0, 1500.0 # Thermodynamics
     ]

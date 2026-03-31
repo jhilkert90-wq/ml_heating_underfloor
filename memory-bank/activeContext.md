@@ -1,5 +1,44 @@
 # Active Context - Current Work & Decision State
 
+### 🏗️ **HEAT SOURCE CHANNEL ARCHITECTURE (PHASE 2-4) IMPLEMENTED - March 31, 2026**
+
+**CRITICAL MILESTONE**: Decomposed heat-source learning architecture fully implemented. Each heat source (heat pump, solar/PV, fireplace, TV) now has its own independent learning channel with isolated parameters and prediction history, preventing cross-contamination of learned parameters.
+
+#### ✅ **PHASE 2: HEAT SOURCE CHANNEL ARCHITECTURE COMPLETE**
+- **New module**: `src/heat_source_channels.py` with:
+  - `HeatSourceChannel` abstract base class (`estimate_heat_contribution()`, `estimate_decay_contribution()`, `get_learnable_parameters()`, `apply_gradient_update()`)
+  - `HeatPumpChannel` — wraps slab model (OE, slab τ, ΔT floor); learns only from clean cycles
+  - `SolarChannel` — forecast-aware PV heat with cloud factor; `predict_future_contribution()` uses PV forecast for proactive sunset handling
+  - `FireplaceChannel` — exponential decay model (τ ~ 45 min) after fireplace off
+  - `TVChannel` — simple additive (~0.25 kW)
+  - `HeatSourceChannelOrchestrator` — routes learning, combines channels, proportional error attribution
+
+#### ✅ **PHASE 3: CHANNEL-ISOLATED LEARNING COMPLETE**
+- `route_learning()` isolates gradient updates: HP only when no external sources active; FP/PV/TV learn from their own active periods
+- `attribute_error()` distributes error proportionally by heat contribution
+- Per-channel prediction history in `channel.history` lists
+
+#### ✅ **PHASE 4: SOLAR TRANSITION FORECASTING COMPLETE**
+- `SolarChannel.predict_future_contribution()` maps PV forecast array to per-step heat estimates
+- `orchestrator.predict_future_heat()` sums all channel forecasts for proactive outlet adjustment
+
+#### ⏳ **INTEGRATION INTO MAIN CONTROL LOOP (Steps 10-11) — DEFERRED**
+- The orchestrator is implemented as a standalone module ready for integration
+- Integration into `ThermalEquilibriumModel.predict_equilibrium_temperature()` and `model_wrapper._calculate_required_outlet_temp()` is deferred per plan recommendation: "Deploy Phase 1 first, monitor, Phase 2-4 optional"
+- Phase 1 guards (fireplace, PV dampening, pump-OFF fix, HLC floor) are already active in the main control loop
+- Config flag `ENABLE_HEAT_SOURCE_CHANNELS=true` is available for gating
+
+**FILES CREATED/MODIFIED**:
+- `src/heat_source_channels.py` — NEW: 4 channel implementations + orchestrator
+- `src/config.py` — Added `ENABLE_HEAT_SOURCE_CHANNELS`
+- `.env_sample` — Added `ENABLE_HEAT_SOURCE_CHANNELS` with documentation
+- `tests/unit/test_heat_source_channels.py` — Channel isolation tests (4 tests)
+- `tests/unit/test_solar_transition.py` — Solar transition scenario test
+- `tests/unit/test_learning_isolation.py` — Phase 1 guard verification (3 tests)
+- `CHANGELOG.md` — Updated
+
+---
+
 ### 🧠 **ADAPTIVE LEARNING & SOURCE ATTRIBUTION IMPLEMENTED - February 15, 2026**
 
 **CRITICAL MILESTONE**: The system now features advanced adaptive learning capabilities for external heat sources. It can dynamically learn the heat contribution of the fireplace, TV, and PV panels by observing prediction errors when these sources are active. This moves the system from static weight assumptions to dynamic, home-specific learning.

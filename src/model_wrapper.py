@@ -70,6 +70,7 @@ class EnhancedModelWrapper:
         # UNIFIED FORECAST: Store cycle-aligned forecast conditions for smart
         # rounding
         self.cycle_aligned_forecast = {}
+        self._avg_cloud_cover = 50.0
 
         logging.info(
             "🎯 Model Wrapper initialized with ThermalEquilibriumModel"

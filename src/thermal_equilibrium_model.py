@@ -37,6 +37,22 @@ class ThermalEquilibriumModel:
         # Load calibrated parameters first, fallback to config defaults
         self._load_thermal_parameters()
 
+        # Phase 2-4: Heat Source Channel Orchestrator (Steps 10-11)
+        # Routes learning updates to the correct channel, preventing
+        # cross-contamination between heat sources.
+        self.orchestrator = None
+        if config.ENABLE_HEAT_SOURCE_CHANNELS:
+            try:
+                from src.heat_source_channels import (
+                    HeatSourceChannelOrchestrator,
+                )
+
+                self.orchestrator = HeatSourceChannelOrchestrator()
+            except Exception as exc:
+                logging.warning(
+                    "⚠️ Could not init heat source orchestrator: %s", exc
+                )
+
         # self.outdoor_coupling = config.OUTDOOR_COUPLING
         # thermal_bridge_factor removed in Phase 2: was not used in
         # calculations
@@ -785,6 +801,16 @@ class ThermalEquilibriumModel:
 
         if len(self.prediction_history) > config.MAX_PREDICTION_HISTORY:
             self.prediction_history = self.prediction_history[-config.MAX_PREDICTION_HISTORY:]
+
+        # Step 10: Route learning through orchestrator for channel isolation.
+        # Each channel independently learns from its own active periods,
+        # preventing cross-contamination (e.g. fireplace heat misattributed
+        # to outlet effectiveness).
+        if self.orchestrator is not None:
+            self.orchestrator.route_learning(
+                error=prediction_error,
+                context=prediction_context or {},
+            )
 
         if len(self.prediction_history) >= self.recent_errors_window:
             error_magnitude = abs(prediction_error)

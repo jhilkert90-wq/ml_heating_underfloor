@@ -10,6 +10,7 @@ def mock_config():
     with patch('src.physics_calibration.config') as mock:
         mock.INDOOR_TEMP_ENTITY_ID = "sensor.indoor_temp"
         mock.ACTUAL_OUTLET_TEMP_ENTITY_ID = "sensor.outlet_temp"
+        mock.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID = "sensor.outlet_temp"
         mock.OUTDOOR_TEMP_ENTITY_ID = "sensor.outdoor_temp"
         mock.PV_POWER_ENTITY_ID = "sensor.pv_power"
         mock.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace"
