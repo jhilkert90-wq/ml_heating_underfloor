@@ -155,7 +155,7 @@ class SolarChannel(HeatSourceChannel):
 
     def estimate_heat_contribution(self, context: Dict) -> float:
         pv_power = context.get("pv_power", 0)
-        if isinstance(pv_power, (list,)):
+        if isinstance(pv_power, list):
             pv_power = pv_power[-1] if pv_power else 0
         cloud = context.get("avg_cloud_cover", 50.0)
         cloud_factor = max(0.1, 1.0 - (cloud / 100.0) ** self.cloud_factor_exponent)
@@ -328,12 +328,14 @@ class HeatSourceChannelOrchestrator:
         source channel gets the learning record.  HP never learns when
         any external source is active (to keep OE/HLC clean).
         """
-        fireplace_on = context.get("fireplace_on", 0) and context.get("fireplace_on", 0) > 0
+        fp_on_val = context.get("fireplace_on", 0)
+        fireplace_on = bool(fp_on_val) and fp_on_val > 0
         pv_power = context.get("pv_power", 0)
-        if isinstance(pv_power, (list,)):
+        if isinstance(pv_power, list):
             pv_power = pv_power[-1] if pv_power else 0
         pv_active = float(pv_power) > SolarChannel.PV_LEARNING_THRESHOLD
-        tv_on = context.get("tv_on", 0) and context.get("tv_on", 0) > 0
+        tv_on_val = context.get("tv_on", 0)
+        tv_on = bool(tv_on_val) and tv_on_val > 0
 
         any_external_active = fireplace_on or pv_active or tv_on
 
