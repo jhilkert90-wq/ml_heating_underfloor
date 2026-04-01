@@ -31,19 +31,25 @@ class ThermalParameterConfig:
     DEFAULTS = {
         'outlet_temp_max': 35.0,           # °C
         'outlet_temp_min': 0.0,           # °C
-        'thermal_time_constant': 6.0,      # hours
+        'thermal_time_constant': 4.0,      # hours
         'equilibrium_ratio': 0.17,         # dimensionless
         'total_conductance': 0.8,         # 1/hour
         'pv_heat_weight': 0.0005,           # °C/W
         'fireplace_heat_weight': 0.02,      # °C
         'tv_heat_weight': 0.35,             # °C
+        'fp_heat_output_kw': 3.0,          # kW
+        'fp_decay_time_constant': 2.0,    # hours
+        'room_spread_delay_minutes': 30.0,  # minutes
         'adaptive_learning_rate': 0.01,
         'learning_confidence': 3.0,
         'min_learning_rate': 0.001,
         'max_learning_rate': 0.1,
         'heat_loss_coefficient': 0.15,      # 1/hour (Corrected baseline)
-        'outlet_effectiveness': 0.55,      # dimensionless
+        'outlet_effectiveness': 0.93,      # dimensionless
+        'delta_t_floor': 2.0,              # °C
+        'cloud_factor_exponent': 1.0,      # dimensionless
         'solar_lag_minutes': 45.0,         # minutes
+        'solar_decay_tau_hours': 0.5,      # hours
         'slab_time_constant_hours': 1.0,  # hours (UFH slab forced-convection time constant; data-fitted from 180m² floor)
     }
 
@@ -59,13 +65,19 @@ class ThermalParameterConfig:
         'pv_heat_weight': (0.0005, 0.005),       # W/°C
         'fireplace_heat_weight': (0.01, 6.0),    # 1/°C
         'tv_heat_weight': (0.05, 1.5),           # W/°C
+        'fp_heat_output_kw': (0.5, 15.0),        # kW
+        'fp_decay_time_constant': (0.1, 5.0),    # hours
+        'room_spread_delay_minutes': (0.0, 180.0),  # minutes
         'adaptive_learning_rate': (0.001, 0.1),
         'learning_confidence': (1.0, 5.0),
         'min_learning_rate': (0.0001, 0.01),
         'max_learning_rate': (0.01, 0.2),
         'heat_loss_coefficient': (0.01, 1.2),
         'outlet_effectiveness': (0.3, 2.0),
+        'delta_t_floor': (0.0, 10.0),      # °C
+        'cloud_factor_exponent': (0.1, 3.0),  # dimensionless
         'solar_lag_minutes': (0.0, 180.0),  # minutes
+        'solar_decay_tau_hours': (0.0, 3.0),  # hours
         'slab_time_constant_hours': (0.5, 3.0),  # hours (forced convection: 0.5h min to 3h max)
     }
 
@@ -80,6 +92,9 @@ class ThermalParameterConfig:
         'pv_heat_weight': 'PV power heating contribution (W/°C)',
         'fireplace_heat_weight': 'Fireplace heating contribution (1/°C)',
         'tv_heat_weight': 'TV/appliance heating contribution (W/°C)',
+        'fp_heat_output_kw': 'Fireplace channel startup heat output (kW)',
+        'fp_decay_time_constant': 'Fireplace channel heat decay time constant (hours)',
+        'room_spread_delay_minutes': 'Fireplace channel room-spread delay (minutes)',
         'adaptive_learning_rate':
             'Adaptive learning rate for parameter adjustment',
         'learning_confidence': 'Confidence in the current learned parameters',
@@ -87,7 +102,10 @@ class ThermalParameterConfig:
         'max_learning_rate': 'Maximum learning rate',
         'heat_loss_coefficient': 'Heat loss coefficient (1/hour)',
         'outlet_effectiveness': 'Outlet effectiveness (dimensionless)',
+        'delta_t_floor': 'Heat-pump loop delta-T floor used by the HP channel (°C)',
+        'cloud_factor_exponent': 'Solar channel cloud-cover attenuation exponent',
         'solar_lag_minutes': 'Effective delay/smoothing window for solar gain',
+        'solar_decay_tau_hours': 'Solar channel residual-heat decay time constant (hours)',
         'slab_time_constant_hours': 'UFH slab (Estrich) first-order thermal time constant (hours)',
     }
 
@@ -101,13 +119,19 @@ class ThermalParameterConfig:
         'pv_heat_weight': 'W/°C',
         'fireplace_heat_weight': '1/°C',
         'tv_heat_weight': 'W/°C',
+        'fp_heat_output_kw': 'kW',
+        'fp_decay_time_constant': 'hours',
+        'room_spread_delay_minutes': 'minutes',
         'adaptive_learning_rate': 'dimensionless',
         'learning_confidence': 'dimensionless',
         'min_learning_rate': 'dimensionless',
         'max_learning_rate': 'dimensionless',
         'heat_loss_coefficient': '1/hour',
         'outlet_effectiveness': 'dimensionless',
+        'delta_t_floor': '°C',
+        'cloud_factor_exponent': 'dimensionless',
         'solar_lag_minutes': 'minutes',
+        'solar_decay_tau_hours': 'hours',
         'slab_time_constant_hours': 'hours',
     }
 

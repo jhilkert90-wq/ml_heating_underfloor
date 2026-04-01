@@ -32,7 +32,7 @@ This documentation has been completely audited and restructured to accurately re
 | [Thermal Parameter Guide](THERMAL_PARAMETER_CONSOLIDATION.md) | ✅ Current | Unified parameter system |
 | [Delta Forecast Calibration](DELTA_FORECAST_CALIBRATION_GUIDE.md) | ✅ Current | Prediction accuracy tuning |
 | [Adaptive Learning Guide](ADAPTIVE_LEARNING_INFLUXDB_EXPORT.md) | ✅ Current | Learning system configuration |
-| [Adaptive Fireplace Learning](ADAPTIVE_FIREPLACE_LEARNING_GUIDE.md) | ✅ Current | Fireplace integration |
+| [Adaptive Fireplace Learning](ADAPTIVE_FIREPLACE_LEARNING_GUIDE.md) | ✅ Current | Legacy fireplace fallback and flag behavior |
 
 ### 🔧 Development & Testing
 
@@ -61,7 +61,7 @@ This documentation has been completely audited and restructured to accurately re
 - **THERMAL_PARAMETER_CONSOLIDATION.md** - Matches unified parameter system
 - **DELTA_FORECAST_CALIBRATION_GUIDE.md** - Recent, implementation verified
 - **ADAPTIVE_LEARNING_INFLUXDB_EXPORT.md** - Matches actual InfluxDB export
-- **ADAPTIVE_FIREPLACE_LEARNING_GUIDE.md** - Verified against adaptive_fireplace_learning.py
+- **ADAPTIVE_FIREPLACE_LEARNING_GUIDE.md** - Verified as the legacy fallback path when channel mode is disabled
 - **THERMAL_MODEL_IMPLEMENTATION.md** - Accurate thermal model documentation
 
 ### ⚠️ Archived Documents
@@ -88,7 +88,7 @@ This documentation has been completely audited and restructured to accurately re
 ✅ **ThermalEquilibriumModel** - Physics-based temperature prediction  
 ✅ **ModelWrapper** - Binary search optimization and control logic  
 ✅ **MultiHeatSourcePhysics** - External heat source integration  
-✅ **AdaptiveFireplaceLearning** - Dynamic fireplace coefficient learning  
+✅ **FireplaceChannel / AdaptiveFireplaceLearning** - Channel-mode fireplace learning with legacy fallback  
 ✅ **UnifiedThermalState** - Parameter persistence and management  
 ✅ **InfluxService** - Data export and monitoring  
 ✅ **HAClient** - Home Assistant integration  

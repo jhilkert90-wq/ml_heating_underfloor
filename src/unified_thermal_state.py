@@ -15,6 +15,7 @@ Key features:
 import json
 import os
 import logging
+from copy import deepcopy
 from typing import Dict, Any
 from datetime import datetime
 import numpy as np
@@ -102,6 +103,7 @@ class ThermalStateManager:
                     list(ThermalParameterConfig.get_bounds(
                         'total_conductance'))
                 },
+                "heat_source_channels": {},
                 "prediction_history": [],
                 "parameter_history": []
             },
@@ -175,6 +177,7 @@ class ThermalStateManager:
 
             # Atomic write: write to temp file, then os.replace for safety
             dir_path = os.path.dirname(self.state_file) or '.'
+            os.makedirs(dir_path, exist_ok=True)
             with tempfile.NamedTemporaryFile(
                 'w', dir=dir_path, delete=False, suffix='.tmp'
             ) as tmp_f:
@@ -301,6 +304,7 @@ class ThermalStateManager:
             "solar_lag_minutes_delta": 0.0,
             "slab_time_constant_delta": 0.0
         }
+        self.state["learning_state"]["heat_source_channels"] = {}
 
         logging.info("🎯 Set calibrated baseline parameters (cycles: %s)",
                      calibration_cycles)
@@ -381,6 +385,19 @@ class ThermalStateManager:
         if len(history) > 500:
             self.state["learning_state"]["parameter_history"] = history[-500:]
 
+    def get_heat_source_channel_state(self) -> Dict[str, Any]:
+        """Get persisted heat-source channel state."""
+        return deepcopy(
+            self.state["learning_state"].get("heat_source_channels", {})
+        )
+
+    def set_heat_source_channel_state(self, channel_state: Dict[str, Any]) -> None:
+        """Persist heat-source channel state."""
+        self.state["learning_state"]["heat_source_channels"] = deepcopy(
+            channel_state
+        )
+        self.save_state()
+
     # === OPERATIONAL STATE MANAGEMENT ===
 
     def update_operational_state(self, **kwargs) -> None:
@@ -420,6 +437,7 @@ class ThermalStateManager:
             "current_parameters": self.get_current_parameters(),
             "parameter_adjustments":
             learning_state["parameter_adjustments"].copy(),
+            "heat_source_channels": self.get_heat_source_channel_state(),
             "accuracy_stats": metrics["accuracy_stats"].copy(),
             "learning_enabled": learning_state["learning_enabled"]
         }
@@ -432,6 +450,7 @@ class ThermalStateManager:
             self.state["learning_state"]["learning_confidence"] = 3.0
             self.state["learning_state"]["prediction_history"] = []
             self.state["learning_state"]["parameter_history"] = []
+            self.state["learning_state"]["heat_source_channels"] = {}
 
             # Reset parameter adjustments
             adjustments = self.state["learning_state"]["parameter_adjustments"]

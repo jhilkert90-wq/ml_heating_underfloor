@@ -1794,7 +1794,7 @@ The model currently learns:
 3. **Outlet Effectiveness**: How efficient the radiators/floor heating are
 4. **TV Heat Weight**: The thermal impact of the TV (learned when TV is ON)
 5. **PV Heat Weight**: The passive solar gain factor (learned when Sun is UP)
-6. **Fireplace Heat Contribution**: The kW output of the fireplace (learned via `AdaptiveFireplaceLearning`)
+6. **Fireplace Heat Contribution**: The kW output of the fireplace (learned via `FireplaceChannel` when `ENABLE_HEAT_SOURCE_CHANNELS=true`, or via legacy `AdaptiveFireplaceLearning` when the flag is `false`)
 
 The model only updates parameters when there's **sufficient evidence**:
 

@@ -22,6 +22,11 @@ import math
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 
+try:
+    from .thermal_parameters import thermal_params
+except ImportError:
+    from thermal_parameters import thermal_params
+
 logger = logging.getLogger(__name__)
 
 # Minimum number of learning records before a channel adapts parameters
@@ -30,6 +35,68 @@ _MIN_RECORDS_FOR_LEARNING = 5
 _CHANNEL_LEARNING_RATE = 0.01
 # Dead zone: skip learning when average error is below sensor noise
 _LEARNING_DEAD_ZONE = 0.05  # °C
+
+
+def _get_parameter_default(param_name: str, fallback: float) -> float:
+    """Read channel startup defaults from the unified parameter manager."""
+    try:
+        return float(thermal_params.get(param_name))
+    except (KeyError, TypeError, ValueError):
+        return fallback
+
+
+def _to_float(value, default: float = 0.0) -> float:
+    """Convert possibly scalar-like values to float."""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, list):
+            value = value[-1] if value else default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _is_fireplace_active(context: Dict) -> bool:
+    return _to_float(context.get("fireplace_on", 0.0)) > 0.0
+
+
+def _is_tv_active(context: Dict) -> bool:
+    return _to_float(context.get("tv_on", 0.0)) > 0.0
+
+
+def _get_pv_power(context: Dict) -> float:
+    return _to_float(context.get("pv_power", 0.0))
+
+
+def _is_pv_active(context: Dict) -> bool:
+    return _get_pv_power(context) > SolarChannel.PV_LEARNING_THRESHOLD
+
+
+def _is_heat_pump_active(context: Dict) -> bool:
+    explicit_state = context.get("heat_pump_active")
+    if explicit_state is not None:
+        return bool(explicit_state)
+
+    thermal_power = _to_float(context.get("thermal_power", 0.0))
+    if thermal_power > 0.05:
+        return True
+
+    delta_t = _to_float(context.get("delta_t", 0.0))
+    if delta_t > 0.5:
+        return True
+
+    outlet = _to_float(context.get("outlet_temp", 0.0))
+    indoor = _to_float(context.get("current_indoor", 0.0))
+    inlet = _to_float(context.get("inlet_temp", indoor))
+    return outlet > indoor + 1.0 and outlet > inlet + 0.5
+
+
+def _average_recent_error(history: List[Dict]) -> Optional[float]:
+    if len(history) < _MIN_RECORDS_FOR_LEARNING:
+        return None
+    recent = history[-_MIN_RECORDS_FOR_LEARNING:]
+    return sum(r["error"] for r in recent) / len(recent)
 
 
 class HeatSourceChannel(ABC):
@@ -111,11 +178,17 @@ class HeatPumpChannel(HeatSourceChannel):
 
     def __init__(self):
         super().__init__("heat_pump")
-        self.outlet_effectiveness = 0.17
-        self.slab_time_constant_hours = 1.0
-        self.delta_t_floor = 2.0
+        self.outlet_effectiveness = _get_parameter_default(
+            "outlet_effectiveness", 0.17
+        )
+        self.slab_time_constant_hours = _get_parameter_default(
+            "slab_time_constant_hours", 1.0
+        )
+        self.delta_t_floor = _get_parameter_default("delta_t_floor", 2.0)
 
     def estimate_heat_contribution(self, context: Dict) -> float:
+        if not _is_heat_pump_active(context):
+            return 0.0
         outlet = context.get("outlet_temp", 40.0)
         indoor = context.get("current_indoor", 21.0)
         return self.outlet_effectiveness * max(0.0, outlet - indoor)
@@ -156,6 +229,24 @@ class HeatPumpChannel(HeatSourceChannel):
                 0.3, min(10.0, self.slab_time_constant_hours)
             )
 
+    def _learn_from_recent(self) -> None:
+        avg_error = _average_recent_error(self.history)
+        if avg_error is None or abs(avg_error) < _LEARNING_DEAD_ZONE:
+            return
+
+        gradients: Dict[str, float] = {
+            "outlet_effectiveness": avg_error,
+            "slab_time_constant_hours": avg_error * 0.2,
+        }
+        self.apply_gradient_update(gradients, _CHANNEL_LEARNING_RATE)
+        logger.debug(
+            "♨️ HeatPumpChannel self-learned: avg_error=%.3f, "
+            "outlet_effectiveness=%.3f, slab_tau=%.2fh",
+            avg_error,
+            self.outlet_effectiveness,
+            self.slab_time_constant_hours,
+        )
+
 
 class SolarChannel(HeatSourceChannel):
     """
@@ -171,12 +262,18 @@ class SolarChannel(HeatSourceChannel):
 
     def __init__(self):
         super().__init__("pv")
-        self.pv_heat_weight = 0.002
-        self.solar_lag_minutes = 45.0
-        self.cloud_factor_exponent = 1.0
+        self.pv_heat_weight = _get_parameter_default("pv_heat_weight", 0.002)
+        self.solar_lag_minutes = _get_parameter_default(
+            "solar_lag_minutes", 45.0
+        )
+        self.cloud_factor_exponent = _get_parameter_default(
+            "cloud_factor_exponent", 1.0
+        )
         # Thermal mass of sun-warmed surfaces (floors, walls near windows).
         # After PV drops, these surfaces continue emitting heat with this τ.
-        self.solar_decay_tau_hours = 0.5  # 30 minutes default
+        self.solar_decay_tau_hours = _get_parameter_default(
+            "solar_decay_tau_hours", 0.5
+        )
 
     def estimate_heat_contribution(self, context: Dict) -> float:
         pv_power = context.get("pv_power", 0)
@@ -277,6 +374,24 @@ class SolarChannel(HeatSourceChannel):
             prev = smoothed[-1]
         return smoothed
 
+    def _learn_from_recent(self) -> None:
+        avg_error = _average_recent_error(self.history)
+        if avg_error is None or abs(avg_error) < _LEARNING_DEAD_ZONE:
+            return
+
+        gradients: Dict[str, float] = {
+            "pv_heat_weight": avg_error * 0.1,
+            "solar_decay_tau_hours": avg_error * 0.05,
+        }
+        self.apply_gradient_update(gradients, _CHANNEL_LEARNING_RATE)
+        logger.debug(
+            "☀️ SolarChannel self-learned: avg_error=%.3f, "
+            "pv_heat_weight=%.5f, solar_decay_tau=%.2fh",
+            avg_error,
+            self.pv_heat_weight,
+            self.solar_decay_tau_hours,
+        )
+
 
 class FireplaceChannel(HeatSourceChannel):
     """
@@ -292,9 +407,15 @@ class FireplaceChannel(HeatSourceChannel):
 
     def __init__(self):
         super().__init__("fireplace")
-        self.fp_heat_output_kw = 5.0
-        self.fp_decay_time_constant = 0.75  # hours (~45 min)
-        self.room_spread_delay_minutes = 30.0
+        self.fp_heat_output_kw = _get_parameter_default(
+            "fp_heat_output_kw", 5.0
+        )
+        self.fp_decay_time_constant = _get_parameter_default(
+            "fp_decay_time_constant", 0.75
+        )
+        self.room_spread_delay_minutes = _get_parameter_default(
+            "room_spread_delay_minutes", 30.0
+        )
 
     def estimate_heat_contribution(self, context: Dict) -> float:
         fireplace_on = context.get("fireplace_on", 0)
@@ -374,7 +495,7 @@ class TVChannel(HeatSourceChannel):
 
     def __init__(self):
         super().__init__("tv")
-        self.tv_heat_weight = 0.2  # kW effective contribution
+        self.tv_heat_weight = _get_parameter_default("tv_heat_weight", 0.2)
 
     def estimate_heat_contribution(self, context: Dict) -> float:
         tv_on = context.get("tv_on", 0)
@@ -398,6 +519,19 @@ class TVChannel(HeatSourceChannel):
             self.tv_heat_weight += max(-0.05, min(0.05, delta))
             self.tv_heat_weight = max(0.0, min(1.0, self.tv_heat_weight))
 
+    def _learn_from_recent(self) -> None:
+        avg_error = _average_recent_error(self.history)
+        if avg_error is None or abs(avg_error) < _LEARNING_DEAD_ZONE:
+            return
+
+        gradients: Dict[str, float] = {"tv_heat_weight": avg_error * 0.1}
+        self.apply_gradient_update(gradients, _CHANNEL_LEARNING_RATE)
+        logger.debug(
+            "📺 TVChannel self-learned: avg_error=%.3f, tv_heat_weight=%.3f",
+            avg_error,
+            self.tv_heat_weight,
+        )
+
 
 class HeatSourceChannelOrchestrator:
     """
@@ -414,6 +548,53 @@ class HeatSourceChannelOrchestrator:
             "pv": SolarChannel(),
             "fireplace": FireplaceChannel(),
             "tv": TVChannel(),
+        }
+
+    def sync_from_model_parameters(self, parameters: Dict[str, float]) -> None:
+        """Seed channel parameters from the current thermal-model state."""
+        heat_pump = self.channels["heat_pump"]
+        assert isinstance(heat_pump, HeatPumpChannel)
+        heat_pump.outlet_effectiveness = parameters.get(
+            "outlet_effectiveness", heat_pump.outlet_effectiveness
+        )
+        heat_pump.slab_time_constant_hours = parameters.get(
+            "slab_time_constant_hours", heat_pump.slab_time_constant_hours
+        )
+
+        solar = self.channels["pv"]
+        assert isinstance(solar, SolarChannel)
+        solar.pv_heat_weight = parameters.get(
+            "pv_heat_weight", solar.pv_heat_weight
+        )
+        solar.solar_lag_minutes = parameters.get(
+            "solar_lag_minutes", solar.solar_lag_minutes
+        )
+
+        fireplace = self.channels["fireplace"]
+        assert isinstance(fireplace, FireplaceChannel)
+        fireplace.fp_heat_output_kw = parameters.get(
+            "fireplace_heat_weight", fireplace.fp_heat_output_kw
+        )
+
+        tv = self.channels["tv"]
+        assert isinstance(tv, TVChannel)
+        tv.tv_heat_weight = parameters.get(
+            "tv_heat_weight", tv.tv_heat_weight
+        )
+
+    def export_model_parameters(self) -> Dict[str, float]:
+        """Return channel parameters in thermal-model shape."""
+        heat_pump = self.channels["heat_pump"]
+        solar = self.channels["pv"]
+        fireplace = self.channels["fireplace"]
+        tv = self.channels["tv"]
+        return {
+            "outlet_effectiveness": heat_pump.outlet_effectiveness,
+            "slab_time_constant_hours": heat_pump.slab_time_constant_hours,
+            "pv_heat_weight": solar.pv_heat_weight,
+            "solar_lag_minutes": solar.solar_lag_minutes,
+            "fireplace_heat_weight": fireplace.fp_heat_output_kw,
+            "tv_heat_weight": tv.tv_heat_weight,
         }
 
     def total_heat(self, context: Dict) -> float:
@@ -440,14 +621,10 @@ class HeatSourceChannelOrchestrator:
         Each channel's ``record_learning`` triggers its own independent
         ``_learn_from_recent()`` gradient update.
         """
-        fp_on_val = context.get("fireplace_on", 0)
-        fireplace_on = bool(fp_on_val) and fp_on_val > 0
-        pv_power = context.get("pv_power", 0)
-        if isinstance(pv_power, list):
-            pv_power = pv_power[-1] if pv_power else 0
-        pv_active = float(pv_power) > SolarChannel.PV_LEARNING_THRESHOLD
-        tv_on_val = context.get("tv_on", 0)
-        tv_on = bool(tv_on_val) and tv_on_val > 0
+        fireplace_on = _is_fireplace_active(context)
+        pv_active = _is_pv_active(context)
+        tv_on = _is_tv_active(context)
+        heat_pump_active = _is_heat_pump_active(context)
 
         any_external_active = fireplace_on or pv_active or tv_on
 
@@ -459,9 +636,13 @@ class HeatSourceChannelOrchestrator:
                 self.channels["pv"].record_learning(error, context)
             if tv_on:
                 self.channels["tv"].record_learning(error, context)
-        else:
+        elif heat_pump_active:
             # Clean signal — only heat pump learns
             self.channels["heat_pump"].record_learning(error, context)
+        else:
+            logger.debug(
+                "Skipping channel learning: no active heat source in context"
+            )
 
     def predict_future_heat(
         self, horizon_hours: float, context: Dict

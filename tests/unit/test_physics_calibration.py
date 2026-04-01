@@ -158,6 +158,7 @@ def test_calculate_mae_for_params(stable_periods_fixture):
             params, param_names, stable_periods_fixture, current_params
         )
         assert mae == pytest.approx(0.5)
+        mock_model_instance.sync_heat_source_channels_from_model_state.assert_called_once_with()
         assert (
             mock_model_instance.predict_equilibrium_temperature.call_count == 1
         )
@@ -284,4 +285,67 @@ def test_optimize_thermal_parameters_scipy_disabled(stable_periods_fixture):
             stable_periods_fixture
         )
         assert result is None
+
+
+@patch('src.physics_calibration.calculate_cooling_time_constant', return_value=(None, 0.0))
+@patch('src.physics_calibration.filter_transient_periods', return_value=[])
+@patch('src.physics_calibration.optimize_thermal_parameters')
+@patch('src.physics_calibration.filter_stable_periods')
+@patch('src.physics_calibration.fetch_historical_data_for_calibration')
+@patch('src.physics_calibration.backup_existing_calibration')
+@patch('src.physics_calibration.get_thermal_state_manager')
+@patch('src.physics_calibration.ThermalEquilibriumModel')
+def test_train_thermal_equilibrium_model_syncs_channels_when_enabled(
+    mock_model_cls,
+    mock_get_state_manager,
+    mock_backup,
+    mock_fetch,
+    mock_filter_stable,
+    mock_optimize,
+    mock_filter_transient,
+    mock_cooling_tau,
+):
+    mock_fetch.return_value = pd.DataFrame({'_time': [pd.Timestamp('2023-01-01')]})
+    mock_filter_stable.return_value = [
+        {'indoor_temp': 21.0, 'outlet_temp': 40.0, 'outdoor_temp': 5.0}
+        for _ in range(60)
+    ]
+    mock_optimize.return_value = {
+        'optimization_success': True,
+        'mae': 0.12,
+        'thermal_time_constant': 5.5,
+        'heat_loss_coefficient': 0.18,
+        'outlet_effectiveness': 0.64,
+        'pv_heat_weight': 0.0012,
+        'fireplace_heat_weight': 4.6,
+        'tv_heat_weight': 0.28,
+        'solar_lag_minutes': 55.0,
+    }
+
+    temp_model = MagicMock()
+    temp_model.external_source_weights = {'pv': 0.0, 'fireplace': 0.0, 'tv': 0.0}
+    temp_model.slab_time_constant_hours = 1.4
+
+    final_model = MagicMock()
+    final_model.external_source_weights = {'pv': 0.0, 'fireplace': 0.0, 'tv': 0.0}
+    final_model.thermal_time_constant = 6.0
+    final_model.heat_loss_coefficient = 0.15
+    final_model.outlet_effectiveness = 0.55
+    final_model.learning_confidence = 3.0
+    final_model.slab_time_constant_hours = 1.4
+
+    mock_model_cls.side_effect = [temp_model, final_model]
+    mock_state_manager = MagicMock()
+    mock_get_state_manager.return_value = mock_state_manager
+
+    result = physics_calibration.train_thermal_equilibrium_model()
+
+    assert result is final_model
+    temp_model.sync_heat_source_channels_from_model_state.assert_called_once_with()
+    assert final_model.sync_heat_source_channels_from_model_state.call_count >= 1
+    assert final_model.sync_heat_source_channels_from_model_state.call_args_list[-1].kwargs == {'persist': True}
+    mock_state_manager.set_calibrated_baseline.assert_called_once()
+    mock_state_manager.update_learning_state.assert_called_once_with(
+        learning_confidence=3.0
+    )
 

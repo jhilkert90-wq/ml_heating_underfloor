@@ -1,6 +1,7 @@
 
 import pytest
 from unittest.mock import ANY, Mock, patch
+from src import config
 from src.heating_controller import (
     BlockingStateManager, SensorDataManager, HeatingSystemStateChecker
 )
@@ -11,6 +12,12 @@ from src.state_manager import SystemState
 @pytest.fixture
 def mock_ha_client():
     return Mock()
+
+
+@pytest.fixture(autouse=True)
+def force_active_mode():
+    with patch("src.heating_controller.config.SHADOW_MODE", False):
+        yield
 
 
 class TestBlockingStateManager:
@@ -114,7 +121,10 @@ class TestBlockingStateManager:
         with patch("src.heating_controller.save_state"):
             blocking_manager.handle_grace_period(mock_ha_client, state)
             mock_ha_client.set_state.assert_called_with(
-                'sensor.ml_vorlauftemperatur', 42.0, {}, round_digits=0
+                config.TARGET_OUTLET_TEMP_ENTITY_ID,
+                42.0,
+                {},
+                round_digits=0,
             )
             mock_wait.assert_called_once()
 

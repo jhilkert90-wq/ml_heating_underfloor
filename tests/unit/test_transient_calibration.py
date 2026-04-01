@@ -46,14 +46,20 @@ def test_filter_transient_periods(mock_config, transient_df):
     
     # Check sample structure
     sample = samples[0]
-    assert 'current_indoor' in sample
-    assert 'next_indoor' in sample
-    assert 'outlet_temp' in sample
-    assert 'time_step_hours' in sample
+    assert 'steps' in sample
+    assert 'total_change' in sample
+    assert 'start_indoor' in sample
+    assert 'end_indoor' in sample
+
+    step = sample['steps'][0]
+    assert 'current_indoor' in step
+    assert 'next_indoor' in step
+    assert 'outlet_temp' in step
+    assert 'time_step_hours' in step
     
     # Check values
-    assert sample['outlet_temp'] == 40.0
-    assert abs(sample['time_step_hours'] - 5/60) < 0.001
+    assert step['outlet_temp'] == 40.0
+    assert abs(step['time_step_hours'] - 5/60) < 0.001
 
 def test_calibrate_transient_parameters(mock_config):
     """Test that calibration finds a reasonable time constant."""
@@ -80,14 +86,20 @@ def test_calibrate_transient_parameters(mock_config):
     model.predict_equilibrium_temperature.return_value = 40.0
     
     samples = [{
-        'current_indoor': 20.0,
-        'next_indoor': 25.0,
-        'outlet_temp': 50.0, # Arbitrary, model mock returns 40.0 eq
-        'outdoor_temp': 0.0,
-        'pv_power': 0,
-        'fireplace_on': 0,
-        'tv_on': 0,
-        'time_step_hours': 1.0
+        'steps': [{
+            'current_indoor': 20.0,
+            'next_indoor': 25.0,
+            'outlet_temp': 50.0,  # Arbitrary, model mock returns 40.0 eq
+            'effective_temp': 50.0,
+            'outdoor_temp': 0.0,
+            'pv_power': 0,
+            'fireplace_on': 0,
+            'tv_on': 0,
+            'time_step_hours': 1.0,
+        }],
+        'total_change': 5.0,
+        'start_indoor': 20.0,
+        'end_indoor': 25.0,
     }]
     
     # Run calibration

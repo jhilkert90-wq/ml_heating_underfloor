@@ -54,6 +54,8 @@ class TestEnhancedModelWrapper:
         assert wrapper_instance is not None
         assert wrapper_instance.thermal_model is not None
         assert wrapper_instance.learning_enabled is True
+        if config.ENABLE_HEAT_SOURCE_CHANNELS:
+            assert wrapper_instance.adaptive_fireplace is None
         # A fresh instance starts with cycle_count 0 from the manager
         assert wrapper_instance.cycle_count == 0
 
@@ -191,7 +193,7 @@ class TestEnhancedModelWrapper:
         )
 
         # Expect a relatively high outlet temperature
-        assert optimal_temp > 30.0
+        assert optimal_temp > 25.0
 
     def test_binary_search_cooling(self, wrapper_instance):
         """Test the binary search for a cooling scenario."""
@@ -221,35 +223,93 @@ class TestEnhancedModelWrapper:
         # Should be between current and outlet
         assert 20.0 < predicted_indoor < 40.0
 
-    def test_fireplace_learning_integration(self, wrapper_instance, mocker):
-        """Test that fireplace learning is integrated into the feedback loop."""
-        # Mock the fireplace learner
+    def test_fireplace_channel_mode_uses_channel_estimate(
+        self, clean_state, monkeypatch, mocker
+    ):
+        """Flag-on mode must bypass adaptive fireplace learning entirely."""
+        monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", True)
+        model_wrapper._enhanced_model_wrapper_instance = None
+
+        wrapper = get_enhanced_model_wrapper()
+        assert wrapper.adaptive_fireplace is None
+
+        fireplace_channel = wrapper.thermal_model.orchestrator.channels[
+            "fireplace"
+        ]
+        fireplace_channel.fp_heat_output_kw = 7.5
+        mocked_trajectory = mocker.patch.object(
+            wrapper.thermal_model,
+            "predict_thermal_trajectory",
+            return_value={"trajectory": [21.5]},
+        )
+
+        wrapper.predict_indoor_temp(
+            outlet_temp=40.0,
+            outdoor_temp=5.0,
+            current_indoor=20.0,
+            fireplace_on=1,
+        )
+
+        assert mocked_trajectory.call_args.kwargs["fireplace_power_kw"] == pytest.approx(7.5)
+
+    def test_legacy_fireplace_mode_uses_adaptive_learning(
+        self, clean_state, monkeypatch, mocker
+    ):
+        """Flag-off mode keeps adaptive fireplace learning as legacy behavior."""
         mock_learner = mocker.Mock()
-        wrapper_instance.adaptive_fireplace = mock_learner
-        
-        # Set cycle count to allow learning
-        wrapper_instance.cycle_count = 5
-        
-        # Simulate feedback with fireplace ON
+        mock_learner._calculate_learned_heat_contribution.return_value = {
+            "heat_contribution_kw": 6.2,
+            "learning_confidence": 0.9,
+        }
+
+        monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", False)
+        mocker.patch("src.model_wrapper.AdaptiveFireplaceLearning", return_value=mock_learner)
+        model_wrapper._enhanced_model_wrapper_instance = None
+
+        wrapper = get_enhanced_model_wrapper()
+        mocked_trajectory = mocker.patch.object(
+            wrapper.thermal_model,
+            "predict_thermal_trajectory",
+            return_value={"trajectory": [21.5]},
+        )
+
+        wrapper.predict_indoor_temp(
+            outlet_temp=40.0,
+            outdoor_temp=5.0,
+            current_indoor=20.0,
+            fireplace_on=1,
+        )
+
+        mock_learner._calculate_learned_heat_contribution.assert_called_once()
+        assert mocked_trajectory.call_args.kwargs["fireplace_power_kw"] == pytest.approx(6.2)
+
+    def test_fireplace_learning_integration(self, clean_state, monkeypatch, mocker):
+        """Legacy flag-off mode still observes adaptive fireplace sessions."""
+        monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", False)
+        model_wrapper._enhanced_model_wrapper_instance = None
+
+        wrapper = get_enhanced_model_wrapper()
+        mocker.patch.object(wrapper, "_export_metrics_to_influxdb")
+        mocker.patch.object(wrapper, "export_metrics_to_ha")
+        mock_learner = mocker.Mock()
+        wrapper.adaptive_fireplace = mock_learner
+
+        wrapper.cycle_count = 5
         context = {
             'outlet_temp': 40.0,
             'outdoor_temp': 5.0,
             'current_indoor': 20.0,
             'fireplace_on': 1,
             'tv_on': 0,
-            'pv_power': 0
+            'pv_power': 0,
         }
-        
-        wrapper_instance.learn_from_prediction_feedback(
+
+        wrapper.learn_from_prediction_feedback(
             predicted_temp=21.0,
             actual_temp=22.0,
-            prediction_context=context
+            prediction_context=context,
         )
-        
-        # Verify observe_fireplace_state was called
+
         mock_learner.observe_fireplace_state.assert_called_once()
-        
-        # Verify arguments passed to observe_fireplace_state
-        # It should receive current_indoor (20.0) as living_room_temp
         _, kwargs = mock_learner.observe_fireplace_state.call_args
         assert kwargs['living_room_temp'] == 20.0

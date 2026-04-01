@@ -77,6 +77,23 @@ class TestThermalStateManager:
         assert learning_state["current_cycle_count"] == 10
         assert learning_state["learning_confidence"] == 4.5
 
+    def test_heat_source_channel_state_roundtrip(self, state_manager):
+        """Heat-source channel state should be saved and restored losslessly."""
+        channel_state = {
+            "fireplace": {
+                "parameters": {"fp_heat_output_kw": 7.5},
+                "history_count": 12,
+            },
+            "pv": {
+                "parameters": {"pv_heat_weight": 0.0035},
+                "history_count": 9,
+            },
+        }
+
+        state_manager.set_heat_source_channel_state(channel_state)
+
+        assert state_manager.get_heat_source_channel_state() == channel_state
+
     def test_add_prediction_record(self, state_manager):
         """Test adding a prediction record."""
         record = {"predicted": 22.0, "actual": 21.8}
@@ -96,10 +113,14 @@ class TestThermalStateManager:
     def test_reset_learning_state(self, state_manager):
         """Test resetting the learning state."""
         state_manager.update_learning_state(learning_confidence=1.0)
+        state_manager.set_heat_source_channel_state(
+            {"fireplace": {"parameters": {"fp_heat_output_kw": 8.0}}}
+        )
         state_manager.reset_learning_state()
 
         learning_state = state_manager.get_learning_metrics()
         assert learning_state["learning_confidence"] == 3.0
+        assert learning_state["heat_source_channels"] == {}
 
     def test_backup_and_restore(self, state_manager, temp_state_file):
         """Test creating a backup and restoring from it."""

@@ -3,6 +3,7 @@
 ## 📋 Overview
 
 This document outlines the testing workflow for the ML heating system, which is built on a strict **Test-Driven Development (TDD)** methodology. All new features and bug fixes must begin with writing tests. The project maintains a 100% test success rate, with all 236 tests currently passing.
+This document outlines the testing workflow for the ML heating system, which is built on a strict **Test-Driven Development (TDD)** methodology. All new features and bug fixes must begin with writing tests. The exact test count changes over time, so treat `pytest tests/` as the authoritative source.
 
 ## 🏗️ Test Architecture
 
@@ -37,7 +38,7 @@ This TDD approach ensures that the codebase remains robust, maintainable, and fu
 
 ### **Execute the Full Test Suite**
 ```bash
-# Run all 236+ tests
+# Run the full automated suite
 pytest tests/
 ```
 
@@ -59,12 +60,25 @@ pytest tests/unit/test_heating_controller.py::TestHeatBalanceController::test_ch
 pytest tests/ --cov=src --cov-report=html
 ```
 
+### **Run Heat-Source Channel Workflow Coverage**
+```bash
+# Channel routing and persistence
+pytest tests/unit/test_heat_source_channels.py tests/unit/test_unified_thermal_state.py
+
+# Wrapper and thermal-model activation behavior
+pytest tests/unit/test_model_wrapper.py tests/unit/test_thermal_equilibrium_model.py
+
+# Main-loop and end-to-end channel workflow coverage
+pytest tests/integration/test_main.py tests/integration/test_heat_source_channel_workflow.py
+```
+
 ## 🧪 **Testing Best Practices**
 
 - **Write Tests First**: Adhere to the TDD workflow for all changes.
 - **Keep Unit Tests Fast**: Unit tests should be small, focused, and fast.
 - **Mock External Dependencies**: Use `unittest.mock` to mock external services like Home Assistant and InfluxDB to ensure tests are deterministic and fast.
 - **Test for Edge Cases**: Write tests for boundary conditions, invalid inputs, and error states.
+- **Cover Save/Reload Paths**: For stateful learning features, add workflow tests that verify `predict → learn → save → reload → predict`.
 - **Maintain 100% Test Success**: No code will be merged if it breaks any existing tests.
 
 By following this TDD workflow, we ensure the ML Heating project maintains the highest standards of quality and reliability.

@@ -27,6 +27,17 @@ def model_with_guards(monkeypatch):
     m = ThermalEquilibriumModel()
     m.heat_loss_coefficient = 0.2
     m.outlet_effectiveness = 0.7
+    if m.orchestrator is not None:
+        m.orchestrator.sync_from_model_parameters(
+            {
+                "outlet_effectiveness": m.outlet_effectiveness,
+                "slab_time_constant_hours": m.slab_time_constant_hours,
+                "pv_heat_weight": m.pv_heat_weight,
+                "solar_lag_minutes": m.solar_lag_minutes,
+                "fireplace_heat_weight": m.fireplace_heat_weight,
+                "tv_heat_weight": m.tv_heat_weight,
+            }
+        )
     return m
 
 def test_hp_params_unchanged_when_fireplace_active(model_with_guards):

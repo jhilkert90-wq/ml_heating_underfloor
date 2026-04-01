@@ -15,12 +15,27 @@ class TestBidirectionalTrajectoryCorrection:
     
     def setup_method(self):
         """Set up test environment."""
+        self._clamp_min_patcher = patch(
+            'src.model_wrapper.config.CLAMP_MIN_ABS', 20.0
+        )
+        self._clamp_max_patcher = patch(
+            'src.model_wrapper.config.CLAMP_MAX_ABS', 55.0
+        )
+        self._clamp_min_patcher.start()
+        self._clamp_max_patcher.start()
         self.wrapper = get_enhanced_model_wrapper()
+        for attr in ('_current_indoor', '_current_features'):
+            if hasattr(self.wrapper, attr):
+                delattr(self.wrapper, attr)
         self.base_thermal_features = {
             'pv_power': 0.0,
             'fireplace_on': 0.0,
             'tv_on': 0.0
         }
+
+    def teardown_method(self):
+        self._clamp_max_patcher.stop()
+        self._clamp_min_patcher.stop()
     
     @patch('src.model_wrapper.config.TRAJECTORY_PREDICTION_ENABLED', True)
     def test_temperature_drop_detection_boundary_exact(self):

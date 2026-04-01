@@ -2,7 +2,12 @@
 
 ## Overview
 
-The Adaptive Fireplace Learning System is an intelligent enhancement that learns your fireplace's actual thermal characteristics through real-world usage patterns. Instead of relying on generic physics estimates, it observes temperature differentials and adapts its understanding of your specific fireplace's heat output and distribution.
+The Adaptive Fireplace Learning System is the legacy fireplace-learning path for the ML heating stack. It learns fireplace thermal characteristics through real-world usage patterns by observing temperature differentials and adapting its estimate of fireplace heat output.
+
+> Current runtime behavior
+>
+> - `ENABLE_HEAT_SOURCE_CHANNELS=true`: `FireplaceChannel` is the active fireplace authority for prediction, online learning, and persistence. `AdaptiveFireplaceLearning` is not instantiated inside `EnhancedModelWrapper`.
+> - `ENABLE_HEAT_SOURCE_CHANNELS=false`: `AdaptiveFireplaceLearning` remains the active legacy fireplace path described in this guide.
 
 ## How It Works
 
@@ -23,7 +28,7 @@ Your existing fireplace detection is already sophisticated:
 
 ### Enhanced Learning Layer
 
-The adaptive learning system builds on your control logic:
+In legacy mode, the adaptive learning system builds on your control logic:
 
 1. **Session Tracking**: Every fireplace use becomes a learning opportunity
 2. **Differential Analysis**: Learns actual heat output from temperature patterns  
@@ -63,6 +68,9 @@ The adaptive learning system builds on your control logic:
 ### Environment Variables (from your .env)
 
 ```bash
+# Fireplace routing mode
+ENABLE_HEAT_SOURCE_CHANNELS=true
+
 # Your existing fireplace sensors (already configured)
 FIREPLACE_STATUS_ENTITY_ID=binary_sensor.fireplace_active
 AVG_OTHER_ROOMS_TEMP_ENTITY_ID=sensor.avg_other_rooms_temp
@@ -90,28 +98,25 @@ The system learns these characteristics automatically:
 
 ### Integrated Workflow
 
-The `AdaptiveFireplaceLearning` system is now fully integrated into the `EnhancedModelWrapper`. You do not need to manually initialize it.
+`EnhancedModelWrapper` now chooses the fireplace path from the feature flag. In channel mode, `FireplaceChannel` fully replaces `AdaptiveFireplaceLearning` for runtime predictions and online learning.
 
 ```python
 # In src/model_wrapper.py
 class EnhancedModelWrapper:
     def __init__(self):
-        # ...
-        self.adaptive_fireplace = AdaptiveFireplaceLearning()
+        self.adaptive_fireplace = None
+        if not self._use_heat_source_channels():
+            self.adaptive_fireplace = AdaptiveFireplaceLearning()
 
-    def predict_indoor_temp(self, ...):
-        # ...
-        # 1. Detect fireplace state
-        fireplace_active = self.adaptive_fireplace.detect_fireplace_activity(...)
-        
-        # 2. Get learned heat contribution
-        fireplace_heat = self.adaptive_fireplace.get_current_heat_contribution(...)
-        
-        # 3. Include in physics calculation
-        # ...
+    def _calculate_fireplace_power_kw(self, ...):
+        if self._use_heat_source_channels():
+            return self.thermal_model.orchestrator.channels[
+                "fireplace"
+            ].estimate_heat_contribution(...)
+        return self.adaptive_fireplace._calculate_learned_heat_contribution(...)
 ```
 
-### Manual Usage (for debugging/notebooks)
+### Manual Usage (legacy mode / debugging / notebooks)
 
 ```python
 from src.adaptive_fireplace_learning import AdaptiveFireplaceLearning

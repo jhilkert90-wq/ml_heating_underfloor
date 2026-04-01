@@ -39,6 +39,8 @@ These sensors feed the decomposed heat-source learning channels
 | `LIVING_ROOM_TEMP_ENTITY_ID` | `sensor.living_room_temperature` | Temperature (°C) | FireplaceChannel | Living room temp for fireplace heat differential |
 | `AVG_OTHER_ROOMS_TEMP_ENTITY_ID` | `sensor.avg_other_rooms_temp` | Temperature (°C) | FireplaceChannel | Average other rooms temp (fireplace spread detection) |
 
+When `ENABLE_HEAT_SOURCE_CHANNELS=true`, the fireplace sensors above feed `FireplaceChannel`, whose state is persisted in `learning_state.heat_source_channels`. When the flag is `false`, the same fireplace sensors are consumed by the legacy `AdaptiveFireplaceLearning` fallback instead.
+
 ## Performance & Flow Sensors
 
 | Config Variable | Default Entity ID | Type | Description |
@@ -78,7 +80,7 @@ These sensors feed the decomposed heat-source learning channels
 - Indoor temp (prediction vs actual)
 - Outlet/inlet temp (slab model gradient)
 - PV power (solar channel learning, gating HP learning when PV > 500 W)
-- Fireplace status (fireplace channel learning, gating HP learning)
+- Fireplace status and room temperatures (fireplace channel learning in channel mode, legacy adaptive fireplace learning when channel mode is off)
 - TV status (TV channel learning)
 
 ### Physics Calibration (batch calibration from InfluxDB history)

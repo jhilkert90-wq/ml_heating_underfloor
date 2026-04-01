@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from src import thermal_equilibrium_model
+from src import unified_thermal_state
 
 
 @pytest.fixture(scope="function")
@@ -23,6 +24,9 @@ def clean_model():
         "fireplace": 1.5,
         "tv": 0.1
     }
+    # Baseline physics tests operate directly on the model parameters and are
+    # intentionally isolated from channel-mode synchronization.
+    model.orchestrator = None
     return model
 
 
@@ -192,6 +196,173 @@ class TestCorrectedThermalPhysics:
         )
         assert np.isclose(eq_original, eq_different_time, atol=1e-3), (
             "Thermal time constant affects equilibrium calculation")
+
+
+class TestHeatSourceChannelActivation:
+    def test_fireplace_channel_changes_equilibrium_prediction(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            thermal_equilibrium_model.config,
+            "ENABLE_HEAT_SOURCE_CHANNELS",
+            True,
+        )
+        model = thermal_equilibrium_model.ThermalEquilibriumModel()
+        if model.orchestrator is None:
+            pytest.skip("Heat source channels not enabled")
+
+        base_prediction = model.predict_equilibrium_temperature(
+            outlet_temp=45.0,
+            outdoor_temp=5.0,
+            current_indoor=20.0,
+            fireplace_on=1,
+        )
+
+        fireplace_channel = model.orchestrator.channels["fireplace"]
+        fireplace_channel.fp_heat_output_kw += 3.0
+
+        changed_prediction = model.predict_equilibrium_temperature(
+            outlet_temp=45.0,
+            outdoor_temp=5.0,
+            current_indoor=20.0,
+            fireplace_on=1,
+        )
+
+        assert changed_prediction > base_prediction
+
+    def test_fireplace_channel_state_persists_across_restart(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setattr(
+            thermal_equilibrium_model.config,
+            "ENABLE_HEAT_SOURCE_CHANNELS",
+            True,
+        )
+
+        unified_thermal_state._thermal_state_manager = (
+            unified_thermal_state.ThermalStateManager(
+                state_file=str(tmp_path / "thermal_state.json")
+            )
+        )
+
+        model = thermal_equilibrium_model.ThermalEquilibriumModel()
+        if model.orchestrator is None:
+            pytest.skip("Heat source channels not enabled")
+
+        initial_power = model.orchestrator.channels[
+            "fireplace"
+        ].fp_heat_output_kw
+
+        context = {
+            "outlet_temp": 40.0,
+            "outdoor_temp": 5.0,
+            "current_indoor": 20.0,
+            "fireplace_on": 1,
+            "tv_on": 0,
+            "pv_power": 0.0,
+            "delta_t": 0.0,
+            "thermal_power": 0.0,
+        }
+        for _ in range(6):
+            model.update_prediction_feedback(
+                predicted_temp=20.0,
+                actual_temp=21.0,
+                prediction_context=context,
+            )
+
+        learned_power = model.orchestrator.channels[
+            "fireplace"
+        ].fp_heat_output_kw
+        assert learned_power != pytest.approx(initial_power)
+
+        reloaded_model = thermal_equilibrium_model.ThermalEquilibriumModel()
+        restored_power = reloaded_model.orchestrator.channels[
+            "fireplace"
+        ].fp_heat_output_kw
+        assert restored_power == pytest.approx(learned_power)
+
+    def test_sync_heat_source_channels_from_model_state_reseeds_and_persists(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setattr(
+            thermal_equilibrium_model.config,
+            "ENABLE_HEAT_SOURCE_CHANNELS",
+            True,
+        )
+        monkeypatch.setattr(
+            unified_thermal_state,
+            "_thermal_state_manager",
+            unified_thermal_state.ThermalStateManager(
+                state_file=str(tmp_path / "thermal_state.json")
+            ),
+        )
+
+        model = thermal_equilibrium_model.ThermalEquilibriumModel()
+        if model.orchestrator is None:
+            pytest.skip("Heat source channels not enabled")
+
+        model.outlet_effectiveness = 0.88
+        model.slab_time_constant_hours = 1.7
+        model.pv_heat_weight = 0.0032
+        model.solar_lag_minutes = 75.0
+        model.fireplace_heat_weight = 6.5
+        model.tv_heat_weight = 0.46
+
+        model.sync_heat_source_channels_from_model_state(persist=True)
+
+        heat_pump = model.orchestrator.channels["heat_pump"]
+        solar = model.orchestrator.channels["pv"]
+        fireplace = model.orchestrator.channels["fireplace"]
+        tv = model.orchestrator.channels["tv"]
+        persisted = unified_thermal_state.get_thermal_state_manager()
+        persisted_state = persisted.get_heat_source_channel_state()
+
+        assert heat_pump.outlet_effectiveness == pytest.approx(0.88)
+        assert heat_pump.slab_time_constant_hours == pytest.approx(1.7)
+        assert solar.pv_heat_weight == pytest.approx(0.0032)
+        assert solar.solar_lag_minutes == pytest.approx(75.0)
+        assert fireplace.fp_heat_output_kw == pytest.approx(6.5)
+        assert tv.tv_heat_weight == pytest.approx(0.46)
+        assert persisted_state["fireplace"]["parameters"][
+            "fp_heat_output_kw"
+        ] == pytest.approx(6.5)
+        assert persisted_state["heat_pump"]["parameters"][
+            "outlet_effectiveness"
+        ] == pytest.approx(0.88)
+
+    def test_direct_assignments_keep_orchestrator_synced(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setattr(
+            thermal_equilibrium_model.config,
+            "ENABLE_HEAT_SOURCE_CHANNELS",
+            True,
+        )
+        monkeypatch.setattr(
+            unified_thermal_state,
+            "_thermal_state_manager",
+            unified_thermal_state.ThermalStateManager(
+                state_file=str(tmp_path / "thermal_state.json")
+            ),
+        )
+
+        model = thermal_equilibrium_model.ThermalEquilibriumModel()
+        if model.orchestrator is None:
+            pytest.skip("Heat source channels not enabled")
+
+        model.outlet_effectiveness = 0.91
+        model.slab_time_constant_hours = 1.9
+        model.solar_lag_minutes = 68.0
+        model.pv_heat_weight = 0.0027
+        model.fireplace_heat_weight = 5.8
+        model.tv_heat_weight = 0.44
+
+        assert model.orchestrator.channels["heat_pump"].outlet_effectiveness == pytest.approx(0.91)
+        assert model.orchestrator.channels["heat_pump"].slab_time_constant_hours == pytest.approx(1.9)
+        assert model.orchestrator.channels["pv"].solar_lag_minutes == pytest.approx(68.0)
+        assert model.orchestrator.channels["pv"].pv_heat_weight == pytest.approx(0.0027)
+        assert model.orchestrator.channels["fireplace"].fp_heat_output_kw == pytest.approx(5.8)
+        assert model.orchestrator.channels["tv"].tv_heat_weight == pytest.approx(0.44)
 
     def test_zero_division_protection(self, clean_model):
         """Model should handle zero effectiveness and heat loss without crashing."""

@@ -48,6 +48,7 @@ class ThermalEquilibriumModel:
                 )
 
                 self.orchestrator = HeatSourceChannelOrchestrator()
+                self._initialize_heat_source_channels()
             except Exception as exc:
                 logging.warning(
                     "⚠️ Could not init heat source orchestrator: %s", exc
@@ -339,6 +340,149 @@ class ThermalEquilibriumModel:
         # Initialize remaining attributes
         self._initialize_learning_attributes()
 
+    def _initialize_heat_source_channels(self) -> None:
+        """Seed and restore heat-source channel state."""
+        if self.orchestrator is None:
+            return
+
+        self._seed_orchestrator_from_model_state()
+
+        try:
+            try:
+                from .unified_thermal_state import get_thermal_state_manager
+            except ImportError:
+                from unified_thermal_state import get_thermal_state_manager
+
+            state_manager = get_thermal_state_manager()
+            persisted_state = state_manager.get_heat_source_channel_state()
+            if persisted_state:
+                self.orchestrator.load_channel_state(persisted_state)
+                logging.info(
+                    "🔥 Restored heat-source channel state from unified thermal state"
+                )
+        except Exception as exc:
+            logging.warning(
+                "⚠️ Failed to restore heat-source channel state: %s", exc
+            )
+
+        self._sync_model_from_orchestrator()
+
+    def _seed_orchestrator_from_model_state(self) -> None:
+        """Initialize channel parameters from the current model state."""
+        if self.orchestrator is None:
+            return
+
+        self.orchestrator.sync_from_model_parameters(
+            {
+                "outlet_effectiveness": self.outlet_effectiveness,
+                "slab_time_constant_hours": self.slab_time_constant_hours,
+                "pv_heat_weight": self.pv_heat_weight,
+                "solar_lag_minutes": self.solar_lag_minutes,
+                "fireplace_heat_weight": self.fireplace_heat_weight,
+                "tv_heat_weight": self.tv_heat_weight,
+            }
+        )
+
+    def sync_heat_source_channels_from_model_state(
+        self, persist: bool = False
+    ) -> None:
+        """Reseed channel mode from the current model values.
+
+        Calibration code mutates model parameters directly. When channel mode
+        is enabled, predictions subsequently sync from the orchestrator, so we
+        must explicitly reseed the orchestrator after those mutations.
+        """
+        if self.orchestrator is None:
+            return
+
+        self._seed_orchestrator_from_model_state()
+        self._sync_model_from_orchestrator()
+        if persist:
+            self._persist_heat_source_channel_state()
+
+    def _sync_model_from_orchestrator(self) -> None:
+        """Treat channel state as the source of truth when enabled."""
+        if self.orchestrator is None:
+            return
+
+        parameters = self.orchestrator.export_model_parameters()
+        self.outlet_effectiveness = parameters["outlet_effectiveness"]
+        self.slab_time_constant_hours = parameters[
+            "slab_time_constant_hours"
+        ]
+        self.pv_heat_weight = parameters["pv_heat_weight"]
+        self.solar_lag_minutes = parameters["solar_lag_minutes"]
+        self.fireplace_heat_weight = parameters["fireplace_heat_weight"]
+        self.tv_heat_weight = parameters["tv_heat_weight"]
+
+    def _persist_heat_source_channel_state(self) -> None:
+        """Persist channel state into unified thermal state."""
+        if self.orchestrator is None:
+            return
+
+        try:
+            try:
+                from .unified_thermal_state import get_thermal_state_manager
+            except ImportError:
+                from unified_thermal_state import get_thermal_state_manager
+
+            state_manager = get_thermal_state_manager()
+            state_manager.set_heat_source_channel_state(
+                self.orchestrator.get_channel_state()
+            )
+        except Exception as exc:
+            logging.warning(
+                "⚠️ Failed to persist heat-source channel state: %s", exc
+            )
+
+    def _sync_orchestrator_parameter_if_needed(
+        self, values: Dict[str, float]
+    ) -> None:
+        """Keep channel mode aligned when tracked model parameters are assigned directly."""
+        orchestrator = getattr(self, "orchestrator", None)
+        if orchestrator is None:
+            return
+        orchestrator.sync_from_model_parameters(values)
+
+    @property
+    def outlet_effectiveness(self) -> float:
+        """Get outlet effectiveness."""
+        return getattr(self, "_outlet_effectiveness", 0.0)
+
+    @outlet_effectiveness.setter
+    def outlet_effectiveness(self, value: float):
+        """Set outlet effectiveness and keep channel mode in sync."""
+        self._outlet_effectiveness = value
+        self._sync_orchestrator_parameter_if_needed(
+            {"outlet_effectiveness": value}
+        )
+
+    @property
+    def slab_time_constant_hours(self) -> float:
+        """Get slab time constant."""
+        return getattr(self, "_slab_time_constant_hours", 0.0)
+
+    @slab_time_constant_hours.setter
+    def slab_time_constant_hours(self, value: float):
+        """Set slab time constant and keep channel mode in sync."""
+        self._slab_time_constant_hours = value
+        self._sync_orchestrator_parameter_if_needed(
+            {"slab_time_constant_hours": value}
+        )
+
+    @property
+    def solar_lag_minutes(self) -> float:
+        """Get solar lag minutes."""
+        return getattr(self, "_solar_lag_minutes", 0.0)
+
+    @solar_lag_minutes.setter
+    def solar_lag_minutes(self, value: float):
+        """Set solar lag and keep channel mode in sync."""
+        self._solar_lag_minutes = value
+        self._sync_orchestrator_parameter_if_needed(
+            {"solar_lag_minutes": value}
+        )
+
     @property
     def pv_heat_weight(self) -> float:
         """Get PV heat weight."""
@@ -348,6 +492,7 @@ class ThermalEquilibriumModel:
     def pv_heat_weight(self, value: float):
         """Set PV heat weight."""
         self.external_source_weights["pv"] = value
+        self._sync_orchestrator_parameter_if_needed({"pv_heat_weight": value})
 
     @property
     def tv_heat_weight(self) -> float:
@@ -358,6 +503,7 @@ class ThermalEquilibriumModel:
     def tv_heat_weight(self, value: float):
         """Set TV heat weight."""
         self.external_source_weights["tv"] = value
+        self._sync_orchestrator_parameter_if_needed({"tv_heat_weight": value})
 
     @property
     def fireplace_heat_weight(self) -> float:
@@ -368,6 +514,9 @@ class ThermalEquilibriumModel:
     def fireplace_heat_weight(self, value: float):
         """Set Fireplace heat weight."""
         self.external_source_weights["fireplace"] = value
+        self._sync_orchestrator_parameter_if_needed(
+            {"fireplace_heat_weight": value}
+        )
 
     def _initialize_learning_attributes(self):
         """Initialize adaptive learning and other attributes."""
@@ -554,6 +703,8 @@ class ThermalEquilibriumModel:
         Supports both temperature-based approximation and energy-based
         modeling.
         """
+        self._sync_model_from_orchestrator()
+
         # Calculate effective solar power with lag
         effective_pv = self._calculate_effective_solar(pv_power)
         
@@ -674,6 +825,8 @@ class ThermalEquilibriumModel:
         """
         Update the model with real-world feedback to enable adaptive learning.
         """
+        self._sync_model_from_orchestrator()
+
         if not self.adaptive_learning_enabled:
             return
 
@@ -811,6 +964,8 @@ class ThermalEquilibriumModel:
                 error=prediction_error,
                 context=prediction_context or {},
             )
+            self._sync_model_from_orchestrator()
+            self._persist_heat_source_channel_state()
 
         if len(self.prediction_history) >= self.recent_errors_window:
             error_magnitude = abs(prediction_error)
@@ -825,6 +980,8 @@ class ThermalEquilibriumModel:
                 np.clip(self.learning_confidence, 0.1, 5.0)
             )
             self._adapt_parameters_from_recent_errors()
+            self._sync_model_from_orchestrator()
+            self._persist_heat_source_channel_state()
 
         logging.debug(
             "Prediction feedback: error=%.3f°C, confidence=%.3f",
@@ -1736,6 +1893,8 @@ class ThermalEquilibriumModel:
         """
         Predict temperature trajectory over time horizon.
         """
+        self._sync_model_from_orchestrator()
+
         if time_horizon_hours is None:
             time_horizon_hours = int(self.prediction_horizon_hours)
 
@@ -1950,6 +2109,8 @@ class ThermalEquilibriumModel:
         Calculate optimal outlet temperature to reach target indoor
         temperature.
         """
+        self._sync_model_from_orchestrator()
+
         pv_power = external_sources.get(
             "pv_power", external_sources.get("pv_now", 0)
         )
@@ -2034,6 +2195,8 @@ class ThermalEquilibriumModel:
         """
         Calculate outlet temperature needed for equilibrium at target temp.
         """
+        self._sync_model_from_orchestrator()
+
         external_heating = (
             pv_power * self.external_source_weights["pv"]
             + fireplace_on * self.external_source_weights["fireplace"]

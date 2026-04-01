@@ -60,8 +60,10 @@ class EnhancedModelWrapper:
             state_manager=self.state_manager
         )
 
-        # Initialize adaptive fireplace learning
-        self.adaptive_fireplace = AdaptiveFireplaceLearning()
+        # Adaptive fireplace learning is legacy-only when channel mode is off.
+        self.adaptive_fireplace = None
+        if not self._use_heat_source_channels():
+            self.adaptive_fireplace = AdaptiveFireplaceLearning()
 
         # Get current cycle count from unified state
         metrics = self.state_manager.get_learning_metrics()
@@ -86,6 +88,74 @@ class EnhancedModelWrapper:
             f"{self.thermal_model.learning_confidence:.2f}"
         )
         logging.info(f"   - Current cycle: {self.cycle_count}")
+
+    def _use_heat_source_channels(self) -> bool:
+        """Return whether channel mode is actively controlling heat sources."""
+        return bool(
+            config.ENABLE_HEAT_SOURCE_CHANNELS
+            and self.thermal_model.orchestrator is not None
+        )
+
+    def _calculate_fireplace_power_kw(
+        self,
+        current_indoor: float,
+        outdoor_temp: float,
+        fireplace_on: float,
+        features_local: Optional[Dict] = None,
+    ) -> Optional[float]:
+        """Resolve fireplace power from the active fireplace authority."""
+        if not fireplace_on:
+            return None
+
+        features_local = features_local or {}
+
+        if self._use_heat_source_channels():
+            fireplace_channel = self.thermal_model.orchestrator.channels[
+                "fireplace"
+            ]
+            fireplace_power_kw = fireplace_channel.estimate_heat_contribution(
+                {
+                    "fireplace_on": fireplace_on,
+                    "current_indoor": current_indoor,
+                    "outdoor_temp": outdoor_temp,
+                    "living_room_temp": features_local.get(
+                        "living_room_temp", current_indoor
+                    ),
+                    "other_rooms_temp": features_local.get(
+                        "other_rooms_temp", current_indoor - 2.0
+                    ),
+                }
+            )
+            logging.debug(
+                "🔥 Using fireplace channel power: %.2fkW",
+                fireplace_power_kw,
+            )
+            return fireplace_power_kw
+
+        if self.adaptive_fireplace is None:
+            return None
+
+        living_room_temp = features_local.get(
+            "living_room_temp", current_indoor
+        )
+        other_rooms_temp = features_local.get(
+            "other_rooms_temp", current_indoor - 2.0
+        )
+        fireplace_analysis = (
+            self.adaptive_fireplace._calculate_learned_heat_contribution(
+                temp_differential=living_room_temp - other_rooms_temp,
+                outdoor_temp=outdoor_temp,
+                fireplace_active=True,
+            )
+        )
+        fireplace_power_kw = fireplace_analysis.get("heat_contribution_kw", 0.0)
+        confidence = fireplace_analysis.get("learning_confidence", 0.0)
+        logging.debug(
+            f"🔥 Using adaptive fireplace power (living room): "
+            f"{fireplace_power_kw:.2f}kW "
+            f"(confidence: {confidence:.2f})"
+        )
+        return fireplace_power_kw
 
     def predict_indoor_temp(
         self, outlet_temp: float, outdoor_temp: float, **kwargs
@@ -177,32 +247,13 @@ class EnhancedModelWrapper:
             # Use thermal model to predict temperature at the end of the cycle
             cycle_hours = config.CYCLE_INTERVAL_MINUTES / 60.0
 
-            # Calculate fireplace power using adaptive learning
-            fireplace_power_kw = None
-            if fireplace_on:
-                # Use living room sensor for fireplace analysis
-                features_local = getattr(self, "_current_features", {}) or {}
-                living_room_temp = features_local.get("living_room_temp", current_indoor)
-                other_rooms_temp = features_local.get("other_rooms_temp", current_indoor - 2.0)
-                fireplace_analysis = (
-                    self.adaptive_fireplace
-                    ._calculate_learned_heat_contribution(
-                        temp_differential=living_room_temp - other_rooms_temp,
-                        outdoor_temp=outdoor_temp,
-                        fireplace_active=True,
-                    )
-                )
-                fireplace_power_kw = fireplace_analysis.get(
-                    "heat_contribution_kw", 0.0
-                )
-                confidence = fireplace_analysis.get(
-                    "learning_confidence", 0.0
-                )
-                logging.debug(
-                    f"🔥 Using adaptive fireplace power (living room): "
-                    f"{fireplace_power_kw:.2f}kW "
-                    f"(confidence: {confidence:.2f})"
-                )
+            features_local = getattr(self, "_current_features", {}) or {}
+            fireplace_power_kw = self._calculate_fireplace_power_kw(
+                current_indoor=current_indoor,
+                outdoor_temp=outdoor_temp,
+                fireplace_on=fireplace_on,
+                features_local=features_local,
+            )
 
             trajectory_result = (
                 self.thermal_model.predict_thermal_trajectory(
@@ -437,32 +488,12 @@ class EnhancedModelWrapper:
         fireplace_on = thermal_features.get("fireplace_on", 0.0)
         tv_on = thermal_features.get("tv_on", 0.0)
 
-        # Calculate fireplace power using adaptive learning
-        fireplace_power_kw = None
-        if fireplace_on:
-            # Use living room sensor for fireplace analysis
-            features_local = getattr(self, "_current_features", {}) or {}
-            living_room_temp = features_local.get("living_room_temp", current_indoor)
-            other_rooms_temp = features_local.get("other_rooms_temp", current_indoor - 2.0)
-            fireplace_analysis = (
-                self.adaptive_fireplace
-                ._calculate_learned_heat_contribution(
-                    temp_differential=living_room_temp - other_rooms_temp,
-                    outdoor_temp=outdoor_temp,
-                    fireplace_active=True,
-                )
-            )
-            fireplace_power_kw = fireplace_analysis.get(
-                "heat_contribution_kw", 0.0
-            )
-            confidence = fireplace_analysis.get(
-                "learning_confidence", 0.0
-            )
-            logging.debug(
-                f"🔥 Using adaptive fireplace power (living room): "
-                f"{fireplace_power_kw:.2f}kW "
-                f"(confidence: {confidence:.2f})"
-            )
+        fireplace_power_kw = self._calculate_fireplace_power_kw(
+            current_indoor=current_indoor,
+            outdoor_temp=outdoor_temp,
+            fireplace_on=fireplace_on,
+            features_local=getattr(self, "_current_features", {}) or {},
+        )
 
         # Iterative search to find outlet temp that produces target indoor
         # temp. This uses the learned thermal physics parameters from
@@ -1173,33 +1204,13 @@ class EnhancedModelWrapper:
                     or [thermal_features.get("pv_power", 0.0)]
                 )
 
-            # Calculate fireplace power using adaptive learning
             fireplace_on = thermal_features.get("fireplace_on", 0.0)
-            fireplace_power_kw = None
-            if fireplace_on:
-                # Use living room sensor for fireplace analysis
-                features_local = features if features is not None else {}
-                living_room_temp = features_local.get("living_room_temp", current_indoor)
-                other_rooms_temp = features_local.get("other_rooms_temp", current_indoor - 2.0)
-                fireplace_analysis = (
-                    self.adaptive_fireplace
-                    ._calculate_learned_heat_contribution(
-                        temp_differential=living_room_temp - other_rooms_temp,
-                        outdoor_temp=outdoor_temp,
-                        fireplace_active=True,
-                    )
-                )
-                fireplace_power_kw = fireplace_analysis.get(
-                    "heat_contribution_kw", 0.0
-                )
-                confidence = fireplace_analysis.get(
-                    "learning_confidence", 0.0
-                )
-                logging.debug(
-                    f"🔥 Using adaptive fireplace power (living room): "
-                    f"{fireplace_power_kw:.2f}kW "
-                    f"(confidence: {confidence:.2f})"
-                )
+            fireplace_power_kw = self._calculate_fireplace_power_kw(
+                current_indoor=current_indoor,
+                outdoor_temp=outdoor_temp,
+                fireplace_on=fireplace_on,
+                features_local=features if features is not None else {},
+            )
 
             # Get trajectory prediction with forecast integration
             # Use the enhanced predict_thermal_trajectory which now supports
@@ -1319,12 +1330,18 @@ class EnhancedModelWrapper:
                     trajectory_times
                     and trajectory_times[0] <= cycle_hours + 0.01
                 ):
-                    if trajectory_temps[0] > target_indoor + 0.1:
+                    if (
+                        trajectory_temps[0]
+                        > target_indoor + sensor_precision_tolerance
+                    ):
                         immediate_overshoot = True
                 else:
                     # Fallback if times not available or first step is far
                     # future
-                    if trajectory_temps[0] > target_indoor + 0.1:
+                    if (
+                        trajectory_temps[0]
+                        > target_indoor + sensor_precision_tolerance
+                    ):
                         immediate_overshoot = True
 
                 if not immediate_overshoot:
@@ -1334,13 +1351,16 @@ class EnhancedModelWrapper:
                     # we heat aggressively now knowing we can back off in the
                     # next cycle.
                     temp_boundary_violation = (
-                        min_temp <= target_indoor - 0.05  # Strict undershoot
+                        min_temp <= target_indoor - sensor_precision_tolerance
                         or max_temp >= target_indoor + 0.5  # Relaxed overshoot
                     )
 
                     # Log if we are ignoring a future overshoot that would have
                     # been caught by strict rules
-                    if (max_temp >= target_indoor + 0.1) and (
+                    if (
+                        max_temp
+                        >= target_indoor + sensor_precision_tolerance
+                    ) and (
                         max_temp < target_indoor + 0.5
                     ):
                         logging.debug(
@@ -1351,8 +1371,8 @@ class EnhancedModelWrapper:
                 else:
                     # Immediate overshoot detected - enforce strict boundaries
                     temp_boundary_violation = (
-                        min_temp <= target_indoor - 0.05
-                        or max_temp >= target_indoor + 0.1
+                        min_temp <= target_indoor - sensor_precision_tolerance
+                        or max_temp >= target_indoor + sensor_precision_tolerance
                     )
             else:
                 temp_boundary_violation = False
@@ -1377,7 +1397,8 @@ class EnhancedModelWrapper:
                     # tolerance (±0.3°C instead of ±0.1°C)
                     if reaches_target_at <= 0.5:  # Very fast achievement
                         relaxed_boundary_violation = (
-                            min_temp <= target_indoor - 0.05  # Keep strict undershoot gate
+                            min_temp
+                            <= target_indoor - sensor_precision_tolerance
                             or max_temp >= target_indoor + 0.3  # Relaxed overshoot only
                         )
                         if not relaxed_boundary_violation:
@@ -1452,15 +1473,26 @@ class EnhancedModelWrapper:
             # Calculate trajectory error
             min_predicted_temp = min(trajectory_temps)
             max_predicted_temp = max(trajectory_temps)
+            boundary_tolerance = 0.1
 
             # Determine primary error source
-            min_violates = min_predicted_temp <= target_indoor - 0.05
-            max_violates = max_predicted_temp >= target_indoor + 0.1
+            min_violates = (
+                min_predicted_temp <= target_indoor - boundary_tolerance
+            )
+            max_violates = (
+                max_predicted_temp >= target_indoor + boundary_tolerance
+            )
 
             if min_violates and max_violates:
                 # Both boundaries violated - choose the more severe
-                min_severity = abs(min_predicted_temp - (target_indoor - 0.05))
-                max_severity = abs(max_predicted_temp - (target_indoor + 0.1))
+                min_severity = abs(
+                    min_predicted_temp
+                    - (target_indoor - boundary_tolerance)
+                )
+                max_severity = abs(
+                    max_predicted_temp
+                    - (target_indoor + boundary_tolerance)
+                )
                 if min_severity > max_severity:
                     temp_error = target_indoor - min_predicted_temp
                 else:
@@ -1635,41 +1667,41 @@ class EnhancedModelWrapper:
         if not self.learning_enabled:
             return
 
-        # Update adaptive fireplace learning BEFORE the blocking check so
-        # that fireplace sessions that span a DHW cycle are not silently
-        # lost.  The observer only tracks session state — it does not
-        # modify thermal model parameters — so it is safe to call even
-        # during blocking.
-        try:
-            fireplace_on_now = bool(
-                prediction_context.get("fireplace_on", 0)
-            )
-            if (
-                fireplace_on_now
-                or self.adaptive_fireplace.current_session is not None
-            ):
-                current_indoor = prediction_context.get(
-                    "current_indoor", 20.0
+        if self.adaptive_fireplace is not None:
+            # Update adaptive fireplace learning BEFORE the blocking check so
+            # that fireplace sessions that span a DHW cycle are not silently
+            # lost. The observer only tracks session state and is legacy-only
+            # when heat-source channels are disabled.
+            try:
+                fireplace_on_now = bool(
+                    prediction_context.get("fireplace_on", 0)
                 )
-                other_rooms_temp = prediction_context.get(
-                    "avg_other_rooms_temp", current_indoor - 2.0
-                )
-                outdoor_temp = prediction_context.get("outdoor_temp", 0.0)
+                if (
+                    fireplace_on_now
+                    or self.adaptive_fireplace.current_session is not None
+                ):
+                    current_indoor = prediction_context.get(
+                        "current_indoor", 20.0
+                    )
+                    other_rooms_temp = prediction_context.get(
+                        "avg_other_rooms_temp", current_indoor - 2.0
+                    )
+                    outdoor_temp = prediction_context.get("outdoor_temp", 0.0)
 
-                living_room_temp = prediction_context.get(
-                    "living_room_temp"
-                ) or current_indoor
-                self.adaptive_fireplace.observe_fireplace_state(
-                    living_room_temp=living_room_temp,
-                    other_rooms_temp=other_rooms_temp,
-                    outdoor_temp=outdoor_temp,
-                    fireplace_active=fireplace_on_now,
+                    living_room_temp = prediction_context.get(
+                        "living_room_temp"
+                    ) or current_indoor
+                    self.adaptive_fireplace.observe_fireplace_state(
+                        living_room_temp=living_room_temp,
+                        other_rooms_temp=other_rooms_temp,
+                        outdoor_temp=outdoor_temp,
+                        fireplace_active=fireplace_on_now,
+                    )
+            except Exception as e:
+                logging.warning(
+                    "Fireplace learning observation failed: %s", e,
+                    exc_info=True,
                 )
-        except Exception as e:
-            logging.warning(
-                "Fireplace learning observation failed: %s", e,
-                exc_info=True,
-            )
 
         if is_blocking_active:
             logging.info(

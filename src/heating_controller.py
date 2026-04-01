@@ -721,23 +721,23 @@ class SensorDataManager:
             ),
         }
         
-        critical_sensors = {
-            config.TARGET_INDOOR_TEMP_ENTITY_ID: sensor_data[
-                "target_indoor_temp"
-            ],
-            config.INDOOR_TEMP_ENTITY_ID: sensor_data["actual_indoor"],
-            config.OUTDOOR_TEMP_ENTITY_ID: sensor_data["outdoor_temp"],
-            config.OPENWEATHERMAP_TEMP_ENTITY_ID: sensor_data["owm_temp"],
-            config.AVG_OTHER_ROOMS_TEMP_ENTITY_ID: sensor_data[
-                "avg_other_rooms_temp"
-            ],
-            config.ACTUAL_OUTLET_TEMP_ENTITY_ID: sensor_data[
-                "actual_outlet_temp"
-            ],
-        }
+        critical_sensors = [
+                (config.TARGET_INDOOR_TEMP_ENTITY_ID, sensor_data[
+                    "target_indoor_temp"
+                ]),
+                (config.INDOOR_TEMP_ENTITY_ID, sensor_data["actual_indoor"]),
+                (config.OUTDOOR_TEMP_ENTITY_ID, sensor_data["outdoor_temp"]),
+                (config.OPENWEATHERMAP_TEMP_ENTITY_ID, sensor_data["owm_temp"]),
+                (config.AVG_OTHER_ROOMS_TEMP_ENTITY_ID, sensor_data[
+                    "avg_other_rooms_temp"
+                ]),
+                (config.ACTUAL_OUTLET_TEMP_ENTITY_ID, sensor_data[
+                    "actual_outlet_temp"
+                ]),
+            ]
         
         missing_sensors = [
-            name for name, value in critical_sensors.items() if value is None
+                name for name, value in critical_sensors if value is None
         ]
         
         if missing_sensors:

@@ -106,6 +106,7 @@ def train_thermal_equilibrium_model():
     temp_model.external_source_weights['tv'] = optimized_params.get(
         'tv_heat_weight', ThermalParameterConfig.get_default('tv_heat_weight')
     )
+    temp_model.sync_heat_source_channels_from_model_state()
 
     transient_calibration_succeeded = False
     transient_samples = filter_transient_periods(df)
@@ -211,6 +212,7 @@ def train_thermal_equilibrium_model():
     thermal_model.external_source_weights['fireplace'] = fireplace_weight
     thermal_model.external_source_weights['tv'] = tv_weight
     thermal_model.solar_lag_minutes = solar_lag
+    thermal_model.sync_heat_source_channels_from_model_state()
 
     # Set reasonable learning confidence based on optimization success
     thermal_model.learning_confidence = 3.0  # High confidence from scipy
@@ -277,6 +279,9 @@ def train_thermal_equilibrium_model():
 
         # Explicitly set confidence to 3.0 after calibration
         state_manager.update_learning_state(learning_confidence=3.0)
+        thermal_model.sync_heat_source_channels_from_model_state(
+            persist=True
+        )
 
         logging.info(
             "✅ Calibrated parameters (scipy-optimized) saved to unified "
@@ -1468,6 +1473,7 @@ def calculate_mae_for_params(
             test_model.solar_lag_minutes = param_dict.get(
                 'solar_lag_minutes', current_params['solar_lag_minutes']
             )
+            test_model.sync_heat_source_channels_from_model_state()
 
             # FORCE TEMPERATURE-BASED PHYSICS:
             # We intentionally pass thermal_power=None here even if available.
