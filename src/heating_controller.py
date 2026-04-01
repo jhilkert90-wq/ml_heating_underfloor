@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 from . import config
 from .ha_client import HAClient, get_sensor_attributes
+from .shadow_mode import get_shadow_output_entity_id
 from .state_manager import save_state, SystemState
 
 
@@ -63,8 +64,11 @@ class BlockingStateManager:
             logging.info("Blocking process active (DHW/Defrost), skipping.")
             
             try:
-                attributes_state = get_sensor_attributes(
+                heating_state_entity_id = get_shadow_output_entity_id(
                     "sensor.ml_heating_state"
+                )
+                attributes_state = get_sensor_attributes(
+                    heating_state_entity_id
                 )
                 attributes_state.update(
                     {
@@ -74,7 +78,7 @@ class BlockingStateManager:
                     }
                 )
                 ha_client.set_state(
-                    "sensor.ml_heating_state",
+                    heating_state_entity_id,
                     2,
                     attributes_state,
                     round_digits=None,
@@ -340,12 +344,15 @@ class BlockingStateManager:
             actual_outlet_temp_start,
             "cool-down" if wait_for_cooling else "warm-up",
         )
+        target_output_entity_id = get_shadow_output_entity_id(
+            config.TARGET_OUTLET_TEMP_ENTITY_ID
+        )
         
         # Set the grace target temperature
         ha_client.set_state(
-            config.TARGET_OUTLET_TEMP_ENTITY_ID,
+            target_output_entity_id,
             grace_target,
-            get_sensor_attributes(config.TARGET_OUTLET_TEMP_ENTITY_ID),
+            get_sensor_attributes(target_output_entity_id),
             round_digits=0,
         )
         
@@ -514,13 +521,18 @@ class BlockingStateManager:
                                     float(outdoor_temp),
                                 )
                                 current_grace_target = final_target
+                                target_output_entity_id = (
+                                    get_shadow_output_entity_id(
+                                        config.TARGET_OUTLET_TEMP_ENTITY_ID
+                                    )
+                                )
 
                                 # Update HA entity
                                 ha_client.set_state(
-                                    config.TARGET_OUTLET_TEMP_ENTITY_ID,
+                                    target_output_entity_id,
                                     current_grace_target,
                                     get_sensor_attributes(
-                                        config.TARGET_OUTLET_TEMP_ENTITY_ID
+                                        target_output_entity_id
                                     ),
                                     round_digits=0,
                                 )
@@ -760,8 +772,11 @@ class SensorDataManager:
         )
         
         try:
-            attributes_state = get_sensor_attributes(
+            heating_state_entity_id = get_shadow_output_entity_id(
                 "sensor.ml_heating_state"
+            )
+            attributes_state = get_sensor_attributes(
+                heating_state_entity_id
             )
             attributes_state.update(
                 {
@@ -771,7 +786,7 @@ class SensorDataManager:
                 }
             )
             ha_client.set_state(
-                "sensor.ml_heating_state",
+                heating_state_entity_id,
                 4,
                 attributes_state,
                 round_digits=None,
@@ -859,8 +874,11 @@ class HeatingSystemStateChecker:
             )
             
             try:
-                attributes_state = get_sensor_attributes(
+                heating_state_entity_id = get_shadow_output_entity_id(
                     "sensor.ml_heating_state"
+                )
+                attributes_state = get_sensor_attributes(
+                    heating_state_entity_id
                 )
                 attributes_state.update(
                     {
@@ -870,7 +888,7 @@ class HeatingSystemStateChecker:
                     }
                 )
                 ha_client.set_state(
-                    "sensor.ml_heating_state",
+                    heating_state_entity_id,
                     6,
                     attributes_state,
                     round_digits=None,

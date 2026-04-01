@@ -2,6 +2,7 @@
 import pytest
 import pandas as pd
 import os
+from unittest.mock import MagicMock, patch
 
 # Ensure the app's config is loaded before other imports
 from src import config, model_wrapper, unified_thermal_state
@@ -65,25 +66,25 @@ class TestEnhancedModelWrapper:
         wrapper2 = get_enhanced_model_wrapper()
         assert wrapper1 is wrapper2
 
-    def test_simplified_prediction(self, wrapper_instance, mocker):
+    def test_simplified_prediction(self, wrapper_instance):
         """Test the simplified_outlet_prediction function."""
-        mocker.patch.object(
-            wrapper_instance, 'calculate_optimal_outlet_temp',
-            return_value=(35.0, {'learning_confidence': 4.5})
-        )
+        with patch.object(
+            wrapper_instance,
+            'calculate_optimal_outlet_temp',
+            return_value=(35.0, {'learning_confidence': 4.5}),
+        ):
+            test_features = pd.DataFrame([{
+                'indoor_temp_lag_30m': 20.5,
+                'target_temp': 21.0,
+                'outdoor_temp': 5.0,
+                'pv_now': 1500.0,
+                'fireplace_on': 0,
+                'tv_on': 1
+            }])
 
-        test_features = pd.DataFrame([{
-            'indoor_temp_lag_30m': 20.5,
-            'target_temp': 21.0,
-            'outdoor_temp': 5.0,
-            'pv_now': 1500.0,
-            'fireplace_on': 0,
-            'tv_on': 1
-        }])
-
-        outlet_temp, confidence, metadata = simplified_outlet_prediction(
-            test_features, 20.5, 21.0
-        )
+            outlet_temp, confidence, metadata = simplified_outlet_prediction(
+                test_features, 20.5, 21.0
+            )
 
         assert outlet_temp == 35.0
         assert confidence == 4.5
@@ -111,66 +112,217 @@ class TestEnhancedModelWrapper:
         assert metadata['prediction_method'] == \
             'thermal_equilibrium_single_prediction'
 
-    def test_learning_feedback(self, wrapper_instance, mocker):
+    def test_learning_feedback(self, wrapper_instance):
         """Test the learn_from_prediction_feedback method works."""
-        # Mock dependencies
-        mocker.patch('src.model_wrapper.create_influx_service')
-        mocker.patch('src.model_wrapper.create_ha_client')
+        with patch('src.model_wrapper.create_influx_service'), patch(
+            'src.model_wrapper.create_ha_client'
+        ):
+            # Set cycle count to 2 to avoid first-cycle skip
+            wrapper_instance.cycle_count = 2
 
-        # Set cycle count to 2 to avoid first-cycle skip
-        wrapper_instance.cycle_count = 2
-
-        wrapper_instance.learn_from_prediction_feedback(
-            predicted_temp=35.0,
-            actual_temp=34.2,
-            prediction_context={'indoor_temp': 20.5, 'outdoor_temp': 5.0}
-        )
+            wrapper_instance.learn_from_prediction_feedback(
+                predicted_temp=35.0,
+                actual_temp=34.2,
+                prediction_context={
+                    'indoor_temp': 20.5,
+                    'outdoor_temp': 5.0,
+                },
+            )
 
         assert wrapper_instance.cycle_count == 3
         # Further assertions would require mocking the thermal model's
         # internal state
 
-    def test_first_cycle_learning_skip(self, wrapper_instance, mocker):
-        """Verify that online learning is skipped on the first cycle."""
-        # Mock logger to check for the specific log message
-        mock_log_info = mocker.patch('logging.info')
+    def test_comprehensive_metrics_include_channel_fields(
+        self, clean_state, monkeypatch
+    ):
+        monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", True)
+        model_wrapper._enhanced_model_wrapper_instance = None
 
-        # In a clean state, cycle_count starts at 0, from a fresh state file
-        # NOTE: The unified_thermal_state.py _get_default_state initializes
-        # cycle_count to 0.
-        # However, if the test environment has a lingering state file or if the
-        # wrapper initialization logic has changed, this might be different.
-        # We explicitly reset it here to ensure the test precondition is met.
-        wrapper_instance.cycle_count = 0
-        assert wrapper_instance.cycle_count == 0
+        wrapper = get_enhanced_model_wrapper()
+        if wrapper.thermal_model.orchestrator is None:
+            pytest.skip("Heat source channels not enabled")
 
-        initial_params = {
-            "thermal_time_constant":
-                wrapper_instance.thermal_model.thermal_time_constant,
-            "heat_loss_coefficient":
-                wrapper_instance.thermal_model.heat_loss_coefficient,
-            "outlet_effectiveness":
-                wrapper_instance.thermal_model.outlet_effectiveness,
-        }
+        wrapper.thermal_model.prediction_history = [{"error": 0.2}]
+        wrapper.thermal_model.parameter_history = []
+        wrapper.thermal_model.fireplace_heat_weight = 6.4
 
-        # First call should be skipped
-        wrapper_instance.learn_from_prediction_feedback(
-            predicted_temp=22.0,
-            actual_temp=21.0,
-            prediction_context={
-                'outdoor_temp': 10.0, 'outlet_temp': 40.0,
-                'current_indoor': 20.5
-            }
+        heat_pump = wrapper.thermal_model.orchestrator.channels["heat_pump"]
+        solar = wrapper.thermal_model.orchestrator.channels["pv"]
+        fireplace = wrapper.thermal_model.orchestrator.channels["fireplace"]
+        heat_pump.delta_t_floor = 3.2
+        solar.cloud_factor_exponent = 1.3
+        solar.solar_decay_tau_hours = 0.8
+        fireplace.fp_decay_time_constant = 1.0
+        fireplace.room_spread_delay_minutes = 38.0
+
+        ha_metrics = wrapper.get_comprehensive_metrics_for_ha()
+
+        assert ha_metrics["heat_source_channels_enabled"] is True
+        assert ha_metrics["fireplace_heat_weight"] == pytest.approx(6.4)
+        assert ha_metrics["delta_t_floor"] == pytest.approx(3.2)
+        assert ha_metrics["cloud_factor_exponent"] == pytest.approx(1.3)
+        assert ha_metrics["solar_decay_tau_hours"] == pytest.approx(0.8)
+        assert ha_metrics["fp_heat_output_kw"] == pytest.approx(6.4)
+        assert ha_metrics["fp_decay_time_constant"] == pytest.approx(1.0)
+        assert ha_metrics["room_spread_delay_minutes"] == pytest.approx(38.0)
+
+    def test_learning_feedback_only_exports_influx_on_configured_interval(
+        self, wrapper_instance, monkeypatch
+    ):
+        monkeypatch.setattr(
+            config,
+            "INFLUX_METRICS_EXPORT_INTERVAL_CYCLES",
+            5,
+            raising=False,
         )
 
-        params_after_first_call = {
-            "thermal_time_constant":
-                wrapper_instance.thermal_model.thermal_time_constant,
-            "heat_loss_coefficient":
-                wrapper_instance.thermal_model.heat_loss_coefficient,
-            "outlet_effectiveness":
-                wrapper_instance.thermal_model.outlet_effectiveness,
+        context = {
+            "outlet_temp": 40.0,
+            "outdoor_temp": 5.0,
+            "current_indoor": 20.0,
+            "fireplace_on": 0,
+            "pv_power": 0.0,
+            "tv_on": 0,
         }
+
+        with patch.object(
+            wrapper_instance, "_export_metrics_to_influxdb"
+        ) as mock_influx_export, patch.object(
+            wrapper_instance, "export_metrics_to_ha"
+        ) as mock_ha_export, patch.object(
+            wrapper_instance.thermal_model,
+            "update_prediction_feedback",
+            return_value=0.1,
+        ):
+            wrapper_instance.cycle_count = 3
+            wrapper_instance.learn_from_prediction_feedback(
+                predicted_temp=21.0,
+                actual_temp=21.2,
+                prediction_context=context,
+            )
+
+            mock_influx_export.assert_not_called()
+            mock_ha_export.assert_called_once()
+
+            mock_influx_export.reset_mock()
+            mock_ha_export.reset_mock()
+
+            wrapper_instance.cycle_count = 4
+            wrapper_instance.learn_from_prediction_feedback(
+                predicted_temp=21.0,
+                actual_temp=21.2,
+                prediction_context=context,
+            )
+
+            mock_influx_export.assert_called_once()
+            mock_ha_export.assert_called_once()
+
+    def test_learning_feedback_skips_live_ha_export_in_effective_shadow_mode(
+        self, wrapper_instance
+    ):
+        context = {
+            "outlet_temp": 40.0,
+            "outdoor_temp": 5.0,
+            "current_indoor": 20.0,
+            "fireplace_on": 0,
+            "pv_power": 0.0,
+            "tv_on": 0,
+        }
+
+        with patch.object(
+            wrapper_instance, "_export_metrics_to_influxdb"
+        ) as mock_influx_export, patch.object(
+            wrapper_instance, "export_metrics_to_ha"
+        ) as mock_ha_export, patch.object(
+            wrapper_instance.thermal_model,
+            "update_prediction_feedback",
+            return_value=0.1,
+        ):
+            wrapper_instance.cycle_count = 3
+            wrapper_instance.learn_from_prediction_feedback(
+                predicted_temp=21.0,
+                actual_temp=21.2,
+                prediction_context=context,
+                effective_shadow_mode=True,
+            )
+
+            mock_influx_export.assert_not_called()
+            mock_ha_export.assert_not_called()
+            assert wrapper_instance.cycle_count == 4
+
+    def test_learning_feedback_exports_ha_metrics_in_shadow_deployment(
+        self, wrapper_instance, monkeypatch
+    ):
+        context = {
+            "outlet_temp": 40.0,
+            "outdoor_temp": 5.0,
+            "current_indoor": 20.0,
+            "fireplace_on": 0,
+            "pv_power": 0.0,
+            "tv_on": 0,
+        }
+        monkeypatch.setattr(config, "SHADOW_MODE", True)
+
+        with patch.object(
+            wrapper_instance, "_export_metrics_to_influxdb"
+        ) as mock_influx_export, patch.object(
+            wrapper_instance, "export_metrics_to_ha"
+        ) as mock_ha_export, patch.object(
+            wrapper_instance.thermal_model,
+            "update_prediction_feedback",
+            return_value=0.1,
+        ):
+            wrapper_instance.cycle_count = 3
+            wrapper_instance.learn_from_prediction_feedback(
+                predicted_temp=21.0,
+                actual_temp=21.2,
+                prediction_context=context,
+                effective_shadow_mode=True,
+            )
+
+            mock_influx_export.assert_not_called()
+            mock_ha_export.assert_called_once()
+
+    def test_first_cycle_learning_skip(self, wrapper_instance):
+        """Verify that online learning is skipped on the first cycle."""
+        with patch('logging.info') as mock_log_info:
+            # In a clean state, cycle_count starts at 0, from a fresh state file
+            # NOTE: The unified_thermal_state.py _get_default_state initializes
+            # cycle_count to 0.
+            # However, if the test environment has a lingering state file or if the
+            # wrapper initialization logic has changed, this might be different.
+            # We explicitly reset it here to ensure the test precondition is met.
+            wrapper_instance.cycle_count = 0
+            assert wrapper_instance.cycle_count == 0
+
+            initial_params = {
+                "thermal_time_constant":
+                    wrapper_instance.thermal_model.thermal_time_constant,
+                "heat_loss_coefficient":
+                    wrapper_instance.thermal_model.heat_loss_coefficient,
+                "outlet_effectiveness":
+                    wrapper_instance.thermal_model.outlet_effectiveness,
+            }
+
+            # First call should be skipped
+            wrapper_instance.learn_from_prediction_feedback(
+                predicted_temp=22.0,
+                actual_temp=21.0,
+                prediction_context={
+                    'outdoor_temp': 10.0, 'outlet_temp': 40.0,
+                    'current_indoor': 20.5
+                }
+            )
+
+            params_after_first_call = {
+                "thermal_time_constant":
+                    wrapper_instance.thermal_model.thermal_time_constant,
+                "heat_loss_coefficient":
+                    wrapper_instance.thermal_model.heat_loss_coefficient,
+                "outlet_effectiveness":
+                    wrapper_instance.thermal_model.outlet_effectiveness,
+            }
 
         assert initial_params == params_after_first_call
         mock_log_info.assert_any_call(
@@ -224,7 +376,7 @@ class TestEnhancedModelWrapper:
         assert 20.0 < predicted_indoor < 40.0
 
     def test_fireplace_channel_mode_uses_channel_estimate(
-        self, clean_state, monkeypatch, mocker
+        self, clean_state, monkeypatch
     ):
         """Flag-on mode must bypass adaptive fireplace learning entirely."""
         monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", True)
@@ -237,61 +389,62 @@ class TestEnhancedModelWrapper:
             "fireplace"
         ]
         fireplace_channel.fp_heat_output_kw = 7.5
-        mocked_trajectory = mocker.patch.object(
+
+        with patch.object(
             wrapper.thermal_model,
             "predict_thermal_trajectory",
             return_value={"trajectory": [21.5]},
-        )
-
-        wrapper.predict_indoor_temp(
-            outlet_temp=40.0,
-            outdoor_temp=5.0,
-            current_indoor=20.0,
-            fireplace_on=1,
-        )
+        ) as mocked_trajectory:
+            wrapper.predict_indoor_temp(
+                outlet_temp=40.0,
+                outdoor_temp=5.0,
+                current_indoor=20.0,
+                fireplace_on=1,
+            )
 
         assert mocked_trajectory.call_args.kwargs["fireplace_power_kw"] == pytest.approx(7.5)
 
     def test_legacy_fireplace_mode_uses_adaptive_learning(
-        self, clean_state, monkeypatch, mocker
+        self, clean_state, monkeypatch
     ):
         """Flag-off mode keeps adaptive fireplace learning as legacy behavior."""
-        mock_learner = mocker.Mock()
+        mock_learner = MagicMock()
         mock_learner._calculate_learned_heat_contribution.return_value = {
             "heat_contribution_kw": 6.2,
             "learning_confidence": 0.9,
         }
 
         monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", False)
-        mocker.patch("src.model_wrapper.AdaptiveFireplaceLearning", return_value=mock_learner)
-        model_wrapper._enhanced_model_wrapper_instance = None
 
-        wrapper = get_enhanced_model_wrapper()
-        mocked_trajectory = mocker.patch.object(
-            wrapper.thermal_model,
-            "predict_thermal_trajectory",
-            return_value={"trajectory": [21.5]},
-        )
+        with patch(
+            "src.model_wrapper.AdaptiveFireplaceLearning",
+            return_value=mock_learner,
+        ):
+            model_wrapper._enhanced_model_wrapper_instance = None
 
-        wrapper.predict_indoor_temp(
-            outlet_temp=40.0,
-            outdoor_temp=5.0,
-            current_indoor=20.0,
-            fireplace_on=1,
-        )
+            wrapper = get_enhanced_model_wrapper()
+            with patch.object(
+                wrapper.thermal_model,
+                "predict_thermal_trajectory",
+                return_value={"trajectory": [21.5]},
+            ) as mocked_trajectory:
+                wrapper.predict_indoor_temp(
+                    outlet_temp=40.0,
+                    outdoor_temp=5.0,
+                    current_indoor=20.0,
+                    fireplace_on=1,
+                )
 
         mock_learner._calculate_learned_heat_contribution.assert_called_once()
         assert mocked_trajectory.call_args.kwargs["fireplace_power_kw"] == pytest.approx(6.2)
 
-    def test_fireplace_learning_integration(self, clean_state, monkeypatch, mocker):
+    def test_fireplace_learning_integration(self, clean_state, monkeypatch):
         """Legacy flag-off mode still observes adaptive fireplace sessions."""
         monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", False)
         model_wrapper._enhanced_model_wrapper_instance = None
 
         wrapper = get_enhanced_model_wrapper()
-        mocker.patch.object(wrapper, "_export_metrics_to_influxdb")
-        mocker.patch.object(wrapper, "export_metrics_to_ha")
-        mock_learner = mocker.Mock()
+        mock_learner = MagicMock()
         wrapper.adaptive_fireplace = mock_learner
 
         wrapper.cycle_count = 5
@@ -304,11 +457,14 @@ class TestEnhancedModelWrapper:
             'pv_power': 0,
         }
 
-        wrapper.learn_from_prediction_feedback(
-            predicted_temp=21.0,
-            actual_temp=22.0,
-            prediction_context=context,
-        )
+        with patch.object(wrapper, "_export_metrics_to_influxdb"), patch.object(
+            wrapper, "export_metrics_to_ha"
+        ):
+            wrapper.learn_from_prediction_feedback(
+                predicted_temp=21.0,
+                actual_temp=22.0,
+                prediction_context=context,
+            )
 
         mock_learner.observe_fireplace_state.assert_called_once()
         _, kwargs = mock_learner.observe_fireplace_state.call_args

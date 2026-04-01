@@ -16,8 +16,16 @@ import requests
 # Support both package-relative and direct import for notebooks
 try:
     from . import config  # Package-relative import
+    from .shadow_mode import (
+        get_base_output_entity_id,
+        get_shadow_output_entity_id,
+    )
 except ImportError:
     import config  # Direct import fallback for notebooks
+    from shadow_mode import (  # type: ignore
+        get_base_output_entity_id,
+        get_shadow_output_entity_id,
+    )
 
 
 class HAClient:
@@ -136,7 +144,11 @@ class HAClient:
             round_digits: The number of decimal places to round the state
             value to.
         """
-        url = f"{self.url}/api/states/{entity_id}"
+        effective_entity_id = get_shadow_output_entity_id(
+            entity_id,
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
+        url = f"{self.url}/api/states/{effective_entity_id}"
 
         # Round the value only if round_digits is specified.
         if round_digits is not None:
@@ -154,10 +166,16 @@ class HAClient:
             "attributes": attributes or {},
         }
         try:
-            logging.debug("Setting HA state for %s: %s", entity_id, payload)
+            logging.debug(
+                "Setting HA state for %s: %s",
+                effective_entity_id,
+                payload,
+            )
             requests.post(url, headers=self.headers, json=payload, timeout=10)
         except requests.RequestException as exc:
-            warnings.warn(f"HA state set failed for {entity_id}: {exc}")
+            warnings.warn(
+                f"HA state set failed for {effective_entity_id}: {exc}"
+            )
 
     def get_hourly_forecast(self) -> List[float]:
         """
@@ -324,7 +342,11 @@ class HAClient:
             importances.items(), key=lambda item: item[1], reverse=True
         )
 
-        attributes = get_sensor_attributes("sensor.ml_feature_importance")
+        feature_importance_entity_id = get_shadow_output_entity_id(
+            "sensor.ml_feature_importance",
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
+        attributes = get_sensor_attributes(feature_importance_entity_id)
         # Store the top 10 features and their importance percentage.
         attributes["top_features"] = {
             f: round(v * 100, 2) for f, v in sorted_importances[:10]
@@ -334,7 +356,7 @@ class HAClient:
         logging.debug("Logging feature importance")
         # The state of the sensor is the total number of features.
         self.set_state(
-            "sensor.ml_feature_importance",
+            feature_importance_entity_id,
             len(sorted_importances),
             attributes,
             round_digits=None,
@@ -356,13 +378,21 @@ class HAClient:
             rmse: The current Root Mean Squared Error.
         """
         now_utc = datetime.now(timezone.utc).isoformat()
+        mae_entity_id = get_shadow_output_entity_id(
+            config.MAE_ENTITY_ID,
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
+        rmse_entity_id = get_shadow_output_entity_id(
+            config.RMSE_ENTITY_ID,
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
 
         # Log Mean Absolute Error (MAE)
         logging.debug("Logging MAE")
-        attributes_mae = get_sensor_attributes(config.MAE_ENTITY_ID)
+        attributes_mae = get_sensor_attributes(mae_entity_id)
         attributes_mae["last_updated"] = now_utc
         self.set_state(
-            config.MAE_ENTITY_ID,
+            mae_entity_id,
             mae,
             attributes_mae,
             round_digits=4,
@@ -370,10 +400,10 @@ class HAClient:
 
         # Log Root Mean Squared Error (RMSE)
         logging.debug("Logging RMSE")
-        attributes_rmse = get_sensor_attributes(config.RMSE_ENTITY_ID)
+        attributes_rmse = get_sensor_attributes(rmse_entity_id)
         attributes_rmse["last_updated"] = now_utc
         self.set_state(
-            config.RMSE_ENTITY_ID,
+            rmse_entity_id,
             rmse,
             attributes_rmse,
             round_digits=4,
@@ -394,18 +424,36 @@ class HAClient:
                 from the EnhancedModelWrapper
         """
         now_utc = datetime.now(timezone.utc).isoformat()
+        learning_entity_id = get_shadow_output_entity_id(
+            "sensor.ml_heating_learning",
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
+        mae_entity_id = get_shadow_output_entity_id(
+            config.MAE_ENTITY_ID,
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
+        rmse_entity_id = get_shadow_output_entity_id(
+            config.RMSE_ENTITY_ID,
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
+        prediction_accuracy_entity_id = get_shadow_output_entity_id(
+            "sensor.ml_prediction_accuracy",
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
 
         # 1. ML Heating Learning sensor: Confidence + thermal parameters
-        attributes_learning = get_sensor_attributes("sensor.ml_heating_learning")
+        attributes_learning = get_sensor_attributes(learning_entity_id)
         attributes_learning.update({
-            # Learned thermal parameters - ALL 7 parameters currently in use
+            # Learned thermal parameters exported in all modes
             "thermal_time_constant": learning_metrics.get("thermal_time_constant", 6.0),
             "heat_loss_coefficient": learning_metrics.get("heat_loss_coefficient", 0.146),
             "outlet_effectiveness": learning_metrics.get("outlet_effectiveness", 0.936),
             "pv_heat_weight": learning_metrics.get("pv_heat_weight", 0.001),
+            "fireplace_heat_weight": learning_metrics.get("fireplace_heat_weight", 0.0),
             "tv_heat_weight": learning_metrics.get("tv_heat_weight", 0.1),
             "solar_lag_minutes": learning_metrics.get("solar_lag_minutes", 0.0),
             "slab_time_constant_hours": learning_metrics.get("slab_time_constant_hours", 2.0),
+            "heat_source_channels_enabled": learning_metrics.get("heat_source_channels_enabled", False),
             
             # Legacy/derived parameters (for backward compatibility)
             "total_conductance": learning_metrics.get("total_conductance", 0.3),
@@ -423,17 +471,27 @@ class HAClient:
             "last_updated": now_utc
         })
 
+        if learning_metrics.get("heat_source_channels_enabled", False):
+            attributes_learning.update({
+                "delta_t_floor": learning_metrics.get("delta_t_floor", 0.0),
+                "cloud_factor_exponent": learning_metrics.get("cloud_factor_exponent", 1.0),
+                "solar_decay_tau_hours": learning_metrics.get("solar_decay_tau_hours", 0.0),
+                "fp_heat_output_kw": learning_metrics.get("fp_heat_output_kw", 0.0),
+                "fp_decay_time_constant": learning_metrics.get("fp_decay_time_constant", 0.0),
+                "room_spread_delay_minutes": learning_metrics.get("room_spread_delay_minutes", 0.0),
+            })
+
         # State is the learning confidence score (no redundant attribute)
         learning_confidence = learning_metrics.get("learning_confidence", 0.0)
         self.set_state(
-            "sensor.ml_heating_learning",
+            learning_entity_id,
             learning_confidence,
             attributes_learning,
             round_digits=3,
         )
 
         # 2. Enhanced MAE sensor: All-time MAE + time-windowed breakdowns
-        attributes_mae = get_sensor_attributes("sensor.ml_model_mae")
+        attributes_mae = get_sensor_attributes(mae_entity_id)
         attributes_mae.update({
             "mae_1h": learning_metrics.get("mae_1h", 0.0),
             "mae_6h": learning_metrics.get("mae_6h", 0.0), 
@@ -446,14 +504,14 @@ class HAClient:
         # State is all-time MAE
         mae_all_time = learning_metrics.get("mae_all_time", 0.0)
         self.set_state(
-            "sensor.ml_model_mae",
+            mae_entity_id,
             mae_all_time,
             attributes_mae,
             round_digits=4,
         )
 
         # 3. Enhanced RMSE sensor: All-time RMSE + error distribution
-        attributes_rmse = get_sensor_attributes("sensor.ml_model_rmse")
+        attributes_rmse = get_sensor_attributes(rmse_entity_id)
         attributes_rmse.update({
             "recent_max_error": learning_metrics.get("recent_max_error", 0.0),
             "std_error": self._calculate_std_error(learning_metrics),
@@ -465,14 +523,16 @@ class HAClient:
         # State is all-time RMSE
         rmse_all_time = learning_metrics.get("rmse_all_time", 0.0)
         self.set_state(
-            "sensor.ml_model_rmse", 
+            rmse_entity_id,
             rmse_all_time,
             attributes_rmse,
             round_digits=4,
         )
 
         # 4. Clean prediction accuracy sensor: 24h control quality only
-        attributes_accuracy = get_sensor_attributes("sensor.ml_prediction_accuracy")
+        attributes_accuracy = get_sensor_attributes(
+            prediction_accuracy_entity_id
+        )
         attributes_accuracy.update({
             "perfect_accuracy_pct": learning_metrics.get("perfect_accuracy_pct", 0.0),
             "tolerable_accuracy_pct": learning_metrics.get("tolerable_accuracy_pct", 0.0),
@@ -486,7 +546,7 @@ class HAClient:
         # State is the percentage of good control (24h window, ±0.2°C)
         good_control_24h = learning_metrics.get("good_control_pct", 0.0)
         self.set_state(
-            "sensor.ml_prediction_accuracy",
+            prediction_accuracy_entity_id,
             good_control_24h,
             attributes_accuracy,
             round_digits=1,
@@ -536,11 +596,17 @@ def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
     Returns:
         A dictionary of attributes for that sensor.
     """
+    effective_entity_id = get_shadow_output_entity_id(
+        entity_id,
+        shadow_deployment=getattr(config, "SHADOW_MODE", False),
+    )
+    base_entity_id = get_base_output_entity_id(effective_entity_id)
+
     base_attributes = {
         "state_class": "measurement",
     }
     sensor_specific_attributes = {
-        "sensor.ml_vorlauftemperatur": {
+        config.TARGET_OUTLET_TEMP_ENTITY_ID: {
             "unique_id": "ml_heating_target_outlet_temp",
             "friendly_name": "ML Target Outlet Temp",
             "unit_of_measurement": "°C",
@@ -560,13 +626,13 @@ def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
             "unit_of_measurement": "std dev",
             "icon": "mdi:chart-line",
         },
-        "sensor.ml_model_mae": {
+        config.MAE_ENTITY_ID: {
             "unique_id": "ml_heating_model_mae",
             "friendly_name": "ML Model MAE",
             "unit_of_measurement": "°C",
             "icon": "mdi:chart-line",
         },
-        "sensor.ml_model_rmse": {
+        config.RMSE_ENTITY_ID: {
             "unique_id": "ml_heating_model_rmse",
             "friendly_name": "ML Model RMSE",
             "unit_of_measurement": "°C",
@@ -596,9 +662,44 @@ def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
             "unit_of_measurement": "%",
             "icon": "mdi:target",
         },
+        "sensor.ml_heating_cop_realtime": {
+            "unique_id": "ml_heating_cop_realtime",
+            "friendly_name": "ML Heating COP (Realtime)",
+            "unit_of_measurement": "COP",
+            "icon": "mdi:heat-pump",
+            "device_class": "power_factor",
+        },
+        "sensor.ml_heating_thermal_power": {
+            "unique_id": "ml_heating_thermal_power",
+            "friendly_name": "ML Heating Thermal Power",
+            "unit_of_measurement": "kW",
+            "icon": "mdi:flash",
+            "device_class": "power",
+        },
     }
+
+    def _default_unique_id(sensor_id: str) -> str:
+        return sensor_id.replace(".", "_")
+
+    def _default_friendly_name(sensor_id: str) -> str:
+        return sensor_id.split(".", 1)[-1].replace("_", " ").title()
+
     attributes = base_attributes.copy()
-    attributes.update(sensor_specific_attributes.get(entity_id, {}))
+    attributes.update(sensor_specific_attributes.get(base_entity_id, {}))
+
+    if "unique_id" not in attributes:
+        attributes["unique_id"] = _default_unique_id(base_entity_id)
+    if "friendly_name" not in attributes:
+        attributes["friendly_name"] = _default_friendly_name(base_entity_id)
+
+    if effective_entity_id != base_entity_id:
+        if not attributes["unique_id"].endswith("_shadow"):
+            attributes["unique_id"] = f"{attributes['unique_id']}_shadow"
+        if not attributes["friendly_name"].endswith(" Shadow"):
+            attributes["friendly_name"] = (
+                f"{attributes['friendly_name']} Shadow"
+            )
+
     return attributes
 
 

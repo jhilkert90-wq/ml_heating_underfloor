@@ -103,7 +103,22 @@ class TestSensorIntegration(unittest.TestCase):
         mock_prediction.return_value = (38.0, 5.0, {})
 
         # Mock attributes
-        mock_get_attributes.return_value = {}
+        mock_get_attributes.side_effect = lambda entity_id: {
+            "sensor.ml_heating_thermal_power": {
+                "friendly_name": "ML Heating Thermal Power",
+                "unit_of_measurement": "kW",
+                "icon": "mdi:flash",
+                "device_class": "power",
+                "state_class": "measurement",
+            },
+            "sensor.ml_heating_cop_realtime": {
+                "friendly_name": "ML Heating COP (Realtime)",
+                "unit_of_measurement": "COP",
+                "icon": "mdi:heat-pump",
+                "device_class": "power_factor",
+                "state_class": "measurement",
+            },
+        }.get(entity_id, {})
 
         # Run main for one cycle
         # We need to break the infinite loop in main.

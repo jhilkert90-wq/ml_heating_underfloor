@@ -17,8 +17,10 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 # Support both package-relative and direct import for notebooks
 try:
     from . import config  # Package-relative import
+    from .shadow_mode import get_effective_influx_features_bucket
 except ImportError:
     import config  # type: ignore # Direct import fallback for notebooks
+    from shadow_mode import get_effective_influx_features_bucket  # type: ignore
 
 
 class InfluxService:
@@ -29,6 +31,18 @@ class InfluxService:
         self.client = InfluxDBClient(url=url, token=token, org=org)
         self.query_api: QueryApi = self.client.query_api()
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
+
+    def _get_generated_metrics_bucket(self, bucket: Optional[str] = None) -> str:
+        """Resolve the generated-metrics bucket with shadow deployment suffixing."""
+        requested_bucket = (
+            bucket
+            or getattr(config, "INFLUX_FEATURES_BUCKET", None)
+            or "ml_heating_features"
+        )
+        return get_effective_influx_features_bucket(
+            requested_bucket,
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
 
     def close(self):
         """Closes the InfluxDB client connection."""
@@ -561,11 +575,7 @@ class InfluxService:
 
         # STRICT SEPARATION: Feature data MUST go to features bucket
         # Do NOT fallback to config.INFLUX_BUCKET (historic data)
-        write_bucket = (
-            bucket
-            or getattr(config, "INFLUX_FEATURES_BUCKET", None)
-            or "ml_heating_features"
-        )
+        write_bucket = self._get_generated_metrics_bucket(bucket)
         write_org = org or getattr(config, "INFLUX_ORG", None)
 
         try:
@@ -627,11 +637,7 @@ class InfluxService:
 
         # STRICT SEPARATION: Prediction metrics go to features bucket
         # as they are generated data, not historic sensor data
-        write_bucket = (
-            bucket
-            or getattr(config, "INFLUX_FEATURES_BUCKET", None)
-            or "ml_heating_features"
-        )
+        write_bucket = self._get_generated_metrics_bucket(bucket)
         write_org = org or getattr(config, "INFLUX_ORG", None)
 
         try:
@@ -768,11 +774,7 @@ class InfluxService:
 
             # STRICT SEPARATION: Thermal learning metrics go to features bucket
             # as they are generated data, not historic sensor data
-            write_bucket = (
-                bucket
-                or getattr(config, "INFLUX_FEATURES_BUCKET", None)
-                or "ml_heating_features"
-            )
+            write_bucket = self._get_generated_metrics_bucket(bucket)
             write_org = org or getattr(config, "INFLUX_ORG", None)
             point_time = timestamp if timestamp else datetime.now(timezone.utc)
 
@@ -805,6 +807,69 @@ class InfluxService:
                     thermal_model.thermal_time_constant
                 ))
             )
+            p = p.field(
+                "pv_heat_weight",
+                float(current_params.get(
+                    'pv_heat_weight', getattr(thermal_model, 'pv_heat_weight', 0.0)
+                ))
+            )
+            p = p.field(
+                "fireplace_heat_weight",
+                float(current_params.get(
+                    'fireplace_heat_weight',
+                    getattr(thermal_model, 'fireplace_heat_weight', 0.0)
+                ))
+            )
+            p = p.field(
+                "tv_heat_weight",
+                float(current_params.get(
+                    'tv_heat_weight', getattr(thermal_model, 'tv_heat_weight', 0.0)
+                ))
+            )
+            p = p.field(
+                "solar_lag_minutes",
+                float(current_params.get(
+                    'solar_lag_minutes',
+                    getattr(thermal_model, 'solar_lag_minutes', 0.0)
+                ))
+            )
+            p = p.field(
+                "slab_time_constant_hours",
+                float(current_params.get(
+                    'slab_time_constant_hours',
+                    getattr(thermal_model, 'slab_time_constant_hours', 0.0)
+                ))
+            )
+            p = p.field(
+                "heat_source_channels_enabled",
+                bool(learning_metrics.get('heat_source_channels_enabled', False))
+            )
+
+            if learning_metrics.get('heat_source_channels_enabled', False):
+                p = p.field(
+                    "delta_t_floor",
+                    float(current_params.get('delta_t_floor', 0.0))
+                )
+                p = p.field(
+                    "cloud_factor_exponent",
+                    float(current_params.get('cloud_factor_exponent', 1.0))
+                )
+                p = p.field(
+                    "solar_decay_tau_hours",
+                    float(current_params.get('solar_decay_tau_hours', 0.0))
+                )
+                p = p.field(
+                    "fp_heat_output_kw",
+                    float(current_params.get('fp_heat_output_kw', 0.0))
+                )
+                p = p.field(
+                    "fp_decay_time_constant",
+                    float(current_params.get('fp_decay_time_constant', 0.0))
+                )
+                p = p.field(
+                    "room_spread_delay_minutes",
+                    float(current_params.get('room_spread_delay_minutes', 0.0))
+                )
 
             # Learning metadata
             p = p.field(
@@ -904,11 +969,7 @@ class InfluxService:
 
         # STRICT SEPARATION: Learning phase metrics go to features bucket
         # as they are generated data, not historic sensor data
-        write_bucket = (
-            bucket
-            or getattr(config, "INFLUX_FEATURES_BUCKET", None)
-            or "ml_heating_features"
-        )
+        write_bucket = self._get_generated_metrics_bucket(bucket)
         write_org = org or getattr(config, "INFLUX_ORG", None)
 
         try:
@@ -1013,11 +1074,7 @@ class InfluxService:
 
         # STRICT SEPARATION: Trajectory metrics go to features bucket
         # as they are generated data, not historic sensor data
-        write_bucket = (
-            bucket
-            or getattr(config, "INFLUX_FEATURES_BUCKET", None)
-            or "ml_heating_features"
-        )
+        write_bucket = self._get_generated_metrics_bucket(bucket)
         write_org = org or getattr(config, "INFLUX_ORG", None)
 
         try:
@@ -1134,11 +1191,7 @@ class InfluxService:
 
         # STRICT SEPARATION: Shadow benchmarks go to features bucket
         # as they are generated data, not historic sensor data
-        write_bucket = (
-            bucket
-            or getattr(config, "INFLUX_FEATURES_BUCKET", None)
-            or "ml_heating_features"
-        )
+        write_bucket = self._get_generated_metrics_bucket(bucket)
         write_org = org or getattr(config, "INFLUX_ORG", None)
 
         try:
@@ -1237,11 +1290,7 @@ class InfluxService:
 
         # STRICT SEPARATION: Thermodynamic metrics go to features bucket
         # as they are generated data, not historic sensor data
-        write_bucket = (
-            bucket
-            or getattr(config, "INFLUX_FEATURES_BUCKET", None)
-            or "ml_heating_features"
-        )
+        write_bucket = self._get_generated_metrics_bucket(bucket)
         write_org = org or getattr(config, "INFLUX_ORG", None)
 
         try:

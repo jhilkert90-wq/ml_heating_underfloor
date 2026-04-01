@@ -89,6 +89,16 @@ When `ENABLE_HEAT_SOURCE_CHANNELS=true`, the fireplace sensors above feed `Firep
 - PV power, fireplace status, TV status (multi-source attribution)
 - Flow rate, power consumption (COP and thermal power)
 
+### Current Batch Calibration Coverage
+- Batch-calibrated today: `thermal_time_constant`, `heat_loss_coefficient`, `outlet_effectiveness`, `pv_heat_weight`, `fireplace_heat_weight`, `tv_heat_weight`, `solar_lag_minutes`
+- Preserved rather than batch-calibrated: `slab_time_constant_hours`
+- Indirectly seeded into channel mode from calibrated legacy state: `fp_heat_output_kw` from `fireplace_heat_weight`
+- Not batch-calibrated in the current physics path: `delta_t_floor`, `cloud_factor_exponent`, `solar_decay_tau_hours`, `fp_decay_time_constant`, `room_spread_delay_minutes`
+
+The non-calibrated channel-only parameters remain orchestrator-managed runtime
+state. Some are exported for observability, but they are not part of the
+historical scipy optimization path yet.
+
 ### Solar Transition Scenarios (evening / morning)
 - PV power + PV forecast → SolarChannel.predict_future_contribution()
 - Inlet temp → slab residual heat after HP reduces

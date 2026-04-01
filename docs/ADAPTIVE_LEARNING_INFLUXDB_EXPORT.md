@@ -29,7 +29,8 @@ The adaptive learning system now automatically exports comprehensive metrics to 
    - `write_trajectory_prediction_metrics()` - Exports trajectory accuracy data
 
 3. **Model Wrapper Integration (`model_wrapper.py`)**
-   - Automatic export every 5 learning cycles (~25 minutes)
+  - Automatic InfluxDB export every `INFLUX_METRICS_EXPORT_INTERVAL_CYCLES` learning cycles (default: 5, about 25 minutes)
+  - Home Assistant sensor export every learning cycle for real-time monitoring
    - Integrated with existing prediction feedback loop
    - Zero-impact on main control logic
 
@@ -55,11 +56,23 @@ Tracks learned thermal model parameters:
 ```influx
 ml_thermal_parameters,source=ml_heating,parameter_type=current
   outlet_effectiveness=0.55,heat_loss_coefficient=0.045,
-  thermal_time_constant=26.5,learning_confidence=3.8,
+  thermal_time_constant=26.5,pv_heat_weight=0.0032,
+  fireplace_heat_weight=6.4,tv_heat_weight=0.46,
+  solar_lag_minutes=75.0,slab_time_constant_hours=1.7,
+  heat_source_channels_enabled=true,
+  delta_t_floor=3.4,cloud_factor_exponent=1.4,
+  solar_decay_tau_hours=0.9,fp_heat_output_kw=6.4,
+  fp_decay_time_constant=1.1,room_spread_delay_minutes=42.0,
+  learning_confidence=3.8,
   current_learning_rate=0.01,parameter_updates_total=45,
   outlet_effectiveness_correction_pct=12.3,
   thermal_time_constant_stability=0.89,parameter_updates_24h=12
 ```
+
+When `ENABLE_HEAT_SOURCE_CHANNELS=true`, `ml_thermal_parameters` includes the
+channel-only learnable parameters from the live orchestrator in addition to the
+legacy flattened thermal parameters. When the flag is `false`, those optional
+channel-only fields are omitted.
 
 ### ml_learning_phase
 
@@ -93,9 +106,12 @@ The system automatically exports metrics during normal operation:
 
 ```python
 # In model_wrapper.py - EnhancedModelWrapper.learn_from_prediction_feedback()
-if self.cycle_count % 5 == 0:  # Every 5 learning cycles
+if self.cycle_count % config.INFLUX_METRICS_EXPORT_INTERVAL_CYCLES == 0:
     self._export_metrics_to_influxdb()
 ```
+
+Home Assistant exports are intentionally more frequent and run every learning
+cycle so monitoring sensors stay current during debugging and tuning.
 
 ### Manual Export
 
@@ -127,6 +143,23 @@ from(bucket: "home_assistant/autogen")
   |> range(start: -7d)
   |> filter(fn: (r) => r["_measurement"] == "ml_thermal_parameters")
   |> filter(fn: (r) => r["_field"] == "outlet_effectiveness")
+```
+
+**Heat-Source Channel Parameters** (`ENABLE_HEAT_SOURCE_CHANNELS=true`):
+```flux
+from(bucket: "home_assistant/autogen")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r["_measurement"] == "ml_thermal_parameters")
+  |> filter(
+    fn: (r) =>
+      r["_field"] == "delta_t_floor" or
+      r["_field"] == "cloud_factor_exponent" or
+      r["_field"] == "solar_decay_tau_hours" or
+      r["_field"] == "fp_heat_output_kw" or
+      r["_field"] == "fp_decay_time_constant" or
+      r["_field"] == "room_spread_delay_minutes"
+  )
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 ```
 
 **Learning Phase Distribution:**
@@ -209,8 +242,8 @@ INFLUX_BUCKET = "home_assistant/autogen"
 Controlled in `model_wrapper.py`:
 
 ```python
-# Export every N cycles (default: 5 = ~25 minutes)
-EXPORT_FREQUENCY = 5
+# Influx export every N cycles (default: 5 = ~25 minutes)
+INFLUX_METRICS_EXPORT_INTERVAL_CYCLES = 5
 ```
 
 ## Troubleshooting

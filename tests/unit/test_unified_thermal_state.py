@@ -1,6 +1,7 @@
 
 import pytest
 import os
+import src.unified_thermal_state
 
 from src.unified_thermal_state import (
     ThermalStateManager, get_thermal_state_manager
@@ -142,10 +143,32 @@ class TestThermalStateManager:
 
     def test_get_thermal_state_manager_singleton(self, temp_state_file):
         """Test that get_thermal_state_manager returns a singleton."""
-        import src.unified_thermal_state
         src.unified_thermal_state._thermal_state_manager = None
 
         manager1 = get_thermal_state_manager()
         manager2 = get_thermal_state_manager()
         assert manager1 is manager2
+
+    def test_get_thermal_state_manager_uses_shadow_isolated_default_file(
+        self, tmp_path, monkeypatch
+    ):
+        """Default manager path should be suffixed for shadow deployments."""
+        src.unified_thermal_state._thermal_state_manager = None
+
+        base_path = tmp_path / "thermal_state.json"
+        monkeypatch.setattr(
+            "src.shadow_mode.config.SHADOW_MODE",
+            True,
+        )
+        monkeypatch.setattr(
+            "src.shadow_mode.config.UNIFIED_STATE_FILE",
+            str(base_path),
+        )
+
+        manager = get_thermal_state_manager()
+        manager.save_state()
+
+        assert manager.state_file == str(tmp_path / "thermal_state_shadow.json")
+        assert os.path.exists(tmp_path / "thermal_state_shadow.json") is True
+        assert os.path.exists(base_path) is False
 

@@ -199,6 +199,58 @@ class TestCorrectedThermalPhysics:
 
 
 class TestHeatSourceChannelActivation:
+    def test_adaptive_learning_metrics_export_channel_parameters(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setattr(
+            thermal_equilibrium_model.config,
+            "ENABLE_HEAT_SOURCE_CHANNELS",
+            True,
+        )
+        monkeypatch.setattr(
+            unified_thermal_state,
+            "_thermal_state_manager",
+            unified_thermal_state.ThermalStateManager(
+                state_file=str(tmp_path / "thermal_state.json")
+            ),
+        )
+
+        model = thermal_equilibrium_model.ThermalEquilibriumModel()
+        if model.orchestrator is None:
+            pytest.skip("Heat source channels not enabled")
+
+        model.prediction_history = [{"error": 0.2}]
+        model.parameter_history = []
+        model.thermal_time_constant = 5.5
+        model.heat_loss_coefficient = 0.22
+        model.outlet_effectiveness = 0.88
+        model.pv_heat_weight = 0.0032
+        model.fireplace_heat_weight = 6.5
+        model.tv_heat_weight = 0.46
+        model.solar_lag_minutes = 75.0
+        model.slab_time_constant_hours = 1.7
+
+        heat_pump = model.orchestrator.channels["heat_pump"]
+        solar = model.orchestrator.channels["pv"]
+        fireplace = model.orchestrator.channels["fireplace"]
+        heat_pump.delta_t_floor = 3.4
+        solar.cloud_factor_exponent = 1.4
+        solar.solar_decay_tau_hours = 0.9
+        fireplace.fp_decay_time_constant = 1.1
+        fireplace.room_spread_delay_minutes = 42.0
+
+        metrics = model.get_adaptive_learning_metrics()
+        current_parameters = metrics["current_parameters"]
+
+        assert metrics["heat_source_channels_enabled"] is True
+        assert current_parameters["fireplace_heat_weight"] == pytest.approx(6.5)
+        assert current_parameters["delta_t_floor"] == pytest.approx(3.4)
+        assert current_parameters["cloud_factor_exponent"] == pytest.approx(1.4)
+        assert current_parameters["solar_decay_tau_hours"] == pytest.approx(0.9)
+        assert current_parameters["fp_heat_output_kw"] == pytest.approx(6.5)
+        assert current_parameters["fp_decay_time_constant"] == pytest.approx(1.1)
+        assert current_parameters["room_spread_delay_minutes"] == pytest.approx(42.0)
+
     def test_fireplace_channel_changes_equilibrium_prediction(
         self, monkeypatch
     ):

@@ -28,6 +28,7 @@ from src import config
 from src.ha_client import create_ha_client
 from src.adaptive_fireplace_learning import AdaptiveFireplaceLearning
 from src.prediction_context import prediction_context_manager
+from src.shadow_mode import resolve_shadow_mode
 
 
 # Singleton pattern to prevent multiple model instantiation
@@ -94,6 +95,19 @@ class EnhancedModelWrapper:
         return bool(
             config.ENABLE_HEAT_SOURCE_CHANNELS
             and self.thermal_model.orchestrator is not None
+        )
+
+    def _get_influx_export_interval_cycles(self) -> int:
+        """Return the configured Influx export interval in learning cycles."""
+        return max(
+            1,
+            int(
+                getattr(
+                    config,
+                    "INFLUX_METRICS_EXPORT_INTERVAL_CYCLES",
+                    5,
+                )
+            ),
         )
 
     def _calculate_fireplace_power_kw(
@@ -1659,6 +1673,7 @@ class EnhancedModelWrapper:
         prediction_context: Dict,
         timestamp: Optional[str] = None,
         is_blocking_active: bool = False,
+        effective_shadow_mode: Optional[bool] = None,
     ):
         """
         Learn from prediction feedback using the thermal model's adaptive
@@ -1763,14 +1778,24 @@ class EnhancedModelWrapper:
                 cycle_count=self.cycle_count
             )
 
-            # Export metrics to InfluxDB every cycle (temporarily increased
-            # frequency for debugging)
-            # Was: if self.cycle_count % 5 == 0:
-            self._export_metrics_to_influxdb()
+            # Export Influx metrics at the configured cadence to limit write
+            # volume while keeping Home Assistant updates real-time.
+            if self.cycle_count % self._get_influx_export_interval_cycles() == 0:
+                self._export_metrics_to_influxdb()
 
-            # Export metrics to Home Assistant every cycle for real-time
-            # monitoring
-            self.export_metrics_to_ha()
+            shadow_mode = resolve_shadow_mode(
+                effective_shadow_mode=effective_shadow_mode
+            )
+
+            # Keep live HA metrics quiet during effective shadow-mode cycles
+            # until the later shadow-suffixed rollout is in place.
+            if shadow_mode.should_publish_output_entities:
+                self.export_metrics_to_ha()
+            else:
+                logging.debug(
+                    "Skipping live HA metric export during effective "
+                    "shadow mode"
+                )
 
             # Log learning cycle completion
             if prediction_error is not None:
@@ -1848,38 +1873,10 @@ class EnhancedModelWrapper:
                     current_params = metrics["current_parameters"]
                     # Return flattened structure with actual loaded parameters
                     result = metrics.copy()
+                    result.update(current_params)
                     result.update(
                         {
-                            "thermal_time_constant": current_params.get(
-                                "thermal_time_constant",
-                                self.thermal_model.thermal_time_constant,
-                            ),
-                            "heat_loss_coefficient": current_params.get(
-                                "heat_loss_coefficient",
-                                self.thermal_model.heat_loss_coefficient,
-                            ),
-                            "outlet_effectiveness": current_params.get(
-                                "outlet_effectiveness",
-                                self.thermal_model.outlet_effectiveness,
-                            ),
-                            "pv_heat_weight": current_params.get(
-                                "pv_heat_weight",
-                                self.thermal_model.pv_heat_weight,
-                            ),
-                            "tv_heat_weight": current_params.get(
-                                "tv_heat_weight",
-                                self.thermal_model.tv_heat_weight,
-                            ),
-                            "solar_lag_minutes": current_params.get(
-                                "solar_lag_minutes",
-                                self.thermal_model.solar_lag_minutes,
-                            ),
-                            "slab_time_constant_hours": current_params.get(
-                                "slab_time_constant_hours",
-                                self.thermal_model.slab_time_constant_hours,
-                            ),
-                            "learning_confidence":
-                                self.thermal_model.learning_confidence,
+                            "learning_confidence": self.thermal_model.learning_confidence,
                             "cycle_count": self.cycle_count,
                         }
                     )
@@ -1921,7 +1918,7 @@ class EnhancedModelWrapper:
 
             # Combine into comprehensive HA-friendly format
             ha_metrics = {
-                # Core thermal parameters (learned) - all 7
+                # Core thermal parameters (learned)
                 "thermal_time_constant": thermal_metrics.get(
                     "thermal_time_constant", 6.0
                 ),
@@ -1934,6 +1931,9 @@ class EnhancedModelWrapper:
                 "pv_heat_weight": thermal_metrics.get(
                     "pv_heat_weight", 0.001
                 ),
+                "fireplace_heat_weight": thermal_metrics.get(
+                    "fireplace_heat_weight", 0.0
+                ),
                 "tv_heat_weight": thermal_metrics.get(
                     "tv_heat_weight", 0.1
                 ),
@@ -1942,6 +1942,9 @@ class EnhancedModelWrapper:
                 ),
                 "slab_time_constant_hours": thermal_metrics.get(
                     "slab_time_constant_hours", 2.0
+                ),
+                "heat_source_channels_enabled": bool(
+                    thermal_metrics.get("heat_source_channels_enabled", False)
                 ),
                 "learning_confidence": thermal_metrics.get(
                     "learning_confidence", 3.0
@@ -2027,6 +2030,30 @@ class EnhancedModelWrapper:
                 # Timestamp
                 "last_updated": datetime.now().isoformat(),
             }
+
+            if ha_metrics["heat_source_channels_enabled"]:
+                ha_metrics.update(
+                    {
+                        "delta_t_floor": thermal_metrics.get(
+                            "delta_t_floor", 0.0
+                        ),
+                        "cloud_factor_exponent": thermal_metrics.get(
+                            "cloud_factor_exponent", 1.0
+                        ),
+                        "solar_decay_tau_hours": thermal_metrics.get(
+                            "solar_decay_tau_hours", 0.0
+                        ),
+                        "fp_heat_output_kw": thermal_metrics.get(
+                            "fp_heat_output_kw", 0.0
+                        ),
+                        "fp_decay_time_constant": thermal_metrics.get(
+                            "fp_decay_time_constant", 0.0
+                        ),
+                        "room_spread_delay_minutes": thermal_metrics.get(
+                            "room_spread_delay_minutes", 0.0
+                        ),
+                    }
+                )
 
             return ha_metrics
 

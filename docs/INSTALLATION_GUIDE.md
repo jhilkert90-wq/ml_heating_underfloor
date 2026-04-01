@@ -157,7 +157,7 @@ This section details all available configuration parameters for the ML Heating C
 
 #### Model and State Storage
 
-*   **UNIFIED_STATE_FILE**: Absolute path where the unified thermal state (including model parameters and learning history) is stored. Default: `/data/unified_thermal_state.json`.
+*   **UNIFIED_STATE_FILE**: Absolute path where the unified thermal state (including model parameters and learning history) is stored. Default: `/data/unified_thermal_state.json`. When `SHADOW_MODE=true`, ML Heating automatically writes to the suffixed shadow file instead, for example `/data/unified_thermal_state_shadow.json`.
 *   **CALIBRATION_BASELINE_FILE**: Path to the file storing the calibrated physics baseline. Default: `/data/calibrated_baseline.json`.
 
 #### Script Behavior and Learning Parameters
@@ -168,7 +168,7 @@ This section details all available configuration parameters for the ML Heating C
 *   **TRAINING_LOOKBACK_HOURS**: The number of hours of historical data to use for the initial training or calibration of the model.
 *   **CYCLE_INTERVAL_MINUTES**: The time in minutes between each full cycle of learning and prediction. Default: `10`.
 *   **MAX_TEMP_CHANGE_PER_CYCLE**: The maximum allowable integer change (in degrees Celsius) for the heat pump's outlet temperature setpoint in a single cycle. This prevents abrupt temperature changes. Default: `2`.
-*   **INFLUX_FEATURES_BUCKET**: InfluxDB bucket for exporting feature importances and learning parameters for analysis.
+*   **INFLUX_FEATURES_BUCKET**: InfluxDB bucket for exporting generated ML metrics and learning parameters for analysis. When `SHADOW_MODE=true`, the runtime automatically writes to `<bucket>_shadow`. Historical reads from `INFLUX_BUCKET` are unchanged.
 
 #### Home Assistant Entity IDs (Critical)
 
@@ -177,7 +177,7 @@ These parameters define which Home Assistant entities the add-on will read from 
 *   **TARGET_INDOOR_TEMP_ENTITY_ID**: An `input_number` or `sensor` that holds the desired target indoor temperature. Example: `input_number.hp_auto_correct_target`.
 *   **INDOOR_TEMP_ENTITY_ID**: The primary indoor temperature sensor that the system will try to maintain. Example: `sensor.your_indoor_temp_sensor`.
 *   **ACTUAL_OUTLET_TEMP_ENTITY_ID**: The heat pump's actual outlet temperature sensor. Example: `sensor.your_hp_outlet_temp`.
-*   **TARGET_OUTLET_TEMP_ENTITY_ID**: The entity this script will write its calculated target outlet temperature to. This should be an entity that controls your heat pump's setpoint. Example: `sensor.ml_vorlauftemperatur`.
+*   **TARGET_OUTLET_TEMP_ENTITY_ID**: The entity this script will write its calculated target outlet temperature to. This should be an entity that controls your heat pump's setpoint. Example: `sensor.ml_vorlauftemperatur`. When `SHADOW_MODE=true`, ML Heating automatically publishes to the suffixed shadow entity instead, for example `sensor.ml_vorlauftemperatur_shadow`.
 *   **ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID**: The target outlet temperature that was *actually* set (either by the ML model or your existing heat curve). This is crucial for the model to learn correctly in both active and shadow modes. Example: `sensor.hp_target_temp_circuit1`.
 *   **DHW_STATUS_ENTITY_ID**: A `binary_sensor` that is 'on' when Domestic Hot Water (DHW) is being heated.
 *   **DEFROST_STATUS_ENTITY_ID**: A `binary_sensor` that is 'on' during a defrost cycle of the heat pump.
@@ -189,7 +189,8 @@ These parameters define which Home Assistant entities the add-on will read from 
 *   **OUTDOOR_TEMP_ENTITY_ID**: The outdoor temperature sensor, preferably compensated or located near the heat pump.
 *   **HEATING_STATUS_ENTITY_ID**: The climate entity for your heating system, used to check if it's in 'heat' or 'auto' mode. Example: `climate.your_heating_entity`.
 *   **OPENWEATHERMAP_TEMP_ENTITY_ID**: An external weather forecast temperature sensor (e.g., from OpenWeatherMap) for proactive adjustments.
-*   **ML_HEATING_CONTROL_ENTITY_ID**: An `input_boolean` to enable/disable ML control. When 'on', ML actively controls heating (Active Mode). When 'off', it runs in Shadow Mode. Example: `input_boolean.ml_heating`.
+*   **ML_HEATING_CONTROL_ENTITY_ID**: An `input_boolean` to enable/disable ML control. When 'on', ML actively controls heating (Active Mode). When 'off', it runs in runtime shadow mode. Example: `input_boolean.ml_heating`.
+*   **SHADOW_MODE**: Static deployment flag for running a parallel shadow instance. When `true`, the application still learns from the live `ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID` and history bucket, but it publishes its own Home Assistant outputs, generated Influx metrics, and unified state file into `_shadow`-suffixed names.
 
 #### PV (Solar) Power Entity IDs
 
@@ -321,9 +322,9 @@ These entities are automatically created in Home Assistant for monitoring the mo
 ### Shadow Mode (Recommended Start)
 
 1. **Configure for Shadow Mode**
-   - The add-on starts in shadow mode by default
-   - It observes your current heating control but doesn't interfere
-   - Perfect for safe initial learning
+   - Set `SHADOW_MODE=true` for a dedicated parallel shadow deployment
+   - The shadow deployment observes the live controller but doesn't interfere with the live target entity
+   - All ML-owned HA outputs and generated Influx metrics are isolated automatically with `_shadow` suffixes
 
 2. **Monitor Learning Progress**
    - Check the dashboard's **Performance** tab

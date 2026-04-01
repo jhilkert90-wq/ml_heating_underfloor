@@ -42,6 +42,7 @@ from .heating_controller import (
     HeatingSystemStateChecker,
 )
 from .sensor_buffer import SensorBuffer
+from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
 
 
 def main():
@@ -233,14 +234,13 @@ def main():
     from .model_wrapper import get_enhanced_model_wrapper
 
     wrapper = get_enhanced_model_wrapper()
-    if not config.SHADOW_MODE:
-        try:
-            wrapper.export_metrics_to_ha()
-            logging.info("✅ Initial metrics exported to HA successfully.")
-        except Exception as e:
-            logging.error(
-                f"❌ FAILED to export initial metrics to HA: {e}", exc_info=True
-            )
+    try:
+        wrapper.export_metrics_to_ha()
+        logging.info("✅ Initial metrics exported to HA successfully.")
+    except Exception as e:
+        logging.error(
+            f"❌ FAILED to export initial metrics to HA: {e}", exc_info=True
+        )
     # Define blocking_entities outside try block so it's available in
     # exception handler
     blocking_entities = [
@@ -363,30 +363,24 @@ def main():
 
                         # Export to Home Assistant
                         # 1. COP
+                        cop_entity_id = get_shadow_output_entity_id(
+                            "sensor.ml_heating_cop_realtime"
+                        )
                         ha_client.set_state(
-                            "sensor.ml_heating_cop_realtime",
+                            cop_entity_id,
                             thermo_metrics["cop_realtime"],
-                            {
-                                "friendly_name": "ML Heating COP (Realtime)",
-                                "unit_of_measurement": "COP",
-                                "icon": "mdi:heat-pump",
-                                "device_class": "power_factor",
-                                "state_class": "measurement"
-                            },
+                            get_sensor_attributes(cop_entity_id),
                             round_digits=2
                         )
 
                         # 2. Thermal Power
+                        thermal_power_entity_id = get_shadow_output_entity_id(
+                            "sensor.ml_heating_thermal_power"
+                        )
                         ha_client.set_state(
-                            "sensor.ml_heating_thermal_power",
+                            thermal_power_entity_id,
                             thermo_metrics["thermal_power_kw"],
-                            {
-                                "friendly_name": "ML Heating Thermal Power",
-                                "unit_of_measurement": "kW",
-                                "icon": "mdi:flash",
-                                "device_class": "power",
-                                "state_class": "measurement"
-                            },
+                            get_sensor_attributes(thermal_power_entity_id),
                             round_digits=3
                         )
 
@@ -422,9 +416,10 @@ def main():
                     )
                 ml_heating_enabled = False
 
-            effective_shadow_mode = (
-                config.SHADOW_MODE or not ml_heating_enabled
+            shadow_mode = resolve_shadow_mode(
+                ml_heating_enabled=ml_heating_enabled
             )
+            effective_shadow_mode = shadow_mode.effective_shadow_mode
 
             if not all_states:
                 logging.warning(
@@ -433,8 +428,11 @@ def main():
                 # Emit NETWORK_ERROR state to Home Assistant
                 try:
                     ha_client = create_ha_client()
-                    attributes_state = get_sensor_attributes(
+                    heating_state_entity_id = get_shadow_output_entity_id(
                         "sensor.ml_heating_state"
+                    )
+                    attributes_state = get_sensor_attributes(
+                        heating_state_entity_id
                     )
                     attributes_state.update(
                         {
@@ -445,7 +443,7 @@ def main():
                         }
                     )
                     ha_client.set_state(
-                        "sensor.ml_heating_state",
+                        heating_state_entity_id,
                         3,
                         attributes_state,
                         round_digits=None,
@@ -782,6 +780,7 @@ def main():
                             prediction_context=enhanced_prediction_context,
                             timestamp=datetime.now().isoformat(),
                             is_blocking_active=is_blocking,
+                            effective_shadow_mode=effective_shadow_mode,
                         )
 
                         logging.debug(
@@ -796,24 +795,9 @@ def main():
                             "Online learning failed: %s", e, exc_info=True
                         )
 
-                    # Shadow mode error tracking
-                    # Track what error ML and heat curve made
-                    shadow_mode_active = (
-                        config.TARGET_OUTLET_TEMP_ENTITY_ID
-                        != config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID
-                    )
-
                     # Shadow mode error tracking removed - handled by
-                    # ThermalEquilibriumModel Only log shadow mode
-                    # comparison when actually in shadow mode (not active)
-                    effective_shadow_mode = (
-                        config.SHADOW_MODE
-                        or not ha_client.get_state(
-                            config.ML_HEATING_CONTROL_ENTITY_ID,
-                            all_states,
-                            is_binary=True,
-                        )
-                    )
+                    # ThermalEquilibriumModel. Use the shared shadow-mode
+                    # decision for comparison logging below.
                 if (
                     effective_shadow_mode
                     and actual_applied_temp != last_final_temp_stored
@@ -928,13 +912,16 @@ def main():
                     "Blocking process active (DHW/Defrost), skipping."
                 )
                 try:
+                    heating_state_entity_id = get_shadow_output_entity_id(
+                        "sensor.ml_heating_state"
+                    )
                     blocking_reasons = [
                         e
                         for e in blocking_entities
                         if ha_client.get_state(e, all_states, is_binary=True)
                     ]
                     attributes_state = get_sensor_attributes(
-                        "sensor.ml_heating_state"
+                        heating_state_entity_id
                     )
                     attributes_state.update(
                         {
@@ -948,7 +935,7 @@ def main():
                         }
                     )
                     ha_client.set_state(
-                        "sensor.ml_heating_state",
+                        heating_state_entity_id,
                         2,
                         attributes_state,
                         round_digits=None,
@@ -1141,7 +1128,10 @@ def main():
             # monitoring. In shadow mode, skip all HA sensor updates to
             # avoid interference.
 
-            if config.SHADOW_MODE:
+            target_output_entity_id = get_shadow_output_entity_id(
+                config.TARGET_OUTLET_TEMP_ENTITY_ID
+            )
+            if effective_shadow_mode and not shadow_mode.shadow_deployment:
                 logging.info(
                     "🔍 SHADOW MODE: ML prediction calculated but not "
                     "applied to heating system"
@@ -1151,182 +1141,189 @@ def main():
                     final_temp,
                 )
             else:
-                # Apply smart rounding: test floor vs ceiling to see which
-                # gets closer to target
-                floor_temp = np.floor(final_temp)
-                ceiling_temp = np.ceil(final_temp)
-
-                if floor_temp == ceiling_temp:
-                    # Already an integer
-                    smart_rounded_temp = int(final_temp)
-                    logging.debug(
-                        f"Smart rounding: {final_temp:.2f}°C is already "
-                        "integer"
-                    )
-                else:
-                    # Test both options using the thermal model to see which
+                if not effective_shadow_mode:
+                    # Apply smart rounding: test floor vs ceiling to see which
                     # gets closer to target
-                    try:
-                        from .model_wrapper import get_enhanced_model_wrapper
+                    floor_temp = np.floor(final_temp)
+                    ceiling_temp = np.ceil(final_temp)
 
-                        wrapper = get_enhanced_model_wrapper()
+                    if floor_temp == ceiling_temp:
+                        # Already an integer
+                        smart_rounded_temp = int(final_temp)
+                        logging.debug(
+                            f"Smart rounding: {final_temp:.2f}°C is already "
+                            "integer"
+                        )
+                    else:
+                        # Test both options using the thermal model to see which
+                        # gets closer to target
+                        try:
+                            from .model_wrapper import get_enhanced_model_wrapper
 
-                        # Create test contexts for floor and ceiling
-                        # temperatures
-                        pv_hist = (
-                            features_dict.get("pv_power_history", [])
-                            if isinstance(features_dict, dict)
-                            else []
-                        )
-                        pv_now_test = (
-                            features_dict.get("pv_now", 0.0)
-                            if isinstance(features_dict, dict)
-                            else 0.0
-                        )
-                        # If actual PV is zero (sun has set), use zero instead of lagged values
-                        if pv_now_test == 0:
-                            pv_val = 0.0
-                        else:
-                            pv_val = (sum(pv_hist) / len(pv_hist)) if (pv_hist and len(pv_hist) > 0) else pv_now_test
-                        test_context_floor = {
-                            "outlet_temp": floor_temp,
-                            "outdoor_temp": outdoor_temp,
-                            "pv_power": pv_val,
-                            "pv_power_history": pv_hist,
-                            "fireplace_on": fireplace_on,
-                            "tv_on": (
-                                features_dict.get("tv_on", 0.0)
+                            wrapper = get_enhanced_model_wrapper()
+
+                            # Create test contexts for floor and ceiling
+                            # temperatures
+                            pv_hist = (
+                                features_dict.get("pv_power_history", [])
+                                if isinstance(features_dict, dict)
+                                else []
+                            )
+                            pv_now_test = (
+                                features_dict.get("pv_now", 0.0)
                                 if isinstance(features_dict, dict)
                                 else 0.0
-                            ),
-                        }
-
-                        test_context_ceiling = test_context_floor.copy()
-                        test_context_ceiling["outlet_temp"] = ceiling_temp
-
-                        # UNIFIED CONTEXT: Use same forecast-based
-                        # conditions as binary search
-                        from .prediction_context import (
-                            prediction_context_manager
-                        )
-
-                        # Set up unified prediction context (same as binary
-                        # search uses)
-
-                        pv_hist_smart = features_dict.get("pv_power_history", [])
-                        pv_now_smart = features_dict.get("pv_now", 0.0)
-                        # If actual PV is zero (sun has set), use zero instead of lagged values
-                        if pv_now_smart == 0:
-                            pv_smart_scalar = 0.0
-                        else:
-                            pv_smart_scalar = (sum(pv_hist_smart) / len(pv_hist_smart)) if (pv_hist_smart and len(pv_hist_smart) > 0) else pv_now_smart
-                        thermal_features = {
-                            "pv_power": pv_smart_scalar,
-                            "pv_power_history": pv_hist_smart,
-                            "fireplace_on": (
-                                float(fireplace_on)
-                                if fireplace_on is not None
-                                else 0.0
-                            ),
-                            "tv_on": features_dict.get("tv_on", 0.0),
-                        }
-
-                        prediction_context_manager.set_features(features_dict)
-                        unified_context = (
-                            prediction_context_manager.create_context(
-                                outdoor_temp=outdoor_temp,
-                                pv_power=thermal_features["pv_power"],
-                                thermal_features=thermal_features,
-                                target_temp=target_indoor_temp,
-                                current_temp=prediction_indoor_temp
                             )
-                        )
-
-                        thermal_params = (
-                            prediction_context_manager
-                            .get_thermal_model_params()
-                        )
-
-                        # Get predictions using UNIFIED forecast-based
-                        # parameters
-                        floor_predicted = wrapper.predict_indoor_temp(
-                            outlet_temp=floor_temp,
-                            outdoor_temp=thermal_params["outdoor_temp"],
-                            current_indoor=prediction_indoor_temp,
-                            pv_power=thermal_params["pv_power"],
-                            fireplace_on=thermal_params["fireplace_on"],
-                            tv_on=thermal_params["tv_on"],
-                        )
-                        ceiling_predicted = wrapper.predict_indoor_temp(
-                            outlet_temp=ceiling_temp,
-                            outdoor_temp=thermal_params["outdoor_temp"],
-                            current_indoor=prediction_indoor_temp,
-                            pv_power=thermal_params["pv_power"],
-                            fireplace_on=thermal_params["fireplace_on"],
-                            tv_on=thermal_params["tv_on"],
-                        )
-
-                        # Handle None returns from predict_indoor_temp
-                        if (
-                            floor_predicted is None
-                            or ceiling_predicted is None
-                        ):
-                            logging.warning(
-                                "Smart rounding: predict_indoor_temp "
-                                "returned None, using fallback"
-                            )
-                            smart_rounded_temp = round(final_temp)
-                            logging.debug(
-                                f"Smart rounding fallback: {final_temp:.2f}°C "
-                                f"→ {smart_rounded_temp}°C"
-                            )
-                        else:
-                            # Calculate errors from target
-                            floor_error = abs(
-                                floor_predicted - target_indoor_temp
-                            )
-                            ceiling_error = abs(
-                                ceiling_predicted - target_indoor_temp
-                            )
-
-                            if floor_error <= ceiling_error:
-                                smart_rounded_temp = int(floor_temp)
-                                chosen = "floor"
+                            # If actual PV is zero (sun has set), use zero instead of lagged values
+                            if pv_now_test == 0:
+                                pv_val = 0.0
                             else:
-                                smart_rounded_temp = int(ceiling_temp)
-                                chosen = "ceiling"
+                                pv_val = (sum(pv_hist) / len(pv_hist)) if (pv_hist and len(pv_hist) > 0) else pv_now_test
+                            test_context_floor = {
+                                "outlet_temp": floor_temp,
+                                "outdoor_temp": outdoor_temp,
+                                "pv_power": pv_val,
+                                "pv_power_history": pv_hist,
+                                "fireplace_on": fireplace_on,
+                                "tv_on": (
+                                    features_dict.get("tv_on", 0.0)
+                                    if isinstance(features_dict, dict)
+                                    else 0.0
+                                ),
+                            }
 
-                            logging.debug(
-                                f"Smart rounding: {final_temp:.2f}°C → "
-                                f"{smart_rounded_temp}°C (chose {chosen}: "
-                                f"floor→{floor_predicted:.2f}°C "
-                                f"[err={floor_error:.3f}], "
-                                f"ceiling→{ceiling_predicted:.2f}°C "
-                                f"[err={ceiling_error:.3f}], "
-                                f"target={target_indoor_temp:.1f}°C)"
+                            test_context_ceiling = test_context_floor.copy()
+                            test_context_ceiling["outlet_temp"] = ceiling_temp
+
+                            # UNIFIED CONTEXT: Use same forecast-based
+                            # conditions as binary search
+                            from .prediction_context import (
+                                prediction_context_manager
                             )
-                    except Exception as e:
-                        # Fallback to regular rounding if smart rounding
-                        # fails
-                        smart_rounded_temp = round(final_temp)
-                        logging.warning(
-                            f"Smart rounding failed ({e}), using regular "
-                            f"rounding: {final_temp:.2f}°C → "
-                            f"{smart_rounded_temp}°C"
-                        )
+
+                            # Set up unified prediction context (same as binary
+                            # search uses)
+
+                            pv_hist_smart = features_dict.get("pv_power_history", [])
+                            pv_now_smart = features_dict.get("pv_now", 0.0)
+                            # If actual PV is zero (sun has set), use zero instead of lagged values
+                            if pv_now_smart == 0:
+                                pv_smart_scalar = 0.0
+                            else:
+                                pv_smart_scalar = (sum(pv_hist_smart) / len(pv_hist_smart)) if (pv_hist_smart and len(pv_hist_smart) > 0) else pv_now_smart
+                            thermal_features = {
+                                "pv_power": pv_smart_scalar,
+                                "pv_power_history": pv_hist_smart,
+                                "fireplace_on": (
+                                    float(fireplace_on)
+                                    if fireplace_on is not None
+                                    else 0.0
+                                ),
+                                "tv_on": features_dict.get("tv_on", 0.0),
+                            }
+
+                            prediction_context_manager.set_features(features_dict)
+                            unified_context = (
+                                prediction_context_manager.create_context(
+                                    outdoor_temp=outdoor_temp,
+                                    pv_power=thermal_features["pv_power"],
+                                    thermal_features=thermal_features,
+                                    target_temp=target_indoor_temp,
+                                    current_temp=prediction_indoor_temp
+                                )
+                            )
+
+                            thermal_params = (
+                                prediction_context_manager
+                                .get_thermal_model_params()
+                            )
+
+                            # Get predictions using UNIFIED forecast-based
+                            # parameters
+                            floor_predicted = wrapper.predict_indoor_temp(
+                                outlet_temp=floor_temp,
+                                outdoor_temp=thermal_params["outdoor_temp"],
+                                current_indoor=prediction_indoor_temp,
+                                pv_power=thermal_params["pv_power"],
+                                fireplace_on=thermal_params["fireplace_on"],
+                                tv_on=thermal_params["tv_on"],
+                            )
+                            ceiling_predicted = wrapper.predict_indoor_temp(
+                                outlet_temp=ceiling_temp,
+                                outdoor_temp=thermal_params["outdoor_temp"],
+                                current_indoor=prediction_indoor_temp,
+                                pv_power=thermal_params["pv_power"],
+                                fireplace_on=thermal_params["fireplace_on"],
+                                tv_on=thermal_params["tv_on"],
+                            )
+
+                            # Handle None returns from predict_indoor_temp
+                            if (
+                                floor_predicted is None
+                                or ceiling_predicted is None
+                            ):
+                                logging.warning(
+                                    "Smart rounding: predict_indoor_temp "
+                                    "returned None, using fallback"
+                                )
+                                smart_rounded_temp = round(final_temp)
+                                logging.debug(
+                                    f"Smart rounding fallback: {final_temp:.2f}°C "
+                                    f"→ {smart_rounded_temp}°C"
+                                )
+                            else:
+                                # Calculate errors from target
+                                floor_error = abs(
+                                    floor_predicted - target_indoor_temp
+                                )
+                                ceiling_error = abs(
+                                    ceiling_predicted - target_indoor_temp
+                                )
+
+                                if floor_error <= ceiling_error:
+                                    smart_rounded_temp = int(floor_temp)
+                                    chosen = "floor"
+                                else:
+                                    smart_rounded_temp = int(ceiling_temp)
+                                    chosen = "ceiling"
+
+                                logging.debug(
+                                    f"Smart rounding: {final_temp:.2f}°C → "
+                                    f"{smart_rounded_temp}°C (chose {chosen}: "
+                                    f"floor→{floor_predicted:.2f}°C "
+                                    f"[err={floor_error:.3f}], "
+                                    f"ceiling→{ceiling_predicted:.2f}°C "
+                                    f"[err={ceiling_error:.3f}], "
+                                    f"target={target_indoor_temp:.1f}°C)"
+                                )
+                        except Exception as e:
+                            # Fallback to regular rounding if smart rounding
+                            # fails
+                            smart_rounded_temp = round(final_temp)
+                            logging.warning(
+                                f"Smart rounding failed ({e}), using regular "
+                                f"rounding: {final_temp:.2f}°C → "
+                                f"{smart_rounded_temp}°C"
+                            )
+                else:
+                    logging.info(
+                        "🔍 SHADOW DEPLOYMENT: Publishing ML recommendation "
+                        "to %s",
+                        target_output_entity_id,
+                    )
 
                 logging.debug("Setting target outlet temp")
                 ha_client.set_state(
-                    config.TARGET_OUTLET_TEMP_ENTITY_ID,
+                    target_output_entity_id,
                     round(final_temp, 1),
-                    get_sensor_attributes(config.TARGET_OUTLET_TEMP_ENTITY_ID),
+                    get_sensor_attributes(target_output_entity_id),
                     round_digits=None,  # No additional rounding needed
                 )
 
             # --- Log Metrics ---
             # Metrics logging now handled by ThermalEquilibriumModel in
             # model_wrapper
-            if not config.SHADOW_MODE:
+            if not effective_shadow_mode:
                 logging.debug("Logging thermal model metrics")
                 # Confidence is logged via simplified_outlet_prediction
                 # metadata
@@ -1354,7 +1351,7 @@ def main():
 
             # --- Update ML State sensor ---
             # Skip ML state sensor updates in shadow mode
-            if not config.SHADOW_MODE:
+            if shadow_mode.should_publish_output_entities:
                 try:
                     # Get thermal model trust metrics from
                     # ThermalEquilibriumModel
@@ -1362,8 +1359,12 @@ def main():
                         "thermal_trust_metrics", {}
                     )
 
-                    attributes_state = get_sensor_attributes(
+                    heating_state_entity_id = get_shadow_output_entity_id(
                         "sensor.ml_heating_state"
+                    )
+
+                    attributes_state = get_sensor_attributes(
+                        heating_state_entity_id
                     )
                     attributes_state.update(
                         {
@@ -1386,7 +1387,7 @@ def main():
                         }
                     )
                     ha_client.set_state(
-                        "sensor.ml_heating_state",
+                        heating_state_entity_id,
                         1 if confidence < config.CONFIDENCE_THRESHOLD else 0,
                         attributes_state,
                         round_digits=None,
@@ -1401,7 +1402,7 @@ def main():
                 )
 
             # --- Shadow Mode Status Logging ---
-            if config.SHADOW_MODE:
+            if shadow_mode.shadow_deployment:
                 logging.debug(
                     "🔍 SHADOW MODE: Enabled via config (SHADOW_MODE=true)"
                 )
@@ -1446,7 +1447,7 @@ def main():
             thermal_params = {}
             # Calculate what the applied temperature will actually predict
             try:
-                if not config.SHADOW_MODE and "wrapper" in locals():
+                if not effective_shadow_mode and "wrapper" in locals():
                     # Get prediction for the applied smart-rounded temperature
                     pv_hist_applied = features_dict.get("pv_power_history", [])
                     pv_now_applied = features_dict.get("pv_now", 0.0)
@@ -1546,8 +1547,11 @@ def main():
             logging.error("Error in main loop: %s", e, exc_info=True)
             try:
                 ha_client = create_ha_client()
-                attributes_state = get_sensor_attributes(
+                heating_state_entity_id = get_shadow_output_entity_id(
                     "sensor.ml_heating_state"
+                )
+                attributes_state = get_sensor_attributes(
+                    heating_state_entity_id
                 )
                 attributes_state.update(
                     {
@@ -1557,7 +1561,7 @@ def main():
                     }
                 )
                 ha_client.set_state(
-                    "sensor.ml_heating_state",
+                    heating_state_entity_id,
                     7,
                     attributes_state,
                     round_digits=None,

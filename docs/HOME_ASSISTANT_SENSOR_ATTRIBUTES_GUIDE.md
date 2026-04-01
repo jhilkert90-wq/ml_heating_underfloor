@@ -21,6 +21,18 @@ This sensor provides a high-level overview of the adaptive learning process, inc
     -   `equilibrium_ratio` (float): A learned parameter representing the ratio of heat distribution.
     -   `heat_loss_coefficient` (float): The learned coefficient representing heat loss.
     -   `outlet_effectiveness` (float): The learned effectiveness of the heat pump outlet in transferring heat to the indoor environment.
+    -   `pv_heat_weight` (float): The current PV/solar heat gain coefficient.
+    -   `fireplace_heat_weight` (float): The flattened fireplace heat contribution used for backward-compatible monitoring.
+    -   `tv_heat_weight` (float): The learned TV/internal gains coefficient.
+    -   `solar_lag_minutes` (float): The learned solar lag/smoothing window.
+    -   `slab_time_constant_hours` (float): The learned slab/Estrich response time constant.
+    -   `heat_source_channels_enabled` (bool): `True` when the decomposed heat-source channel architecture is the active runtime authority.
+    -   `delta_t_floor` (float): Only present when `heat_source_channels_enabled=true`; heat-pump channel delta-T floor.
+    -   `cloud_factor_exponent` (float): Only present when `heat_source_channels_enabled=true`; solar-channel cloud attenuation exponent.
+    -   `solar_decay_tau_hours` (float): Only present when `heat_source_channels_enabled=true`; solar residual-heat decay constant.
+    -   `fp_heat_output_kw` (float): Only present when `heat_source_channels_enabled=true`; live fireplace channel heat output.
+    -   `fp_decay_time_constant` (float): Only present when `heat_source_channels_enabled=true`; fireplace decay constant.
+    -   `room_spread_delay_minutes` (float): Only present when `heat_source_channels_enabled=true`; fireplace room-spread delay.
     -   `cycle_count` (int): The total number of learning cycles completed.
     -   `parameter_updates` (int): The number of times the model's parameters have been updated.
     -   `model_health` (string): A string indicating the overall health of the model (e.g., "OK", "NEEDS_CALIBRATION").
@@ -29,6 +41,8 @@ This sensor provides a high-level overview of the adaptive learning process, inc
     -   `improvement_percentage` (float): The percentage of improvement in model performance over a recent window.
     -   `total_predictions` (int): The total number of predictions made by the model.
     -   `last_updated` (string): The UTC timestamp of the last update.
+
+-   **Update cadence**: This sensor is updated every learning cycle. InfluxDB thermal-parameter exports are intentionally less frequent by default.
 
 ### `sensor.ml_model_mae`
 

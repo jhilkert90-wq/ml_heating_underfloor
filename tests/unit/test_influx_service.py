@@ -19,6 +19,8 @@ def mock_config():
         mock_config.INFLUX_TOKEN = "test-token"
         mock_config.INFLUX_ORG = "test-org"
         mock_config.INFLUX_BUCKET = "test-bucket"
+        mock_config.INFLUX_FEATURES_BUCKET = "test-features"
+        mock_config.SHADOW_MODE = False
         mock_config.HISTORY_STEP_MINUTES = 5
         mock_config.ACTUAL_OUTLET_TEMP_ENTITY_ID = "sensor.outlet_temp"
         mock_config.INDOOR_TEMP_ENTITY_ID = "sensor.indoor_temp"
@@ -110,3 +112,88 @@ def test_singleton_logic(mock_config):
     
     # Clean up final instance
     reset_influx_service()
+
+
+def test_write_thermal_learning_metrics_includes_channel_fields(influx_service):
+    """Channel-aware thermal exports should include the new channel fields."""
+    influx_service.write_api.write = MagicMock()
+
+    mock_model = MagicMock()
+    mock_model.thermal_time_constant = 5.5
+    mock_model.heat_loss_coefficient = 0.22
+    mock_model.outlet_effectiveness = 0.88
+    mock_model.pv_heat_weight = 0.0032
+    mock_model.fireplace_heat_weight = 6.4
+    mock_model.tv_heat_weight = 0.46
+    mock_model.solar_lag_minutes = 75.0
+    mock_model.slab_time_constant_hours = 1.7
+    mock_model.base_outlet_effectiveness = 0.8
+    mock_model.get_adaptive_learning_metrics.return_value = {
+        "learning_confidence": 3.6,
+        "current_learning_rate": 0.01,
+        "parameter_updates": 8,
+        "thermal_time_constant_stability": 0.2,
+        "heat_loss_coefficient_stability": 0.03,
+        "outlet_effectiveness_stability": 0.04,
+        "heat_source_channels_enabled": True,
+        "current_parameters": {
+            "thermal_time_constant": 5.5,
+            "heat_loss_coefficient": 0.22,
+            "outlet_effectiveness": 0.88,
+            "pv_heat_weight": 0.0032,
+            "fireplace_heat_weight": 6.4,
+            "tv_heat_weight": 0.46,
+            "solar_lag_minutes": 75.0,
+            "slab_time_constant_hours": 1.7,
+            "delta_t_floor": 3.4,
+            "cloud_factor_exponent": 1.4,
+            "solar_decay_tau_hours": 0.9,
+            "fp_heat_output_kw": 6.4,
+            "fp_decay_time_constant": 1.1,
+            "room_spread_delay_minutes": 42.0,
+        },
+    }
+
+    influx_service.write_thermal_learning_metrics(mock_model)
+
+    record = influx_service.write_api.write.call_args.kwargs["record"]
+    fields = record._fields
+
+    assert fields["fireplace_heat_weight"] == pytest.approx(6.4)
+    assert fields["heat_source_channels_enabled"] is True
+    assert fields["delta_t_floor"] == pytest.approx(3.4)
+    assert fields["cloud_factor_exponent"] == pytest.approx(1.4)
+    assert fields["solar_decay_tau_hours"] == pytest.approx(0.9)
+    assert fields["fp_heat_output_kw"] == pytest.approx(6.4)
+    assert fields["fp_decay_time_constant"] == pytest.approx(1.1)
+    assert fields["room_spread_delay_minutes"] == pytest.approx(42.0)
+
+
+def test_generated_metrics_use_shadow_features_bucket(influx_service, mock_config):
+    """Configured features bucket should gain the shadow suffix in shadow deployment."""
+    influx_service.write_api.write = MagicMock()
+    mock_config.SHADOW_MODE = True
+    mock_config.INFLUX_FEATURES_BUCKET = "custom_features"
+
+    influx_service.write_feature_importances({"feat1": 0.5})
+
+    assert influx_service.write_api.write.call_args.kwargs["bucket"] == (
+        "custom_features_shadow"
+    )
+
+
+def test_explicit_generated_metrics_bucket_is_shadow_suffixed(
+    influx_service, mock_config
+):
+    """Explicit generated-metrics buckets should also be shadow-isolated."""
+    influx_service.write_api.write = MagicMock()
+    mock_config.SHADOW_MODE = True
+
+    influx_service.write_thermodynamic_metrics(
+        {"cop_realtime": 3.2, "thermal_power_kw": 4.8},
+        bucket="manual_features",
+    )
+
+    assert influx_service.write_api.write.call_args.kwargs["bucket"] == (
+        "manual_features_shadow"
+    )

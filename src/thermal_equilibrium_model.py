@@ -2245,6 +2245,53 @@ class ThermalEquilibriumModel:
             return {k: abs(v) / total for k, v in weights.items()}
         return weights
 
+    def _get_current_export_parameters(self) -> Dict[str, float]:
+        """Build a runtime parameter snapshot for HA and Influx exports."""
+        current_parameters = {
+            "thermal_time_constant": self.thermal_time_constant,
+            "heat_loss_coefficient": self.heat_loss_coefficient,
+            "outlet_effectiveness": self.outlet_effectiveness,
+            "pv_heat_weight": self.pv_heat_weight,
+            "fireplace_heat_weight": self.fireplace_heat_weight,
+            "tv_heat_weight": self.tv_heat_weight,
+            "solar_lag_minutes": self.solar_lag_minutes,
+            "slab_time_constant_hours": self.slab_time_constant_hours,
+        }
+
+        if self.orchestrator is None:
+            return current_parameters
+
+        # Pull channel-only values from the live orchestrator so exports
+        # always reflect the active runtime authority, not stale persisted
+        # state.
+        channel_parameters = self.orchestrator.get_all_parameters()
+        heat_pump_params = channel_parameters.get("heat_pump", {})
+        solar_params = channel_parameters.get("pv", {})
+        fireplace_params = channel_parameters.get("fireplace", {})
+
+        current_parameters.update(
+            {
+                "delta_t_floor": heat_pump_params.get("delta_t_floor", 0.0),
+                "cloud_factor_exponent": solar_params.get(
+                    "cloud_factor_exponent", 1.0
+                ),
+                "solar_decay_tau_hours": solar_params.get(
+                    "solar_decay_tau_hours", 0.0
+                ),
+                "fp_heat_output_kw": fireplace_params.get(
+                    "fp_heat_output_kw", self.fireplace_heat_weight
+                ),
+                "fp_decay_time_constant": fireplace_params.get(
+                    "fp_decay_time_constant", 0.0
+                ),
+                "room_spread_delay_minutes": fireplace_params.get(
+                    "room_spread_delay_minutes", 0.0
+                ),
+            }
+        )
+
+        return current_parameters
+
     def get_adaptive_learning_metrics(self) -> Dict:
         """
         ENHANCED: Get metrics with additional debugging info.
@@ -2304,19 +2351,12 @@ class ThermalEquilibriumModel:
             "error_improvement_trend": error_improvement,
             "learning_confidence": self.learning_confidence,
             "current_learning_rate": self._calculate_adaptive_learning_rate(),
+            "heat_source_channels_enabled": self.orchestrator is not None,
             "thermal_time_constant_stability": thermal_stability,
             "heat_loss_coefficient_stability": heat_loss_coefficient_stability,
             "outlet_effectiveness_stability": outlet_effectiveness_stability,
             "recent_gradients": recent_gradients,
-            "current_parameters": {
-                "thermal_time_constant": self.thermal_time_constant,
-                "heat_loss_coefficient": self.heat_loss_coefficient,
-                "outlet_effectiveness": self.outlet_effectiveness,
-                "pv_heat_weight": self.pv_heat_weight,
-                "tv_heat_weight": self.tv_heat_weight,
-                "solar_lag_minutes": self.solar_lag_minutes,
-                "slab_time_constant_hours": self.slab_time_constant_hours,
-            },
+            "current_parameters": self._get_current_export_parameters(),
             "fixes_applied": "VERSION_WITH_CORRECTED_GRADIENTS",
         }
 

@@ -10,6 +10,11 @@ The `ml_heating_feature` bucket is the central repository for:
 3.  **System State:** Internal states of the thermal equilibrium model and adaptive learning engine.
 4.  **Benchmarking:** Comparisons between ML control and legacy heat curve logic.
 
+When `SHADOW_MODE=true`, all generated measurements documented here are written
+to the shadow deployment bucket automatically by appending `_shadow` to
+`INFLUX_FEATURES_BUCKET`. Example: `ml_heating_features` becomes
+`ml_heating_features_shadow`. Historical reads still use `INFLUX_BUCKET`.
+
 ---
 
 ## Measurement: `ml_prediction_metrics`
@@ -34,11 +39,26 @@ Tracks the accuracy and performance of the core temperature prediction model ove
 
 Logs the internal physics parameters of the `ThermalEquilibriumModel`. These parameters are dynamically adjusted by the adaptive learning engine.
 
+When `ENABLE_HEAT_SOURCE_CHANNELS=true`, this measurement also includes the
+channel-only learnable parameters from the live heat-source orchestrator.
+
 | Field Key | Data Type | Semantic Description | Observability Significance | ML Feature Context |
 | :--- | :--- | :--- | :--- | :--- |
 | `outlet_effectiveness` | Float | Efficiency factor of the heat distribution system (radiators/floor). | Drops may indicate hydraulic balancing issues or air in the system. | Core physics parameter (coefficient) in the heat equation. |
 | `heat_loss_coefficient` | Float | Rate of heat loss from the building envelope (W/K). | Increases indicate open windows, insulation failure, or extreme wind. | Core physics parameter defining building thermal retention. |
 | `thermal_time_constant` | Float | System inertia; time required to reach 63.2% of a temperature change. | Changes suggest alterations in thermal mass (e.g., furniture changes, renovation). | Lag parameter determining system responsiveness. |
+| `pv_heat_weight` | Float | Learned PV/solar heat coefficient. | Sudden drift can indicate bad solar attribution or sensor mismatch. | External-source coupling coefficient. |
+| `fireplace_heat_weight` | Float | Flattened fireplace heat contribution for backward-compatible monitoring. | Makes legacy dashboards comparable to channel mode. | Legacy-compatible external-source coefficient. |
+| `tv_heat_weight` | Float | Learned TV/internal gains coefficient. | Helps detect over-attribution of occupancy/electronics heat. | Minor-source coupling coefficient. |
+| `solar_lag_minutes` | Float | Learned solar lag/smoothing window. | Large shifts may indicate changing solar response of the building. | Solar response timing parameter. |
+| `slab_time_constant_hours` | Float | Learned UFH slab response time constant. | Tracks the slow thermal inertia of underfloor heating. | Heat-pump channel lag parameter. |
+| `heat_source_channels_enabled` | Boolean | True when the channel architecture is the active runtime authority. | Distinguishes legacy learning exports from channel-mode exports. | Export-mode discriminator. |
+| `delta_t_floor` | Float | Heat-pump channel delta-T floor. | Helps explain residual slab heat behavior and pump-off modeling. | Heat-pump channel parameter. |
+| `cloud_factor_exponent` | Float | Solar-channel cloud attenuation exponent. | Captures how strongly cloud cover suppresses solar gain. | Solar-channel parameter. |
+| `solar_decay_tau_hours` | Float | Solar-channel residual-heat decay constant. | Exposes post-sunset thermal carry-over from sun-warmed surfaces. | Solar-channel parameter. |
+| `fp_heat_output_kw` | Float | Live fireplace channel heat output in kW. | Directly shows the runtime fireplace authority in channel mode. | Fireplace-channel parameter. |
+| `fp_decay_time_constant` | Float | Fireplace-channel decay constant in hours. | Highlights how long fireplace heat persists after flame-off. | Fireplace-channel lag parameter. |
+| `room_spread_delay_minutes` | Float | Delay before fireplace heat spreads beyond the living room. | Useful for validating zone-to-whole-house heat propagation. | Fireplace-channel propagation parameter. |
 | `learning_confidence` | Float | Statistical confidence (0.0-1.0) in the current parameter set. | Low confidence triggers "safe mode" or conservative control strategies. | Weighting factor for parameter updates. |
 | `current_learning_rate` | Float | The step size used for parameter updates. | High values indicate the model is aggressively searching for a new optimum. | Hyperparameter for the gradient descent optimizer. |
 | `outlet_effectiveness_correction_pct` | Float | Percentage deviation of the current effectiveness from the baseline. | Large deviations (>20%) suggest the baseline physics model is invalid. | Anomaly detection feature. |

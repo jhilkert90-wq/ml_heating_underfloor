@@ -19,6 +19,36 @@ Shadow mode enables ML heating to learn your building's physics without disrupti
 
 3. **Monitor learning progress** via dashboard or Home Assistant sensors
 
+### Parallel Deployment Identity
+
+When `SHADOW_MODE=true`, ML Heating publishes its own outputs into a separate
+namespace so the live installation stays untouched:
+
+- Home Assistant output entities automatically gain a `_shadow` suffix.
+- `INFLUX_FEATURES_BUCKET` is written as `<bucket>_shadow`.
+- `UNIFIED_STATE_FILE` is isolated automatically as `..._shadow.json`.
+
+Examples:
+
+- `sensor.ml_vorlauftemperatur` -> `sensor.ml_vorlauftemperatur_shadow`
+- `sensor.ml_model_mae` -> `sensor.ml_model_mae_shadow`
+- `ml_heating_features` -> `ml_heating_features_shadow`
+
+The system still learns from the live heat-curve output via
+`ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID` and the normal historical `INFLUX_BUCKET`.
+
+## Deployment Checklist
+
+Use this checklist when bringing up a parallel shadow deployment:
+
+1. Set `SHADOW_MODE=true`.
+2. Keep `ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID` pointed at the live controller output so learning still follows the real heat curve. If your live controller writes `sensor.ml_vorlauftemperatur`, then keep `ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID=sensor.ml_vorlauftemperatur`.
+3. Restart the service and confirm the app starts without falling back to legacy errors.
+4. Verify Home Assistant creates suffixed output entities such as `sensor.ml_vorlauftemperatur_shadow`, `sensor.ml_heating_learning_shadow`, and `sensor.ml_model_mae_shadow`. With `TARGET_OUTLET_TEMP_ENTITY_ID=sensor.ml_vorlauftemperatur`, the shadow deployment publishes to `sensor.ml_vorlauftemperatur_shadow`.
+5. Verify generated ML measurements arrive in `<INFLUX_FEATURES_BUCKET>_shadow`, for example `ml_heating_features_shadow`.
+6. Verify the isolated unified state file exists, for example `unified_thermal_state_shadow.json`.
+7. Leave `ML_HEATING_CONTROL_ENTITY_ID=on` if you want the dedicated shadow deployment to keep publishing its `_shadow` outputs. Turning that helper off switches to runtime shadow behavior, but it does not create a new namespace by itself.
+
 ## What Shadow Mode Does
 
 ### For Your Heating System
@@ -86,11 +116,11 @@ Access the Streamlit dashboard to monitor:
 Monitor key metrics via Home Assistant:
 
 ```yaml
-# Available sensors
-sensor.ml_heating_learning_confidence    # Current learning confidence (0-10)
-sensor.ml_heating_efficiency_advantage   # ML vs heat curve efficiency (°C)
-sensor.ml_heating_energy_savings_pct     # Potential energy savings (%)
-sensor.ml_heating_learning_cycles        # Number of learning cycles completed
+# Shadow deployment examples
+sensor.ml_heating_learning_shadow        # Learning state and thermal params
+sensor.ml_model_mae_shadow               # MAE exported by the shadow deployment
+sensor.ml_model_rmse_shadow              # RMSE exported by the shadow deployment
+sensor.ml_vorlauftemperatur_shadow       # ML target outlet recommendation
 ```
 
 ### Log Monitoring
@@ -213,8 +243,11 @@ docker exec ml_heating cat /app/config.yaml
 # Check learning data
 docker exec ml_heating ls -la /data/models/
 
-# View thermal state
-docker exec ml_heating cat /data/models/thermal_state.json
+# View unified thermal state
+docker exec ml_heating cat /data/unified_thermal_state.json
+
+# Shadow deployment state file
+docker exec ml_heating cat /data/unified_thermal_state_shadow.json
 ```
 
 ## Advanced Features

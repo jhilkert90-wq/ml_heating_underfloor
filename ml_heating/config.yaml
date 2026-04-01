@@ -41,7 +41,8 @@ options:
   power_consumption_entity: "sensor.power_wp"
   # Specific heat capacity of the fluid (kJ/kg·K)
   specific_heat_capacity: 4.186
-  # The entity this script will write its calculated target outlet temperature to
+  # The entity this script will write its calculated target outlet temperature to.
+  # When shadow_mode=true, ML Heating publishes to this entity with _shadow appended.
   target_outlet_temp_entity: "sensor.ml_vorlauftemperatur"
   # The target outlet temperature that was actually set (by model or heat curve)
   actual_target_outlet_temp_entity: "sensor.hp_target_temp_circuit1"
@@ -105,7 +106,8 @@ options:
   influxdb_org: "erbehome"
   # The InfluxDB bucket where your Home Assistant data is stored
   influxdb_bucket: "home_assistant/autogen"
-  # InfluxDB bucket for exporting feature importances and ML metrics
+  # InfluxDB bucket for exporting generated ML metrics.
+  # When shadow_mode=true, ML Heating writes to this bucket with _shadow appended.
   influx_features_bucket: "ml_heating_features"
   
   # Model Management - Backup and maintenance settings
@@ -175,7 +177,9 @@ options:
   prediction_horizon_steps: 48
   
   # Shadow Mode Configuration - Testing without affecting heating control
-  # When enabled, ML runs in observation mode without affecting heating
+  # When enabled, ML runs as a dedicated shadow deployment without affecting
+  # the live target entity. HA outputs, generated Influx metrics, and the
+  # default unified state file are isolated automatically with _shadow suffixes.
   shadow_mode: false
   # Home Assistant input_boolean to enable/disable ML control dynamically
   # When ON: ML actively controls heating, When OFF: Shadow mode (ML observes only)

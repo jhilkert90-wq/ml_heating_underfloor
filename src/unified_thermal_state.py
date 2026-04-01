@@ -16,17 +16,17 @@ import json
 import os
 import logging
 from copy import deepcopy
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 import numpy as np
 
 # Import centralized thermal configuration
 try:
     from .thermal_config import ThermalParameterConfig
-    from .config import UNIFIED_STATE_FILE
+    from .shadow_mode import get_effective_unified_state_file
 except ImportError:
     from thermal_config import ThermalParameterConfig
-    from config import UNIFIED_STATE_FILE
+    from shadow_mode import get_effective_unified_state_file
 
 
 class ThermalStateManager:
@@ -36,12 +36,12 @@ class ThermalStateManager:
     with single thermal_state.json containing everything.
     """
 
-    def __init__(self, state_file: str = UNIFIED_STATE_FILE):
-        self.state_file = state_file
+    def __init__(self, state_file: Optional[str] = None):
+        self.state_file = state_file or get_effective_unified_state_file()
         self.state = self._get_default_state()
 
         # Load existing state if available
-        if os.path.exists(state_file):
+        if os.path.exists(self.state_file):
             self.load_state()
         else:
             logging.info("🆕 Creating new unified thermal state file")

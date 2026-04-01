@@ -117,6 +117,10 @@ def write_shadow_mode_benchmarks(self, benchmark_data):
         .time(benchmark_data['timestamp'])
 ```
 
+    When `SHADOW_MODE=true`, the benchmark measurement above is written to the
+    shadow features bucket automatically, for example
+    `ml_heating_features_shadow`.
+
 ## Startup Workflows
 
 ### Fresh Start (No thermal_state.json)
@@ -145,6 +149,27 @@ SHADOW_MODE: false  # Use learned parameters in active mode
 ```
 
 **No additional configuration required!**
+
+## Deployment Identity Separation
+
+`SHADOW_MODE=true` now defines a dedicated shadow deployment identity in
+addition to the runtime shadow-learning behavior:
+
+- Home Assistant output entities are published with `_shadow` appended.
+- Generated ML metrics are written to `${INFLUX_FEATURES_BUCKET}_shadow`.
+- The unified thermal state file is isolated automatically with an added
+    `_shadow` suffix before the file extension.
+
+Examples:
+
+- `sensor.ml_vorlauftemperatur` -> `sensor.ml_vorlauftemperatur_shadow`
+- `sensor.ml_model_mae` -> `sensor.ml_model_mae_shadow`
+- `/data/unified_thermal_state.json` -> `/data/unified_thermal_state_shadow.json`
+
+This is intentionally separate from the dynamic runtime shadow behavior caused
+by `ML_HEATING_CONTROL_ENTITY_ID=off`. Turning the control boolean off suppresses
+live control, but it does not create the `_shadow` entity, bucket, or file
+namespace by itself.
 
 ## Learning Confidence
 

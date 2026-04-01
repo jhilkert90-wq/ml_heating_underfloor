@@ -214,6 +214,23 @@ def train_thermal_equilibrium_model():
     thermal_model.solar_lag_minutes = solar_lag
     thermal_model.sync_heat_source_channels_from_model_state()
 
+    if thermal_model.orchestrator is not None:
+        fireplace_channel = thermal_model.orchestrator.channels.get(
+            'fireplace'
+        )
+        if fireplace_channel is not None:
+            logging.info(
+                "🔥 Channel sync seeded fp_heat_output_kw from calibrated "
+                "fireplace_heat_weight: %.2f",
+                fireplace_channel.fp_heat_output_kw,
+            )
+        logging.info(
+            "ℹ️ Channel-only parameters not batch-calibrated by "
+            "physics_calibration: delta_t_floor, cloud_factor_exponent, "
+            "solar_decay_tau_hours, fp_decay_time_constant, "
+            "room_spread_delay_minutes"
+        )
+
     # Set reasonable learning confidence based on optimization success
     thermal_model.learning_confidence = 3.0  # High confidence from scipy
 
