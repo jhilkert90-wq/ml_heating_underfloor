@@ -84,10 +84,18 @@ class TestThermalStateManager:
             "fireplace": {
                 "parameters": {"fp_heat_output_kw": 7.5},
                 "history_count": 12,
+                "history": [
+                    {
+                        "error": 0.5,
+                        "context": {"fireplace_on": 1},
+                        "parameters": {"fp_heat_output_kw": 7.0},
+                    }
+                ],
             },
             "pv": {
                 "parameters": {"pv_heat_weight": 0.0035},
                 "history_count": 9,
+                "history": [],
             },
         }
 

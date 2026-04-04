@@ -419,3 +419,7 @@ INDOOR_WARMING_DAMPING_FACTOR: float = float(os.getenv("INDOOR_WARMING_DAMPING_F
 ENABLE_HEAT_SOURCE_CHANNELS: bool = (
     os.getenv("ENABLE_HEAT_SOURCE_CHANNELS", "true").lower() == "true"
 )
+ENABLE_MIXED_SOURCE_ATTRIBUTION: bool = (
+    os.getenv("ENABLE_MIXED_SOURCE_ATTRIBUTION", "false").lower()
+    == "true"
+)

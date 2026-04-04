@@ -469,3 +469,235 @@ class TestEnhancedModelWrapper:
         mock_learner.observe_fireplace_state.assert_called_once()
         _, kwargs = mock_learner.observe_fireplace_state.call_args
         assert kwargs['living_room_temp'] == 20.0
+
+
+# ---------------------------------------------------------------------------
+# Cloud discount on PV scalar in _extract_thermal_features
+# ---------------------------------------------------------------------------
+
+class TestPvScalarCloudDiscount:
+    """_extract_thermal_features should apply cloud discount to pv_scalar
+    so that the binary search sees a realistic PV contribution, not a raw
+    sensor spike during a brief sun break."""
+
+    @pytest.fixture
+    def wrapper(self):
+        w = model_wrapper.EnhancedModelWrapper.__new__(
+            model_wrapper.EnhancedModelWrapper
+        )
+        w._avg_cloud_cover = 50.0
+        w._cloud_cover_forecast = [50.0] * 6
+        return w
+
+    def test_cloud_discount_reduces_pv_scalar(self, wrapper, monkeypatch):
+        """With 60% cloud cover, pv_scalar should be substantially less
+        than the raw 45-min average."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
+        monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
+                            raising=False)
+        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
+        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        features = {
+            "pv_power_history": [4000] * 18,  # 3h of 4kW
+            "pv_now": 4000,
+            "cloud_cover_1h": 60.0,
+            "avg_cloud_cover": 60.0,
+        }
+        result = wrapper._extract_thermal_features(features)
+        # Without cloud discount: pv_scalar = 4000
+        # With 60% cloud: factor ~0.4, so scalar ~1600
+        assert result["pv_power"] < 4000 * 0.8, (
+            f"Expected cloud-discounted PV, got {result['pv_power']}"
+        )
+        assert result["pv_power"] > 0, "PV should not be zero"
+
+    def test_cloud_discount_clear_sky(self, wrapper, monkeypatch):
+        """With 0% cloud cover, pv_scalar should be unchanged (factor=1.0)."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
+        monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
+                            raising=False)
+        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
+        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        features = {
+            "pv_power_history": [3000] * 18,
+            "pv_now": 3000,
+            "cloud_cover_1h": 0.0,
+            "avg_cloud_cover": 0.0,
+        }
+        result = wrapper._extract_thermal_features(features)
+        assert result["pv_power"] == pytest.approx(3000.0, rel=0.01), (
+            f"Clear sky should not discount PV, got {result['pv_power']}"
+        )
+
+    def test_cloud_discount_disabled(self, wrapper, monkeypatch):
+        """When CLOUD_COVER_CORRECTION_ENABLED=False, pv_scalar should be raw."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
+        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        features = {
+            "pv_power_history": [4000] * 18,
+            "pv_now": 4000,
+            "cloud_cover_1h": 80.0,
+            "avg_cloud_cover": 80.0,
+        }
+        result = wrapper._extract_thermal_features(features)
+        assert result["pv_power"] == pytest.approx(4000.0, rel=0.01), (
+            f"Cloud discount disabled, pv should be raw, got {result['pv_power']}"
+        )
+
+    def test_cloud_discount_uses_1h_forecast(self, wrapper, monkeypatch):
+        """Should prefer cloud_cover_1h over avg_cloud_cover."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
+        monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
+                            raising=False)
+        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
+        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        features = {
+            "pv_power_history": [2000] * 18,
+            "pv_now": 2000,
+            "cloud_cover_1h": 0.0,      # Clear 1h forecast
+            "avg_cloud_cover": 90.0,    # Heavy avg
+        }
+        result = wrapper._extract_thermal_features(features)
+        # Should use cloud_cover_1h=0 → factor=1.0 → pv=2000
+        assert result["pv_power"] == pytest.approx(2000.0, rel=0.01), (
+            f"Should use 1h forecast (clear), got {result['pv_power']}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# HP-off binary search: simulated HP-on delta_t
+# ---------------------------------------------------------------------------
+
+class TestHpOffSimulatedDeltaT:
+    """When HP is off (delta_t < 1.0), the binary search should use the
+    learned delta_t_floor (~2.55) so the trajectory simulates pump-on and
+    candidates can differentiate.  Without this fix, all candidates
+    produce identical predictions → 'unreachable' → outlet spikes to 35°C."""
+
+    @pytest.fixture
+    def wrapper(self, clean_state):
+        """Wrapper with _current_features simulating HP-off."""
+        w = get_enhanced_model_wrapper()
+        w.cycle_count = 10
+        w._avg_cloud_cover = 50.0
+        w._cloud_cover_forecast = [50.0] * 6
+        return w
+
+    def test_hp_off_uses_simulated_delta_t(self, wrapper, monkeypatch):
+        """With delta_t < 1.0, binary search should pass learned
+        delta_t_floor (>= 1.0) so slab pump_on gate opens."""
+        # Simulate HP-off features
+        wrapper._current_features = {
+            "delta_t": 0.2,
+            "inlet_temp": 23.5,
+            "pv_now": 0.0,
+        }
+
+        # Track what delta_t_floor is passed to predict_thermal_trajectory
+        captured_dtf = []
+        original_predict = wrapper.thermal_model.predict_thermal_trajectory
+
+        def spy_predict(**kwargs):
+            captured_dtf.append(kwargs.get("delta_t_floor"))
+            return original_predict(**kwargs)
+
+        monkeypatch.setattr(
+            wrapper.thermal_model, "predict_thermal_trajectory", spy_predict
+        )
+
+        # The learned delta_t_floor should be >= 1.0
+        resolved = wrapper.thermal_model._resolve_delta_t_floor(0.2)
+        assert resolved >= 1.0, (
+            f"Learned delta_t_floor should be >= 1.0, got {resolved}"
+        )
+
+        # Run binary search
+        result = wrapper._calculate_required_outlet_temp(
+            current_indoor=22.8,
+            target_indoor=22.6,
+            outdoor_temp=5.0,
+            thermal_features={
+                "pv_power": 0.0,
+                "fireplace_on": 0.0,
+                "tv_on": 0.0,
+                "thermal_power": 0.0,
+                "indoor_temp_gradient": 0.0,
+                "temp_diff_indoor_outdoor": 17.8,
+                "outlet_indoor_diff": 0.7,
+            },
+        )
+
+        # All trajectory calls should have used the simulated delta_t
+        assert len(captured_dtf) > 0, "Binary search should call trajectory"
+        for dtf in captured_dtf:
+            assert dtf >= 1.0, (
+                f"Expected simulated delta_t >= 1.0, got {dtf}"
+            )
+
+        # Result should NOT be max outlet (35°C)
+        assert result < config.CLAMP_MAX_ABS, (
+            f"HP-off should not spike to max outlet {config.CLAMP_MAX_ABS}, "
+            f"got {result}"
+        )
+
+    def test_hp_on_uses_real_delta_t(self, wrapper, monkeypatch):
+        """With delta_t >= 1.0, binary search should use the real value."""
+        wrapper._current_features = {
+            "delta_t": 3.5,
+            "inlet_temp": 30.0,
+            "pv_now": 0.0,
+        }
+
+        captured_dtf = []
+        original_predict = wrapper.thermal_model.predict_thermal_trajectory
+
+        def spy_predict(**kwargs):
+            captured_dtf.append(kwargs.get("delta_t_floor"))
+            return original_predict(**kwargs)
+
+        monkeypatch.setattr(
+            wrapper.thermal_model, "predict_thermal_trajectory", spy_predict
+        )
+
+        wrapper._calculate_required_outlet_temp(
+            current_indoor=22.0,
+            target_indoor=22.6,
+            outdoor_temp=5.0,
+            thermal_features={
+                "pv_power": 0.0,
+                "fireplace_on": 0.0,
+                "tv_on": 0.0,
+                "thermal_power": 2.0,
+                "indoor_temp_gradient": 0.0,
+                "temp_diff_indoor_outdoor": 17.0,
+                "outlet_indoor_diff": 5.0,
+            },
+        )
+
+        assert len(captured_dtf) > 0, "Binary search should call trajectory"
+        for dtf in captured_dtf:
+            assert dtf == pytest.approx(3.5, abs=0.01), (
+                f"HP-on should use real delta_t=3.5, got {dtf}"
+            )
+
+    def test_slab_passive_delta_in_features(self, wrapper):
+        """slab_passive_delta should appear in extracted thermal features."""
+        w = model_wrapper.EnhancedModelWrapper.__new__(
+            model_wrapper.EnhancedModelWrapper
+        )
+        w._avg_cloud_cover = 50.0
+        w._cloud_cover_forecast = [50.0] * 6
+        features = {
+            "pv_power_history": [0] * 5,
+            "pv_now": 0.0,
+            "inlet_temp": 24.0,
+            "indoor_temp_lag_30m": 22.5,
+        }
+        result = w._extract_thermal_features(features)
+        assert "slab_passive_delta" in result, (
+            "slab_passive_delta should be in thermal features"
+        )
+        assert result["slab_passive_delta"] == pytest.approx(1.5, abs=0.01), (
+            f"Expected 24.0 - 22.5 = 1.5, got {result['slab_passive_delta']}"
+        )

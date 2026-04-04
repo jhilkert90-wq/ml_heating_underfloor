@@ -46,6 +46,8 @@ def _make_prediction(error, outdoor_temp=5.0, pv_power=0):
 def model():
     """Create model with realistic parameters and enough history."""
     m = ThermalEquilibriumModel()
+    # These tests target the legacy global recent-window learner.
+    m.orchestrator = None
     m.thermal_time_constant = 3.8
     m.heat_loss_coefficient = 0.146
     m.outlet_effectiveness = 0.936
@@ -61,12 +63,12 @@ def model():
 class TestDeadZone:
     def test_dead_zone_constant_exists(self):
         assert hasattr(PhysicsConstants, "LEARNING_DEAD_ZONE")
-        assert PhysicsConstants.LEARNING_DEAD_ZONE == 0.02
+        assert PhysicsConstants.LEARNING_DEAD_ZONE == 0.01
 
     def test_dead_zone_blocks_learning_below_threshold(self, model):
-        """Errors averaging 0.01°C (< 0.02) must NOT change parameters."""
+        """Errors averaging 0.005°C (< 0.01) must NOT change parameters."""
         window = model.recent_errors_window
-        model.prediction_history = [_make_prediction(0.01)] * window
+        model.prediction_history = [_make_prediction(0.005)] * window
 
         old_hlc = model.heat_loss_coefficient
         old_oe = model.outlet_effectiveness
@@ -91,10 +93,10 @@ class TestDeadZone:
         assert model.heat_loss_coefficient != old_hlc
 
     def test_dead_zone_boundary(self, model):
-        """Errors exactly at 0.02 should be blocked (< not <=)."""
+        """Errors exactly at 0.01 should be blocked (< not <=)."""
         window = model.recent_errors_window
-        # Average will be exactly 0.019 – just inside dead zone
-        model.prediction_history = [_make_prediction(0.019)] * window
+        # Average will be exactly 0.009 – just inside dead zone
+        model.prediction_history = [_make_prediction(0.009)] * window
 
         old_hlc = model.heat_loss_coefficient
         model._adapt_parameters_from_recent_errors()

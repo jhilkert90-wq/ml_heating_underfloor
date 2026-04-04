@@ -1,0 +1,112 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "format": "unified_thermal_state",
+    "created": "2026-04-02T23:39:14.636153",
+    "last_updated": "2026-04-02T23:39:14.642152"
+  },
+  "baseline_parameters": {
+    "thermal_time_constant": 4.0,
+    "equilibrium_ratio": 0.17,
+    "total_conductance": 0.8,
+    "heat_loss_coefficient": 0.15,
+    "outlet_effectiveness": 0.93,
+    "solar_lag_minutes": 45.0,
+    "slab_time_constant_hours": 1.0,
+    "pv_heat_weight": 0.0005,
+    "fireplace_heat_weight": 0.02,
+    "tv_heat_weight": 0.35,
+    "source": "config_defaults",
+    "calibration_date": null,
+    "calibration_cycles": 0
+  },
+  "learning_state": {
+    "cycle_count": 4,
+    "learning_confidence": 3.0,
+    "learning_enabled": true,
+    "parameter_adjustments": {
+      "equilibrium_ratio_delta": 0.0,
+      "total_conductance_delta": 0.0,
+      "heat_loss_coefficient_delta": 0.0,
+      "outlet_effectiveness_delta": 0.0,
+      "thermal_time_constant_delta": 0.0,
+      "pv_heat_weight_delta": 0.0,
+      "tv_heat_weight_delta": 0.0,
+      "solar_lag_minutes_delta": 0.0,
+      "slab_time_constant_delta": 0.0
+    },
+    "parameter_bounds": {
+      "equilibrium_ratio": [
+        0.1,
+        0.9
+      ],
+      "total_conductance": [
+        0.1,
+        0.8
+      ]
+    },
+    "heat_source_channels": {},
+    "prediction_history": [
+      {
+        "timestamp": "2026-04-02T23:39:14.638161",
+        "predicted": 21.0,
+        "actual": 21.2,
+        "error": 0.1999999999999993,
+        "abs_error": 0.1999999999999993,
+        "squared_error": 0.039999999999999716,
+        "context": {
+          "outlet_temp": 40.0,
+          "outdoor_temp": 5.0,
+          "current_indoor": 20.0,
+          "fireplace_on": 0,
+          "pv_power": 0.0,
+          "tv_on": 0
+        }
+      },
+      {
+        "timestamp": "2026-04-02T23:39:14.642152",
+        "predicted": 21.0,
+        "actual": 21.2,
+        "error": 0.1999999999999993,
+        "context": {
+          "outlet_temp": 40.0,
+          "outdoor_temp": 5.0,
+          "current_indoor": 20.0,
+          "fireplace_on": 0,
+          "pv_power": 0.0,
+          "tv_on": 0
+        }
+      }
+    ],
+    "parameter_history": []
+  },
+  "prediction_metrics": {
+    "total_predictions": 2,
+    "accuracy_stats": {
+      "mae_1h": 0.0,
+      "mae_6h": 0.0,
+      "mae_24h": 0.0,
+      "mae_all_time": 0.0,
+      "rmse_all_time": 0.0
+    },
+    "recent_performance": {
+      "last_10_mae": 0.0,
+      "last_10_max_error": 0.0
+    }
+  },
+  "operational_state": {
+    "last_indoor_temp": null,
+    "last_outdoor_temp": null,
+    "last_outlet_temp": null,
+    "last_prediction": null,
+    "last_run_time": null,
+    "is_calibrating": false,
+    "last_run_features": null,
+    "last_final_temp": null,
+    "last_avg_other_rooms_temp": null,
+    "last_fireplace_on": false,
+    "last_is_blocking": false,
+    "last_blocking_reasons": [],
+    "last_blocking_end_time": null
+  }
+}

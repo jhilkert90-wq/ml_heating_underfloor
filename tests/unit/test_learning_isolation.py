@@ -24,6 +24,7 @@ def make_context(fireplace_on=0, pv_power=0):
 @pytest.fixture
 def model_with_guards(monkeypatch):
     monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", True)
+    monkeypatch.setattr(config, "ENABLE_MIXED_SOURCE_ATTRIBUTION", False)
     m = ThermalEquilibriumModel()
     m.heat_loss_coefficient = 0.2
     m.outlet_effectiveness = 0.7

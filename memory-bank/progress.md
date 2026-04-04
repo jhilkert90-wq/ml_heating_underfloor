@@ -1,6 +1,33 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - March 31, 2026
+## 🎯 CURRENT STATUS - April 4, 2026
+
+### ✅ **SLAB MODEL FIXES & PV OSCILLATION DAMPING**
+
+**System Status**: **OPERATIONAL WITH 6 TARGETED FIXES** — Production log analysis drove six precision fixes addressing HP-off outlet spike, PV oscillation, slab gate, and diagnostic improvements.
+
+**Test Suite**: **397/402 passing** (5 pre-existing failures unrelated to changes)
+
+**Implementation Status**:
+- ✅ HP-off binary search: simulated HP-on delta_t prevents 35°C outlet spike
+- ✅ Cloud discount on PV scalar: 1h forecast dampens sensor spikes in binary search
+- ✅ PV routing: `max(current, smoothed)` captures solar thermal lag at sunset
+- ✅ PV smoothing: window shortened from 3h to solar_decay_tau (~30min)
+- ✅ Slab pump gate: `measured_delta_t >= 1.0` required for pump-ON branch
+- ✅ Slab passive delta sensor: `inlet_temp - indoor_temp` exported to HA
+- ✅ 3 env-dependent test fixes (ENABLE_MIXED_SOURCE_ATTRIBUTION monkeypatch)
+- ✅ 10+ new tests added, 9 existing tests updated for compatibility
+- ✅ Shadow mode + active mode verified (26/26 tests passing)
+
+**Files Modified**:
+- `src/model_wrapper.py` — HP-off fix, cloud discount, slab_passive_delta sensor
+- `src/heat_source_channels.py` — PV routing max(current, smoothed)
+- `src/temperature_control.py` — PV smoothing window
+- `src/thermal_equilibrium_model.py` — Slab pump gate, _resolve_delta_t_floor
+
+---
+
+## Previous Status - March 31, 2026
 
 ### ✅ **HEAT SOURCE CHANNEL ARCHITECTURE (PHASE 2-4) IMPLEMENTED**
 

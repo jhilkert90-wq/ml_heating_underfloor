@@ -1,5 +1,43 @@
 # Active Context - Current Work & Decision State
 
+### 🔧 **SLAB MODEL FIXES & PV OSCILLATION DAMPING — April 4, 2026**
+
+**CRITICAL FIX SESSION**: Six targeted fixes addressing real production issues observed in logs:
+
+#### ✅ **HP-OFF OUTLET SPIKE FIX (35°C → sensible setpoint)**
+- **Problem**: When HP turns off (delta_t ≈ 0), binary search simulates all candidates in slab passive mode → all produce identical predictions → "unreachable" → outlet spikes to 35°C (meaningless since HP is off)
+- **Fix**: When `delta_t < 1.0`, substitute the learned HP `delta_t_floor` (~2.55°C) so binary search simulates "HP running at this outlet". Candidates now differentiate → binary search converges → NIBE gets correct setpoint to restart heating
+- **Files**: `src/model_wrapper.py` (`_calculate_required_outlet_temp()` — pre-check, loop, and trajectory verification all use `_search_delta_t_floor`)
+
+#### ✅ **CLOUD DISCOUNT ON PV SCALAR**
+- **Problem**: Raw PV sensor spikes during brief sun breaks (4kW) caused binary search to declare "target unreachable" → outlet snapped to 18°C → bounced back next cycle → 6am–11am oscillation (21.8–24.9°C)
+- **Fix**: Apply 1h cloud forecast discount to PV scalar in `_extract_thermal_features()` before binary search
+- **Files**: `src/model_wrapper.py`
+
+#### ✅ **PV ROUTING: max(current, smoothed)**
+- **Problem**: At sunset, `pv_power_current=200W` < 500W threshold but `pv_smoothed=1305W` from solar thermal lag
+- **Fix**: `_is_pv_active()` uses `max(pv_current, pv_smoothed)` against PV_LEARNING_THRESHOLD
+- **Files**: `src/heat_source_channels.py`
+
+#### ✅ **PV SMOOTHING WINDOW → solar_decay_tau**
+- **Problem**: 3h window (18 readings) included stale morning PV values in afternoon
+- **Fix**: Shortened to `solar_decay_tau` (~30min, 3 readings) in `temperature_control.py`
+- **Files**: `src/temperature_control.py`
+
+#### ✅ **SLAB PUMP-ON GATE**
+- **Problem**: Slab entered pump-ON branch when HP was off (outlet 25.2 > inlet 23.3 but no actual flow)
+- **Fix**: Dual condition `pump_on = (outlet > t_slab AND measured_delta_t >= 1.0)`
+- **Files**: `src/thermal_equilibrium_model.py`
+
+#### ✅ **SLAB PASSIVE DELTA SENSOR**
+- New diagnostic: `slab_passive_delta = inlet_temp - indoor_temp` exported to HA
+- Positive = slab warmer than room (passive heating available)
+- **Files**: `src/model_wrapper.py` (features + HA metrics)
+
+**Test suite**: 397 passed, 5 pre-existing failures (shadow mode env, energy conservation cloud cover, sensor attribute, thermodynamic sensor)
+
+---
+
 ### 🏗️ **HEAT SOURCE CHANNEL ARCHITECTURE (PHASE 2-4) IMPLEMENTED - March 31, 2026**
 
 **CRITICAL MILESTONE**: Decomposed heat-source learning architecture fully implemented. Each heat source (heat pump, solar/PV, fireplace, TV) now has its own independent learning channel with isolated parameters and prediction history, preventing cross-contamination of learned parameters.

@@ -289,23 +289,56 @@ class OnlineLearning:
         """Perform the actual online learning"""
         try:
             wrapper = get_enhanced_model_wrapper()
+            previous_indoor = current_indoor - actual_indoor_change
+            thermal_power_kw = learning_features.get('thermal_power_kw')
+            delta_t = learning_features.get('delta_t', 0.0)
+            heat_pump_active = bool(
+                (
+                    thermal_power_kw is not None
+                    and thermal_power_kw > 0.05
+                )
+                or delta_t > 0.5
+            )
             
             # Shadow mode vs Active mode learning context
+            pv_now = learning_features.get('pv_now', 0.0)
+            pv_history = learning_features.get('pv_power_history')
+            if pv_now == 0:
+                pv_smoothed = 0.0
+            else:
+                # Use a window matching solar_decay_tau (~30 min ≈ 3 steps
+                # at 10-min resolution) so the smoothed value reflects the
+                # actual thermal lag of solar heating, NOT a full 3 h average
+                # that dilutes recent PV spikes.
+                _decay_tau_h = getattr(config, "SOLAR_DECAY_TAU_HOURS", 0.5)
+                _step_min = getattr(config, "HISTORY_STEP_MINUTES", 10)
+                _decay_steps = max(1, round(_decay_tau_h * 60 / _step_min))
+                if pv_history and len(pv_history) > 0:
+                    _window = pv_history[-_decay_steps:]
+                    pv_smoothed = sum(_window) / len(_window)
+                else:
+                    pv_smoothed = pv_now
             if config.SHADOW_MODE:
                 # Shadow mode: Learn pure physics (heat curve outlet → actual indoor)
                 prediction_context = {
                     'outlet_temp': actual_applied_temp,  # Heat curve's actual setting
                     'outdoor_temp': learning_features.get('outdoor_temp', 10.0),
-                    'pv_power': learning_features.get('pv_now', 0.0),
+                    'pv_power': pv_smoothed,
+                    'pv_power_current': pv_now,
+                    'pv_power_history': pv_history,
                     'fireplace_on': learning_features.get('fireplace_on', 0.0),
                     'tv_on': learning_features.get('tv_on', 0.0),
+                    'current_indoor': previous_indoor,
+                    'heat_pump_active': heat_pump_active,
+                    'thermal_power': thermal_power_kw,
+                    'inlet_temp': learning_features.get('inlet_temp'),
+                    'delta_t': delta_t,
+                    'living_room_temp': learning_features.get('living_room_temp'),
+                    'avg_cloud_cover': learning_features.get('avg_cloud_cover', 50.0),
                     'indoor_temp_gradient': learning_features.get('indoor_temp_gradient', 0.0),
                     'indoor_temp_delta_60m': learning_features.get('indoor_temp_delta_60m', 0.0),
                     # NO target temperature in shadow mode learning context!
                 }
-                
-                # Previous indoor temperature (what we're learning to predict)
-                previous_indoor = current_indoor - actual_indoor_change
                 
                 # Learn: heat curve outlet → actual indoor (pure physics)
                 wrapper.learn_from_prediction_feedback(
@@ -330,9 +363,18 @@ class OnlineLearning:
                 prediction_context = {
                     'outlet_temp': actual_applied_temp,  # ML's own prediction that was applied
                     'outdoor_temp': learning_features.get('outdoor_temp', 10.0),
-                    'pv_power': learning_features.get('pv_now', 0.0),
+                    'pv_power': pv_smoothed,
+                    'pv_power_current': pv_now,
+                    'pv_power_history': pv_history,
                     'fireplace_on': learning_features.get('fireplace_on', 0.0),
                     'tv_on': learning_features.get('tv_on', 0.0),
+                    'current_indoor': previous_indoor,
+                    'heat_pump_active': heat_pump_active,
+                    'thermal_power': thermal_power_kw,
+                    'inlet_temp': learning_features.get('inlet_temp'),
+                    'delta_t': delta_t,
+                    'living_room_temp': learning_features.get('living_room_temp'),
+                    'avg_cloud_cover': learning_features.get('avg_cloud_cover', 50.0),
                     'indoor_temp_gradient': learning_features.get('indoor_temp_gradient', 0.0),
                     'indoor_temp_delta_60m': learning_features.get('indoor_temp_delta_60m', 0.0),
                 }
@@ -342,7 +384,7 @@ class OnlineLearning:
                 
                 # Call the learning feedback method
                 wrapper.learn_from_prediction_feedback(
-                    predicted_temp=current_indoor - actual_indoor_change + predicted_change,
+                    predicted_temp=previous_indoor + predicted_change,
                     actual_temp=current_indoor,
                     prediction_context=prediction_context,
                     timestamp=datetime.now().isoformat()

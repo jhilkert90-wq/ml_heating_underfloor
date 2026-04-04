@@ -374,6 +374,8 @@ class ThermalEquilibriumModel:
 
         self.orchestrator.sync_from_model_parameters(
             {
+                "thermal_time_constant": self.thermal_time_constant,
+                "heat_loss_coefficient": self.heat_loss_coefficient,
                 "outlet_effectiveness": self.outlet_effectiveness,
                 "slab_time_constant_hours": self.slab_time_constant_hours,
                 "pv_heat_weight": self.pv_heat_weight,
@@ -406,6 +408,8 @@ class ThermalEquilibriumModel:
             return
 
         parameters = self.orchestrator.export_model_parameters()
+        self.thermal_time_constant = parameters["thermal_time_constant"]
+        self.heat_loss_coefficient = parameters["heat_loss_coefficient"]
         self.outlet_effectiveness = parameters["outlet_effectiveness"]
         self.slab_time_constant_hours = parameters[
             "slab_time_constant_hours"
@@ -415,8 +419,10 @@ class ThermalEquilibriumModel:
         self.fireplace_heat_weight = parameters["fireplace_heat_weight"]
         self.tv_heat_weight = parameters["tv_heat_weight"]
 
-    def _persist_heat_source_channel_state(self) -> None:
-        """Persist channel state into unified thermal state."""
+    def _persist_heat_source_channel_state(
+        self, parameter_history_records: Optional[List[Dict]] = None
+    ) -> None:
+        """Persist channel state and any new channel update records."""
         if self.orchestrator is None:
             return
 
@@ -427,6 +433,11 @@ class ThermalEquilibriumModel:
                 from unified_thermal_state import get_thermal_state_manager
 
             state_manager = get_thermal_state_manager()
+            if parameter_history_records:
+                for parameter_record in parameter_history_records:
+                    state_manager.add_parameter_history_record(
+                        parameter_record
+                    )
             state_manager.set_heat_source_channel_state(
                 self.orchestrator.get_channel_state()
             )
@@ -443,6 +454,57 @@ class ThermalEquilibriumModel:
         if orchestrator is None:
             return
         orchestrator.sync_from_model_parameters(values)
+
+    def _get_channel_parameter_value(
+        self, channel_name: str, parameter_name: str, fallback: float
+    ) -> float:
+        """Read a live channel-owned parameter without trusting stale exports."""
+        orchestrator = getattr(self, "orchestrator", None)
+        if orchestrator is None:
+            return fallback
+
+        channel = orchestrator.channels.get(channel_name)
+        if channel is None or not hasattr(channel, parameter_name):
+            return fallback
+
+        try:
+            return float(getattr(channel, parameter_name))
+        except (TypeError, ValueError):
+            return fallback
+
+    def _resolve_delta_t_floor(self, observed_delta_t: float) -> float:
+        """Prefer the observed loop delta-T when present, else fall back to HP channel state."""
+        if observed_delta_t >= 1.0:
+            return observed_delta_t
+        return self._get_channel_parameter_value(
+            "heat_pump", "delta_t_floor", 2.0
+        )
+
+    @property
+    def thermal_time_constant(self) -> float:
+        """Get thermal time constant."""
+        return getattr(self, "_thermal_time_constant", 0.0)
+
+    @thermal_time_constant.setter
+    def thermal_time_constant(self, value: float):
+        """Set thermal time constant and keep channel mode in sync."""
+        self._thermal_time_constant = value
+        self._sync_orchestrator_parameter_if_needed(
+            {"thermal_time_constant": value}
+        )
+
+    @property
+    def heat_loss_coefficient(self) -> float:
+        """Get heat loss coefficient."""
+        return getattr(self, "_heat_loss_coefficient", 0.0)
+
+    @heat_loss_coefficient.setter
+    def heat_loss_coefficient(self, value: float):
+        """Set heat loss coefficient and keep channel mode in sync."""
+        self._heat_loss_coefficient = value
+        self._sync_orchestrator_parameter_if_needed(
+            {"heat_loss_coefficient": value}
+        )
 
     @property
     def outlet_effectiveness(self) -> float:
@@ -677,8 +739,10 @@ class ThermalEquilibriumModel:
 
         # Clamp to valid range
         cloud_pct = max(0.0, min(100.0, cloud_cover_pct))
-        # Exponential formula: physically accurate for cloud-covering behavior
-        cloud_factor = (1.0 - cloud_pct / 100.0)
+        cloud_exponent = self._get_channel_parameter_value(
+            "pv", "cloud_factor_exponent", 1.0
+        )
+        cloud_factor = 1.0 - (cloud_pct / 100.0) ** cloud_exponent
 
         min_factor = float(getattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1))
         min_factor = max(0.0, min(1.0, min_factor))
@@ -960,12 +1024,20 @@ class ThermalEquilibriumModel:
         # preventing cross-contamination (e.g. fireplace heat misattributed
         # to outlet effectiveness).
         if self.orchestrator is not None:
-            self.orchestrator.route_learning(
+            update_events = self.orchestrator.route_learning(
                 error=prediction_error,
                 context=prediction_context or {},
             )
             self._sync_model_from_orchestrator()
-            self._persist_heat_source_channel_state()
+            channel_history_records = self._build_channel_parameter_history_records(
+                update_events=update_events,
+                timestamp=timestamp,
+            )
+            for history_record in channel_history_records:
+                self._append_parameter_history_record(history_record)
+            self._persist_heat_source_channel_state(
+                parameter_history_records=channel_history_records,
+            )
 
         if len(self.prediction_history) >= self.recent_errors_window:
             error_magnitude = abs(prediction_error)
@@ -1022,6 +1094,12 @@ class ThermalEquilibriumModel:
 
     def _adapt_parameters_from_recent_errors(self):
         """Adapt model parameters with corrected gradient calculations."""
+        if self.orchestrator is not None:
+            logging.debug(
+                "Skipping legacy global adaptation: channel mode owns recent-window learning"
+            )
+            return
+
         recent_predictions = self.prediction_history[
             -self.recent_errors_window:
         ]
@@ -1421,7 +1499,7 @@ class ThermalEquilibriumModel:
         solar_lag_change = abs(self.solar_lag_minutes - old_solar_lag)
         slab_change = abs(self.slab_time_constant_hours - old_slab_time_constant)
 
-        self.parameter_history.append(
+        self._append_parameter_history_record(
             {
                 "timestamp": recent_predictions[-1]["timestamp"],
                 "thermal_time_constant": self.thermal_time_constant,
@@ -1456,9 +1534,6 @@ class ThermalEquilibriumModel:
                 },
             }
         )
-
-        if len(self.parameter_history) > config.MAX_PARAMETER_HISTORY:
-            self.parameter_history = self.parameter_history[-config.MAX_PARAMETER_HISTORY:]
 
         if (
             thermal_change > 0.001
@@ -1780,8 +1855,8 @@ class ThermalEquilibriumModel:
         heat_loss_coefficient_std = 0.0
         thermal_time_constant_std = 0.0
         outlet_effectiveness_std = 0.0
-        if len(self.parameter_history) >= 3:
-            recent_params = self.parameter_history[-3:]
+        recent_params = self._get_recent_parameter_snapshot_records(3)
+        if len(recent_params) >= 3:
             heat_loss_coefficient_std = np.std(
                 [p["heat_loss_coefficient"] for p in recent_params]
             )
@@ -1911,12 +1986,10 @@ class ThermalEquilibriumModel:
         # Steady-state temperature drop across floor loop: ΔT = BT2 − BT3
         # = thermal_power / (flow_rate × C_P).  Passed from caller as
         # delta_t_floor; defaults to 0 to preserve backward-compat behaviour.
-        delta_t_floor = float(external_sources.get("delta_t_floor", 0.0))
-        # When pump is off the measured BT2−BT3 collapses to ~0°C, which
-        # makes the slab target ≈ outlet (too high).  Use a physically
-        # realistic default for the pump-ON simulation branch.
-        if delta_t_floor < 1.0:
-            delta_t_floor = 2.0
+        measured_delta_t = float(external_sources.get("delta_t_floor", 0.0))
+        delta_t_floor = self._resolve_delta_t_floor(measured_delta_t)
+        # _resolve_delta_t_floor already substitutes the HP channel's learned
+        # value (~2 °C) when measured < 1.0, so no hardcoded fallback needed.
 
         time_step_hours = time_step_minutes / 60.0
         num_steps = int(time_horizon_hours * 60 / time_step_minutes)
@@ -1988,24 +2061,30 @@ class ThermalEquilibriumModel:
             # T_slab tracks the return temperature (BT3 / Rücklauf).
             # T_slab(0) = inlet_temp; when None the slab model is inactive.
             #
-            # Pump-ON  (BT2 > BT3): forced convection drives BT3 toward
-            #   BT2 − ΔT_floor, where ΔT_floor = Q_room / (flow × Cp)
-            #   = BT2 − BT3 at steady state (passed as delta_t_floor).
-            # Pump-OFF (BT2 ≤ BT3): NIBE shuts down; BT3 cools passively
-            #   toward indoor air temperature with τ = thermal_time_constant.
+            # Pump-ON  (BT2 > BT3 AND measured ΔT ≥ 1): forced convection
+            #   drives BT3 toward BT2 − ΔT_floor.
+            # Pump-OFF (measured ΔT < 1 OR BT2 ≤ BT3): NIBE shuts down;
+            #   BT3 cools passively toward indoor air temperature.
+            #
+            # Using measured_delta_t as the gate prevents the pump-ON branch
+            # from firing when the HP is actually off but outlet happens to
+            # read higher than inlet due to sensor values or calculated targets.
             if step == 0:
                 t_slab = (
                     float(inlet_temp)
                     if inlet_temp is not None
                     else float(outlet_temp)
                 )
-            if float(outlet_temp) > t_slab:  # pump can run: BT2 > BT3
+            pump_on = (
+                float(outlet_temp) > t_slab and measured_delta_t >= 1.0
+            )
+            if pump_on:
                 alpha = min(1.0, time_step_hours / self.slab_time_constant_hours)
                 t_slab_target = float(outlet_temp) - delta_t_floor
                 t_slab = t_slab + alpha * (t_slab_target - t_slab)
                 # Floor emits heat based on mean water temp across the loop
                 t_effective = (float(outlet_temp) + t_slab) / 2.0
-            else:  # pump off: BT2 ≤ BT3, passive cooling toward indoor air
+            else:  # pump off: passive cooling toward indoor air
                 alpha_passive = 1.0 - np.exp(
                     -time_step_hours / self.thermal_time_constant
                 )
@@ -2292,6 +2371,137 @@ class ThermalEquilibriumModel:
 
         return current_parameters
 
+    def _append_parameter_history_record(self, parameter_record: Dict) -> None:
+        """Append a parameter-history record and keep the in-memory list capped."""
+        self.parameter_history.append(parameter_record)
+        if len(self.parameter_history) > config.MAX_PARAMETER_HISTORY:
+            self.parameter_history = self.parameter_history[
+                -config.MAX_PARAMETER_HISTORY:
+            ]
+
+    def _normalize_parameter_snapshot(
+        self, parameters: Optional[Dict[str, float]]
+    ) -> Dict[str, float]:
+        """Normalize a parameter snapshot to plain float values."""
+        normalized: Dict[str, float] = {}
+        for name, value in (parameters or {}).items():
+            try:
+                normalized[name] = float(value)
+            except (TypeError, ValueError):
+                continue
+        return normalized
+
+    def _normalize_channel_parameter_changes(
+        self, changes: Optional[Dict[str, Dict[str, float]]]
+    ) -> Dict[str, Dict[str, float]]:
+        """Normalize structured channel change snapshots for persistence."""
+        normalized: Dict[str, Dict[str, float]] = {}
+        for name, change in (changes or {}).items():
+            if not isinstance(change, dict):
+                continue
+            try:
+                normalized[name] = {
+                    "before": float(change["before"]),
+                    "after": float(change["after"]),
+                    "delta": float(change["delta"]),
+                }
+            except (KeyError, TypeError, ValueError):
+                continue
+        return normalized
+
+    def _build_channel_parameter_history_records(
+        self, update_events: List[Dict], timestamp: Optional[str]
+    ) -> List[Dict]:
+        """Build top-level parameter-history records from channel update events."""
+        if not update_events:
+            return []
+
+        current_snapshot = self._get_current_export_parameters()
+        records: List[Dict] = []
+
+        for event in update_events:
+            structured_changes = self._normalize_channel_parameter_changes(
+                event.get("changes")
+            )
+            try:
+                attributed_error = float(
+                    event.get("attributed_error", event.get("error", 0.0))
+                )
+            except (TypeError, ValueError):
+                attributed_error = 0.0
+            try:
+                raw_prediction_error = float(
+                    event.get("raw_prediction_error", attributed_error)
+                )
+            except (TypeError, ValueError):
+                raw_prediction_error = attributed_error
+
+            active_contributions: Dict[str, float] = {}
+            for name, value in (event.get("active_contributions") or {}).items():
+                try:
+                    active_contributions[name] = float(value)
+                except (TypeError, ValueError):
+                    continue
+
+            history_record = {
+                "timestamp": timestamp,
+                "record_type": event.get("record_type", "channel_update"),
+                "channel": event.get("channel"),
+                "learning_rate": event.get("learning_rate"),
+                "learning_confidence": self.learning_confidence,
+                "avg_recent_error": abs(attributed_error),
+                "raw_prediction_error": raw_prediction_error,
+                "attributed_error": attributed_error,
+                "attribution_applied": bool(
+                    event.get("attribution_applied", False)
+                ),
+                "active_contributions": active_contributions,
+                "heat_pump_frozen_by_fireplace": bool(
+                    event.get("heat_pump_frozen_by_fireplace", False)
+                ),
+                "parameters_before": self._normalize_parameter_snapshot(
+                    event.get("parameters_before")
+                ),
+                "parameters_after": self._normalize_parameter_snapshot(
+                    event.get("parameters_after")
+                ),
+                "channel_parameter_changes": structured_changes,
+                "gradients": {},
+                "changes": {
+                    name: abs(change["delta"])
+                    for name, change in structured_changes.items()
+                },
+            }
+            history_record.update(current_snapshot)
+            records.append(history_record)
+
+        return records
+
+    def _get_recent_parameter_snapshot_records(self, limit: int) -> List[Dict]:
+        """Return recent history records that contain the core parameter snapshot."""
+        if limit <= 0:
+            return []
+
+        records: List[Dict] = []
+        required_keys = (
+            "thermal_time_constant",
+            "heat_loss_coefficient",
+            "outlet_effectiveness",
+        )
+
+        for record in reversed(self.parameter_history):
+            try:
+                for key in required_keys:
+                    float(record[key])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            records.append(record)
+            if len(records) >= limit:
+                break
+
+        return list(reversed(records))
+
     def get_adaptive_learning_metrics(self) -> Dict:
         """
         ENHANCED: Get metrics with additional debugging info.
@@ -2318,8 +2528,8 @@ class ThermalEquilibriumModel:
         else:
             error_improvement = 0.0
 
-        if len(self.parameter_history) >= 5:
-            recent_params = self.parameter_history[-5:]
+        recent_params = self._get_recent_parameter_snapshot_records(5)
+        if len(recent_params) >= 5:
             thermal_stability = np.std(
                 [p["thermal_time_constant"] for p in recent_params]
             )

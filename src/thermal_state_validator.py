@@ -13,6 +13,11 @@ try:
     from jsonschema import validate, ValidationError
     SCHEMA_VALIDATION_AVAILABLE = True
 except ImportError:
+    validate = None
+
+    class ValidationError(Exception):
+        """Fallback placeholder when jsonschema is unavailable."""
+
     logging.warning("jsonschema not installed - schema validation disabled")
     SCHEMA_VALIDATION_AVAILABLE = False
 

@@ -27,6 +27,7 @@ plotly>=5.0.0
 
 # Testing Framework
 pytest>=7.0.0
+hypothesis>=6.0.0
 
 # Additional Standard Library modules used:
 # - json, os, sys, logging, datetime, time, math, typing, collections, dataclasses

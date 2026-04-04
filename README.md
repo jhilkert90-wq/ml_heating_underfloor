@@ -41,6 +41,8 @@ The primary goal is to improve upon traditional heat curves by creating a **self
 -   **Differential-Based Effectiveness:** Heat transfer effectiveness scales with outlet-indoor temperature differential for accurate low-differential scenarios
 -   **Adaptive Learning:** Model parameters continuously adjust based on prediction feedback to improve accuracy over time
 -   **Open Window Adaptation:** System automatically detects sudden heat loss changes (like opened windows) and applies gentle corrections, then restabilizes when disturbances end
+-   **HP-Off Simulated Delta-T:** When the heat pump is off (delta_t < 1°C), the binary search substitutes the learned delta_t_floor (~2.55°C) to simulate "HP on" conditions, preventing false 35°C outlet spikes from the slab passive mode making all candidates identical
+-   **Slab Pump Gate:** Dual-condition gate (`outlet > t_slab AND measured_delta_t >= 1.0`) ensures the slab passive heating model only activates when the heat pump is genuinely running, preventing false pump-on states
 
 ### Safety & Robustness
 
@@ -62,6 +64,9 @@ The primary goal is to improve upon traditional heat curves by creating a **self
 
 -   **Fireplace Mode:** When fireplace is active, uses alternative temperature sensor (e.g., average of other rooms) to prevent incorrect learning
 -   **PV Solar Warming:** Learns how solar power generation affects indoor temperature
+-   **Cloud-Aware PV Scalar:** PV heating contribution is discounted by 1-hour cloud forecast percentage, preventing overestimation on cloudy days
+-   **Improved PV Routing:** PV active detection uses `max(current, smoothed)` power, preventing false negatives when current power briefly dips below threshold
+-   **Fast PV Smoothing:** PV smoothing window uses `solar_decay_tau` (~30 min) instead of a fixed 10-reading window, enabling faster response to solar changes
 -   **TV/Electronics Heat:** Can track heat contribution from electronics and appliances
 
 ### Live Performance Tracking
@@ -305,7 +310,8 @@ The controller uses **ThermalEquilibriumModel** - a physics-based machine learni
 - Adaptive learning: Parameters adjust based on prediction accuracy
 - Differential-based effectiveness: Heat transfer scales with outlet-indoor temperature differential
 - Weather forecast integration: Anticipates temperature changes
-- PV forecast integration: Predicts solar heat gain
+- PV forecast integration: Predicts solar heat gain (cloud-discounted)
+- Slab passive delta tracking: Monitors `inlet_temp - indoor_temp` as a diagnostic for passive slab heating potential
 
 **System States & Blocking:**
 - DHW heating, defrosting, disinfection, DHW boost heater
@@ -480,6 +486,7 @@ ml_heating/
 │   ├── model_wrapper.py            # Enhanced prediction wrapper
 │   ├── physics_features.py         # Feature engineering
 │   ├── physics_calibration.py      # Historical training
+│   ├── heat_source_channels.py     # Multi-source heat channel learning (PV, fireplace, etc.)
 │   ├── ha_client.py                # Home Assistant integration (manages sensor publishing)
 │   ├── influx_service.py           # InfluxDB queries
 │   ├── state_manager.py            # State persistence

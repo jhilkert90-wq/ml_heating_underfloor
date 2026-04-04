@@ -24,7 +24,7 @@ from src.heat_source_channels import (
     FireplaceChannel,
     HeatSourceChannelOrchestrator,
     SolarChannel,
-    _MIN_RECORDS_FOR_LEARNING,
+    _get_min_records_for_learning,
 )
 from src.thermal_equilibrium_model import ThermalEquilibriumModel
 from src import config
@@ -302,6 +302,7 @@ class TestMorningScenario:
             time_horizon_hours=4, time_step_minutes=60,
             pv_forecasts=[0, 800, 2000, 3000],
             pv_power=0, inlet_temp=30.0,
+            delta_t_floor=2.0,  # HP is on
         )
         high = model.predict_thermal_trajectory(outlet_temp=42.0, **kw)
         low = model.predict_thermal_trajectory(outlet_temp=35.0, **kw)
@@ -410,7 +411,7 @@ class TestFireplaceIndependentLearning:
         original_kw = ch.fp_heat_output_kw
         ctx = _make_context(fireplace_on=1)
         # Feed enough positive-error observations
-        for _ in range(_MIN_RECORDS_FOR_LEARNING):
+        for _ in range(_get_min_records_for_learning()):
             ch.record_learning(error=1.0, context=ctx)
         assert ch.fp_heat_output_kw > original_kw, (
             f"Positive error should increase fp_heat_output_kw: "
@@ -423,7 +424,7 @@ class TestFireplaceIndependentLearning:
         ch = FireplaceChannel()
         original_kw = ch.fp_heat_output_kw
         ctx = _make_context(fireplace_on=1)
-        for _ in range(_MIN_RECORDS_FOR_LEARNING):
+        for _ in range(_get_min_records_for_learning()):
             ch.record_learning(error=-1.0, context=ctx)
         assert ch.fp_heat_output_kw < original_kw, (
             f"Negative error should decrease fp_heat_output_kw: "
@@ -435,8 +436,8 @@ class TestFireplaceIndependentLearning:
         ch = FireplaceChannel()
         original_kw = ch.fp_heat_output_kw
         ctx = _make_context(fireplace_on=1)
-        for _ in range(_MIN_RECORDS_FOR_LEARNING):
-            ch.record_learning(error=0.01, context=ctx)
+        for _ in range(_get_min_records_for_learning()):
+            ch.record_learning(error=0.005, context=ctx)
         assert ch.fp_heat_output_kw == original_kw, (
             "Below dead zone: fp_heat_output_kw should not change"
         )
@@ -459,7 +460,7 @@ class TestFireplaceIndependentLearning:
         fp = orch.channels["fireplace"]
         original_kw = fp.fp_heat_output_kw
         ctx = _make_context(fireplace_on=1)
-        for _ in range(_MIN_RECORDS_FOR_LEARNING):
+        for _ in range(_get_min_records_for_learning()):
             orch.route_learning(error=1.5, context=ctx)
         assert fp.fp_heat_output_kw > original_kw, (
             "Fireplace channel should self-learn through orchestrator"
@@ -524,8 +525,9 @@ class TestOrchestratorIntegration:
             f"variation={variation:.4f}"
         )
 
-    def test_orchestrator_learning_routing_no_cross_contamination(self):
+    def test_orchestrator_learning_routing_no_cross_contamination(self, monkeypatch):
         """Multiple scenarios must not cross-contaminate channels."""
+        monkeypatch.setattr(config, "ENABLE_MIXED_SOURCE_ATTRIBUTION", False)
         orch = HeatSourceChannelOrchestrator()
         # PV active → only PV learns
         orch.route_learning(0.5, _make_context(pv_power=2000))

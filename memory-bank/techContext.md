@@ -142,6 +142,34 @@ jupyter>=1.0.0          # Notebook environment
 
 **Config**: `ENABLE_HEAT_SOURCE_CHANNELS=true` (env var, default true)
 
+### Slab Model & Binary Search Fixes (April 2026)
+
+**Slab Pump Gate**: Dual condition prevents false pump-ON when HP is off:
+```python
+pump_on = (float(outlet_temp) > t_slab and measured_delta_t >= 1.0)
+```
+When HP off (measured_delta_t < 1.0), slab always enters passive branch regardless of outlet/inlet relationship.
+
+**HP-Off Binary Search**: When delta_t < 1.0, binary search substitutes the learned `delta_t_floor` (~2.55°C) so trajectories simulate "HP running at this outlet":
+```python
+if _dtf < 1.0:
+    _dtf = self.thermal_model._resolve_delta_t_floor(_dtf)  # ~2.55
+```
+Without this, all candidates produce identical passive-slab predictions → "unreachable" → 35°C spike.
+
+**Cloud Discount on PV Scalar**: Applied in `_extract_thermal_features()` before binary search:
+```python
+cloud_factor = max(min_factor, 1.0 - (cloud_pct / 100.0))
+pv_scalar *= cloud_factor
+```
+Uses 1h cloud forecast (`cloud_cover_1h`). Prevents raw PV sensor spikes from causing outlet oscillation.
+
+**PV Routing**: `_is_pv_active()` uses `max(pv_current, pv_smoothed) > 500W` to capture solar thermal lag at sunset.
+
+**PV Smoothing**: Window shortened from 3h (18 readings) to `solar_decay_tau` (~30min, 3 readings) to exclude stale morning values.
+
+**Slab Passive Delta**: `inlet_temp - indoor_temp` exported as `slab_passive_delta` diagnostic. Positive = passive heating available.
+
 ### Physics-Based Model Design
 
 **Hybrid Approach**:

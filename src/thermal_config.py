@@ -46,10 +46,10 @@ class ThermalParameterConfig:
         'max_learning_rate': 0.1,
         'heat_loss_coefficient': 0.15,      # 1/hour (Corrected baseline)
         'outlet_effectiveness': 0.93,      # dimensionless
-        'delta_t_floor': 2.0,              # °C
+        'delta_t_floor': 2.4,              # °C
         'cloud_factor_exponent': 1.0,      # dimensionless
         'solar_lag_minutes': 45.0,         # minutes
-        'solar_decay_tau_hours': 0.5,      # hours
+        'solar_decay_tau_hours': 1.0,      # hours
         'slab_time_constant_hours': 1.0,  # hours (UFH slab forced-convection time constant; data-fitted from 180m² floor)
     }
 

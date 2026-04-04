@@ -4,6 +4,7 @@ from src import config
 from src import model_wrapper
 from src import thermal_equilibrium_model
 from src import unified_thermal_state
+from src.heat_source_channels import _get_min_records_for_learning
 from src.model_wrapper import get_enhanced_model_wrapper
 
 
@@ -33,6 +34,7 @@ def make_learning_context(
 @pytest.fixture
 def isolated_channel_state(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", True)
+    monkeypatch.setattr(config, "ENABLE_MIXED_SOURCE_ATTRIBUTION", False)
     monkeypatch.setattr(
         model_wrapper.EnhancedModelWrapper,
         "_export_metrics_to_influxdb",
@@ -59,7 +61,7 @@ def isolated_channel_state(monkeypatch, tmp_path):
 @pytest.mark.parametrize(
     ("scenario", "context_kwargs", "expected_channels"),
     [
-        ("none", {}, set()),
+        ("none", {}, {"heat_pump"}),
         ("heat_pump", {"heat_pump_active": True}, {"heat_pump"}),
         ("pv", {"pv_power": 1500.0}, {"pv"}),
         ("fireplace", {"fireplace_on": 1}, {"fireplace"}),
@@ -101,7 +103,8 @@ def test_channel_mode_persists_expected_learning_routes(
     assert model.orchestrator is not None
 
     context = make_learning_context(**context_kwargs)
-    for _ in range(6):
+    n = _get_min_records_for_learning() + 1
+    for _ in range(n):
         model.update_prediction_feedback(
             predicted_temp=20.0,
             actual_temp=21.0,
@@ -111,9 +114,13 @@ def test_channel_mode_persists_expected_learning_routes(
     persisted_state = isolated_channel_state.get_heat_source_channel_state()
 
     for channel_name in ("heat_pump", "pv", "fireplace", "tv"):
-        expected_history = 6 if channel_name in expected_channels else 0
+        expected_history = n if channel_name in expected_channels else 0
         assert persisted_state[channel_name]["history_count"] == expected_history, (
             f"Scenario {scenario} routed unexpected history into "
+            f"{channel_name}"
+        )
+        assert len(persisted_state[channel_name].get("history", [])) == expected_history, (
+            f"Scenario {scenario} persisted unexpected history payload for "
             f"{channel_name}"
         )
 
@@ -147,7 +154,8 @@ def test_wrapper_channel_workflow_persists_fireplace_learning_across_restart(
     initial_fireplace_power = fireplace_channel.fp_heat_output_kw
 
     learning_context = make_learning_context(fireplace_on=1)
-    for _ in range(8):
+    n = _get_min_records_for_learning() + 1
+    for _ in range(n):
         wrapper.learn_from_prediction_feedback(
             predicted_temp=20.0,
             actual_temp=25.0,
@@ -161,6 +169,7 @@ def test_wrapper_channel_workflow_persists_fireplace_learning_across_restart(
     assert persisted_state["fireplace"]["parameters"][
         "fp_heat_output_kw"
     ] == pytest.approx(learned_fireplace_power)
+    assert len(persisted_state["fireplace"].get("history", [])) == n
 
     model_wrapper._enhanced_model_wrapper_instance = None
     reloaded_wrapper = get_enhanced_model_wrapper()
@@ -174,6 +183,9 @@ def test_wrapper_channel_workflow_persists_fireplace_learning_across_restart(
             "fireplace"
         ].fp_heat_output_kw
     )
+    restored_fireplace_history = reloaded_wrapper.thermal_model.orchestrator.channels[
+        "fireplace"
+    ].history
     reloaded_prediction = reloaded_wrapper.predict_indoor_temp(
         outlet_temp=21.0,
         outdoor_temp=5.0,
@@ -185,4 +197,5 @@ def test_wrapper_channel_workflow_persists_fireplace_learning_across_restart(
 
     assert reloaded_wrapper.adaptive_fireplace is None
     assert restored_fireplace_power == pytest.approx(learned_fireplace_power)
+    assert len(restored_fireplace_history) == n
     assert reloaded_prediction > baseline_prediction

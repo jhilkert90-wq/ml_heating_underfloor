@@ -595,16 +595,27 @@ def main():
                                 "outdoor_temp", 10.0
                             ),
                             "pv_power": pv_scalar_learn,
+                            "pv_power_current": pv_now_learn,
                             "pv_power_history": pv_history,
                             "fireplace_on": float(
                                 state.get("last_fireplace_on", False)
                             ),
                             "tv_on": learning_features.get("tv_on", 0.0),
-                            "target_temp": last_indoor_temp,  # Use last indoor as target for learning context
                             "current_indoor": last_indoor_temp,
                             "avg_other_rooms_temp": last_avg_other_rooms_temp,
                             "thermal_power": learning_features.get(
                                 "thermal_power_kw", None
+                            ),
+                            "heat_pump_active": bool(
+                                (
+                                    learning_features.get("thermal_power_kw")
+                                    is not None
+                                    and learning_features.get(
+                                        "thermal_power_kw", 0.0
+                                    )
+                                    > 0.05
+                                )
+                                or learning_features.get("delta_t", 0.0) > 0.5
                             ),
                             # Pass auxiliary heat if available in features
                             "auxiliary_heat": learning_features.get(

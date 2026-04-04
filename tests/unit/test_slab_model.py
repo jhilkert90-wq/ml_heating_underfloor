@@ -46,6 +46,7 @@ def _make_prediction_records(
     outdoor_temp: float = 3.0,
     indoor_temp: float = 22.8,
     error: float = 0.05,
+    delta_t: float = 5.0,
 ):
     """Build n synthetic prediction-history records."""
     records = []
@@ -65,6 +66,7 @@ def _make_prediction_records(
                 "tv_on": 0.0,
                 "avg_cloud_cover": 50.0,
                 "inlet_temp": inlet_temp,
+                "delta_t": delta_t,
             },
         })
     return records
@@ -85,6 +87,7 @@ class TestSlabDynamics:
             time_horizon_hours=4.0,
             time_step_minutes=10,
             inlet_temp=25.0,   # slab starts well below outlet_cmd
+            delta_t_floor=2.0, # HP is on
         )
         assert "trajectory" in result
         assert len(result["trajectory"]) > 0
@@ -100,6 +103,7 @@ class TestSlabDynamics:
             time_horizon_hours=1.0,
             time_step_minutes=10,
             inlet_temp=10.0,   # extreme cold start
+            delta_t_floor=2.0, # HP is on
         )
         result_no_slab = model.predict_thermal_trajectory(
             current_indoor=22.8,
@@ -109,6 +113,7 @@ class TestSlabDynamics:
             time_horizon_hours=1.0,
             time_step_minutes=10,
             inlet_temp=None,   # no slab → t_slab = outlet_cmd immediately
+            delta_t_floor=2.0, # HP is on
         )
         # With near-zero τ the first step should be nearly identical to no-slab
         assert abs(result_with_slab["trajectory"][0]
@@ -127,6 +132,7 @@ class TestSlabDynamics:
             time_horizon_hours=2.0,
             time_step_minutes=10,
             inlet_temp=25.0,   # slab starts warmer than outlet_cmd
+            delta_t_floor=2.0, # HP is on
         )
         result_no_slab = model.predict_thermal_trajectory(
             current_indoor=22.8,
@@ -136,6 +142,7 @@ class TestSlabDynamics:
             time_horizon_hours=2.0,
             time_step_minutes=10,
             inlet_temp=None,   # no slab → cold outlet applied immediately
+            delta_t_floor=2.0, # HP is on
         )
         # Slab-model should keep the first step warmer
         assert result_with_slab["trajectory"][0] > result_no_slab["trajectory"][0], (
@@ -183,6 +190,7 @@ class TestSlabGradient:
             n=12,
             outlet_temp=27.0,
             inlet_temp=27.0,   # equilibrium: slab = outlet_cmd
+            delta_t=0.0,        # no flow: HP off at equilibrium
         )
         gradient = model._calculate_slab_time_constant_gradient(
             model.prediction_history

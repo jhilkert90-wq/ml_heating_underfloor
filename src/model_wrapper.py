@@ -395,7 +395,26 @@ class EnhancedModelWrapper:
             pv_scalar = sum(lag_window) / len(lag_window)
         else:
             pv_scalar = pv_now
-        
+
+        # Apply cloud discount to PV scalar before it enters the binary
+        # search.  Without this, a raw sensor spike (e.g. 4 kW during a
+        # brief sun break) makes the binary search declare "target
+        # unreachable" and snap the outlet to 18 °C, only to bounce back
+        # next cycle when clouds return.  The equilibrium model already
+        # applies cloud_factor internally, but the *scalar* fed to the
+        # binary-search convergence pre-check must be consistent.
+        cloud_1h = features.get("cloud_cover_1h",
+                                features.get("avg_cloud_cover", 50.0))
+        if getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False):
+            cloud_pct = max(0.0, min(100.0, float(cloud_1h)))
+            min_factor = float(
+                getattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1)
+            )
+            cloud_factor = max(
+                min_factor, 1.0 - (cloud_pct / 100.0)
+            )
+            pv_scalar *= cloud_factor
+
         thermal_features["pv_power"] = pv_scalar
         # Pass PV history for lag calculation in model
         thermal_features["pv_power_history"] = pv_history
@@ -414,6 +433,17 @@ class EnhancedModelWrapper:
             features.get("temp_diff_indoor_outdoor", 0.0)
         thermal_features["outlet_indoor_diff"] = \
             features.get("outlet_indoor_diff", 0.0)
+
+        # Slab passive delta: inlet_temp (BT3, slab return) minus indoor temp.
+        # Positive → slab warmer than room (passive heating available).
+        # Negative → slab cooler than room (absorbing heat from room).
+        _inlet_t = features.get("inlet_temp")
+        _indoor_t = features.get("indoor_temp_lag_30m",
+                                 features.get("current_indoor"))
+        if _inlet_t is not None and _indoor_t is not None:
+            thermal_features["slab_passive_delta"] = (
+                float(_inlet_t) - float(_indoor_t)
+            )
 
         # Note: Occupancy/cooking features removed (no sensors)
 
@@ -559,21 +589,43 @@ class EnhancedModelWrapper:
                 f"DEBUG: Using PV history (len={len(pv_input)}) instead of scalar {avg_pv}"
             )
 
+        # Resolve delta_t for the binary search ONCE, before both the
+        # pre-check and the binary-search loop, so both use the same value.
+        _inlet = (
+            self._current_features.get("inlet_temp")
+            if hasattr(self, "_current_features")
+            else None
+        )
+        _dtf = (
+            self._current_features.get("delta_t", 0.0)
+            if hasattr(self, "_current_features")
+            else 0.0
+        )
+
+        # HP-OFF FIX: When HP is off (delta_t < 1.0), the slab pump
+        # gate blocks ALL binary-search candidates identically (passive
+        # branch ignores outlet_temp).  Substitute the learned HP
+        # delta_t_floor so the trajectory simulates "HP running at this
+        # outlet" — letting candidates differentiate and conveying the
+        # correct setpoint for NIBE to start heating.
+        if _dtf < 1.0:
+            _dtf_simulated = (
+                self.thermal_model._resolve_delta_t_floor(_dtf)
+            )
+            logging.info(
+                "🔄 HP off (delta_t=%.2f): simulating HP-on "
+                "delta_t=%.2f for binary search",
+                _dtf, _dtf_simulated,
+            )
+            _dtf = _dtf_simulated
+        # Store the resolved delta_t for use by trajectory verification too
+        self._search_delta_t_floor = _dtf
+
         # Pre-check for unreachable targets to avoid futile searching.
         # Uses predict_thermal_trajectory (same model as binary search) so
         # the slab dynamics are considered in the reachability decision.
         try:
             optimization_horizon = float(config.TRAJECTORY_STEPS)
-            _inlet = (
-                self._current_features.get("inlet_temp")
-                if hasattr(self, "_current_features")
-                else None
-            )
-            _dtf = (
-                self._current_features.get("delta_t", 0.0)
-                if hasattr(self, "_current_features")
-                else 0.0
-            )
 
             # Check what minimum outlet temp produces
             min_traj = self.thermal_model.predict_thermal_trajectory(
@@ -729,16 +781,8 @@ class EnhancedModelWrapper:
                         tv_on=tv_on,
                         fireplace_power_kw=fireplace_power_kw,
                         cloud_cover_pct=self._avg_cloud_cover,
-                        inlet_temp=(
-                            self._current_features.get("inlet_temp")
-                            if hasattr(self, "_current_features")
-                            else None
-                        ),
-                        delta_t_floor=(
-                            self._current_features.get("delta_t", 0.0)
-                            if hasattr(self, "_current_features")
-                            else 0.0
-                        ),
+                        inlet_temp=_inlet,
+                        delta_t_floor=_dtf,
                     )
                 )
 
@@ -1252,7 +1296,8 @@ class EnhancedModelWrapper:
                     if hasattr(self, "_current_features")
                     else None
                 ),
-                delta_t_floor=(
+                delta_t_floor=getattr(
+                    self, "_search_delta_t_floor",
                     self._current_features.get("delta_t", 0.0)
                     if hasattr(self, "_current_features")
                     else 0.0
@@ -2053,6 +2098,16 @@ class EnhancedModelWrapper:
                             "room_spread_delay_minutes", 0.0
                         ),
                     }
+                )
+
+            # Slab passive delta: inlet_temp − indoor → passive heating signal
+            _feats = getattr(self, "_current_features", {}) or {}
+            _s_inlet = _feats.get("inlet_temp")
+            _s_indoor = _feats.get("indoor_temp_lag_30m",
+                                   _feats.get("current_indoor"))
+            if _s_inlet is not None and _s_indoor is not None:
+                ha_metrics["slab_passive_delta"] = round(
+                    float(_s_inlet) - float(_s_indoor), 2
                 )
 
             return ha_metrics
