@@ -974,6 +974,21 @@ def main():
             if not heating_checker.check_heating_active(ha_client, all_states):
                 time.sleep(PhysicsConstants.RETRY_DELAY_SECONDS)
                 continue
+
+            # --- Determine climate mode (heating vs cooling) ---
+            climate_mode = heating_checker.get_climate_mode(
+                ha_client, all_states
+            )
+            # Propagate mode to model wrapper so binary search uses correct
+            # outlet bounds and fallbacks.
+            from .model_wrapper import get_enhanced_model_wrapper as _get_wrapper
+            _wrapper = _get_wrapper()
+            _wrapper.set_climate_mode(climate_mode)
+            if climate_mode == "cooling":
+                logging.info(
+                    "❄️ COOLING MODE: ML will calculate cooling outlet "
+                    "temperature (outlet < inlet)"
+                )
          
             if is_grace_period:
                 # Skip control logic but allow state saving at the end of loop

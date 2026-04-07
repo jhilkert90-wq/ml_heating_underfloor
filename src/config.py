@@ -393,9 +393,27 @@ DELTA_CALIBRATION_MAX_OFFSET: float = float(
     os.getenv("DELTA_CALIBRATION_MAX_OFFSET", "10.0")
 )
 
-# Absolute clamp values for outlet temperature
+# Absolute clamp values for outlet temperature (heating mode)
 CLAMP_MIN_ABS: float = float(os.getenv("CLAMP_MIN_ABS", "25.0"))
 CLAMP_MAX_ABS: float = float(os.getenv("CLAMP_MAX_ABS", "55.0"))
+
+# --- Cooling Mode Configuration ---
+# Cooling outlet temperature bounds.
+# COOLING_CLAMP_MIN_ABS: Absolute minimum outlet temp in cooling mode.
+#   The heat pump shuts down when outlet reaches this value.
+# COOLING_CLAMP_MAX_ABS: Maximum outlet temp in cooling mode.
+#   Typically near inlet temp; the HP needs at least MIN_COOLING_DELTA_K
+#   between inlet and outlet to operate.
+COOLING_CLAMP_MIN_ABS: float = float(os.getenv("COOLING_CLAMP_MIN_ABS", "18.0"))
+COOLING_CLAMP_MAX_ABS: float = float(os.getenv("COOLING_CLAMP_MAX_ABS", "24.0"))
+# Minimum delta between inlet and outlet for heat pump operation in cooling (K)
+MIN_COOLING_DELTA_K: float = float(os.getenv("MIN_COOLING_DELTA_K", "2.0"))
+# Safety margin above the HP shutdown limit to prevent short-cycling.
+# The ML will target at least this margin above COOLING_CLAMP_MIN_ABS
+# to avoid the HP hitting the hard 18°C limit and shutting down.
+COOLING_SHUTDOWN_MARGIN_K: float = float(
+    os.getenv("COOLING_SHUTDOWN_MARGIN_K", "1.0")
+)
 
 # Thermal Model Parameters
 PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.002"))
@@ -436,3 +454,43 @@ ENABLE_MIXED_SOURCE_ATTRIBUTION: bool = (
     os.getenv("ENABLE_MIXED_SOURCE_ATTRIBUTION", "false").lower()
     == "true"
 )
+
+
+# --- Climate Mode Helpers ---
+def get_climate_mode(heating_state: str | None) -> str:
+    """Determine climate mode from the HEATING_STATUS_ENTITY_ID state.
+
+    Returns:
+        "heating" if state is "heat" or "auto",
+        "cooling" if state is "cool",
+        "off" otherwise.
+    """
+    if heating_state is None:
+        return "off"
+    state_lower = str(heating_state).lower().strip()
+    if state_lower in ("heat", "auto"):
+        return "heating"
+    if state_lower == "cool":
+        return "cooling"
+    return "off"
+
+
+def get_outlet_bounds(climate_mode: str) -> tuple[float, float]:
+    """Return (min, max) outlet temperature bounds for the given mode.
+
+    In heating mode the outlet is above room temperature.
+    In cooling mode the outlet is below room temperature.
+    """
+    if climate_mode == "cooling":
+        # Add safety margin above the HP shutdown limit to avoid short-cycling.
+        effective_min = COOLING_CLAMP_MIN_ABS + COOLING_SHUTDOWN_MARGIN_K
+        return effective_min, COOLING_CLAMP_MAX_ABS
+    return CLAMP_MIN_ABS, CLAMP_MAX_ABS
+
+
+def get_fallback_outlet(climate_mode: str) -> float:
+    """Return a safe fallback outlet temperature for the given mode."""
+    if climate_mode == "cooling":
+        # Mid-range cooling outlet — safe and not too aggressive.
+        return (COOLING_CLAMP_MIN_ABS + COOLING_CLAMP_MAX_ABS) / 2.0
+    return 35.0

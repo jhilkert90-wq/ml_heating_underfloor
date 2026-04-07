@@ -34,8 +34,13 @@ class PhysicsConstants:
     MAX_OUTDOOR_TEMP = 50.0    # Extreme heat limit
     
     # Heat pump bounds (°C)
-    MIN_OUTLET_TEMP = 25.0     # Minimum heat pump outlet temperature
-    MAX_OUTLET_TEMP = 70.0     # Maximum safe heat pump outlet temperature
+    MIN_OUTLET_TEMP = 25.0     # Minimum heat pump outlet temperature (heating)
+    MAX_OUTLET_TEMP = 70.0     # Maximum safe heat pump outlet temperature (heating)
+    
+    # Cooling heat pump bounds (°C)
+    MIN_COOLING_OUTLET_TEMP = 18.0  # HP shutdown limit in cooling mode
+    MAX_COOLING_OUTLET_TEMP = 24.0  # Upper cooling outlet (near room temp)
+    MIN_COOLING_DELTA_K = 2.0       # Min delta between inlet and outlet
     
     # Physics bounds
     ABSOLUTE_ZERO_CELSIUS = -273.15  # Absolute zero in Celsius
