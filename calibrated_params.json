@@ -1,0 +1,15 @@
+{
+  "thermal_time_constant": 7.87076674390872,
+  "heat_loss_coefficient": 0.13749863064242002,
+  "outlet_effectiveness": 0.6887962655114351,
+  "pv_heat_weight": 0.0002476100711928259,
+  "fireplace_heat_weight": 0.4733372960030362,
+  "tv_heat_weight": 0.35,
+  "solar_lag_minutes": 45.0,
+  "slab_time_constant_hours": 3.1993159958068556,
+  "optimization_mae": 0.6932632149762632,
+  "stable_periods_count": 37119,
+  "fp_decay_time_constant": 2.5634403231938974,
+  "room_spread_delay_minutes": 17.5,
+  "delta_t_floor": 2.3000000000000007
+}

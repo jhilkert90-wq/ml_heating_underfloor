@@ -290,21 +290,27 @@ def test_heat_pump_self_learning_updates_hp_owned_model_parameters():
 
 
 def test_solar_channel_self_learning_updates_retained_adaptive_parameters():
-    orch = HeatSourceChannelOrchestrator()
-    solar = orch.channels["pv"]
-    initial_lag = solar.solar_lag_minutes
-    initial_cloud_exponent = solar.cloud_factor_exponent
+    from src import config
+    original = getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+    config.CLOUD_COVER_CORRECTION_ENABLED = True
+    try:
+        orch = HeatSourceChannelOrchestrator()
+        solar = orch.channels["pv"]
+        initial_lag = solar.solar_lag_minutes
+        initial_cloud_exponent = solar.cloud_factor_exponent
 
-    context = make_context(
-        pv_power=2000,
-        avg_cloud_cover=90.0,
-        pv_power_history=[300.0, 500.0, 700.0, 900.0],
-    )
-    for _ in range(_get_min_records_for_learning() + 1):
-        orch.route_learning(1.0, context)
+        context = make_context(
+            pv_power=2000,
+            avg_cloud_cover=90.0,
+            pv_power_history=[300.0, 500.0, 700.0, 900.0],
+        )
+        for _ in range(_get_min_records_for_learning() + 1):
+            orch.route_learning(1.0, context)
 
-    assert solar.solar_lag_minutes != pytest.approx(initial_lag)
-    assert solar.cloud_factor_exponent != pytest.approx(initial_cloud_exponent)
+        assert solar.solar_lag_minutes != pytest.approx(initial_lag)
+        assert solar.cloud_factor_exponent != pytest.approx(initial_cloud_exponent)
+    finally:
+        config.CLOUD_COVER_CORRECTION_ENABLED = original
 
 
 def test_no_source_active_routes_learning_to_heat_pump_channel():

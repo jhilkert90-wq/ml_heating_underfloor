@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_calculate_parameter_gradient`: passes `inlet_temp` from prediction context to both `+ε` and `−ε` trajectory evaluations.
 - `unified_thermal_state.py`: `parameter_adjustments` default dict and `set_calibrated_baseline` reset dict extended with `solar_lag_minutes_delta` and `slab_time_constant_delta`; `update_learning_state` now accepts any key (no longer silently drops unknown delta keys).
 - `physics_calibration.py`: `calibrated_params` now includes `slab_time_constant_hours` (preserved from current runtime value, not re-optimised — stable-period data cannot identify slab dynamics).
+- `physics_calibration.py`: `_filter_pv_only_periods()` filters periods with `indoor_temp >= PV_CALIBRATION_INDOOR_CEILING` before PV Pass 2 scipy optimization.
+- `physics_calibration.py`: `filter_pv_decay_periods()` uses 6-step sliding-window crossing detection instead of single-step sharp-drop filter.
+- `heat_source_channels.py`: `SolarChannel._learn_from_recent()` and `apply_gradient_update()` skip `cloud_factor_exponent` updates when `CLOUD_COVER_CORRECTION_ENABLED=false`.
+- `thermal_config.py`: `pv_heat_weight` default 0.0005 → 0.0002, bounds (0.0005, 0.005) → (0.0001, 0.005).
+- `influx_service.py`: Flux query entity filter now includes `LIVING_ROOM_TEMP_ENTITY_ID`.
+- `config.py`: Removed duplicate `LIVING_ROOM_TEMP_ENTITY_ID` definition.
 
 ### Fixed
 - **Control Stability:** Fixed "Deadbeat Control" oscillation by decoupling the control interval (30m) from the optimization horizon (4h). This prevents excessive outlet temperature spikes when correcting small deviations.
@@ -45,10 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PV smoothing window**: Shortened from 3h (18 readings) to `solar_decay_tau` (~30min, 3 readings) in `temperature_control.py`. The old 3h window included stale morning PV values in the afternoon.
 - **Slab pump-on gate**: Pump-ON branch now requires `measured_delta_t >= 1.0` in addition to `outlet_temp > t_slab`. Prevents slab model from entering active heating when HP is actually off (delta_t ≈ 0 but outlet reads higher than inlet due to stale setpoint).
 - **Cloud discount on PV scalar**: Applied 1h cloud forecast discount to the PV scalar in `_extract_thermal_features()` before it enters the binary search. Raw sensor spikes during brief sun breaks (e.g. 4kW) no longer cause the binary search to snap outlet to 18°C, preventing 6am–11am outlet oscillation (21.8–24.9°C).
+- **Blind-contaminated PV calibration data**: Root cause fix for `pv_heat_weight` stuck at lower bound. Automated blinds close when rooms > 22.9°C → real solar heating drops 70–90% → roof PV sensor still reads ~2000W → optimizer sees high PV with flat indoor temp → pushes weight to lower bound. `_filter_pv_only_periods()` now excludes periods where `indoor_temp >= PV_CALIBRATION_INDOOR_CEILING` (default 23.0°C).
+- **`pv_heat_weight` bounds**: Default lowered from 0.0005 → 0.0002, lower bound from 0.0005 → 0.0001. Previous default = lower bound prevented the optimizer from exploring below the initial value.
+- **`cloud_factor_exponent` learning when disabled**: Online learning (`SolarChannel._learn_from_recent()`) and batch calibration (`calibrate_cloud_factor()`) now gated behind `CLOUD_COVER_CORRECTION_ENABLED`. Previously both ran unconditionally — when the flag was `false`, the prediction path returned 1.0 but gradients still updated the exponent, causing parameter drift without feedback.
+- **`calibrate_delta_t_floor` sensitivity**: Raised minimum delta_t threshold from 0.5 → 1.0°C and minimum calibration result from 0.5 → 1.0°C. Prevents floor from converging to sub-1°C values where HP is effectively off.
+- **PV decay period detection**: Replaced single-step sharp-drop filter with 6-step (30 min) sliding-window crossing detection in `filter_pv_decay_periods()`. Old method required an exact single-step PV drop below threshold, missing gradual sunset transitions. New method detects when a 6-reading window crosses from above to below the PV threshold.
+- **`cloud_cover_pct` calibration default**: Changed all 4 hardcoded fallback values from 50.0 → 0.0. When cloud cover data is unavailable, assuming clear sky (0%) is physically correct — the calibration should learn the actual heating at the measured PV power, not discount it by an assumed 50% cloud cover.
 
 ### Added
 - **`slab_passive_delta` sensor**: New diagnostic metric (`inlet_temp - indoor_temp`) exported to HA. Positive = slab warmer than room (passive heating available), negative = slab absorbing heat. Visible in thermal features and HA sensor attributes.
 - **`_search_delta_t_floor`**: Internal variable ensuring both binary search pre-check, loop, and trajectory verification use the same (potentially simulated) delta_t value per cycle.
+- **`PV_CALIBRATION_INDOOR_CEILING` config variable**: Indoor temperature ceiling (default 23.0°C) for filtering blind-contaminated PV calibration periods. When automated blinds close (rooms ≥ 22.9°C), real solar heating drops 70–90% while the roof PV sensor still reads high — this causes the optimizer to push `pv_heat_weight` to its lower bound. Periods with `indoor_temp >= ceiling` are now excluded from PV Pass 2 calibration.
+- **`LIVING_ROOM_TEMP_ENTITY_ID` in InfluxDB query**: Living room temperature sensor now included in the Flux query entity filter, ensuring indoor temperature data is available for calibration.
 
 ### Technical Achievements
 

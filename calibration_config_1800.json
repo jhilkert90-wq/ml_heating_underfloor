@@ -1,0 +1,22 @@
+{
+  "INDOOR_TEMP_ENTITY_ID": "sensor.rt_mittelwert",
+  "ACTUAL_OUTLET_TEMP_ENTITY_ID": "sensor.nibe_bt2_supply_temp_s1",
+  "ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID": "sensor.ml_vorlauftemperatur",
+  "OUTDOOR_TEMP_ENTITY_ID": "sensor.nibe_bt1_outdoor_temperature",
+  "PV_POWER_ENTITY_ID": "sensor.pv_leistung_gefiltert",
+  "TV_STATUS_ENTITY_ID": "input_boolean.tv_an",
+  "FIREPLACE_STATUS_ENTITY_ID": "binary_sensor.kamin_an",
+  "INLET_TEMP_ENTITY_ID": "sensor.nibe_eb100_ep14_bt3_return_temp",
+  "FLOW_RATE_ENTITY_ID": "input_number.hp_current_flow_rate",
+  "POWER_CONSUMPTION_ENTITY_ID": "sensor.nibe_el_leistung",
+  "DHW_STATUS_ENTITY_ID": "binary_sensor.warmwassermodus",
+  "DEFROST_STATUS_ENTITY_ID": "binary_sensor.defrost_wp",
+  "DISINFECTION_STATUS_ENTITY_ID": "binary_sensor.warmwassermodus",
+  "DHW_BOOST_HEATER_STATUS_ENTITY_ID": "binary_sensor.warmwassermodus",
+  "LIVING_ROOM_TEMP_ENTITY_ID": "sensor.rt_wz",
+  "SPECIFIC_HEAT_CAPACITY": 4.186,
+  "GRACE_PERIOD_MAX_MINUTES": 15.0,
+  "CLOUD_COVER_CORRECTION_ENABLED": false,
+  "PV_CALIBRATION_INDOOR_CEILING": 23.0,
+  "TRAINING_LOOKBACK_HOURS": 1800
+}

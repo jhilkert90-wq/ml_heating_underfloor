@@ -7,7 +7,9 @@ using historical target temperature data and actual house behavior.
 
 import logging
 import json
+from datetime import datetime, timedelta, timezone
 import numpy as np
+import pandas as pd
 
 try:
     from scipy.optimize import minimize
@@ -75,7 +77,7 @@ def train_thermal_equilibrium_model():
     logging.info(
         "Step 3: Optimizing thermal parameters using scipy.optimize..."
     )
-    optimized_params = optimize_thermal_parameters(stable_periods)
+    optimized_params = optimize_thermal_parameters(stable_periods, df=df)
 
     if not optimized_params or not optimized_params.get(
         'optimization_success'
@@ -175,6 +177,76 @@ def train_thermal_equilibrium_model():
                 cooling_tau, MAX_PLAUSIBLE_COOLING_TAU,
             )
 
+    # Step 3d: Calibrate channel-specific parameters
+    # These parameters live in the heat source channels and cannot be
+    # optimized from stable-period equilibrium data — they require
+    # dedicated analysis of specific operating conditions.
+    logging.info(
+        "Step 3d: Calibrating channel-specific parameters "
+        "(FP decay/spread, delta_t_floor, cloud exponent, solar decay)..."
+    )
+    channel_params = {}
+
+    # --- Fireplace decay time constant ---
+    fp_decay_periods = filter_fp_decay_periods(
+        df,
+        hlc=optimized_params.get('heat_loss_coefficient'),
+        oe=optimized_params.get('outlet_effectiveness'),
+    )
+    fp_tau = calibrate_fp_decay_tau(fp_decay_periods)
+    if fp_tau is not None:
+        channel_params["fp_decay_time_constant"] = fp_tau
+
+    # --- Fireplace room spread delay ---
+    fp_spread_periods = filter_fp_spread_periods(df)
+    fp_spread_delay = calibrate_room_spread_delay(fp_spread_periods)
+    if fp_spread_delay is not None:
+        channel_params["room_spread_delay_minutes"] = fp_spread_delay
+
+    # --- delta_t_floor ---
+    dt_floor = calibrate_delta_t_floor(stable_periods)
+    if dt_floor is not None:
+        channel_params["delta_t_floor"] = dt_floor
+
+    # --- slab_time_constant_hours ---
+    slab_tau = calibrate_slab_time_constant(df)
+    if slab_tau is not None:
+        channel_params["slab_time_constant_hours"] = slab_tau
+
+    # --- Cloud factor exponent (only when cloud correction is enabled) ---
+    if getattr(config, 'CLOUD_COVER_CORRECTION_ENABLED', False):
+        cloudy_periods = filter_cloudy_pv_periods(df)
+        pv_weight_for_cloud = optimized_params.get(
+            "pv_heat_weight",
+            ThermalParameterConfig.get_default("pv_heat_weight"),
+        )
+        cloud_exp = calibrate_cloud_factor(cloudy_periods, pv_weight_for_cloud)
+        if cloud_exp is not None:
+            channel_params["cloud_factor_exponent"] = cloud_exp
+    else:
+        logging.info(
+            "Skipping cloud_factor_exponent calibration"
+            " (CLOUD_COVER_CORRECTION_ENABLED=false)"
+        )
+
+    # --- Solar decay tau ---
+    pv_decay_periods = filter_pv_decay_periods(df)
+    solar_tau = calibrate_solar_decay_tau(pv_decay_periods)
+    if solar_tau is not None:
+        channel_params["solar_decay_tau_hours"] = solar_tau
+
+    if channel_params:
+        logging.info(
+            "✅ Calibrated %d channel parameters: %s",
+            len(channel_params),
+            ", ".join(f"{k}={v:.3f}" for k, v in channel_params.items()),
+        )
+    else:
+        logging.warning(
+            "⚠️ No channel-specific parameters calibrated "
+            "(insufficient data for all)"
+        )
+
     # Step 4: Create thermal model with optimized parameters
     logging.info("Step 4: Creating thermal model with optimized parameters...")
     thermal_model = ThermalEquilibriumModel()
@@ -224,12 +296,19 @@ def train_thermal_equilibrium_model():
                 "fireplace_heat_weight: %.2f",
                 fireplace_channel.fp_heat_output_kw,
             )
-        logging.info(
-            "ℹ️ Channel-only parameters not batch-calibrated by "
-            "physics_calibration: delta_t_floor, cloud_factor_exponent, "
-            "solar_decay_tau_hours, fp_decay_time_constant, "
-            "room_spread_delay_minutes"
-        )
+
+        # Apply channel-specific calibrated parameters (Step 3d results)
+        if channel_params:
+            _apply_channel_params(thermal_model.orchestrator, channel_params)
+            logging.info(
+                "✅ Applied %d channel-specific calibrated parameters",
+                len(channel_params),
+            )
+        else:
+            logging.info(
+                "ℹ️ No channel-specific parameters to apply "
+                "(all fell below data thresholds)"
+            )
 
     # Set reasonable learning confidence based on optimization success
     thermal_model.learning_confidence = 3.0  # High confidence from scipy
@@ -278,16 +357,20 @@ def train_thermal_equilibrium_model():
             'fireplace_heat_weight': fireplace_weight,
             'tv_heat_weight': tv_weight,
             'solar_lag_minutes': solar_lag,
-            # slab_time_constant_hours is NOT optimized from stable-period data
-            # (equilibrium periods have inlet_temp ≈ outlet_cmd → gradient = 0).
-            # Preserve the current runtime value so online learning progress
-            # is not lost when recalibrating.
-            'slab_time_constant_hours': getattr(
-                thermal_model,
+            # slab_time_constant_hours: prefer calibrated value from
+            # channel_params (step response), else fall back to runtime value.
+            'slab_time_constant_hours': channel_params.get(
                 'slab_time_constant_hours',
-                ThermalParameterConfig.get_default('slab_time_constant_hours'),
+                getattr(
+                    thermal_model,
+                    'slab_time_constant_hours',
+                    ThermalParameterConfig.get_default('slab_time_constant_hours'),
+                ),
             ),
         }
+
+        # Merge channel-specific calibrated parameters into baseline
+        calibrated_params.update(channel_params)
 
         # Set as calibrated baseline
         state_manager.set_calibrated_baseline(
@@ -353,7 +436,7 @@ def validate_thermal_model():
                 fireplace_on=0,
                 tv_on=0,
                 _suppress_logging=True,
-                cloud_cover_pct=50.0,
+                cloud_cover_pct=0.0,
             )
             monotonic_check.append(equilibrium)
             print(f"{outlet_temp:3d}°C       → {equilibrium:.2f}°C")
@@ -440,45 +523,253 @@ def validate_thermal_model():
 
 
 def fetch_historical_data_for_calibration(lookback_hours=672):
-    """Fetch historical data for calibration."""
+    """Fetch historical data for calibration.
+
+    Respects ``config.TRAINING_DATA_SOURCE``:
+    * ``"influx"``    – only InfluxDB
+    * ``"ha_history"`` – only HA REST API history
+    * ``"auto"``       – try InfluxDB first; if data is empty **or** missing
+                         important columns, supplement / fall back to HA history
+    """
     logging.info(f"=== FETCHING {lookback_hours} HOURS OF HISTORICAL DATA ===")
 
-    influx = InfluxService(
-        url=config.INFLUX_URL,
-        token=config.INFLUX_TOKEN,
-        org=config.INFLUX_ORG
-    )
+    source = getattr(config, "TRAINING_DATA_SOURCE", "auto").lower()
 
-    df = influx.get_training_data(lookback_hours=lookback_hours)
+    df = pd.DataFrame()
 
-    if df.empty:
-        logging.error("❌ No historical data available")
-        return None
+    # --- InfluxDB path ---
+    if source in ("influx", "auto"):
+        try:
+            influx = InfluxService(
+                url=config.INFLUX_URL,
+                token=config.INFLUX_TOKEN,
+                org=config.INFLUX_ORG,
+            )
+            df = influx.get_training_data(lookback_hours=lookback_hours)
+        except Exception as exc:
+            logging.warning("InfluxDB fetch failed: %s", exc)
+            df = pd.DataFrame()
 
-    logging.info(f"✅ Fetched {len(df)} samples ({len(df)/12:.1f} hours)")
+        if not df.empty:
+            logging.info(
+                "✅ Fetched %d samples (%.1f hours) from InfluxDB",
+                len(df), len(df) / 12,
+            )
 
+    # Columns we expect for full-featured calibration
     required_columns = [
         config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
         config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
         config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
         config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
         config.PV_POWER_ENTITY_ID.split(".", 1)[-1],
-        config.TV_STATUS_ENTITY_ID.split(".", 1)[-1]
+        config.TV_STATUS_ENTITY_ID.split(".", 1)[-1],
+    ]
+    important_optional_columns = [
+        config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1],
+        config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+        config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1],
+        config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1],
+        config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1],
     ]
 
-    # Optional new sensors (don't fail if missing to maintain backward
-    # compatibility)
-    # optional_columns = [
-    #     config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1],
-    #     config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1],
-    #     config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1]
-    # ]
+    # --- HA history: full fallback (empty primary) or column supplement ---
+    def _get_ha_df():
+        """Lazy-load HA history DataFrame."""
+        try:
+            from .ha_history_service import get_training_data_from_ha
+        except ImportError:
+            from ha_history_service import get_training_data_from_ha  # type: ignore
+        return get_training_data_from_ha(lookback_hours=lookback_hours)
+
+    if df.empty and source in ("ha_history", "auto"):
+        # Full fallback
+        logging.info(
+            "Fetching calibration data from HA history API "
+            "(source=%s) …", source,
+        )
+        df = _get_ha_df()
+        if not df.empty:
+            logging.info(
+                "✅ Fetched %d samples (%.1f hours) from HA history",
+                len(df), len(df) / 12,
+            )
+    elif not df.empty and source == "auto":
+        # InfluxDB returned data – check for missing columns we can fill
+        all_wanted = required_columns + important_optional_columns
+        missing_in_influx = [c for c in all_wanted if c not in df.columns]
+        if missing_in_influx:
+            logging.info(
+                "InfluxDB data missing %d columns (%s) — "
+                "attempting to supplement from HA history …",
+                len(missing_in_influx),
+                ", ".join(missing_in_influx),
+            )
+            ha_df = _get_ha_df()
+            if not ha_df.empty:
+                # Merge missing columns by nearest timestamp
+                for col in missing_in_influx:
+                    if col in ha_df.columns:
+                        # Align on _time with merge_asof (±5 min tolerance)
+                        supplement = ha_df[["_time", col]].dropna(
+                            subset=[col]
+                        )
+                        if supplement.empty:
+                            continue
+                        df = pd.merge_asof(
+                            df.sort_values("_time"),
+                            supplement.sort_values("_time"),
+                            on="_time",
+                            tolerance=pd.Timedelta("5min"),
+                            direction="nearest",
+                        )
+                        if col in df.columns and df[col].notna().sum() > 0:
+                            logging.info(
+                                "  ✅ Supplemented '%s' from HA history "
+                                "(%d values)",
+                                col, df[col].notna().sum(),
+                            )
+                        else:
+                            logging.warning(
+                                "  ⚠️  Column '%s' still empty after "
+                                "HA supplement", col,
+                            )
+            else:
+                logging.warning(
+                    "⚠️  HA history returned no data — "
+                    "proceeding without missing columns"
+                )
+
+    # ------------------------------------------------------------------
+    # Per-entity time-coverage check (auto mode, InfluxDB data present)
+    # ------------------------------------------------------------------
+    # InfluxDB may not retain data for the full lookback window, or
+    # individual entities may have started recording later.  Detect
+    # per-entity gaps and supplement from HA where possible.
+    # ------------------------------------------------------------------
+    _META_COLS = frozenset({
+        "_time", "result", "table", "_start", "_stop", "_measurement",
+    })
+
+    if not df.empty and source == "auto":
+        expected_start = datetime.now(tz=timezone.utc) - timedelta(
+            hours=lookback_hours,
+        )
+        data_cols = [c for c in df.columns if c not in _META_COLS]
+        entities_with_gaps: dict = {}
+
+        for col in data_cols:
+            valid_mask = df[col].notna()
+            if not valid_mask.any():
+                continue  # entirely missing → handled by column check
+            first_valid_time = df.loc[valid_mask.idxmax(), "_time"]
+            gap_hours = (
+                (first_valid_time - expected_start).total_seconds() / 3600
+            )
+            if gap_hours > 1:
+                entities_with_gaps[col] = {
+                    "first_valid_time": first_valid_time,
+                    "gap_hours": gap_hours,
+                }
+
+        if entities_with_gaps:
+            logging.info(
+                "InfluxDB per-entity coverage gaps detected for %d "
+                "entities (requested %dh):",
+                len(entities_with_gaps),
+                lookback_hours,
+            )
+            for col, info in entities_with_gaps.items():
+                logging.info(
+                    "  %s: missing first %.1fh (data starts %s)",
+                    col, info["gap_hours"], info["first_valid_time"],
+                )
+
+            ha_df = _get_ha_df()
+
+            if not ha_df.empty:
+                # Extend the time grid if InfluxDB doesn't cover the
+                # full lookback (all entities start late).
+                influx_start = df["_time"].min()
+                if influx_start > expected_start + timedelta(hours=1):
+                    ha_early = ha_df[ha_df["_time"] < influx_start].copy()
+                    if not ha_early.empty:
+                        # Keep only _time + entity columns present in df
+                        keep_cols = ["_time"] + [
+                            c for c in df.columns
+                            if c in ha_early.columns and c != "_time"
+                        ]
+                        ha_early = ha_early[[
+                            c for c in keep_cols if c in ha_early.columns
+                        ]]
+                        df = pd.concat(
+                            [ha_early, df], ignore_index=True,
+                        )
+                        df.sort_values("_time", inplace=True)
+                        df.reset_index(drop=True, inplace=True)
+                        logging.info(
+                            "  ✅ Extended time range by %.1fh from HA "
+                            "(%d rows prepended)",
+                            (influx_start - ha_early["_time"].min()
+                             ).total_seconds() / 3600,
+                            len(ha_early),
+                        )
+
+                # Fill per-entity NaN gaps from HA data
+                for col, info in entities_with_gaps.items():
+                    if col not in ha_df.columns:
+                        logging.warning(
+                            "  ⚠️  '%s' not available in HA history",
+                            col,
+                        )
+                        continue
+                    null_mask = df[col].isna()
+                    if not null_mask.any():
+                        continue
+                    gap_rows = df.loc[null_mask, ["_time"]].copy()
+                    ha_col = ha_df[["_time", col]].dropna(subset=[col])
+                    if ha_col.empty:
+                        logging.warning(
+                            "  ⚠️  HA has no data for '%s'", col,
+                        )
+                        continue
+                    filled = pd.merge_asof(
+                        gap_rows.sort_values("_time"),
+                        ha_col.sort_values("_time"),
+                        on="_time",
+                        tolerance=pd.Timedelta("5min"),
+                        direction="nearest",
+                    )
+                    n_filled = filled[col].notna().sum()
+                    df.loc[null_mask, col] = filled[col].values
+                    logging.info(
+                        "  ✅ Supplemented '%s' with %d HA values "
+                        "(%.1fh gap)",
+                        col, n_filled, info["gap_hours"],
+                    )
+            else:
+                logging.warning(
+                    "⚠️  HA history returned no data — "
+                    "proceeding with incomplete entity coverage"
+                )
+
+    # ------------------------------------------------------------------
+    # Final gap-filling pass
+    # ------------------------------------------------------------------
+    if not df.empty:
+        df.ffill(inplace=True)
+        df.bfill(inplace=True)
+
+    if df.empty:
+        logging.error("❌ No training data available from any source")
+        return None
 
     missing_cols = [col for col in required_columns if col not in df.columns]
     if missing_cols:
         logging.error(f"❌ Missing required columns: {missing_cols}")
         return None
 
+    # Log optional columns that are still absent
     fireplace_col = config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1]
     if fireplace_col not in df.columns:
         logging.info(
@@ -655,11 +946,13 @@ def filter_transient_periods(df, sequence_length_steps=12, min_temp_change=0.3):
 
 def calculate_cooling_time_constant(df):
     """
-    Estimate thermal time constant from cooling periods (e.g. during DHW cycles).
+    Estimate thermal time constant from cooling periods (HP-off).
+    Detects HP-off via thermal power < 0.5 kW (outlet-inlet delta is small),
+    falls back to DHW periods.
     Uses log-linear regression on (T_indoor - T_outdoor).
     Returns (tau, r_squared).
     """
-    logging.info("=== CALCULATING COOLING TIME CONSTANT (DHW PERIODS) ===")
+    logging.info("=== CALCULATING COOLING TIME CONSTANT ===")
 
     if df is None or df.empty:
         return None, 0.0
@@ -668,30 +961,57 @@ def calculate_cooling_time_constant(df):
     dhw_col = config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1]
     indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
     outdoor_col = config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
-
-    if dhw_col not in df.columns:
-        logging.warning(
-            "⚠️ DHW status column not found - cannot estimate cooling constant"
-        )
-        return None, 0.0
+    flow_col = config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1]
+    inlet_col = config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
 
     # Work on a copy to avoid modifying the original dataframe
     df_cooling = df.copy()
     df_cooling = df_cooling.sort_values('_time')
 
-    # Find continuous DHW blocks
-    # Create a group identifier that changes when DHW status changes
-    df_cooling['dhw_group'] = (
-        df_cooling[dhw_col] != df_cooling[dhw_col].shift()
-    ).cumsum()
+    # Compute thermal_power_kw for HP-off detection
+    can_compute_power = (
+        flow_col in df_cooling.columns
+        and inlet_col in df_cooling.columns
+        and outlet_col in df_cooling.columns
+    )
+    if can_compute_power:
+        delta_t = df_cooling[outlet_col] - df_cooling[inlet_col]
+        df_cooling['_thermal_power_kw'] = (
+            (df_cooling[flow_col] / 60.0)
+            * config.SPECIFIC_HEAT_CAPACITY
+            * delta_t
+        ).clip(lower=0.0)
+        logging.info("Using thermal-power based HP-off detection (power < 0.5 kW)")
+        hp_off = df_cooling['_thermal_power_kw'] < 0.5
+        df_cooling['cooling_group'] = (hp_off != hp_off.shift()).cumsum()
+        group_col = 'cooling_group'
+        filter_val = True  # select groups where hp_off is True
+    elif dhw_col in df_cooling.columns:
+        logging.info("Thermal power unavailable, falling back to DHW-based detection")
+        df_cooling['dhw_group'] = (
+            df_cooling[dhw_col] != df_cooling[dhw_col].shift()
+        ).cumsum()
+        group_col = 'dhw_group'
+        filter_val = None  # will check dhw > 0
+    else:
+        logging.warning(
+            "⚠️ Neither thermal power nor DHW column found - cannot estimate cooling constant"
+        )
+        return None, 0.0
 
     cooling_taus = []
 
-    for _, group in df_cooling.groupby('dhw_group'):
-        if group[dhw_col].iloc[0] == 0:
-            continue  # Not a DHW period
+    for _, group in df_cooling.groupby(group_col):
+        # Filter: only HP-off groups (power-based) or DHW-on groups (DHW-based)
+        if filter_val is True:
+            if not (group['_thermal_power_kw'].iloc[0] < 0.5):
+                continue
+        else:
+            if group[dhw_col].iloc[0] == 0:
+                continue  # Not a DHW period
 
-        if len(group) < 4:  # Need some points (assuming 5 min intervals)
+        if len(group) < 3:  # Need some points (assuming 5 min intervals)
             continue
 
         # Calculate time in hours from start of block
@@ -712,13 +1032,13 @@ def calculate_cooling_time_constant(df):
         # Filter for valid log inputs
         # Ensure indoor is at least 2 degrees above outdoor
         valid_indices = temp_diffs > 2.0
-        if valid_indices.sum() < 4:
+        if valid_indices.sum() < 3:
             continue
 
         y = np.log(temp_diffs[valid_indices])
         x = times[valid_indices]
 
-        if len(x) < 4:
+        if len(x) < 3:
             continue
 
         # Linear regression
@@ -745,16 +1065,16 @@ def calculate_cooling_time_constant(df):
         r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
 
         # Expecting cooling, so slope should be negative
-        if slope >= -0.001:  # Too flat or heating up
+        if slope >= -0.0005:  # Too flat or heating up
             continue
 
         tau = -1.0 / slope
 
-        # Sanity check tau (1h to 48h).
+        # Sanity check tau (0.5h to 72h).
         # DHW periods are typically short (20-60 min); the temperature drop
         # is tiny. A near-flat cooling curve produces a slope close to 0,
-        # which maps to tau → ∞. Cap at 48h so such periods are discarded.
-        if 1.0 < tau < 48.0 and r_squared > 0.8:
+        # which maps to tau → ∞. Cap at 72h so such periods are discarded.
+        if 0.5 < tau < 72.0 and r_squared > 0.6:
             cooling_taus.append({
                 'tau': tau,
                 'r2': r_squared,
@@ -830,7 +1150,7 @@ def calibrate_transient_parameters(thermal_model, transient_sequences):
                     tv_on=s['tv_on'],
                     thermal_power=None,   # force temperature-based formula
                     _suppress_logging=True,
-                    cloud_cover_pct=50.0,
+                    cloud_cover_pct=0.0,
                 )
                 dt = s['time_step_hours']
                 approach = 1.0 - np.exp(-dt / tau)
@@ -843,10 +1163,10 @@ def calibrate_transient_parameters(thermal_model, transient_sequences):
 
     # Start from a physically reasonable guess (not the previous calibrated
     # value, which may be the wrong 16.5h).
-    initial_tau = 6.0
-    # Physically: 1h (tiny shed) to 48h (heavily insulated passive house).
-    # Exclude very large values so a flat landscape can't drift there.
-    bounds = [(1.0, 48.0)]
+    initial_tau = 4.0
+    # Physically: 2h (lightweight partition) to 12h (well-insulated house).
+    # Tighter bounds prevent the optimizer drifting to unrealistic values.
+    bounds = [(2.0, 12.0)]
 
     logging.info(
         "Calibrating tau from %d sequences (initial guess: %.1fh)",
@@ -869,7 +1189,7 @@ def calibrate_transient_parameters(thermal_model, transient_sequences):
                 best_tau, result.fun, result.success
             )
             # Sanity-check: warn if result is near a bound (may indicate poor fit)
-            if best_tau < 1.5 or best_tau > 40.0:
+            if best_tau < 2.5 or best_tau > 11.0:
                 logging.warning(
                     "tau=%.2fh is near a calibration bound - verify data quality",
                     best_tau
@@ -907,10 +1227,31 @@ def filter_stable_periods(df, temp_change_threshold=0.2, min_duration=20):
     boost_col = config.DHW_BOOST_HEATER_STATUS_ENTITY_ID.split(".", 1)[-1]
 
     grace_period_minutes = config.GRACE_PERIOD_MAX_MINUTES
-    grace_period_samples = grace_period_minutes // 5
+    grace_period_samples = int(grace_period_minutes) // 5
+
+    # Pre-compute minutes since last defrost for each row.
+    # Used later to exclude post-defrost slab-recovery periods from
+    # OE / HLC calibration (the HP re-heats the slab before the room
+    # reaches true steady-state, which biases OE downward).
+    if defrost_col in df.columns:
+        defrost_mask = df[defrost_col].fillna(0).astype(bool)
+        # Build an integer index of the last defrost event per row.
+        # Where defrost is active, record the row position; elsewhere NaN.
+        # Forward-fill gives the position of the most recent defrost row.
+        defrost_positions = pd.Series(np.where(defrost_mask, np.arange(len(df)), np.nan))
+        last_defrost_pos = defrost_positions.ffill()
+        samples_since = np.arange(len(df)) - last_defrost_pos.values
+        # 5 min per sample
+        df['_minutes_since_defrost'] = samples_since * 5
+        # Rows before any defrost event → inf (never affected)
+        df['_minutes_since_defrost'] = df['_minutes_since_defrost'].fillna(
+            float('inf')
+        )
+    else:
+        df['_minutes_since_defrost'] = float('inf')
 
     stable_periods = []
-    window_size = min_duration // 5
+    window_size = int(min_duration) // 5
 
     logging.info(
         f"Looking for periods with <{temp_change_threshold}°C change"
@@ -1001,9 +1342,9 @@ def filter_stable_periods(df, temp_change_threshold=0.2, min_duration=20):
             if (inlet_val is not None and flow_val is not None and
                     outlet_val is not None):
                 delta_t = outlet_val - inlet_val
-                # Q = m * c * dt (flow in L/h -> kg/s: / 3600)
+                # Q = m * c * dt (flow in L/min -> L/s: / 60)
                 thermal_power_kw = (
-                    (flow_val / 3600.0) *
+                    (flow_val / 60.0) *
                     config.SPECIFIC_HEAT_CAPACITY *
                     delta_t
                 )
@@ -1023,6 +1364,9 @@ def filter_stable_periods(df, temp_change_threshold=0.2, min_duration=20):
             'fireplace_on': center_row.get(fireplace_col, 0.0),
             'tv_on': center_row.get(tv_col, 0.0),
             'thermal_power_kw': thermal_power_kw,
+            'minutes_since_defrost': center_row.get(
+                '_minutes_since_defrost', float('inf')
+            ),
             'timestamp': center_row['_time'],
             'stability_score': 1.0 / (temp_std + 0.01),
             'outlet_stability': 1.0 / (outlet_temps.std() + 0.01)
@@ -1121,7 +1465,7 @@ def debug_thermal_predictions(stable_periods, sample_size=5):
             tv_on=period['tv_on'],
             thermal_power=None,  # Force temperature-based path for consistency
             _suppress_logging=True,
-            cloud_cover_pct=50.0,
+            cloud_cover_pct=0.0,
         )
 
         actual_temp = period['indoor_temp']
@@ -1156,6 +1500,9 @@ def calculate_direct_heat_loss(stable_periods):
 
     u_values = []
 
+    grace = config.DEFROST_RECOVERY_GRACE_MINUTES
+    n_defrost_excluded = 0
+
     for p in stable_periods:
         # Check if we have thermal power data
         if 'thermal_power_kw' not in p or not p['thermal_power_kw']:
@@ -1172,6 +1519,13 @@ def calculate_direct_heat_loss(stable_periods):
         # to avoid division by zero or noise amplification
         delta_t = p['indoor_temp'] - p['outdoor_temp']
         if delta_t < 5.0 or p['thermal_power_kw'] < 0.5:
+            continue
+
+        # Exclude post-defrost slab recovery and outlet ≤ inlet periods
+        if (p.get('minutes_since_defrost', float('inf')) < grace
+                or p.get('effective_temp', p.get('outlet_temp', 1))
+                    <= p.get('inlet_temp', 0)):
+            n_defrost_excluded += 1
             continue
 
         # Calculate U = P / dT
@@ -1193,11 +1547,301 @@ def calculate_direct_heat_loss(stable_periods):
     logging.info(f"✅ Calculated direct heat loss from {len(u_values)} periods")
     logging.info(f"  Mean U: {avg_u:.4f} kW/K")
     logging.info(f"  Std Dev: {std_u:.4f}")
+    if n_defrost_excluded:
+        logging.info(
+            f"  Defrost-recovery excluded: {n_defrost_excluded} periods "
+            f"(grace={grace} min)"
+        )
 
     return avg_u
 
 
-def optimize_thermal_parameters(stable_periods):
+def _filter_hp_only_periods(stable_periods):
+    """Return stable periods where only the heat pump is actively heating.
+
+    Criteria:
+    - PV < 100 W, fireplace off, TV off
+    - HP delivering meaningful thermal power (≥ 0.5 kW)
+    - Not in post-defrost slab recovery (outlet > inlet, grace elapsed)
+
+    Without the power threshold HP-off periods (pump recirculating at
+    ~19 W standby) pull OE to unrealistically low values.  Without the
+    defrost grace, slab-recovery periods (HP re-heating slab after
+    defrost stole heat) bias OE downward in cold weather.
+    """
+    grace = config.DEFROST_RECOVERY_GRACE_MINUTES
+    filtered = [
+        p for p in stable_periods
+        if p.get('pv_power', 0) < 100
+        and p.get('fireplace_on', 0) == 0
+        and p.get('tv_on', 0) == 0
+        and p.get('thermal_power_kw', 0) >= 0.5
+        and p.get('minutes_since_defrost', float('inf')) >= grace
+        and p.get('effective_temp', p.get('outlet_temp', 1))
+            > p.get('inlet_temp', 0)
+    ]
+    n_defrost = sum(
+        1 for p in stable_periods
+        if p.get('thermal_power_kw', 0) >= 0.5
+        and p.get('pv_power', 0) < 100
+        and p.get('fireplace_on', 0) == 0
+        and p.get('tv_on', 0) == 0
+        and (p.get('minutes_since_defrost', float('inf')) < grace
+             or p.get('effective_temp', p.get('outlet_temp', 1))
+                <= p.get('inlet_temp', 0))
+    )
+    if n_defrost:
+        logging.info(
+            "  Defrost-recovery filter excluded %d HP-only periods "
+            "(grace=%d min)", n_defrost, grace
+        )
+    return filtered
+
+
+def _filter_hp_tv_periods(stable_periods):
+    """Return stable periods where only HP (+ optionally TV) is active.
+
+    Criteria: PV < 100 W, fireplace off. TV is allowed.
+    Used for Pass 1 when TV weight is frozen to its config value.
+    """
+    return [
+        p for p in stable_periods
+        if p.get('pv_power', 0) < 100
+        and p.get('fireplace_on', 0) == 0
+    ]
+
+
+def _filter_pv_only_periods(stable_periods, hlc=None, oe=None):
+    """Return stable periods where PV is the only external source.
+
+    Criteria: PV > 100 W, fireplace off, TV off.
+    If *hlc* and *oe* are provided (from Pass 1), uses a residual-based
+    blind detection heuristic: only keeps periods where actual indoor temp
+    exceeds the HP-only equilibrium prediction, indicating PV is actively
+    heating the room (blinds open).  Periods at or below the HP-only
+    prediction are excluded (blinds likely closed, PV blocked).
+    """
+    all_pv = [
+        p for p in stable_periods
+        if p.get('pv_power', 0) > 100
+        and p.get('fireplace_on', 0) == 0
+        and p.get('tv_on', 0) == 0
+    ]
+    if hlc is not None and oe is not None and (hlc + oe) > 0:
+        filtered = []
+        excluded = 0
+        for p in all_pv:
+            outlet = p.get('effective_temp', p.get('outlet_temp', 25.0))
+            outdoor = p.get('outdoor_temp', 10.0)
+            hp_eq = (oe * outlet + hlc * outdoor) / (oe + hlc)
+            actual = p.get('indoor_temp', 20.0)
+            if actual > hp_eq + 0.1:
+                filtered.append(p)
+            else:
+                excluded += 1
+        if excluded > 0:
+            logging.info(
+                "PV filter: excluded %d/%d periods where indoor ≤ HP equilibrium"
+                " (blinds likely closed)",
+                excluded, len(all_pv),
+            )
+    else:
+        filtered = all_pv
+    return filtered
+
+
+def _filter_pv_periods_from_df(df, hlc=None, oe=None):
+    """Extract ALL rows with PV > 100 W from the raw DataFrame as period dicts.
+
+    Unlike ``_filter_pv_only_periods`` this does NOT require stability
+    filtering, capturing the strong PV signal visible during temperature
+    changes.  Applies the same residual blind-detection heuristic when
+    *hlc* and *oe* are available.
+    """
+    if df is None or df.empty:
+        return []
+
+    indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outdoor_col = config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+    pv_col = config.PV_POWER_ENTITY_ID.split(".", 1)[-1]
+    fireplace_col = config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1]
+    tv_col = config.TV_STATUS_ENTITY_ID.split(".", 1)[-1]
+    inlet_col = config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    actual_outlet_col = config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+
+    required = [indoor_col, outlet_col, outdoor_col, pv_col]
+    for c in required:
+        if c not in df.columns:
+            logging.info(
+                "Column %s missing — cannot build PV periods from df", c,
+            )
+            return []
+
+    # Basic filter: PV > 100 W, fireplace off, no NaN in critical columns
+    mask = (df[pv_col] > 100)
+    if fireplace_col in df.columns:
+        mask = mask & (df[fireplace_col] == 0)
+    mask = (
+        mask
+        & df[indoor_col].notna()
+        & df[outlet_col].notna()
+        & df[outdoor_col].notna()
+    )
+
+    pv_df = df.loc[mask].copy()
+    if pv_df.empty:
+        return []
+
+    # Effective temp: (BT2 + BT3) / 2 when both are available
+    has_actual = actual_outlet_col and actual_outlet_col in pv_df.columns
+    has_inlet = inlet_col in pv_df.columns
+    if has_actual and has_inlet:
+        both_ok = pv_df[actual_outlet_col].notna() & pv_df[inlet_col].notna()
+        pv_df['_eff'] = pv_df[outlet_col].astype(float)
+        pv_df.loc[both_ok, '_eff'] = (
+            pv_df.loc[both_ok, actual_outlet_col].astype(float)
+            + pv_df.loc[both_ok, inlet_col].astype(float)
+        ) / 2.0
+    else:
+        pv_df['_eff'] = pv_df[outlet_col].astype(float)
+
+    # Residual blind detection (same heuristic as _filter_pv_only_periods)
+    excluded = 0
+    if hlc is not None and oe is not None and (hlc + oe) > 0:
+        hp_eq = (oe * pv_df['_eff'] + hlc * pv_df[outdoor_col]) / (oe + hlc)
+        blind_mask = pv_df[indoor_col] <= hp_eq + 0.1
+        excluded = int(blind_mask.sum())
+        pv_df = pv_df[~blind_mask]
+
+    if excluded > 0:
+        logging.info(
+            "PV df filter: excluded %d/%d rows where indoor ≤ HP equilibrium"
+            " (blinds likely closed)",
+            excluded, excluded + len(pv_df),
+        )
+
+    if pv_df.empty:
+        return []
+
+    # Sort by time and build positional index for PV history lookback
+    pv_df = pv_df.sort_values('_time').reset_index(drop=True)
+
+    # Pre-extract full PV column from the ORIGINAL df (sorted) for history
+    # lookback.  The original df index lets us look back 36 samples (~3h).
+    df_sorted = df.sort_values('_time').reset_index(drop=True)
+    pv_all = df_sorted[pv_col].values.astype(float)
+    # Map each pv_df row back to its position in the original sorted df
+    # via the _time column for efficient lookback.
+    orig_times = df_sorted['_time'].values
+    pv_df_times = pv_df['_time'].values
+
+    # Build period dicts compatible with _run_optimization_pass
+    has_tv = tv_col in pv_df.columns
+    periods = []
+    search_start = 0  # sliding window for bisect-like search
+    for idx in range(len(pv_df)):
+        row = pv_df.iloc[idx]
+        row_time = pv_df_times[idx]
+
+        # Find position in original df for PV history lookback
+        # (linear scan from last position — both are sorted by _time)
+        while (search_start < len(orig_times) - 1
+               and orig_times[search_start] < row_time):
+            search_start += 1
+        orig_idx = search_start
+
+        # PV history: up to 36 samples lookback (3 hours at 5-min steps)
+        hist_start = max(0, orig_idx - 36)
+        pv_history = pv_all[hist_start:orig_idx + 1].tolist()
+
+        periods.append({
+            'indoor_temp': float(row[indoor_col]),
+            'outlet_temp': float(row[outlet_col]),
+            'outdoor_temp': float(row[outdoor_col]),
+            'pv_power': float(row[pv_col]),
+            'pv_power_history': pv_history,
+            'fireplace_on': 0,
+            'tv_on': float(row.get(tv_col, 0) or 0) if has_tv else 0,
+            'effective_temp': float(row['_eff']),
+        })
+
+    logging.info(
+        "PV df filter: %d periods from raw DataFrame (PV > 100W, FP off)",
+        len(periods),
+    )
+    return periods
+
+
+def _run_optimization_pass(
+    param_names, param_values, param_bounds,
+    periods, current_params, frozen_params=None,
+    pass_label="",
+):
+    """Run a single L-BFGS-B optimisation pass.
+
+    Returns a dict ``{param_name: optimised_value, ..., 'mae': float}``
+    on success, or *None* on failure.
+    """
+    # Scaling factors for better convergence
+    scaling_factors = []
+    for name in param_names:
+        if name == 'solar_lag_minutes':
+            scaling_factors.append(100.0)
+        elif name == 'pv_heat_weight':
+            scaling_factors.append(0.001)
+        else:
+            scaling_factors.append(1.0)
+
+    scaled_values = [v / s for v, s in zip(param_values, scaling_factors)]
+    scaled_bounds = [
+        (b[0] / s, b[1] / s) for b, s in zip(param_bounds, scaling_factors)
+    ]
+
+    # Reset call counter for each pass
+    calculate_mae_for_params.call_count = 0
+
+    def objective(scaled_params):
+        real_params = [p * s for p, s in zip(scaled_params, scaling_factors)]
+        return calculate_mae_for_params(
+            real_params, param_names, periods, current_params,
+            frozen_params=frozen_params,
+        )
+
+    label = f" ({pass_label})" if pass_label else ""
+    logging.info(
+        "Starting optimisation%s with %d periods, %d params: %s",
+        label, len(periods), len(param_names), param_names,
+    )
+
+    try:
+        result = minimize(
+            objective,
+            x0=scaled_values,
+            bounds=scaled_bounds,
+            method='L-BFGS-B',
+            options={'maxiter': 500, 'ftol': 1e-6, 'disp': True, 'iprint': 2},
+        )
+        # Unscale
+        result.x = result.x * np.array(scaling_factors)
+
+        log_optimization_results(result, param_names, param_values)
+
+        if result.success:
+            out = {name: result.x[i] for i, name in enumerate(param_names)}
+            out['mae'] = result.fun
+            logging.info("✅ Pass%s MAE: %.4f°C", label, result.fun)
+            return out
+
+        logging.error("❌ Optimisation%s failed: %s", label, result.message)
+        return None
+
+    except Exception as e:
+        logging.error("❌ Optimisation%s error: %s", label, e)
+        return None
+
+
+def optimize_thermal_parameters(stable_periods, df=None):
     """Multi-parameter optimization with data availability checks."""
     logging.info(
         "=== MULTI-PARAMETER OPTIMIZATION WITH DATA AVAILABILITY CHECKS ==="
@@ -1222,10 +1866,8 @@ def optimize_thermal_parameters(stable_periods):
         'tv_on': sum(1 for p in stable_periods if p.get('tv_on', 0) > 0)
     }
 
-    data_availability = {}
     for source, count in data_stats.items():
         percentage = (count / total_periods) * 100
-        data_availability[source] = percentage
         logging.info(
             f"  {source}: {count}/{total_periods} periods ({percentage:.1f}%)"
         )
@@ -1236,31 +1878,6 @@ def optimize_thermal_parameters(stable_periods):
         f"  effective_temp: {eff_count}/{total_periods} periods "
         f"({eff_count/total_periods*100:.0f}%) — using (BT2+BT3)/2"
     )
-
-    excluded_params = []
-    min_usage_threshold = 1.0
-
-    if data_availability['fireplace_on'] <= min_usage_threshold:
-        excluded_params.append('fireplace_heat_weight')
-        logging.info(
-            "  🚫 Excluding fireplace_heat_weight "
-            f"(only {data_availability['fireplace_on']:.1f}% usage)"
-        )
-
-    if data_availability['tv_on'] <= min_usage_threshold:
-        excluded_params.append('tv_heat_weight')
-        logging.info(
-            "  🚫 Excluding tv_heat_weight "
-            f"(only {data_availability['tv_on']:.1f}% usage)"
-        )
-
-    if data_availability['pv_power'] <= min_usage_threshold:
-        excluded_params.append('pv_heat_weight')
-        excluded_params.append('solar_lag_minutes')
-        logging.info(
-            "  🚫 Excluding pv_heat_weight and solar_lag_minutes "
-            f"(only {data_availability['pv_power']:.1f}% usage)"
-        )
 
     # Try to calculate direct heat loss first
     direct_u = calculate_direct_heat_loss(stable_periods)
@@ -1289,92 +1906,201 @@ def optimize_thermal_parameters(stable_periods):
             ThermalParameterConfig.get_default('solar_lag_minutes')
     }
 
-    logging.info("=== PARAMETERS FOR OPTIMIZATION ===")
-    for param, value in current_params.items():
-        if param in excluded_params:
-            logging.info(f"  {param}: {value} (FIXED - insufficient data)")
-        else:
-            logging.info(f"  {param}: {value} (OPTIMIZE)")
-
-    param_names, param_values, param_bounds = build_optimization_params(
-        current_params, excluded_params, heat_loss_center=direct_u
-    )
-
-    logging.info(f"Optimizing {len(param_names)} parameters: {param_names}")
-
-    # Define scaling factors for better optimization convergence
-    # We want all parameters to be roughly in the range [0.1, 10.0]
-    scaling_factors = []
-    for name in param_names:
-        if name == 'solar_lag_minutes':
-            scaling_factors.append(100.0)  # 45.0 -> 0.45
-        elif name == 'pv_heat_weight':
-            scaling_factors.append(0.001)  # 0.002 -> 2.0
-        else:
-            scaling_factors.append(1.0)
-
-    # Apply scaling to initial values and bounds
-    scaled_values = [v / s for v, s in zip(param_values, scaling_factors)]
-    scaled_bounds = [
-        (b[0] / s, b[1] / s) for b, s in zip(param_bounds, scaling_factors)
-    ]
-
-    def objective_function(scaled_params):
-        """Calculate MAE for given parameters (unscaling them first)."""
-        real_params = [p * s for p, s in zip(scaled_params, scaling_factors)]
-        return calculate_mae_for_params(
-            real_params, param_names, stable_periods, current_params
-        )
-
-    logging.info(
-        f"Starting optimization with {len(stable_periods)} periods..."
-    )
-    logging.info("This may take a few minutes...")
-
     logging.getLogger().setLevel(logging.DEBUG)
 
-    try:
-        result = minimize(
-            objective_function,
-            x0=scaled_values,
-            bounds=scaled_bounds,
-            method='L-BFGS-B',
-            options={
-                'maxiter': 500,
-                'ftol': 1e-3,
-                'disp': True,
-                'iprint': 2
-            }
+    # ------------------------------------------------------------------
+    # Pass 1: OE on HP-only periods (HLC fixed from energy balance)
+    # When direct_u is available, HLC is frozen at the physics-anchored
+    # value to break the HLC/OE degeneracy.  Falls back to co-optimising
+    # HLC+OE if the direct calculation failed.
+    # ------------------------------------------------------------------
+    fix_hlc = direct_u is not None
+    pass_label = "Pass 1 OE-only" if fix_hlc else "Pass 1 HLC+OE"
+    logging.info("=== %s (HP-only periods) ===", pass_label)
+
+    hp_periods = _filter_hp_only_periods(stable_periods)
+    MIN_HP_PERIODS = 10
+    if len(hp_periods) < MIN_HP_PERIODS:
+        logging.warning(
+            "⚠️ Only %d HP-only periods (need %d) — "
+            "falling back to all periods for Pass 1",
+            len(hp_periods), MIN_HP_PERIODS,
+        )
+        hp_periods = stable_periods
+
+    excluded_params = []  # kept for build_optimization_params signature
+    param_names, param_values, param_bounds = build_optimization_params(
+        current_params, excluded_params,
+        heat_loss_center=direct_u,
+        fix_hlc=fix_hlc,
+    )
+
+    # Freeze all heat-source weights to zero so they cannot contaminate
+    # the OE estimate.  When fix_hlc, also freeze HLC at the direct value.
+    frozen_pass1 = {
+        'pv_heat_weight': 0.0,
+        'fireplace_heat_weight': 0.0,
+        'tv_heat_weight': 0.0,
+        'solar_lag_minutes': 0.0,
+    }
+    if fix_hlc:
+        frozen_pass1['heat_loss_coefficient'] = direct_u
+
+    pass1 = _run_optimization_pass(
+        param_names, param_values, param_bounds,
+        hp_periods, current_params, frozen_params=frozen_pass1,
+        pass_label=pass_label,
+    )
+    if pass1 is None:
+        logging.error("❌ %s failed", pass_label)
+        return None
+
+    hlc = direct_u if fix_hlc else pass1['heat_loss_coefficient']
+    oe = pass1['outlet_effectiveness']
+    pass1_mae = pass1['mae']
+    logging.info(
+        "✅ Pass 1 result: HLC=%.4f%s, OE=%.4f  (MAE %.4f°C)",
+        hlc, " (fixed)" if fix_hlc else "", oe, pass1_mae,
+    )
+
+    # ------------------------------------------------------------------
+    # Pass 2: PV weight on PV-only periods (HLC/OE/solar_lag locked)
+    # solar_lag_minutes is fixed at its config default — cross-correlation
+    # is unreliable for UFH systems where the slab buffers the PV→room
+    # signal, and slab_time_constant_hours models the delay physics.
+    # When a raw DataFrame is available, ALL PV rows are used (not just
+    # stability-filtered ones) to capture the strong PV signal that the
+    # stability filter excludes.
+    # ------------------------------------------------------------------
+    if df is not None:
+        pv_periods = _filter_pv_periods_from_df(df, hlc=hlc, oe=oe)
+        if len(pv_periods) < 5:
+            logging.info(
+                "Only %d PV periods from df — falling back to stable-period filter",
+                len(pv_periods),
+            )
+            pv_periods = _filter_pv_only_periods(stable_periods, hlc=hlc, oe=oe)
+    else:
+        pv_periods = _filter_pv_only_periods(stable_periods, hlc=hlc, oe=oe)
+    MIN_PV_PERIODS = 5
+    pv_weight = current_params['pv_heat_weight']
+    solar_lag = current_params['solar_lag_minutes']  # kept at config default
+
+    if len(pv_periods) >= MIN_PV_PERIODS:
+        frozen_pass2 = {
+            'heat_loss_coefficient': hlc,
+            'outlet_effectiveness': oe,
+            'fireplace_heat_weight': 0.0,
+            'tv_heat_weight': current_params['tv_heat_weight'],
+            'solar_lag_minutes': solar_lag,
+        }
+        logging.info(
+            "=== PASS 2: PV weight only (%d PV-only periods, solar_lag frozen=%.0f) ===",
+            len(pv_periods), solar_lag,
+        )
+        pv_names, pv_values, pv_bounds = _build_pv_params(current_params)
+
+        pass2 = _run_optimization_pass(
+            pv_names, pv_values, pv_bounds,
+            pv_periods, current_params, frozen_params=frozen_pass2,
+            pass_label="Pass 2 PV",
+        )
+        if pass2 is not None:
+            pv_weight = pass2['pv_heat_weight']
+            logging.info(
+                "✅ Pass 2 result: pv_weight=%.5f, solar_lag=%.1f min (frozen)",
+                pv_weight, solar_lag,
+            )
+        else:
+            logging.warning(
+                "⚠️ Pass 2 (PV) failed — using default pv_weight"
+            )
+    else:
+        logging.info(
+            "⚠️ Only %d PV-only periods (need %d) — "
+            "skipping Pass 2, using default PV params",
+            len(pv_periods), MIN_PV_PERIODS,
         )
 
-        # Unscale the result immediately for logging and downstream processing
-        result.x = result.x * np.array(scaling_factors)
+    # ------------------------------------------------------------------
+    # Pass 3: FP weight on FP-active periods (HLC/OE/PV locked)
+    # ------------------------------------------------------------------
+    fp_periods = [
+        p for p in stable_periods
+        if p.get('fireplace_on', 0) > 0
+        and p.get('pv_power', 0) < 100  # avoid PV contamination
+    ]
+    MIN_FP_PERIODS = 5
+    fp_weight = current_params['fireplace_heat_weight']
 
-        log_optimization_results(result, param_names, param_values)
+    if len(fp_periods) >= MIN_FP_PERIODS:
+        logging.info(
+            "=== PASS 3: FP weight (%d FP-active periods) ===",
+            len(fp_periods),
+        )
+        fp_names = ['fireplace_heat_weight']
+        fp_values = [current_params['fireplace_heat_weight']]
+        fp_bounds = [(0.1, 5.0)]
 
-        if result.success:
-            optimized_params = build_optimized_params(
-                result, current_params, param_names, excluded_params
+        frozen_pass3 = {
+            'heat_loss_coefficient': hlc,
+            'outlet_effectiveness': oe,
+            'pv_heat_weight': pv_weight,
+            'solar_lag_minutes': solar_lag,
+            'tv_heat_weight': current_params['tv_heat_weight'],
+        }
+
+        pass3 = _run_optimization_pass(
+            fp_names, fp_values, fp_bounds,
+            fp_periods, current_params, frozen_params=frozen_pass3,
+            pass_label="Pass 3 FP",
+        )
+        if pass3 is not None:
+            fp_weight = pass3['fireplace_heat_weight']
+            logging.info(
+                "✅ Pass 3 result: fireplace_heat_weight=%.4f",
+                fp_weight,
             )
-
-            log_optimized_parameters(
-                optimized_params, current_params, excluded_params
-            )
-            return optimized_params
-
         else:
-            logging.error(f"❌ Optimization failed: {result.message}")
-            return None
+            logging.warning(
+                "⚠️ Pass 3 (FP) failed — using default fireplace_heat_weight"
+            )
+    else:
+        logging.info(
+            "⚠️ Only %d FP-active periods (need %d) — "
+            "skipping Pass 3, using default FP weight",
+            len(fp_periods), MIN_FP_PERIODS,
+        )
 
-    except Exception as e:
-        logging.error(f"❌ Optimization error: {e}")
-        return None
+    # ------------------------------------------------------------------
+    # Merge results
+    # ------------------------------------------------------------------
+    optimized_params = dict(current_params)
+    optimized_params['heat_loss_coefficient'] = hlc
+    optimized_params['outlet_effectiveness'] = oe
+    optimized_params['pv_heat_weight'] = pv_weight
+    optimized_params['solar_lag_minutes'] = solar_lag
+    optimized_params['fireplace_heat_weight'] = fp_weight
+    optimized_params['mae'] = pass1_mae
+    optimized_params['optimization_success'] = True
+    optimized_params['excluded_parameters'] = []
+
+    log_optimized_parameters(optimized_params, current_params, [])
+
+    return optimized_params
 
 
 def build_optimization_params(
-    current_params, excluded_params, heat_loss_center=None
+    current_params, excluded_params, heat_loss_center=None,
+    fix_hlc=False,
 ):
-    """Build lists of parameters for optimization."""
+    """Build lists of parameters for optimization.
+
+    When *fix_hlc* is True **and** *heat_loss_center* is provided, HLC is
+    excluded from the optimisation list (it will be frozen via
+    ``frozen_params`` instead).  This breaks the HLC/OE degeneracy by
+    anchoring HLC from the energy-balance calculation.
+    """
     param_names = []
     param_values = []
     param_bounds = []
@@ -1389,14 +2115,23 @@ def build_optimization_params(
     # It requires dynamic/transient data for calibration.
 
     for p in core_params:
+        # When fix_hlc is requested and we have a physics anchor, skip HLC
+        if p == 'heat_loss_coefficient' and fix_hlc and heat_loss_center is not None:
+            logging.info(
+                "  Fixing heat_loss_coefficient = %.4f from energy balance"
+                " (not optimised)",
+                heat_loss_center,
+            )
+            continue
+
         param_names.append(p)
         param_values.append(current_params[p])
 
-        # Special handling for heat loss if we have a direct calculation
         if p == 'heat_loss_coefficient' and heat_loss_center is not None:
-            # Constrain to +/- 30% of calculated value
-            lower = heat_loss_center * 0.7
-            upper = heat_loss_center * 1.3
+            # Constrain to +/- 10% of calculated value (HLC and OE are
+            # degenerate in the temp-based model; anchor HLC tightly)
+            lower = heat_loss_center * 0.9
+            upper = heat_loss_center * 1.1
             # But keep within absolute physical bounds
             abs_bounds = ThermalParameterConfig.get_bounds(p)
             final_lower = max(lower, abs_bounds[0])
@@ -1408,8 +2143,6 @@ def build_optimization_params(
             )
         elif p == 'heat_loss_coefficient':
             # Use strict bounds from config to ensure physical realism
-            # Do not expand to 2.0 as that allows unrealistic "tent-like"
-            # physics
             default_bounds = ThermalParameterConfig.get_bounds(p)
             param_bounds.append(default_bounds)
             logging.info(
@@ -1419,30 +2152,105 @@ def build_optimization_params(
         else:
             param_bounds.append(ThermalParameterConfig.get_bounds(p))
 
-    heat_source_params = {
-        'pv_heat_weight': (0.0005, 0.005),
-        'fireplace_heat_weight': (1.0, 6.0),
-        'tv_heat_weight': (0.1, 1.5),
-        'solar_lag_minutes': (0.0, 180.0)
-    }
-
-    for param, bounds in heat_source_params.items():
-        if param not in excluded_params:
-            param_names.append(param)
-            param_values.append(current_params[param])
-            param_bounds.append(bounds)
+    # Heat-source weights are NO LONGER co-optimised with HLC/OE.
+    # PV is calibrated in an isolated Pass 2 (_build_pv_params).
+    # FP weight comes from Step 3d channel calibration.
+    # TV weight is fixed at default.
 
     return param_names, param_values, param_bounds
 
 
+def _calibrate_solar_lag_crosscorr(df):
+    """Estimate solar_lag_minutes via cross-correlation of PV vs d(indoor)/dt.
+
+    Returns the lag in minutes that maximises the correlation, or None if
+    insufficient data.  The search range is 0–180 min in 5-min steps.
+    """
+    pv_col = config.PV_POWER_ENTITY_ID.split(".", 1)[-1]
+    indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+
+    if df is None or pv_col not in df.columns or indoor_col not in df.columns:
+        return None
+
+    df_s = df.sort_values('_time').reset_index(drop=True)
+    pv = df_s[pv_col].values.astype(float)
+    indoor = df_s[indoor_col].values.astype(float)
+
+    # Indoor temp rate of change (forward diff, per 5-min step)
+    d_indoor = np.diff(indoor)
+    pv_trimmed = pv[:-1]  # align lengths
+
+    if len(d_indoor) < 72:  # need at least 6 hours of data
+        return None
+
+    max_lag_steps = 36  # 180 min / 5 min
+    best_lag = 0
+    best_corr = -np.inf
+
+    for lag in range(max_lag_steps + 1):
+        if lag == 0:
+            x = pv_trimmed
+            y = d_indoor
+        else:
+            x = pv_trimmed[:-lag]
+            y = d_indoor[lag:]
+
+        if len(x) < 36:
+            break
+
+        # Pearson correlation (handle constant arrays)
+        x_std = np.std(x)
+        y_std = np.std(y)
+        if x_std < 1e-10 or y_std < 1e-10:
+            continue
+
+        corr = np.corrcoef(x, y)[0, 1]
+        if corr > best_corr:
+            best_corr = corr
+            best_lag = lag
+
+    lag_minutes = best_lag * 5.0
+    logging.info(
+        "Solar lag cross-correlation: best_lag=%.0f min (r=%.3f)",
+        lag_minutes, best_corr,
+    )
+    if best_corr < 0.05:
+        logging.warning("Solar lag correlation too weak (r=%.3f) — ignoring", best_corr)
+        return None
+
+    return lag_minutes
+
+
+def _build_pv_params(current_params):
+    """Build parameter lists for the PV-only optimisation pass.
+
+    solar_lag_minutes is frozen (not calibrated) — the slab time constant
+    models the thermal delay physics more accurately for UFH systems.
+    """
+    param_names = ['pv_heat_weight']
+    param_values = [current_params['pv_heat_weight']]
+    param_bounds = [(0.0001, 0.005)]
+    return param_names, param_values, param_bounds
+
+
 def calculate_mae_for_params(
-    params, param_names, stable_periods, current_params
+    params, param_names, stable_periods, current_params,
+    frozen_params=None,
 ):
-    """Calculate MAE for a given set of parameters."""
+    """Calculate MAE for a given set of parameters.
+
+    ``frozen_params`` is an optional dict of parameter-name → value that
+    take precedence over both *param_dict* (the values being optimised)
+    and *current_params* (the defaults).  This is used by the isolated-pass
+    optimiser to lock parameters that must not change in a given pass
+    (e.g. pv/fp/tv weights set to 0 during the HLC+OE pass).
+    """
     total_error = 0.0
     valid_predictions = 0
 
     param_dict = dict(zip(param_names, params))
+    if frozen_params:
+        param_dict.update(frozen_params)
 
     debug_str = ", ".join(
         [f"{name}={val:.4f}" for name, val in param_dict.items()]
@@ -1462,35 +2270,37 @@ def calculate_mae_for_params(
     original_level = root_logger.level
     root_logger.setLevel(logging.WARNING)
 
+    # Create model once and update params (avoids re-init per period)
+    test_model = ThermalEquilibriumModel()
+    test_model.thermal_time_constant = param_dict.get(
+        'thermal_time_constant',
+        current_params['thermal_time_constant']
+    )
+    test_model.heat_loss_coefficient = param_dict[
+        'heat_loss_coefficient'
+    ]
+    test_model.outlet_effectiveness = param_dict[
+        'outlet_effectiveness'
+    ]
+
+    test_model.external_source_weights['pv'] = param_dict.get(
+        'pv_heat_weight', current_params['pv_heat_weight']
+    )
+    test_model.external_source_weights['fireplace'] = param_dict.get(
+        'fireplace_heat_weight',
+        current_params['fireplace_heat_weight']
+    )
+    test_model.external_source_weights['tv'] = param_dict.get(
+        'tv_heat_weight', current_params['tv_heat_weight']
+    )
+
+    test_model.solar_lag_minutes = param_dict.get(
+        'solar_lag_minutes', current_params['solar_lag_minutes']
+    )
+    test_model.sync_heat_source_channels_from_model_state()
+
     for period in test_periods:
         try:
-            test_model = ThermalEquilibriumModel()
-            test_model.thermal_time_constant = param_dict.get(
-                'thermal_time_constant',
-                current_params['thermal_time_constant']
-            )
-            test_model.heat_loss_coefficient = param_dict[
-                'heat_loss_coefficient'
-            ]
-            test_model.outlet_effectiveness = param_dict[
-                'outlet_effectiveness'
-            ]
-
-            test_model.external_source_weights['pv'] = param_dict.get(
-                'pv_heat_weight', current_params['pv_heat_weight']
-            )
-            test_model.external_source_weights['fireplace'] = param_dict.get(
-                'fireplace_heat_weight',
-                current_params['fireplace_heat_weight']
-            )
-            test_model.external_source_weights['tv'] = param_dict.get(
-                'tv_heat_weight', current_params['tv_heat_weight']
-            )
-
-            test_model.solar_lag_minutes = param_dict.get(
-                'solar_lag_minutes', current_params['solar_lag_minutes']
-            )
-            test_model.sync_heat_source_channels_from_model_state()
 
             # FORCE TEMPERATURE-BASED PHYSICS:
             # We intentionally pass thermal_power=None here even if available.
@@ -1520,7 +2330,7 @@ def calculate_mae_for_params(
                 tv_on=period['tv_on'],
                 thermal_power=None,  # Force temperature-based path
                 _suppress_logging=True,
-                cloud_cover_pct=50.0,
+                cloud_cover_pct=0.0,
             )
 
             error = abs(predicted_temp - period['indoor_temp'])
@@ -1615,6 +2425,669 @@ def log_optimized_parameters(
                 )
 
     logging.info(f"Final MAE: {optimized_params['mae']:.4f}°C")
+
+
+# ===================================================================
+# Apply calibrated channel parameters to orchestrator
+# ===================================================================
+
+def _apply_channel_params(orchestrator, channel_params: dict) -> None:
+    """Apply calibrated channel-specific parameters to the orchestrator."""
+    fp_ch = orchestrator.channels.get("fireplace")
+    hp_ch = orchestrator.channels.get("heat_pump")
+    pv_ch = orchestrator.channels.get("pv")
+
+    if fp_ch is not None:
+        if "fp_decay_time_constant" in channel_params:
+            fp_ch.fp_decay_time_constant = channel_params["fp_decay_time_constant"]
+            logging.info(
+                "🔥 Applied fp_decay_time_constant = %.2fh",
+                fp_ch.fp_decay_time_constant,
+            )
+        if "room_spread_delay_minutes" in channel_params:
+            fp_ch.room_spread_delay_minutes = channel_params["room_spread_delay_minutes"]
+            logging.info(
+                "🔥 Applied room_spread_delay_minutes = %.0fmin",
+                fp_ch.room_spread_delay_minutes,
+            )
+
+    if hp_ch is not None:
+        if "delta_t_floor" in channel_params:
+            hp_ch.delta_t_floor = channel_params["delta_t_floor"]
+            logging.info(
+                "🔧 Applied delta_t_floor = %.2f°C",
+                hp_ch.delta_t_floor,
+            )
+
+    if pv_ch is not None:
+        if "cloud_factor_exponent" in channel_params:
+            pv_ch.cloud_factor_exponent = channel_params["cloud_factor_exponent"]
+            logging.info(
+                "☁️ Applied cloud_factor_exponent = %.2f",
+                pv_ch.cloud_factor_exponent,
+            )
+        if "solar_decay_tau_hours" in channel_params:
+            pv_ch.solar_decay_tau_hours = channel_params["solar_decay_tau_hours"]
+            logging.info(
+                "☀️ Applied solar_decay_tau_hours = %.2fh",
+                pv_ch.solar_decay_tau_hours,
+            )
+
+
+# ===================================================================
+# Phase 2 – Fireplace batch calibration
+# ===================================================================
+
+def filter_fp_decay_periods(df, min_on_minutes=15, post_off_minutes=120,
+                            hlc=None, oe=None):
+    """Find fireplace on→off transitions and extract post-off decay curves.
+
+    Returns a list of dicts, each with:
+      * ``indoor_excess`` – list of (minutes_since_off, excess_temp) tuples
+      * ``outdoor_temp``  – mean outdoor temp during the decay window
+      * ``outlet_temp``   – mean outlet temp during the decay window
+    Only includes transitions where the FP was on for ≥ *min_on_minutes*.
+
+    If *hlc* and *oe* are supplied the baseline used for computing indoor
+    excess is the HP-only equilibrium ``(oe*outlet + hlc*outdoor)/(oe+hlc)``
+    instead of the raw outdoor temperature. This isolates the FP-only
+    contribution for more accurate decay fitting.
+    """
+    logging.info("=== FILTERING FOR FIREPLACE DECAY PERIODS ===")
+    if df is None or df.empty:
+        return []
+
+    fp_col = config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1]
+    indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outdoor_col = config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    dhw_col = config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1]
+
+    for c in (fp_col, indoor_col, outdoor_col):
+        if c not in df.columns:
+            logging.warning("Missing column %s for FP decay filtering", c)
+            return []
+
+    df = df.sort_values("_time").reset_index(drop=True)
+    n = len(df)
+    step_min = 5  # 5-minute resolution
+
+    min_on_steps = max(1, min_on_minutes // step_min)
+    post_off_steps = post_off_minutes // step_min
+
+    periods = []
+    i = 0
+    while i < n - post_off_steps:
+        # Look for FP on → off transition
+        if df[fp_col].iloc[i] > 0 and (i + 1 < n) and df[fp_col].iloc[i + 1] <= 0:
+            # Count how long FP was on before this point
+            on_count = 0
+            j = i
+            while j >= 0 and df[fp_col].iloc[j] > 0:
+                on_count += 1
+                j -= 1
+            if on_count < min_on_steps:
+                i += 1
+                continue
+
+            off_start = i + 1
+            off_end = min(off_start + post_off_steps, n)
+            window = df.iloc[off_start:off_end]
+
+            # Skip if blocking active during decay
+            if dhw_col in df.columns and window[dhw_col].sum() > 0:
+                i = off_end
+                continue
+
+            # Skip if FP comes back on during window
+            if window[fp_col].sum() > 0:
+                # Find where FP comes back on and truncate
+                first_on = window[fp_col].gt(0).idxmax()
+                window = df.iloc[off_start:first_on]
+                if len(window) < 4:
+                    i += 1
+                    continue
+
+            indoor_vals = window[indoor_col].values
+            outdoor_mean = window[outdoor_col].mean()
+            outlet_mean = window[outlet_col].mean() if outlet_col in window.columns else 25.0
+
+            # Compute indoor excess above baseline
+            if hlc is not None and oe is not None and (hlc + oe) > 0:
+                baseline = (oe * outlet_mean + hlc * outdoor_mean) / (oe + hlc)
+            else:
+                baseline = outdoor_mean
+            excess = [(k * step_min, float(indoor_vals[k]) - baseline)
+                      for k in range(len(indoor_vals))
+                      if (float(indoor_vals[k]) - baseline) > 0.1]
+
+            if len(excess) >= 3:
+                periods.append({
+                    "indoor_excess": excess,
+                    "outdoor_temp": outdoor_mean,
+                    "outlet_temp": outlet_mean,
+                })
+            i = off_end
+        else:
+            i += 1
+
+    logging.info("Found %d fireplace decay periods", len(periods))
+    return periods
+
+
+def calibrate_fp_decay_tau(decay_periods):
+    """Calibrate fp_decay_time_constant from post-off exponential decay.
+
+    Uses log-linear regression: ln(T_excess) = ln(A) - t/τ.
+    Returns τ in hours, or None if insufficient data.
+    """
+    if len(decay_periods) < 5:
+        logging.warning(
+            "Insufficient FP decay periods: %d (need ≥5)", len(decay_periods)
+        )
+        return None
+
+    taus = []
+    for period in decay_periods:
+        pts = period["indoor_excess"]
+        if len(pts) < 3:
+            continue
+        t_vals = np.array([p[0] for p in pts], dtype=float)  # minutes
+        y_vals = np.array([p[1] for p in pts], dtype=float)
+
+        valid = y_vals > 0.05
+        if valid.sum() < 3:
+            continue
+
+        t_vals = t_vals[valid]
+        y_vals = y_vals[valid]
+        log_y = np.log(y_vals)
+
+        # Linear regression
+        n_pts = len(t_vals)
+        sx = t_vals.sum()
+        sy = log_y.sum()
+        sxy = (t_vals * log_y).sum()
+        sxx = (t_vals * t_vals).sum()
+        denom = n_pts * sxx - sx * sx
+        if abs(denom) < 1e-10:
+            continue
+        slope = (n_pts * sxy - sx * sy) / denom
+
+        if slope >= -0.001:
+            continue  # Not decaying
+
+        tau_min = -1.0 / slope  # in minutes
+        tau_h = tau_min / 60.0
+
+        if 0.1 <= tau_h <= 6.0:
+            taus.append(tau_h)
+
+    if not taus:
+        logging.warning("No valid FP decay fits")
+        return None
+
+    result = float(np.median(taus))
+    logging.info(
+        "Calibrated fp_decay_time_constant = %.2fh (from %d fits)",
+        result, len(taus),
+    )
+    return result
+
+
+def calibrate_slab_time_constant(df, delta_t_floor=None):
+    """Calibrate slab_time_constant_hours from pump-ON inlet response.
+
+    When the heat pump starts, the outlet (supply) temperature rises and
+    the slab (measured at inlet/return) follows with time constant tau_slab:
+
+        inlet(t)  →  outlet - delta_t_floor   (exponential approach)
+
+    This matches the trajectory model usage:
+        alpha = min(1.0, dt / slab_tau)
+        t_slab += alpha * ((outlet - delta_t_floor) - t_slab)
+
+    HP startup is detected via thermal_power transitioning from < 0.5 kW
+    to >= 0.5 kW.  For each event we fit the first 90 min of HP-ON data.
+
+    Returns tau in hours, or None if insufficient data.
+    """
+    logging.info("=== CALIBRATING SLAB TIME CONSTANT ===")
+    if df is None or df.empty:
+        return None
+
+    inlet_col = config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    flow_col = config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1]
+    indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+
+    for c in (inlet_col, outlet_col, flow_col, indoor_col):
+        if c not in df.columns:
+            logging.info("Column %s missing — skipping slab tau calibration", c)
+            return None
+
+    if delta_t_floor is None:
+        delta_t_floor = ThermalParameterConfig.get_default('delta_t_floor')
+
+    df_s = df.sort_values('_time').reset_index(drop=True)
+
+    # Compute thermal power for HP state detection
+    delta_t = df_s[outlet_col] - df_s[inlet_col]
+    thermal_power = (
+        (df_s[flow_col] / 60.0)
+        * config.SPECIFIC_HEAT_CAPACITY
+        * delta_t
+    ).clip(lower=0.0)
+
+    # Detect HP startup transitions (rising edges: off → on)
+    hp_on = thermal_power >= 0.5
+    hp_on_prev = hp_on.shift(1, fill_value=False)
+    startups = hp_on & ~hp_on_prev
+
+    slab_taus = []
+    n_startups = 0
+
+    for start_idx in startups[startups].index:
+        n_startups += 1
+
+        # Find contiguous HP-ON window from this startup
+        end_idx = start_idx
+        while end_idx + 1 < len(df_s) and hp_on.iloc[end_idx + 1]:
+            end_idx += 1
+
+        window = df_s.iloc[start_idx:end_idx + 1]
+        if len(window) < 6:  # Need ≥ 30 min of HP-ON data
+            continue
+
+        # Use first 90 min only
+        t_hours_all = (
+            window['_time'] - window['_time'].iloc[0]
+        ).dt.total_seconds().values / 3600.0
+        use = t_hours_all <= 1.5
+        window = window.iloc[:int(use.sum())]
+        t_hours = t_hours_all[:len(window)]
+
+        if len(window) < 6:
+            continue
+
+        inlet_vals = window[inlet_col].values.astype(float)
+        outlet_vals = window[outlet_col].values.astype(float)
+
+        # Check minimum gap: inlet must be meaningfully below
+        # the target (outlet - delta_t_floor) somewhere in the window
+        target_vals = outlet_vals - delta_t_floor
+        max_gap = float(np.max(target_vals - inlet_vals))
+        if max_gap < 0.5:
+            continue
+
+        # Timestep-based MSE fitting using the model's own formula:
+        #   pred_{k+1} = pred_k + min(1, dt/tau) * (outlet_k - dtf - pred_k)
+        # This handles ramping outlet naturally.
+        dt_steps = np.diff(t_hours)  # time steps in hours
+
+        def _slab_mse(params):
+            tau = params[0]
+            pred = inlet_vals[0]
+            mse = 0.0
+            for k in range(len(dt_steps)):
+                alpha = min(1.0, dt_steps[k] / tau)
+                pred = pred + alpha * (target_vals[k] - pred)
+                mse += (pred - inlet_vals[k + 1]) ** 2
+            return mse / len(dt_steps)
+
+        if minimize is None:
+            continue
+
+        try:
+            result = minimize(
+                _slab_mse, [1.0],
+                bounds=[(0.1, 6.0)],
+                method='L-BFGS-B',
+                options={'ftol': 1e-8, 'maxiter': 100},
+            )
+        except Exception:
+            continue
+
+        if not (result.success or result.fun < 0.5):
+            continue
+
+        best_tau = float(result.x[0])
+        best_mse = float(result.fun)
+
+        # Quality gate: MSE < 0.5 °C² (≈ 0.7°C RMS)
+        if best_mse > 0.5:
+            continue
+
+        if 0.1 < best_tau < 6.0:
+            slab_taus.append(best_tau)
+
+    logging.info(
+        "Slab tau: checked %d HP-startup events, %d valid fits",
+        n_startups, len(slab_taus),
+    )
+
+    if not slab_taus:
+        logging.info("No valid slab approach periods found")
+        return None
+
+    result = float(np.median(slab_taus))
+    result = max(0.2, min(4.0, result))
+    logging.info(
+        "Calibrated slab_time_constant_hours = %.2fh (median of %d events)",
+        result, len(slab_taus),
+    )
+    return result
+
+
+def filter_fp_spread_periods(df, min_on_minutes=20):
+    """Find FP events where living_room_temp AND indoor_temp are available.
+
+    Returns list of dicts with ``living_room`` and ``indoor_avg`` time
+    series arrays suitable for cross-correlation.
+    """
+    logging.info("=== FILTERING FOR FIREPLACE SPREAD PERIODS ===")
+    if df is None or df.empty:
+        return []
+
+    fp_col = config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1]
+    indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+    lr_col = getattr(config, "LIVING_ROOM_TEMP_ENTITY_ID", "").split(".", 1)[-1]
+
+    if not lr_col or lr_col not in df.columns:
+        logging.info("Living room temp not available — skipping spread calibration")
+        return []
+
+    for c in (fp_col, indoor_col):
+        if c not in df.columns:
+            return []
+
+    df = df.sort_values("_time").reset_index(drop=True)
+    step_min = 5
+    min_steps = max(1, min_on_minutes // step_min)
+
+    periods = []
+    in_event = False
+    event_start = 0
+
+    for i in range(len(df)):
+        fp_on = df[fp_col].iloc[i] > 0
+        if fp_on and not in_event:
+            event_start = i
+            in_event = True
+        elif not fp_on and in_event:
+            event_len = i - event_start
+            if event_len >= min_steps:
+                window = df.iloc[event_start:i]
+                lr_vals = window[lr_col].values
+                avg_vals = window[indoor_col].values
+                if not (np.isnan(lr_vals).any() or np.isnan(avg_vals).any()):
+                    periods.append({
+                        "living_room": lr_vals.astype(float),
+                        "indoor_avg": avg_vals.astype(float),
+                        "duration_steps": event_len,
+                    })
+            in_event = False
+
+    logging.info("Found %d FP spread periods", len(periods))
+    return periods
+
+
+def calibrate_room_spread_delay(spread_periods):
+    """Calibrate room_spread_delay_minutes via cross-correlation.
+
+    Returns delay in minutes, or None if insufficient data.
+    """
+    if len(spread_periods) < 5:
+        logging.warning(
+            "Insufficient FP spread periods: %d (need ≥5)", len(spread_periods)
+        )
+        return None
+
+    step_min = 5
+    delays = []
+    for period in spread_periods:
+        lr = period["living_room"]
+        avg = period["indoor_avg"]
+        if len(lr) < 4:
+            continue
+        # Differentiate to get rate of change
+        lr_diff = np.diff(lr)
+        avg_diff = np.diff(avg)
+        if np.std(lr_diff) < 1e-8 or np.std(avg_diff) < 1e-8:
+            continue
+        # Normalized cross-correlation
+        corr = np.correlate(
+            (lr_diff - lr_diff.mean()) / (np.std(lr_diff) * len(lr_diff)),
+            (avg_diff - avg_diff.mean()) / np.std(avg_diff),
+            mode="full",
+        )
+        mid = len(lr_diff) - 1
+        # Only look at positive lags (living room leads)
+        positive_lags = corr[mid:]
+        if len(positive_lags) == 0:
+            continue
+        peak_idx = np.argmax(positive_lags)
+        delay_min = peak_idx * step_min
+        if 0 <= delay_min <= 180:
+            delays.append(delay_min)
+
+    if not delays:
+        logging.warning("No valid FP spread delay estimates")
+        return None
+
+    result = float(np.median(delays))
+    logging.info(
+        "Calibrated room_spread_delay_minutes = %.0fmin (from %d estimates)",
+        result, len(delays),
+    )
+    return result
+
+
+def calibrate_delta_t_floor(stable_periods):
+    """Calibrate delta_t_floor as percentile-10 of outlet-inlet during HP-on.
+
+    Returns delta_t_floor in °C, or None if insufficient data.
+    Filters out periods with low flow rate (< 5 L/min) where delta_t
+    is dominated by standstill heat loss and is not representative.
+    """
+    logging.info("=== CALIBRATING DELTA_T_FLOOR ===")
+    deltas = []
+    for p in stable_periods:
+        inlet = p.get("inlet_temp")
+        outlet = p.get("outlet_temp")
+        thermal_power = p.get("thermal_power_kw", 0)
+        if inlet is None or outlet is None:
+            continue
+        if not isinstance(inlet, (int, float)) or not isinstance(outlet, (int, float)):
+            continue
+        dt = outlet - inlet
+        if dt > 1.0 and thermal_power > 0.5:
+            deltas.append(dt)
+
+    if len(deltas) < 10:
+        logging.warning("Insufficient data for delta_t_floor: %d", len(deltas))
+        return None
+
+    result = float(np.percentile(deltas, 25))
+    result = max(1.0, min(10.0, result))
+    logging.info(
+        "Calibrated delta_t_floor = %.2f°C (P25 of %d samples)",
+        result, len(deltas),
+    )
+    return result
+
+
+def filter_cloudy_pv_periods(df, min_pv=200, cloud_col="cloud_cover_proxy",
+                             min_cloud=20, max_cloud=80):
+    """Extract periods with PV > min_pv and variable cloud cover."""
+    if df is None or df.empty:
+        return []
+
+    pv_col = config.PV_POWER_ENTITY_ID.split(".", 1)[-1]
+    indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+
+    if pv_col not in df.columns or cloud_col not in df.columns:
+        return []
+
+    mask = (
+        (df[pv_col] > min_pv)
+        & (df[cloud_col] >= min_cloud)
+        & (df[cloud_col] <= max_cloud)
+    )
+    subset = df[mask]
+    if len(subset) < 30:
+        return []
+
+    periods = []
+    for _, row in subset.iterrows():
+        periods.append({
+            "pv_power": float(row[pv_col]),
+            "cloud_pct": float(row[cloud_col]),
+            "indoor_temp": float(row.get(indoor_col, 20.0)),
+        })
+    return periods
+
+
+def calibrate_cloud_factor(cloudy_periods, pv_heat_weight):
+    """Fit cloud_factor_exponent: effective_pv = pv × (1-cloud/100)^exp.
+
+    Returns exponent, or None if insufficient data.
+    """
+    if len(cloudy_periods) < 30 or pv_heat_weight <= 0:
+        return None
+
+    if minimize is None:
+        return None
+
+    def objective(params):
+        exp = params[0]
+        if exp <= 0:
+            return 1e9
+        errors = []
+        for p in cloudy_periods:
+            cloud_frac = p["cloud_pct"] / 100.0
+            effective = p["pv_power"] * (1.0 - cloud_frac) ** exp
+            predicted_contribution = effective * pv_heat_weight
+            # We don't have a perfect target; use residual variance
+            errors.append(predicted_contribution)
+        # Minimize variance of contributions (well-calibrated exponent
+        # should reduce scatter)
+        arr = np.array(errors)
+        return float(np.std(arr))
+
+    try:
+        result = minimize(objective, [1.0], bounds=[(0.1, 3.0)], method="L-BFGS-B")
+        if result.success:
+            exp = float(result.x[0])
+            logging.info("Calibrated cloud_factor_exponent = %.2f", exp)
+            return exp
+    except Exception as exc:
+        logging.warning("Cloud factor calibration failed: %s", exc)
+
+    return None
+
+
+def filter_pv_decay_periods(df, pv_high=500, pv_low=100, post_steps=24,
+                            crossing_window=6):
+    """Find transitions where PV drops from >pv_high to <pv_low.
+
+    Uses a sliding window (``crossing_window`` steps, default 6 = 30 min)
+    to detect gradual sunset transitions, not just single-step sharp drops.
+
+    Returns list of dicts with ``indoor_excess`` (minutes, temp) tuples.
+    """
+    if df is None or df.empty:
+        return []
+
+    pv_col = config.PV_POWER_ENTITY_ID.split(".", 1)[-1]
+    indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outdoor_col = config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+
+    for c in (pv_col, indoor_col, outdoor_col):
+        if c not in df.columns:
+            return []
+
+    df = df.sort_values("_time").reset_index(drop=True)
+    n = len(df)
+    step_min = 5
+    periods = []
+
+    i = crossing_window
+    while i < n - post_steps:
+        # Check if PV was above threshold in any of the preceding window steps
+        # and is now below threshold
+        curr_pv = df[pv_col].iloc[i]
+        if curr_pv < pv_low:
+            window_before = df[pv_col].iloc[max(0, i - crossing_window): i]
+            had_high_pv = (window_before > pv_high).any()
+            if had_high_pv:
+                post_window = df.iloc[i: i + post_steps]
+                outdoor_mean = post_window[outdoor_col].mean()
+                baseline = outdoor_mean
+                indoor_vals = post_window[indoor_col].values
+                excess = [
+                    (k * step_min, float(indoor_vals[k]) - baseline)
+                    for k in range(len(indoor_vals))
+                    if float(indoor_vals[k]) - baseline > 0.1
+                ]
+                if len(excess) >= 3:
+                    periods.append({"indoor_excess": excess})
+                i += post_steps
+                continue
+        i += 1
+
+    logging.info("Found %d PV decay periods", len(periods))
+    return periods
+
+
+def calibrate_solar_decay_tau(decay_periods):
+    """Calibrate solar_decay_tau_hours from PV drop residual curves.
+
+    Same log-linear approach as FP decay. Returns τ in hours or None.
+    """
+    if len(decay_periods) < 10:
+        logging.warning(
+            "Insufficient PV decay periods: %d (need ≥10)", len(decay_periods)
+        )
+        return None
+
+    taus = []
+    for period in decay_periods:
+        pts = period["indoor_excess"]
+        if len(pts) < 3:
+            continue
+        t_vals = np.array([p[0] for p in pts], dtype=float)
+        y_vals = np.array([p[1] for p in pts], dtype=float)
+        valid = y_vals > 0.05
+        if valid.sum() < 3:
+            continue
+        t_vals = t_vals[valid]
+        log_y = np.log(y_vals[valid])
+
+        n_pts = len(t_vals)
+        sx = t_vals.sum()
+        sy = log_y.sum()
+        sxy = (t_vals * log_y).sum()
+        sxx = (t_vals * t_vals).sum()
+        denom = n_pts * sxx - sx * sx
+        if abs(denom) < 1e-10:
+            continue
+        slope = (n_pts * sxy - sx * sy) / denom
+        if slope >= -0.001:
+            continue
+        tau_h = (-1.0 / slope) / 60.0
+        if 0.1 <= tau_h <= 3.0:
+            taus.append(tau_h)
+
+    if not taus:
+        return None
+
+    result = float(np.median(taus))
+    logging.info(
+        "Calibrated solar_decay_tau_hours = %.2fh (from %d fits)",
+        result, len(taus),
+    )
+    return result
 
 
 def backup_existing_calibration():

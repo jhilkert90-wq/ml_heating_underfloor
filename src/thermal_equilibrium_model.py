@@ -15,11 +15,13 @@ from typing import Dict, List, Optional
 try:
     from .thermal_parameters import thermal_params  # type: ignore
     from .thermal_constants import PhysicsConstants  # type: ignore
+    from .thermal_config import ThermalParameterConfig  # type: ignore
     from . import config  # type: ignore
 except ImportError:
     # Direct import fallback for notebooks and standalone tests
     from thermal_parameters import thermal_params  # type: ignore
     from thermal_constants import PhysicsConstants  # type: ignore
+    from thermal_config import ThermalParameterConfig  # type: ignore
     import config  # type: ignore
 
 
@@ -124,6 +126,32 @@ class ThermalEquilibriumModel:
                     ) + adjustments.get("tv_heat_weight_delta", 0.0),
                 }
 
+                self.delta_t_floor = (
+                    baseline_params.get(
+                        "delta_t_floor",
+                        ThermalParameterConfig.get_default('delta_t_floor'),
+                    )
+                    + adjustments.get("delta_t_floor_delta", 0.0)
+                )
+                self.fp_decay_time_constant = (
+                    baseline_params.get(
+                        "fp_decay_time_constant",
+                        ThermalParameterConfig.get_default(
+                            'fp_decay_time_constant'),
+                    )
+                    + adjustments.get(
+                        "fp_decay_time_constant_delta", 0.0)
+                )
+                self.room_spread_delay_minutes = (
+                    baseline_params.get(
+                        "room_spread_delay_minutes",
+                        ThermalParameterConfig.get_default(
+                            'room_spread_delay_minutes'),
+                    )
+                    + adjustments.get(
+                        "room_spread_delay_minutes_delta", 0.0)
+                )
+
                 logging.info(
                     "🎯 Loading CALIBRATED thermal parameters "
                     "(baseline + learning adjustments):"
@@ -203,11 +231,6 @@ class ThermalEquilibriumModel:
                 # but old parameters are still within the old (wider) bounds
                 # but outside the new (tighter) bounds.
                 try:
-                    try:
-                        from .thermal_config import ThermalParameterConfig
-                    except ImportError:
-                        from thermal_config import ThermalParameterConfig
-
                     # Clamp heat_loss_coefficient
                     hcl_bounds = ThermalParameterConfig.get_bounds(
                         "heat_loss_coefficient"
@@ -337,6 +360,13 @@ class ThermalEquilibriumModel:
             "tv": thermal_params.get("tv_heat_weight"),
         }
 
+        self.delta_t_floor = ThermalParameterConfig.get_default(
+            'delta_t_floor')
+        self.fp_decay_time_constant = ThermalParameterConfig.get_default(
+            'fp_decay_time_constant')
+        self.room_spread_delay_minutes = ThermalParameterConfig.get_default(
+            'room_spread_delay_minutes')
+
         # Initialize remaining attributes
         self._initialize_learning_attributes()
 
@@ -382,6 +412,10 @@ class ThermalEquilibriumModel:
                 "solar_lag_minutes": self.solar_lag_minutes,
                 "fireplace_heat_weight": self.fireplace_heat_weight,
                 "tv_heat_weight": self.tv_heat_weight,
+                "delta_t_floor": self.delta_t_floor,
+                "fp_decay_time_constant": self.fp_decay_time_constant,
+                "room_spread_delay_minutes":
+                    self.room_spread_delay_minutes,
             }
         )
 
@@ -616,11 +650,6 @@ class ThermalEquilibriumModel:
         self.confidence_boost_rate = PhysicsConstants.CONFIDENCE_BOOST_RATE
         self.recent_errors_window = config.RECENT_ERRORS_WINDOW
 
-        try:
-            from .thermal_config import ThermalParameterConfig
-        except ImportError:
-            from thermal_config import ThermalParameterConfig
-
         self.thermal_time_constant_bounds = ThermalParameterConfig.get_bounds(
             "thermal_time_constant"
         )
@@ -761,6 +790,7 @@ class ThermalEquilibriumModel:
         _suppress_logging: bool = False,
         fireplace_power_kw: float = None,
         cloud_cover_pct: float = 50.0,
+        fireplace_decay_kw: float = 0.0,
     ) -> float:
         """
         Predict equilibrium temperature using standard heat balance physics.
@@ -777,7 +807,7 @@ class ThermalEquilibriumModel:
         cloud_factor = self._calculate_cloud_factor(cloud_cover_pct)
         pv_weight_adjusted = self.external_source_weights.get("pv", 0.0) * cloud_factor
         heat_from_pv = effective_pv * pv_weight_adjusted
-        if not _suppress_logging:
+        if not _suppress_logging and getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False):
             logging.debug(
                 "☁️ Cloud cover=%.0f%%, factor=%.3f, PV weight %.5f → %.5f, "
                 "heat_from_pv=%.4f kW (effective_pv=%.0fW)",
@@ -796,6 +826,8 @@ class ThermalEquilibriumModel:
                 fireplace_on
                 * self.external_source_weights.get("fireplace", 0.0)
             )
+        # Add residual decay heat after fireplace is turned off
+        heat_from_fireplace += fireplace_decay_kw
 
         heat_from_tv = tv_on * self.external_source_weights.get("tv", 0.0)
 
@@ -1983,6 +2015,7 @@ class ThermalEquilibriumModel:
         auxiliary_heat = external_sources.get("auxiliary_heat", 0.0)
         fireplace_power_kw = external_sources.get("fireplace_power_kw", None)
         cloud_cover_pct = external_sources.get("cloud_cover_pct", 50.0)
+        fireplace_decay_kw = float(external_sources.get("fireplace_decay_kw", 0.0))
         # Steady-state temperature drop across floor loop: ΔT = BT2 − BT3
         # = thermal_power / (flow_rate × C_P).  Passed from caller as
         # delta_t_floor; defaults to 0 to preserve backward-compat behaviour.
@@ -2104,6 +2137,7 @@ class ThermalEquilibriumModel:
                 _suppress_logging=True,
                 fireplace_power_kw=fireplace_power_kw,
                 cloud_cover_pct=cloud_cover_pct,
+                fireplace_decay_kw=fireplace_decay_kw,
             )
 
             time_constant_hours = (
@@ -2722,11 +2756,6 @@ class ThermalEquilibriumModel:
         """
         Detect if parameters are in a corrupted state.
         """
-        try:
-            from .thermal_config import ThermalParameterConfig
-        except ImportError:
-            from thermal_config import ThermalParameterConfig
-
         # Check heat_loss_coefficient bounds
         hcl_bounds = ThermalParameterConfig.get_bounds("heat_loss_coefficient")
         if not (hcl_bounds[0] <= self.heat_loss_coefficient <= hcl_bounds[1]):

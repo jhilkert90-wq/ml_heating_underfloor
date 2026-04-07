@@ -93,13 +93,16 @@ class UnifiedPredictionContext:
             forecast_5h_pv = features.get('pv_forecast_5h', pv_power)
             forecast_6h_pv = features.get('pv_forecast_6h', pv_power)
 
-            # Extract cloud cover forecasts (0-100%, default 50%)
-            forecast_1h_cloud = features.get('cloud_cover_forecast_1h', 50.0)
-            forecast_2h_cloud = features.get('cloud_cover_forecast_2h', 50.0)
-            forecast_3h_cloud = features.get('cloud_cover_forecast_3h', 50.0)
-            forecast_4h_cloud = features.get('cloud_cover_forecast_4h', 50.0)
-            forecast_5h_cloud = features.get('cloud_cover_forecast_5h', 50.0)
-            forecast_6h_cloud = features.get('cloud_cover_forecast_6h', 50.0)
+            # Extract cloud cover forecasts (0-100%)
+            # Default 0% (clear sky) — when CLOUD_COVER_CORRECTION_ENABLED=false
+            # physics_features.py already sends 0.0 values.
+            _cc_default = 0.0
+            forecast_1h_cloud = features.get('cloud_cover_forecast_1h', _cc_default)
+            forecast_2h_cloud = features.get('cloud_cover_forecast_2h', _cc_default)
+            forecast_3h_cloud = features.get('cloud_cover_forecast_3h', _cc_default)
+            forecast_4h_cloud = features.get('cloud_cover_forecast_4h', _cc_default)
+            forecast_5h_cloud = features.get('cloud_cover_forecast_5h', _cc_default)
+            forecast_6h_cloud = features.get('cloud_cover_forecast_6h', _cc_default)
 
             outdoor_forecast = [
                 forecast_1h_outdoor,
@@ -185,8 +188,8 @@ class UnifiedPredictionContext:
             avg_pv = pv_power
             outdoor_forecast = [outdoor_temp] * 6
             pv_forecast = [pv_power] * 6
-            cloud_cover_forecast = [50.0] * 6  # Default 50% cloud cover
-            avg_cloud_cover = 50.0
+            cloud_cover_forecast = [0.0] * 6  # Default clear sky
+            avg_cloud_cover = 0.0
             use_forecasts = False
             logging.debug(
                 f"🌡️ Using current conditions (no forecasts): "

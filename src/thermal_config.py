@@ -34,8 +34,8 @@ class ThermalParameterConfig:
         'thermal_time_constant': 4.0,      # hours
         'equilibrium_ratio': 0.17,         # dimensionless
         'total_conductance': 0.8,         # 1/hour
-        'pv_heat_weight': 0.0005,           # °C/W
-        'fireplace_heat_weight': 0.02,      # °C
+        'pv_heat_weight': 0.0002,           # °C/W
+        'fireplace_heat_weight': 1.0,      # °C
         'tv_heat_weight': 0.35,             # °C
         'fp_heat_output_kw': 3.0,          # kW
         'fp_decay_time_constant': 2.0,    # hours
@@ -62,7 +62,7 @@ class ThermalParameterConfig:
         'thermal_time_constant': (3.0, 100.0),     # Hours
         'equilibrium_ratio': (0.1, 0.9),         # dimensionless
         'total_conductance': (0.1, 0.8),         # 1/hour
-        'pv_heat_weight': (0.0005, 0.005),       # W/°C
+        'pv_heat_weight': (0.0001, 0.005),       # W/°C
         'fireplace_heat_weight': (0.01, 6.0),    # 1/°C
         'tv_heat_weight': (0.05, 1.5),           # W/°C
         'fp_heat_output_kw': (0.5, 15.0),        # kW

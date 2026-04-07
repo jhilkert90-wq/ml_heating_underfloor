@@ -76,6 +76,13 @@ class ThermalStateManager:
                 ThermalParameterConfig.get_default('fireplace_heat_weight'),
                 "tv_heat_weight":
                 ThermalParameterConfig.get_default('tv_heat_weight'),
+                "delta_t_floor":
+                ThermalParameterConfig.get_default('delta_t_floor'),
+                "fp_decay_time_constant":
+                ThermalParameterConfig.get_default('fp_decay_time_constant'),
+                "room_spread_delay_minutes":
+                ThermalParameterConfig.get_default(
+                    'room_spread_delay_minutes'),
                 "source": "config_defaults",
                 "calibration_date": None,
                 "calibration_cycles": 0
@@ -93,7 +100,10 @@ class ThermalStateManager:
                     "pv_heat_weight_delta": 0.0,
                     "tv_heat_weight_delta": 0.0,
                     "solar_lag_minutes_delta": 0.0,
-                    "slab_time_constant_delta": 0.0
+                    "slab_time_constant_delta": 0.0,
+                    "delta_t_floor_delta": 0.0,
+                    "fp_decay_time_constant_delta": 0.0,
+                    "room_spread_delay_minutes_delta": 0.0
                 },
                 "parameter_bounds": {
                     "equilibrium_ratio":
@@ -286,6 +296,14 @@ class ThermalStateManager:
         if "slab_time_constant_hours" in parameters:
             baseline["slab_time_constant_hours"] = \
                 parameters["slab_time_constant_hours"]
+        if "delta_t_floor" in parameters:
+            baseline["delta_t_floor"] = parameters["delta_t_floor"]
+        if "fp_decay_time_constant" in parameters:
+            baseline["fp_decay_time_constant"] = \
+                parameters["fp_decay_time_constant"]
+        if "room_spread_delay_minutes" in parameters:
+            baseline["room_spread_delay_minutes"] = \
+                parameters["room_spread_delay_minutes"]
 
         # Update metadata
         baseline["source"] = "calibrated"
@@ -302,7 +320,10 @@ class ThermalStateManager:
             "pv_heat_weight_delta": 0.0,
             "tv_heat_weight_delta": 0.0,
             "solar_lag_minutes_delta": 0.0,
-            "slab_time_constant_delta": 0.0
+            "slab_time_constant_delta": 0.0,
+            "delta_t_floor_delta": 0.0,
+            "fp_decay_time_constant_delta": 0.0,
+            "room_spread_delay_minutes_delta": 0.0
         }
         self.state["learning_state"]["heat_source_channels"] = {}
 

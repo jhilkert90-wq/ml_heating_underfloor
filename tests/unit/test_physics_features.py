@@ -1,7 +1,8 @@
 
 import pytest
+import logging
 import pandas as pd
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from src.physics_features import build_physics_features
 from src import config
 
@@ -93,3 +94,58 @@ def test_build_physics_features_insufficient_history(mock_ha_client, mock_influx
     mock_influx_service.fetch_indoor_history.return_value = [19.8, 20.0]
     features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
     assert features_df is None
+
+
+class TestCloudCoverGate:
+    """Tests for cloud cover gating behind CLOUD_COVER_CORRECTION_ENABLED."""
+
+    def test_cloud_cover_not_fetched_when_disabled(self, mock_ha_client, mock_influx_service, monkeypatch):
+        """When CLOUD_COVER_CORRECTION_ENABLED=False, get_hourly_cloud_cover must NOT be called."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        mock_ha_client.get_hourly_cloud_cover = MagicMock(return_value=[30.0] * 6)
+
+        features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
+        assert features_df is not None
+        mock_ha_client.get_hourly_cloud_cover.assert_not_called()
+
+        # Cloud cover columns should all be 0.0 (clear sky default)
+        for h in range(1, 7):
+            assert features_df[f'cloud_cover_forecast_{h}h'][0] == 0.0
+
+    def test_cloud_cover_fetched_when_enabled(self, mock_ha_client, mock_influx_service, monkeypatch):
+        """When CLOUD_COVER_CORRECTION_ENABLED=True, get_hourly_cloud_cover IS called."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
+        mock_ha_client.get_hourly_cloud_cover = MagicMock(
+            return_value=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        )
+
+        features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
+        assert features_df is not None
+        mock_ha_client.get_hourly_cloud_cover.assert_called_once()
+
+        assert features_df['cloud_cover_forecast_1h'][0] == 10.0
+        assert features_df['cloud_cover_forecast_6h'][0] == 60.0
+
+    def test_no_cloud_cover_log_when_disabled(self, mock_ha_client, mock_influx_service, monkeypatch, caplog):
+        """No ☁️ cloud cover log line when feature is disabled."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        mock_ha_client.get_hourly_cloud_cover = MagicMock(return_value=[30.0] * 6)
+
+        with caplog.at_level(logging.DEBUG):
+            build_physics_features(mock_ha_client, mock_influx_service)
+
+        cloud_logs = [r for r in caplog.records if "☁️" in r.message]
+        assert len(cloud_logs) == 0, f"Expected no ☁️ logs but found: {cloud_logs}"
+
+    def test_cloud_cover_log_emitted_when_enabled(self, mock_ha_client, mock_influx_service, monkeypatch, caplog):
+        """☁️ cloud cover log line IS emitted when feature is enabled."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
+        mock_ha_client.get_hourly_cloud_cover = MagicMock(
+            return_value=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        )
+
+        with caplog.at_level(logging.DEBUG):
+            build_physics_features(mock_ha_client, mock_influx_service)
+
+        cloud_logs = [r for r in caplog.records if "☁️" in r.message]
+        assert len(cloud_logs) >= 1, "Expected ☁️ log when cloud cover is enabled"

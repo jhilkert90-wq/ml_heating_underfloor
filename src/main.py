@@ -60,6 +60,11 @@ def main():
         help="Calibrate the physics model.",
     )
     parser.add_argument(
+        "--calibrate-physics-export-only",
+        action="store_true",
+        help="Export calibration data to CSV and exit (no optimisation).",
+    )
+    parser.add_argument(
         "--validate-physics",
         action="store_true",
         help="Test model behavior and exit.",
@@ -182,6 +187,92 @@ def main():
         except Exception as e:
             logging.error(
                 "Thermal model calibration error: %s", e, exc_info=True
+            )
+        return
+
+    # --- Export Calibration Data Only ---
+    if args.calibrate_physics_export_only:
+        try:
+            from .physics_calibration import (
+                fetch_historical_data_for_calibration,
+            )
+            import json as _json
+            import os as _os
+
+            export_dir = _os.path.dirname(config.UNIFIED_STATE_FILE)
+            _os.makedirs(export_dir, exist_ok=True)
+
+            logging.info("=== EXPORTING CALIBRATION DATA ===")
+            logging.info("Export directory: %s", export_dir)
+
+            # 1. Fetch training data
+            df = fetch_historical_data_for_calibration(
+                lookback_hours=config.TRAINING_LOOKBACK_HOURS,
+            )
+            if df is None or df.empty:
+                logging.error("❌ No calibration data available")
+                return
+
+            csv_path = _os.path.join(export_dir, "calibration_data.csv")
+            df.to_csv(csv_path, index=False)
+            logging.info(
+                "✅ Exported %d rows × %d cols to %s",
+                len(df), len(df.columns), csv_path,
+            )
+
+            # 2. Export config values needed by standalone calibration
+            config_export = {
+                "INDOOR_TEMP_ENTITY_ID": config.INDOOR_TEMP_ENTITY_ID,
+                "ACTUAL_OUTLET_TEMP_ENTITY_ID": config.ACTUAL_OUTLET_TEMP_ENTITY_ID,
+                "ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID": config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID,
+                "OUTDOOR_TEMP_ENTITY_ID": config.OUTDOOR_TEMP_ENTITY_ID,
+                "PV_POWER_ENTITY_ID": config.PV_POWER_ENTITY_ID,
+                "TV_STATUS_ENTITY_ID": config.TV_STATUS_ENTITY_ID,
+                "FIREPLACE_STATUS_ENTITY_ID": config.FIREPLACE_STATUS_ENTITY_ID,
+                "INLET_TEMP_ENTITY_ID": config.INLET_TEMP_ENTITY_ID,
+                "FLOW_RATE_ENTITY_ID": config.FLOW_RATE_ENTITY_ID,
+                "POWER_CONSUMPTION_ENTITY_ID": config.POWER_CONSUMPTION_ENTITY_ID,
+                "DHW_STATUS_ENTITY_ID": config.DHW_STATUS_ENTITY_ID,
+                "DEFROST_STATUS_ENTITY_ID": config.DEFROST_STATUS_ENTITY_ID,
+                "DISINFECTION_STATUS_ENTITY_ID": config.DISINFECTION_STATUS_ENTITY_ID,
+                "DHW_BOOST_HEATER_STATUS_ENTITY_ID": config.DHW_BOOST_HEATER_STATUS_ENTITY_ID,
+                "LIVING_ROOM_TEMP_ENTITY_ID": getattr(config, "LIVING_ROOM_TEMP_ENTITY_ID", ""),
+                "SPECIFIC_HEAT_CAPACITY": float(config.SPECIFIC_HEAT_CAPACITY),
+                "GRACE_PERIOD_MAX_MINUTES": float(config.GRACE_PERIOD_MAX_MINUTES),
+                "CLOUD_COVER_CORRECTION_ENABLED": bool(
+                    getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False),
+                ),
+                "PV_CALIBRATION_INDOOR_CEILING": float(
+                    getattr(config, "PV_CALIBRATION_INDOOR_CEILING", 23.0),
+                ),
+                "TRAINING_LOOKBACK_HOURS": int(config.TRAINING_LOOKBACK_HOURS),
+            }
+            cfg_path = _os.path.join(export_dir, "calibration_config.json")
+            with open(cfg_path, "w") as f:
+                _json.dump(config_export, f, indent=2)
+            logging.info("✅ Exported config to %s", cfg_path)
+
+            # 3. Copy unified thermal state if it exists
+            state_src = config.UNIFIED_STATE_FILE
+            if _os.path.exists(state_src):
+                logging.info(
+                    "✅ Unified thermal state already at %s", state_src,
+                )
+            else:
+                logging.info(
+                    "ℹ️ No unified thermal state found at %s", state_src,
+                )
+
+            logging.info("=== EXPORT COMPLETE ===")
+            logging.info(
+                "Copy these files to your laptop and run:\n"
+                "  python physics_calibration_standalone.py "
+                "--data %s --config %s",
+                csv_path, cfg_path,
+            )
+        except Exception as e:
+            logging.error(
+                "Calibration export error: %s", e, exc_info=True,
             )
         return
 

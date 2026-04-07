@@ -580,6 +580,56 @@ class HAClient:
         # For now, return 0.0 as placeholder
         return 0.0
 
+    def get_history_bulk(
+        self,
+        entity_ids: List[str],
+        start_time: datetime,
+        end_time: Optional[datetime] = None,
+    ) -> Optional[List[List[Dict[str, Any]]]]:
+        """
+        Fetch historical state data for multiple entities from HA REST API.
+
+        Calls ``/api/history/period/{start}`` with ``filter_entity_id``,
+        ``minimal_response`` and ``no_attributes`` for efficiency.
+
+        Args:
+            entity_ids: List of full entity IDs to fetch.
+            start_time: Start of the history window (timezone-aware).
+            end_time: Optional end of the window (defaults to now).
+
+        Returns:
+            A list of entity history arrays (one per entity), or None on
+            failure.  Each inner list contains dicts with at least
+            ``state`` and ``last_changed`` keys.
+        """
+        start_iso = start_time.isoformat()
+        url = f"{self.url}/api/history/period/{start_iso}"
+
+        params: Dict[str, str] = {
+            "filter_entity_id": ",".join(entity_ids),
+            "minimal_response": "",
+            "no_attributes": "",
+        }
+        if end_time is not None:
+            params["end_time"] = end_time.isoformat()
+
+        try:
+            resp = requests.get(
+                url, headers=self.headers, params=params, timeout=120,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if not isinstance(data, list):
+                logging.warning("HA history: unexpected response type %s", type(data))
+                return None
+            return data
+        except requests.Timeout:
+            logging.warning("HA history request timed out for %d entities", len(entity_ids))
+            return None
+        except requests.RequestException as exc:
+            logging.warning("HA history request failed: %s", exc)
+            return None
+
 
 def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
     """

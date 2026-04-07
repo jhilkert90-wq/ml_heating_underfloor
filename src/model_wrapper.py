@@ -75,6 +75,10 @@ class EnhancedModelWrapper:
         self.cycle_aligned_forecast = {}
         self._avg_cloud_cover = 50.0
 
+        # Fireplace state tracking for decay / spread delay
+        self._fireplace_last_on_time: Optional[datetime] = None
+        self._fireplace_on_since: Optional[datetime] = None
+
         logging.info(
             "🎯 Model Wrapper initialized with ThermalEquilibriumModel"
         )
@@ -116,10 +120,40 @@ class EnhancedModelWrapper:
         outdoor_temp: float,
         fireplace_on: float,
         features_local: Optional[Dict] = None,
-    ) -> Optional[float]:
-        """Resolve fireplace power from the active fireplace authority."""
+    ) -> Tuple[Optional[float], float]:
+        """Resolve fireplace power from the active fireplace authority.
+
+        Returns ``(power_kw_or_None, decay_kw)``.  ``decay_kw`` is the
+        residual heat contribution after the fireplace has been turned off
+        (exponential tail).  When the FP is currently ON the decay component
+        is 0.
+        """
+        now = datetime.now()
+
+        # --- Track FP state transitions ---
+        if fireplace_on:
+            if self._fireplace_on_since is None:
+                self._fireplace_on_since = now
+            self._fireplace_last_on_time = now
+        else:
+            self._fireplace_on_since = None
+
+        features_local = features_local or {}
+
+        # --- Decay when OFF ---
+        decay_kw = 0.0
+        if not fireplace_on and self._fireplace_last_on_time is not None:
+            minutes_off = (now - self._fireplace_last_on_time).total_seconds() / 60.0
+            if minutes_off > 0 and self._use_heat_source_channels():
+                fp_ch = self.thermal_model.orchestrator.channels.get("fireplace")
+                if fp_ch:
+                    hours_off = minutes_off / 60.0
+                    decay_kw = fp_ch.estimate_decay_contribution(hours_off, {})
+                    if decay_kw < 0.01:
+                        decay_kw = 0.0  # negligible
+
         if not fireplace_on:
-            return None
+            return None, decay_kw
 
         features_local = features_local or {}
 
@@ -144,10 +178,10 @@ class EnhancedModelWrapper:
                 "🔥 Using fireplace channel power: %.2fkW",
                 fireplace_power_kw,
             )
-            return fireplace_power_kw
+            return fireplace_power_kw, 0.0
 
         if self.adaptive_fireplace is None:
-            return None
+            return None, 0.0
 
         living_room_temp = features_local.get(
             "living_room_temp", current_indoor
@@ -169,7 +203,7 @@ class EnhancedModelWrapper:
             f"{fireplace_power_kw:.2f}kW "
             f"(confidence: {confidence:.2f})"
         )
-        return fireplace_power_kw
+        return fireplace_power_kw, 0.0
 
     def predict_indoor_temp(
         self, outlet_temp: float, outdoor_temp: float, **kwargs
@@ -262,7 +296,7 @@ class EnhancedModelWrapper:
             cycle_hours = config.CYCLE_INTERVAL_MINUTES / 60.0
 
             features_local = getattr(self, "_current_features", {}) or {}
-            fireplace_power_kw = self._calculate_fireplace_power_kw(
+            fireplace_power_kw, fp_decay_kw = self._calculate_fireplace_power_kw(
                 current_indoor=current_indoor,
                 outdoor_temp=outdoor_temp,
                 fireplace_on=fireplace_on,
@@ -282,6 +316,7 @@ class EnhancedModelWrapper:
                     tv_on=tv_on,
                     thermal_power=thermal_power,
                     fireplace_power_kw=fireplace_power_kw,
+                    fireplace_decay_kw=fp_decay_kw,
                     cloud_cover_pct=self._avg_cloud_cover,
                 )
             )
@@ -532,7 +567,7 @@ class EnhancedModelWrapper:
         fireplace_on = thermal_features.get("fireplace_on", 0.0)
         tv_on = thermal_features.get("tv_on", 0.0)
 
-        fireplace_power_kw = self._calculate_fireplace_power_kw(
+        fireplace_power_kw, fp_decay_kw = self._calculate_fireplace_power_kw(
             current_indoor=current_indoor,
             outdoor_temp=outdoor_temp,
             fireplace_on=fireplace_on,
@@ -621,107 +656,6 @@ class EnhancedModelWrapper:
         # Store the resolved delta_t for use by trajectory verification too
         self._search_delta_t_floor = _dtf
 
-        # Pre-check for unreachable targets to avoid futile searching.
-        # Uses predict_thermal_trajectory (same model as binary search) so
-        # the slab dynamics are considered in the reachability decision.
-        try:
-            optimization_horizon = float(config.TRAJECTORY_STEPS)
-
-            # Check what minimum outlet temp produces
-            min_traj = self.thermal_model.predict_thermal_trajectory(
-                current_indoor=current_indoor,
-                target_indoor=target_indoor,
-                outlet_temp=outlet_min,
-                outdoor_temp=outdoor_forecast,
-                time_horizon_hours=optimization_horizon,
-                time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
-                pv_power=pv_input,
-                pv_forecasts=pv_forecast,
-                fireplace_on=fireplace_on,
-                tv_on=tv_on,
-                fireplace_power_kw=fireplace_power_kw,
-                cloud_cover_pct=self._avg_cloud_cover,
-                inlet_temp=_inlet,
-                delta_t_floor=_dtf,
-            )
-            min_prediction = (
-                min_traj["trajectory"][-1]
-                if min_traj and min_traj.get("trajectory")
-                else None
-            )
-
-            # Check what maximum outlet temp produces
-            max_traj = self.thermal_model.predict_thermal_trajectory(
-                current_indoor=current_indoor,
-                target_indoor=target_indoor,
-                outlet_temp=outlet_max,
-                outdoor_temp=outdoor_forecast,
-                time_horizon_hours=optimization_horizon,
-                time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
-                pv_power=pv_input,
-                pv_forecasts=pv_forecast,
-                fireplace_on=fireplace_on,
-                tv_on=tv_on,
-                fireplace_power_kw=fireplace_power_kw,
-                cloud_cover_pct=self._avg_cloud_cover,
-                inlet_temp=_inlet,
-                delta_t_floor=_dtf,
-            )
-            max_prediction = (
-                max_traj["trajectory"][-1]
-                if max_traj and max_traj.get("trajectory")
-                else None
-            )
-
-            if min_prediction is not None and max_prediction is not None:
-                # UNIFIED PRE-CHECK: Check reachability regardless of
-                # heating/cooling scenario
-                temp_diff = target_indoor - current_indoor
-                temp_diff_abs = abs(temp_diff)
-                is_cooling_needed = temp_diff < -0.1  # Need to cool house
-                is_heating_needed = temp_diff > 0.1   # Need to heat house
-
-                # Check if target is unreachable with system limits
-                if target_indoor < min_prediction - tolerance:
-                    # Target below minimum capability
-                    scenario = "cooling" if is_cooling_needed else "heating"
-                    logging.warning(
-                        f"🎯 {scenario.title()} pre-check: Target "
-                        f"{target_indoor:.1f}°C unreachable "
-                        f"(min outlet {outlet_min:.1f}°C → "
-                        f"{min_prediction:.2f}°C), using minimum outlet"
-                    )
-                    return outlet_min
-
-                if target_indoor > max_prediction + tolerance:
-                    # Target above maximum capability
-                    scenario = "cooling" if is_cooling_needed else "heating"
-                    logging.warning(
-                        f"🎯 {scenario.title()} pre-check: Target "
-                        f"{target_indoor:.1f}°C unreachable "
-                        f"(max outlet {outlet_max:.1f}°C → "
-                        f"{max_prediction:.2f}°C), using maximum outlet"
-                    )
-                    return outlet_max
-
-                # Target is achievable - proceed to binary search for ALL
-                # scenarios
-                scenario = (
-                    "cooling"
-                    if is_cooling_needed
-                    else ("heating" if is_heating_needed else "maintenance")
-                )
-                logging.debug(
-                    f"🎯 {scenario.title()} ({temp_diff_abs:.1f}°C "
-                    f"deviation): Target {target_indoor:.1f}°C achievable "
-                    f"(range: {min_prediction:.1f}-{max_prediction:.1f}°C), "
-                    "proceeding to binary search"
-                )
-        except Exception as e:
-            logging.warning(
-                f"Pre-check failed: {e}, proceeding with binary search"
-            )
-
         # Binary search for optimal outlet temperature
         logging.debug(
             f"🎯 Binary search start: target={target_indoor:.1f}°C, "
@@ -780,6 +714,7 @@ class EnhancedModelWrapper:
                         fireplace_on=fireplace_on,
                         tv_on=tv_on,
                         fireplace_power_kw=fireplace_power_kw,
+                        fireplace_decay_kw=fp_decay_kw,
                         cloud_cover_pct=self._avg_cloud_cover,
                         inlet_temp=_inlet,
                         delta_t_floor=_dtf,
@@ -838,6 +773,7 @@ class EnhancedModelWrapper:
                     tv_on=tv_on,
                     _suppress_logging=False,  # Show equilibrium physics
                     fireplace_power_kw=fireplace_power_kw,
+                    fireplace_decay_kw=fp_decay_kw,
                     cloud_cover_pct=self._avg_cloud_cover,
                 )
 
@@ -942,6 +878,7 @@ class EnhancedModelWrapper:
                     tv_on=tv_on,
                     _suppress_logging=True,
                     fireplace_power_kw=fireplace_power_kw,
+                    fireplace_decay_kw=fp_decay_kw,
                     cloud_cover_pct=self._avg_cloud_cover,
                 )
             )
@@ -1263,7 +1200,7 @@ class EnhancedModelWrapper:
                 )
 
             fireplace_on = thermal_features.get("fireplace_on", 0.0)
-            fireplace_power_kw = self._calculate_fireplace_power_kw(
+            fireplace_power_kw, fp_decay_kw = self._calculate_fireplace_power_kw(
                 current_indoor=current_indoor,
                 outdoor_temp=outdoor_temp,
                 fireplace_on=fireplace_on,
@@ -1290,6 +1227,7 @@ class EnhancedModelWrapper:
                 fireplace_on=fireplace_on,
                 tv_on=thermal_features.get("tv_on", 0.0),
                 fireplace_power_kw=fireplace_power_kw,
+                fireplace_decay_kw=fp_decay_kw,
                 cloud_cover_pct=self._avg_cloud_cover,
                 inlet_temp=(
                     self._current_features.get("inlet_temp")
@@ -1542,6 +1480,17 @@ class EnhancedModelWrapper:
                 max_predicted_temp >= target_indoor + boundary_tolerance
             )
 
+            # Projected indoor temperature for overshoot gate:
+            # If the natural trend brings indoor below target + 0.1°C
+            # within TRAJECTORY_STEPS hours, skip overshoot correction
+            # and let the house return to normal.
+            _features = getattr(self, '_current_features', None) or {}
+            indoor_trend_60m = _features.get('indoor_temp_delta_60m', 0.0)
+            projected_indoor = (
+                current_indoor
+                + config.TRAJECTORY_STEPS * indoor_trend_60m
+            )
+
             if min_violates and max_violates:
                 # Both boundaries violated - choose the more severe
                 min_severity = abs(
@@ -1555,14 +1504,17 @@ class EnhancedModelWrapper:
                 if min_severity > max_severity:
                     temp_error = target_indoor - min_predicted_temp
                 else:
-                    # Overshoot is more severe — respect falling-indoor gate
-                    _features = getattr(self, '_current_features', None) or {}
-                    indoor_trend_60m = _features.get('indoor_temp_delta_60m', 0.0)
-                    if indoor_trend_60m < -0.03:
+                    # Overshoot is more severe — skip correction if
+                    # projected indoor will fall below target + 0.1°C
+                    # within TRAJECTORY_STEPS hours.
+                    if projected_indoor < target_indoor + boundary_tolerance:
                         logging.info(
                             f"🔄 Skipping overshoot correction (both violated, "
-                            f"max wins): indoor already falling "
-                            f"({indoor_trend_60m:+.3f}°C/60min) — "
+                            f"max wins): projected indoor "
+                            f"{projected_indoor:.2f}°C < target+0.1 "
+                            f"({target_indoor + boundary_tolerance:.1f}°C) "
+                            f"in {config.TRAJECTORY_STEPS}h "
+                            f"(trend {indoor_trend_60m:+.3f}°C/h) — "
                             "house self-correcting"
                         )
                         return outlet_temp
@@ -1570,14 +1522,15 @@ class EnhancedModelWrapper:
             elif min_violates:
                 temp_error = target_indoor - min_predicted_temp
             elif max_violates:
-                # If indoor is already falling, house is self-correcting after
-                # PV/heat source went away — don't lower outlet unnecessarily.
-                _features = getattr(self, '_current_features', None) or {}
-                indoor_trend_60m = _features.get('indoor_temp_delta_60m', 0.0)
-                if indoor_trend_60m < -0.03:
+                # Skip overshoot correction if projected indoor will fall
+                # below target + 0.1°C within TRAJECTORY_STEPS hours.
+                if projected_indoor < target_indoor + boundary_tolerance:
                     logging.info(
-                        f"🔄 Skipping overshoot correction: indoor already "
-                        f"falling ({indoor_trend_60m:+.3f}°C/60min) — "
+                        f"🔄 Skipping overshoot correction: projected indoor "
+                        f"{projected_indoor:.2f}°C < target+0.1 "
+                        f"({target_indoor + boundary_tolerance:.1f}°C) "
+                        f"in {config.TRAJECTORY_STEPS}h "
+                        f"(trend {indoor_trend_60m:+.3f}°C/h) — "
                         "house self-correcting"
                     )
                     return outlet_temp

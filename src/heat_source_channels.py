@@ -520,7 +520,7 @@ class SolarChannel(HeatSourceChannel):
             self.pv_heat_weight = _clip_to_parameter_bounds(
                 "pv_heat_weight",
                 self.pv_heat_weight + max(-0.0002, min(0.0002, delta)),
-                (0.0005, 0.005),
+                (0.0001, 0.005),
             )
         if "solar_lag_minutes" in gradients:
             delta = gradients["solar_lag_minutes"] * learning_rate
@@ -631,7 +631,8 @@ class SolarChannel(HeatSourceChannel):
             "pv_heat_weight": avg_error * 0.1,
             "solar_decay_tau_hours": avg_error * 0.05,
         }
-        if avg_cloud_cover > 0.0:
+        if (avg_cloud_cover > 0.0
+                and getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)):
             gradients["cloud_factor_exponent"] = avg_error * (
                 avg_cloud_cover / 100.0
             )
@@ -816,6 +817,12 @@ class HeatSourceChannelOrchestrator:
             "fireplace": FireplaceChannel(),
             "tv": TVChannel(),
         }
+        # Track fireplace state transitions for post-off decay routing.
+        # When FP turns off, we keep routing learning to the FP channel
+        # for a decay window (3×τ) to prevent residual FP heat from being
+        # misattributed to the HP channel.
+        self._fireplace_off_cycle_count: int = 0
+        self._fireplace_was_on: bool = False
 
     def sync_from_model_parameters(self, parameters: Dict[str, float]) -> None:
         """Seed channel parameters from the current thermal-model state."""
@@ -833,6 +840,9 @@ class HeatSourceChannelOrchestrator:
         heat_pump.slab_time_constant_hours = parameters.get(
             "slab_time_constant_hours", heat_pump.slab_time_constant_hours
         )
+        heat_pump.delta_t_floor = parameters.get(
+            "delta_t_floor", heat_pump.delta_t_floor
+        )
 
         solar = self.channels["pv"]
         assert isinstance(solar, SolarChannel)
@@ -848,11 +858,28 @@ class HeatSourceChannelOrchestrator:
         fireplace.fp_heat_output_kw = parameters.get(
             "fireplace_heat_weight", fireplace.fp_heat_output_kw
         )
+        fireplace.fp_decay_time_constant = parameters.get(
+            "fp_decay_time_constant", fireplace.fp_decay_time_constant
+        )
+        fireplace.room_spread_delay_minutes = parameters.get(
+            "room_spread_delay_minutes", fireplace.room_spread_delay_minutes
+        )
 
         tv = self.channels["tv"]
         assert isinstance(tv, TVChannel)
         tv.tv_heat_weight = parameters.get(
             "tv_heat_weight", tv.tv_heat_weight
+        )
+
+        # Channel-specific params that may be persisted from batch calibration
+        heat_pump.delta_t_floor = parameters.get(
+            "delta_t_floor", heat_pump.delta_t_floor
+        )
+        solar.cloud_factor_exponent = parameters.get(
+            "cloud_factor_exponent", solar.cloud_factor_exponent
+        )
+        solar.solar_decay_tau_hours = parameters.get(
+            "solar_decay_tau_hours", solar.solar_decay_tau_hours
         )
 
     def export_model_parameters(self) -> Dict[str, float]:
@@ -866,9 +893,14 @@ class HeatSourceChannelOrchestrator:
             "heat_loss_coefficient": heat_pump.heat_loss_coefficient,
             "outlet_effectiveness": heat_pump.outlet_effectiveness,
             "slab_time_constant_hours": heat_pump.slab_time_constant_hours,
+            "delta_t_floor": heat_pump.delta_t_floor,
             "pv_heat_weight": solar.pv_heat_weight,
             "solar_lag_minutes": solar.solar_lag_minutes,
+            "cloud_factor_exponent": solar.cloud_factor_exponent,
+            "solar_decay_tau_hours": solar.solar_decay_tau_hours,
             "fireplace_heat_weight": fireplace.fp_heat_output_kw,
+            "fp_decay_time_constant": fireplace.fp_decay_time_constant,
+            "room_spread_delay_minutes": fireplace.room_spread_delay_minutes,
             "tv_heat_weight": tv.tv_heat_weight,
         }
 
@@ -990,7 +1022,32 @@ class HeatSourceChannelOrchestrator:
         pv_active = _is_pv_active(context)
         tv_on = _is_tv_active(context)
         heat_pump_active = _is_heat_pump_active(context)
-        any_external_active = fireplace_on or pv_active or tv_on
+
+        # --- Fireplace post-off decay window ---
+        # Track FP state transitions.  When FP turns off, continue routing
+        # learning to the FP channel for a decay window of 3×τ cycles so
+        # that residual FP heat is not misattributed to HP.
+        fp_channel = self.channels.get("fireplace")
+        cycle_min = getattr(config, "CYCLE_INTERVAL_MINUTES", 10)
+        fp_tau_h = getattr(fp_channel, "fp_decay_time_constant", 0.75) if fp_channel else 0.75
+        decay_window_cycles = max(1, int((fp_tau_h * 3 * 60) / cycle_min))
+
+        if fireplace_on:
+            self._fireplace_was_on = True
+            self._fireplace_off_cycle_count = 0
+        elif self._fireplace_was_on:
+            self._fireplace_off_cycle_count += 1
+            if self._fireplace_off_cycle_count > decay_window_cycles:
+                self._fireplace_was_on = False
+                self._fireplace_off_cycle_count = 0
+
+        fp_in_decay = (
+            not fireplace_on
+            and self._fireplace_was_on
+            and self._fireplace_off_cycle_count <= decay_window_cycles
+        )
+        # When FP is in decay window, treat it as active for routing
+        any_external_active = fireplace_on or fp_in_decay or pv_active or tv_on
 
         raw_context = context.copy()
         raw_context["raw_prediction_error"] = error
@@ -1031,7 +1088,7 @@ class HeatSourceChannelOrchestrator:
 
         legacy_active_contributions = self._get_active_contributions(raw_context)
         if not getattr(config, "ENABLE_MIXED_SOURCE_ATTRIBUTION", False):
-            if fireplace_on:
+            if fireplace_on or fp_in_decay:
                 self._record_channel_learning(
                     "fireplace",
                     error,
@@ -1062,7 +1119,7 @@ class HeatSourceChannelOrchestrator:
                     update_events,
                 )
             routed = (
-                (["fireplace"] if fireplace_on else [])
+                (["fireplace"] if (fireplace_on or fp_in_decay) else [])
                 + (["pv"] if pv_active else [])
                 + (["tv"] if tv_on else [])
             )
@@ -1074,12 +1131,15 @@ class HeatSourceChannelOrchestrator:
 
         active_contributions = self._get_active_contributions(raw_context)
         heat_pump_frozen_by_fireplace = False
-        if fireplace_on and "heat_pump" in active_contributions:
+        if (fireplace_on or fp_in_decay) and "heat_pump" in active_contributions:
             heat_pump_frozen_by_fireplace = True
             active_contributions.pop("heat_pump", None)
+        # If FP is in post-off decay, ensure it appears in active_contributions
+        if fp_in_decay and "fireplace" not in active_contributions:
+            active_contributions["fireplace"] = 0.5  # partial weight during decay
 
         if not active_contributions:
-            if heat_pump_active and not fireplace_on:
+            if heat_pump_active and not fireplace_on and not fp_in_decay:
                 fallback_contributions = {"heat_pump": 1.0}
                 learning_context = self._build_learning_context(
                     raw_context,
@@ -1208,8 +1268,26 @@ class HeatSourceChannelOrchestrator:
             for name, ch in self.channels.items()
         }
 
+    # Parameters whose authority is baseline + delta in unified_thermal_state.
+    # load_channel_state must NOT overwrite these from channel snapshots.
+    _BASELINE_MANAGED_PARAMS = frozenset({
+        "thermal_time_constant",
+        "heat_loss_coefficient",
+        "outlet_effectiveness",
+        "slab_time_constant_hours",
+        "delta_t_floor",
+        "fp_decay_time_constant",
+        "room_spread_delay_minutes",
+    })
+
     def load_channel_state(self, state: Dict) -> None:
-        """Restore channel parameters from persisted state."""
+        """Restore channel state from persisted data.
+
+        Parameters listed in ``_BASELINE_MANAGED_PARAMS`` are skipped
+        because their authoritative value comes from baseline + delta
+        via ``sync_from_model_parameters``.  All other parameters and
+        the learning history are restored normally.
+        """
         for name, ch_state in state.items():
             if name not in self.channels:
                 continue
@@ -1217,6 +1295,8 @@ class HeatSourceChannelOrchestrator:
             ch = self.channels[name]
             params = ch_state.get("parameters", {})
             for key, value in params.items():
+                if key in self._BASELINE_MANAGED_PARAMS:
+                    continue
                 if hasattr(ch, key):
                     setattr(ch, key, value)
 

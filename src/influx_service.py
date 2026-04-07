@@ -501,6 +501,10 @@ class InfluxService:
         power_consumption_id = (
             config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1]
         )
+        fireplace_id = config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1]
+        living_room_temp_id = (
+            config.LIVING_ROOM_TEMP_ENTITY_ID.split(".", 1)[-1]
+        )
 
         flux_query = f"""
             from(bucket: "{config.INFLUX_BUCKET}")
@@ -519,7 +523,9 @@ class InfluxService:
                 r["entity_id"] == "{fernseher_id}" or
                 r["entity_id"] == "{inlet_temp_id}" or
                 r["entity_id"] == "{flow_rate_id}" or
-                r["entity_id"] == "{power_consumption_id}"
+                r["entity_id"] == "{power_consumption_id}" or
+                r["entity_id"] == "{fireplace_id}" or
+                r["entity_id"] == "{living_room_temp_id}"
             )
             |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
             |> pivot(
@@ -539,8 +545,9 @@ class InfluxService:
             df["_time"] = pd.to_datetime(df["_time"], utc=True)
             df.sort_values("_time", inplace=True)
 
-            df.ffill(inplace=True)
-            df.bfill(inplace=True)
+            # Return raw pivoted data without gap-filling so that the
+            # caller (fetch_historical_data_for_calibration) can detect
+            # per-entity coverage gaps before deciding how to fill them.
             return df
         except Exception:
             return pd.DataFrame()

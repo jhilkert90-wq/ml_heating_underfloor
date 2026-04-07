@@ -19,6 +19,8 @@ def check_flow_rates():
     
     # Fetch last 24 hours
     df = influx.get_training_data(lookback_hours=24)
+    df.ffill(inplace=True)
+    df.bfill(inplace=True)
     
     if df.empty:
         logging.error("No data found")

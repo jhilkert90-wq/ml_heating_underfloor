@@ -126,7 +126,7 @@ class PhysicsConstants:
     # °C - threshold for confidence boosting
     ERROR_THRESHOLD_CONFIDENCE = 0.2
     # °C - dead zone: skip learning when avg error is below sensor noise
-    LEARNING_DEAD_ZONE = 0.01
+    LEARNING_DEAD_ZONE = 0.001
 
     # Parameter stability thresholds (Phase 3.2 addition)
     # Thermal time constant stability (hours)

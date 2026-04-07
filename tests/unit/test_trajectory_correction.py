@@ -92,6 +92,9 @@ class TestBidirectionalTrajectoryCorrection:
     @patch('src.model_wrapper.config.TRAJECTORY_PREDICTION_ENABLED', True)
     def test_temperature_rise_detection_boundary_exact(self):
         """Test detection of temperature rise at exact boundary (21.1°C)."""
+        # Set positive trend so projected-temp gate does NOT skip overshoot
+        self.wrapper._current_indoor = 21.0
+        self.wrapper._current_features = {'indoor_temp_delta_60m': 0.1}
         # Mock trajectory with temperature rising to exactly 21.1°C
         mock_trajectory = {
             'reaches_target_at': None,
@@ -118,6 +121,9 @@ class TestBidirectionalTrajectoryCorrection:
     @patch('src.model_wrapper.config.TRAJECTORY_PREDICTION_ENABLED', True)
     def test_temperature_rise_detection_above_boundary(self):
         """Test detection of temperature rise above boundary (21.2°C)."""
+        # Set positive trend so projected-temp gate does NOT skip overshoot
+        self.wrapper._current_indoor = 21.0
+        self.wrapper._current_features = {'indoor_temp_delta_60m': 0.1}
         # Mock trajectory with temperature rising above boundary
         mock_trajectory = {
             'reaches_target_at': None,
@@ -292,6 +298,9 @@ class TestBidirectionalTrajectoryCorrection:
         
         # We can't easily test logging output, but we can verify the method executes
         # without errors for both scenarios
+        # Set positive trend so projected-temp gate does NOT skip overshoot
+        self.wrapper._current_indoor = 21.0
+        self.wrapper._current_features = {'indoor_temp_delta_60m': 0.1}
         with patch.object(
             self.wrapper.thermal_model, 
             'predict_thermal_trajectory', 

@@ -387,28 +387,29 @@ def build_physics_features(
         logging.debug(f"Could not fetch temperature forecasts: {e}")
         temp_forecasts = [outdoor_temp_f] * 6
     
-    # Get cloud cover forecasts (new: weather-aware PV correction)
-    cloud_cover_forecasts = [50.0] * 6  # Default 50% cloud cover
-    try:
-        if hasattr(ha_client, 'get_hourly_cloud_cover'):
-            cloud_cover_forecasts = ha_client.get_hourly_cloud_cover()
-            # Ensure we have a valid list
-            if not isinstance(cloud_cover_forecasts, list) or len(cloud_cover_forecasts) < 6:
-                cloud_cover_forecasts = [50.0] * 6
-            # Pad to 6 if less
-            while len(cloud_cover_forecasts) < 6:
-                cloud_cover_forecasts.append(cloud_cover_forecasts[-1] if cloud_cover_forecasts else 50.0)
-    except Exception as e:
-        logging.debug(f"Could not fetch cloud cover forecasts: {e}")
-        cloud_cover_forecasts = [50.0] * 6
+    # Get cloud cover forecasts (only when cloud correction is enabled)
+    cloud_cover_forecasts = [0.0] * 6  # Default: clear sky (no correction)
+    if getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False):
+        try:
+            if hasattr(ha_client, 'get_hourly_cloud_cover'):
+                cloud_cover_forecasts = ha_client.get_hourly_cloud_cover()
+                # Ensure we have a valid list
+                if not isinstance(cloud_cover_forecasts, list) or len(cloud_cover_forecasts) < 6:
+                    cloud_cover_forecasts = [0.0] * 6
+                # Pad to 6 if less
+                while len(cloud_cover_forecasts) < 6:
+                    cloud_cover_forecasts.append(cloud_cover_forecasts[-1] if cloud_cover_forecasts else 0.0)
+        except Exception as e:
+            logging.debug(f"Could not fetch cloud cover forecasts: {e}")
+            cloud_cover_forecasts = [0.0] * 6
 
-    avg_cc = sum(cloud_cover_forecasts) / len(cloud_cover_forecasts)
-    logging.debug(
-        "☁️ Cloud cover features: 1h=%.0f%% 2h=%.0f%% 3h=%.0f%% 4h=%.0f%% 5h=%.0f%% 6h=%.0f%% (avg=%.1f%%)",
-        cloud_cover_forecasts[0], cloud_cover_forecasts[1], cloud_cover_forecasts[2],
-        cloud_cover_forecasts[3], cloud_cover_forecasts[4], cloud_cover_forecasts[5],
-        avg_cc,
-    )
+        avg_cc = sum(cloud_cover_forecasts) / len(cloud_cover_forecasts)
+        logging.debug(
+            "☁️ Cloud cover features: 1h=%.0f%% 2h=%.0f%% 3h=%.0f%% 4h=%.0f%% 5h=%.0f%% 6h=%.0f%% (avg=%.1f%%)",
+            cloud_cover_forecasts[0], cloud_cover_forecasts[1], cloud_cover_forecasts[2],
+            cloud_cover_forecasts[3], cloud_cover_forecasts[4], cloud_cover_forecasts[5],
+            avg_cc,
+        )
 
     # Get current time for cyclical encoding
     now = datetime.now()

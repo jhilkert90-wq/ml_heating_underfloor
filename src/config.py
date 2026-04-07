@@ -97,6 +97,10 @@ PREDICTION_HORIZON_STEPS: int = int(
 # The number of hours of historical data to use for initial training.
 TRAINING_LOOKBACK_HOURS: int = int(os.getenv("TRAINING_LOOKBACK_HOURS", "168"))
 
+# Training data source for calibration: "influx", "ha_history", or "auto"
+# "auto" tries InfluxDB first, falls back to HA history API.
+TRAINING_DATA_SOURCE: str = os.getenv("TRAINING_DATA_SOURCE", "auto")
+
 # --- Core Entity IDs ---
 # These are the most critical entities for the script's operation.
 # **It is essential to update these to match your Home Assistant setup.**
@@ -188,11 +192,6 @@ LIVING_ROOM_TEMP_ENTITY_ID: str = os.getenv(
     "LIVING_ROOM_TEMP_ENTITY_ID", "sensor.living_room_temperature"
 )
 
-# Living room temperature sensor (used for fireplace analysis only)
-LIVING_ROOM_TEMP_ENTITY_ID: str = os.getenv(
-    "LIVING_ROOM_TEMP_ENTITY_ID", "sensor.living_room_temperature"
-)
-
 # PV forecast sensor (HA attributes 'watts' available in 15-min steps)
 PV_FORECAST_ENTITY_ID: str = os.getenv(
     "PV_FORECAST_ENTITY_ID", "sensor.energy_production_today_4"
@@ -236,6 +235,12 @@ MAX_TEMP_CHANGE_PER_CYCLE: int = int(
 # Maximum minutes to wait during the grace period after blocking ends.
 GRACE_PERIOD_MAX_MINUTES: int = int(
     os.getenv("GRACE_PERIOD_MAX_MINUTES", "15")
+)
+# Extra grace period after HP defrost cycles.  Defrost steals heat from the
+# slab; the HP then re-heats the slab before the room reaches true steady
+# state.  Periods inside this window are excluded from OE / HLC calibration.
+DEFROST_RECOVERY_GRACE_MINUTES: int = int(
+    os.getenv("DEFROST_RECOVERY_GRACE_MINUTES", "45")
 )
 
 # How often (seconds) to poll blocking entities during the idle period.
@@ -367,6 +372,14 @@ MIN_STABLE_PERIOD_MINUTES: int = int(
     os.getenv("MIN_STABLE_PERIOD_MINUTES", "30")
 )
 OPTIMIZATION_METHOD: str = os.getenv("OPTIMIZATION_METHOD", "L-BFGS-B")
+
+# Indoor temperature ceiling for PV calibration periods.
+# Periods with indoor_temp >= this value are excluded from PV Pass 2
+# because automated blinds likely closed, blocking solar gain while PV
+# stays high on the roof.  Set just below your blind trigger threshold.
+PV_CALIBRATION_INDOOR_CEILING: float = float(
+    os.getenv("PV_CALIBRATION_INDOOR_CEILING", "23.0")
+)
 
 # --- Delta Temperature Forecast Calibration ---
 # Enable local calibration of weather forecasts using measured temperature
