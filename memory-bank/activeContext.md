@@ -1,5 +1,16 @@
 # Active Context - Current Work & Decision State
 
+### 🔧 **UNDERSHOOT GATE — April 7, 2026**
+
+#### ✅ **UNDERSHOOT GATE (mirror of overshoot gate)**
+- **Problem**: The `_calculate_physics_based_correction()` in `model_wrapper.py` had an overshoot gate that skips overshoot correction when indoor temp is falling (house self-correcting). But there was no mirror gate for undershoot — undershoot corrections were always applied even when indoor temp was rising and would self-correct.
+- **Fix**: Added undershoot gate in two locations:
+  1. `min_violates`-only branch: skip undershoot correction if `projected_indoor > target - 0.1°C`
+  2. `both_violated + min_severity > max_severity` branch: same gate
+- **Logic**: `projected_indoor = current_indoor + TRAJECTORY_STEPS × indoor_trend_60m`. If the natural warming trend brings the projected indoor above `target - 0.1°C`, the house is self-correcting and no undershoot correction is needed.
+- **Tests**: 6 new tests in `TestUndershootGate` class + 8 existing tests adapted with explicit trend data
+- **Files**: `src/model_wrapper.py`, `tests/unit/test_trajectory_correction.py`
+
 ### 🔧 **SLAB MODEL FIXES & PV OSCILLATION DAMPING — April 4, 2026**
 
 **CRITICAL FIX SESSION**: Six targeted fixes addressing real production issues observed in logs:
