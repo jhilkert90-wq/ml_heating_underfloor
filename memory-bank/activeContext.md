@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ❄️ **UNIFIED COOLING THERMAL STATE — April 7, 2026**
+
+#### ✅ **Dedicated Cooling State File (`unified_thermal_state_cooling.py`)**
+- **Problem**: Cooling mode shares the same thermal state file as heating, causing learning histories to cross-contaminate. Cooling has different thermal dynamics (faster slab τ, tighter outlet range, external heat as load).
+- **Solution**: Created `CoolingThermalStateManager` in its own JSON file with:
+  1. **Cooling-specific baseline parameters** — faster `slab_time_constant_hours` (0.8h vs 1.0h), tighter outlet range (18–24°C), higher `pv_heat_weight` (solar works against cooling)
+  2. **Independent online learning state** — separate cycle count, confidence, parameter adjustments
+  3. **Calibration tracking** — separate calibration date and cycles for cooling
+  4. **Buffer state persistence** — sensor buffer snapshots saved so cooling resumes after restart without cold start
+- **PR review fixes applied**:
+  - `model_wrapper.py`: Return `outlet_min` (not `outlet_max`) in no-viable-range case — never commands below HP shutdown
+  - `model_wrapper.py`: Renamed `inlet_based_max` → `indoor_based_max` for clarity
+  - `model_wrapper.py`: Fixed `UnboundLocalError` in `simplified_outlet_prediction()` exception handler
+  - `thermal_constants.py`: Deduplicated `MIN_COOLING_DELTA_K` to source from `config`
+- **Tests**: 27 new tests in `test_unified_thermal_state_cooling.py`, 1 test updated in `test_cooling_mode.py`
+- **Files**: `src/unified_thermal_state_cooling.py`, `src/thermal_config.py`, `src/config.py`, `src/shadow_mode.py`, `src/model_wrapper.py`, `src/thermal_constants.py`, `src/main.py`, `.env_sample`
+
 ### 🔧 **UNDERSHOOT GATE — April 7, 2026**
 
 #### ✅ **UNDERSHOOT GATE (mirror of overshoot gate)**

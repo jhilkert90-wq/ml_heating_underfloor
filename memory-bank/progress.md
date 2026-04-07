@@ -2,6 +2,26 @@
 
 ## 🎯 CURRENT STATUS - April 7, 2026
 
+### ✅ **UNIFIED COOLING THERMAL STATE**
+
+**System Status**: **OPERATIONAL** — Dedicated cooling state file with independent learning, calibration, buffer persistence, and cooling-specific parameters.
+
+**Test Suite**: **576/585 passing** (9 pre-existing failures unrelated to changes)
+
+**Implementation Status**:
+- ✅ `CoolingThermalStateManager` with own JSON file (`unified_thermal_state_cooling.json`)
+- ✅ Cooling-specific baseline defaults in `ThermalParameterConfig` (COOLING_DEFAULTS, COOLING_BOUNDS)
+- ✅ Buffer state persistence for cooling sensor snapshots
+- ✅ Independent learning state (cycle count, confidence, parameter adjustments)
+- ✅ Calibration tracking (date, cycles) separate from heating
+- ✅ Shadow-mode support via `get_effective_cooling_state_file()`
+- ✅ PR review fixes: safe no-viable-range return, variable naming, UnboundLocalError fix, constant deduplication
+- ✅ 27 new tests + 1 test updated
+
+**Files Modified**: `src/unified_thermal_state_cooling.py` (new), `src/thermal_config.py`, `src/config.py`, `src/shadow_mode.py`, `src/model_wrapper.py`, `src/thermal_constants.py`, `src/main.py`, `.env_sample`, `tests/unit/test_unified_thermal_state_cooling.py` (new), `tests/unit/test_cooling_mode.py`
+
+## 🎯 PREVIOUS STATUS - April 7, 2026
+
 ### ✅ **UNDERSHOOT GATE (mirror of overshoot gate)**
 
 **System Status**: **OPERATIONAL** — Added undershoot projected-temperature gate to mirror the existing overshoot gate. When indoor temperature is rising naturally, undershoot corrections are skipped to let the house self-correct.
