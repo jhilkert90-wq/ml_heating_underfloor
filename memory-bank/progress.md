@@ -1,6 +1,22 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 4, 2026
+## 🎯 CURRENT STATUS - April 7, 2026
+
+### ✅ **UNDERSHOOT GATE (mirror of overshoot gate)**
+
+**System Status**: **OPERATIONAL** — Added undershoot projected-temperature gate to mirror the existing overshoot gate. When indoor temperature is rising naturally, undershoot corrections are skipped to let the house self-correct.
+
+**Test Suite**: **495/504 passing** (9 pre-existing failures unrelated to changes)
+
+**Implementation Status**:
+- ✅ Undershoot gate in `min_violates`-only branch
+- ✅ Undershoot gate in `both_violated + min_wins` branch
+- ✅ 6 new tests in `TestUndershootGate` class
+- ✅ 8 existing tests adapted with explicit trend data for undershoot gate compatibility
+
+**Files Modified**: `src/model_wrapper.py`, `tests/unit/test_trajectory_correction.py`, `memory-bank/activeContext.md`, `memory-bank/progress.md`
+
+## 🎯 PREVIOUS STATUS - April 4, 2026
 
 ### ✅ **SLAB MODEL FIXES & PV OSCILLATION DAMPING**
 

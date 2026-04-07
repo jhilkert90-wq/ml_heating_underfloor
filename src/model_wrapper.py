@@ -1502,6 +1502,20 @@ class EnhancedModelWrapper:
                     - (target_indoor + boundary_tolerance)
                 )
                 if min_severity > max_severity:
+                    # Undershoot is more severe — skip correction if
+                    # projected indoor will rise above target - 0.1°C
+                    # within TRAJECTORY_STEPS hours.
+                    if projected_indoor > target_indoor - boundary_tolerance:
+                        logging.info(
+                            f"🔄 Skipping undershoot correction (both violated, "
+                            f"min wins): projected indoor "
+                            f"{projected_indoor:.2f}°C > target-0.1 "
+                            f"({target_indoor - boundary_tolerance:.1f}°C) "
+                            f"in {config.TRAJECTORY_STEPS}h "
+                            f"(trend {indoor_trend_60m:+.3f}°C/h) — "
+                            "house self-correcting"
+                        )
+                        return outlet_temp
                     temp_error = target_indoor - min_predicted_temp
                 else:
                     # Overshoot is more severe — skip correction if
@@ -1520,6 +1534,18 @@ class EnhancedModelWrapper:
                         return outlet_temp
                     temp_error = target_indoor - max_predicted_temp
             elif min_violates:
+                # Skip undershoot correction if projected indoor will rise
+                # above target - 0.1°C within TRAJECTORY_STEPS hours.
+                if projected_indoor > target_indoor - boundary_tolerance:
+                    logging.info(
+                        f"🔄 Skipping undershoot correction: projected indoor "
+                        f"{projected_indoor:.2f}°C > target-0.1 "
+                        f"({target_indoor - boundary_tolerance:.1f}°C) "
+                        f"in {config.TRAJECTORY_STEPS}h "
+                        f"(trend {indoor_trend_60m:+.3f}°C/h) — "
+                        "house self-correcting"
+                    )
+                    return outlet_temp
                 temp_error = target_indoor - min_predicted_temp
             elif max_violates:
                 # Skip overshoot correction if projected indoor will fall
