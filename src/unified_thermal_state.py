@@ -559,10 +559,11 @@ class ThermalStateManager:
     def set_heat_source_channel_state(self, channel_state: Dict[str, Any]) -> None:
         """Persist heat-source channel state.
 
-        Channel history entries are slimmed before persisting: unread
-        fields (``parameters``, ``parameters_before``, ``parameters_after``,
-        ``changes``) are dropped and context is trimmed to the fields
-        actually used by channel learning code.
+        Channel history entries are slimmed before persisting: redundant
+        ``parameters_before`` and ``parameters_after`` are dropped (they
+        are derivable from ``parameters`` + ``changes``).  Context is
+        trimmed to the fields used by channel learning and decision
+        visibility.
         """
         compressed = {}
         for ch_name, ch_data in channel_state.items():
