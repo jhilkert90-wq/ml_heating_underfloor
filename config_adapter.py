@@ -57,14 +57,20 @@ def setup_data_directories():
 
 
 def convert_addon_to_env(config):
-    """Convert add-on options to environment variables for existing ML system"""
+    """Convert add-on options to environment variables for existing ML system.
+
+    Maps every config.yaml option to the environment variable name expected by
+    ``src/config.py``.  Keys that are not present in ``config`` are silently
+    skipped so that both the legacy ``ml_heating`` / ``ml_heating_dev`` config
+    schemas and the comprehensive ``ml_heating_underfloor`` schema work.
+    """
 
     # Home Assistant API configuration (internal supervisor access)
     env_vars = {
         'HASS_URL': 'http://supervisor/core',
         'HASS_TOKEN': os.environ.get('SUPERVISOR_TOKEN', ''),
 
-        # Core entity mappings - Complete coverage
+        # --- Core Entity Mappings (must match src/config.py variable names) --
         'TARGET_INDOOR_TEMP_ENTITY_ID': config.get(
             'target_indoor_temp_entity', ''
         ),
@@ -72,6 +78,14 @@ def convert_addon_to_env(config):
         'OUTDOOR_TEMP_ENTITY_ID': config.get('outdoor_temp_entity', ''),
         'HEATING_STATUS_ENTITY_ID': config.get('heating_control_entity', ''),
         'ACTUAL_OUTLET_TEMP_ENTITY_ID': config.get('outlet_temp_entity', ''),
+        'INLET_TEMP_ENTITY_ID': config.get('inlet_temp_entity', ''),
+        'FLOW_RATE_ENTITY_ID': config.get('flow_rate_entity', ''),
+        'POWER_CONSUMPTION_ENTITY_ID': config.get(
+            'power_consumption_entity', ''
+        ),
+        'SPECIFIC_HEAT_CAPACITY': str(
+            config.get('specific_heat_capacity', 4.186)
+        ),
         'TARGET_OUTLET_TEMP_ENTITY_ID': config.get(
             'target_outlet_temp_entity', ''
         ),
@@ -85,86 +99,146 @@ def convert_addon_to_env(config):
             'avg_other_rooms_temp_entity', ''
         ),
         'PV_FORECAST_ENTITY_ID': config.get('pv_forecast_entity', ''),
-
-        # ML learning parameters
-        'LEARNING_RATE': str(config.get('learning_rate', 0.01)),
-        'PREDICTION_HORIZON_MINUTES': str(
-            config.get('prediction_horizon_minutes', 30)
-        ),
-        'CYCLE_INTERVAL_MINUTES': str(
-            config.get('cycle_interval_minutes', 30)
-        ),
-        'MAX_TEMP_CHANGE_PER_CYCLE': str(
-            config.get('max_temp_change_per_cycle', 2.0)
+        'LIVING_ROOM_TEMP_ENTITY_ID': config.get(
+            'living_room_temp_entity', ''
         ),
 
-        # Safety configuration
-        'SAFETY_MAX_TEMP': str(config.get('safety_max_temp', 25.0)),
-        'SAFETY_MIN_TEMP': str(config.get('safety_min_temp', 18.0)),
-        'CLAMP_MIN_ABS': str(config.get('clamp_min_abs', 14.0)),
-        'CLAMP_MAX_ABS': str(config.get('clamp_max_abs', 65.0)),
-
-        # External heat sources (optional)
+        # --- External Heat Sources ---
         'PV_POWER_ENTITY_ID': config.get('pv_power_entity', ''),
+        'SOLAR_CORRECTION_ENTITY_ID': config.get(
+            'solar_correction_entity', ''
+        ),
+        'SOLAR_CORRECTION_DEFAULT_PERCENT': str(
+            config.get('solar_correction_default_percent', 100.0)
+        ),
+        'SOLAR_CORRECTION_MIN_PERCENT': str(
+            config.get('solar_correction_min_percent', 0.0)
+        ),
+        'SOLAR_CORRECTION_MAX_PERCENT': str(
+            config.get('solar_correction_max_percent', 100.0)
+        ),
         'FIREPLACE_STATUS_ENTITY_ID': config.get(
             'fireplace_status_entity', ''
         ),
-        'TV_POWER_ENTITY_ID': config.get('tv_power_entity', ''),
-
-        # InfluxDB configuration
-        'INFLUXDB_HOST': config.get('influxdb_host', 'a0d7b954-influxdb'),
-        'INFLUXDB_PORT': str(config.get('influxdb_port', 8086)),
-        'INFLUXDB_DATABASE': config.get('influxdb_database', 'homeassistant'),
-        'INFLUXDB_USERNAME': config.get('influxdb_username', ''),
-        'INFLUXDB_PASSWORD': config.get('influxdb_password', ''),
-        'INFLUXDB_TOKEN': config.get('influxdb_token', ''),
-        'INFLUXDB_ORG': config.get('influxdb_org', ''),
-        'INFLUXDB_BUCKET': config.get('influxdb_bucket', 'homeassistant'),
-        'INFLUX_FEATURES_BUCKET': config.get(
-            'influx_features_bucket', 'ml_heating_features'
+        # tv_status_entity → TV_STATUS_ENTITY_ID (config.py name)
+        'TV_STATUS_ENTITY_ID': config.get(
+            'tv_status_entity',
+            config.get('tv_power_entity', '')
         ),
 
-        # Advanced Features
-        'HYBRID_LEARNING_ENABLED': str(
-            config.get('hybrid_learning_enabled', True)
-        ).lower(),
-        'PREDICTION_METRICS_ENABLED': str(
-            config.get('prediction_metrics_enabled', True)
-        ).lower(),
-        'TRAJECTORY_PREDICTION_ENABLED': str(
-            config.get('trajectory_prediction_enabled', True)
-        ).lower(),
-
-        # Blocking detection entities
+        # --- Blocking Detection ---
         'DHW_STATUS_ENTITY_ID': config.get('dhw_status_entity', ''),
         'DEFROST_STATUS_ENTITY_ID': config.get('defrost_status_entity', ''),
         'DISINFECTION_STATUS_ENTITY_ID': config.get(
             'disinfection_status_entity', ''
         ),
-        'DHW_BOOST_HEATER_ENTITY_ID': config.get(
+        'DHW_BOOST_HEATER_STATUS_ENTITY_ID': config.get(
             'dhw_boost_heater_entity', ''
         ),
 
-        # Add-on specific paths (different from standalone)
+        # --- ML Learning Parameters ---
+        'HISTORY_STEPS': str(config.get('history_steps', 6)),
+        'HISTORY_STEP_MINUTES': str(config.get('history_step_minutes', 10)),
+        'PREDICTION_HORIZON_STEPS': str(
+            config.get('prediction_horizon_steps', 24)
+        ),
+        'TRAINING_LOOKBACK_HOURS': str(
+            config.get('training_lookback_hours', 168)
+        ),
+        'CYCLE_INTERVAL_MINUTES': str(
+            config.get('cycle_interval_minutes', 10)
+        ),
+        'MAX_TEMP_CHANGE_PER_CYCLE': str(
+            config.get('max_temp_change_per_cycle', 2)
+        ),
+        'TRAINING_DATA_SOURCE': config.get('training_data_source', 'auto'),
+
+        # --- Safety Configuration ---
+        'CLAMP_MIN_ABS': str(config.get('clamp_min_abs', 18.0)),
+        'CLAMP_MAX_ABS': str(config.get('clamp_max_abs', 35.0)),
+
+        # --- Cooling Mode ---
+        'COOLING_CLAMP_MIN_ABS': str(
+            config.get('cooling_clamp_min_abs', 18.0)
+        ),
+        'COOLING_CLAMP_MAX_ABS': str(
+            config.get('cooling_clamp_max_abs', 24.0)
+        ),
+        'MIN_COOLING_DELTA_K': str(
+            config.get('min_cooling_delta_k', 2.0)
+        ),
+        'COOLING_SHUTDOWN_MARGIN_K': str(
+            config.get('cooling_shutdown_margin_k', 1.0)
+        ),
+
+        # --- InfluxDB Configuration ---
+        # config.py expects INFLUX_URL (full URL), INFLUX_TOKEN, INFLUX_ORG,
+        # INFLUX_BUCKET.  The underfloor config uses these directly.
+        # Legacy ml_heating configs use influxdb_host/port; we build the URL.
+        'INFLUX_URL': config.get(
+            'influx_url',
+            'http://{}:{}'.format(
+                config.get('influxdb_host', 'a0d7b954-influxdb'),
+                config.get('influxdb_port', 8086)
+            )
+        ),
+        'INFLUX_TOKEN': config.get(
+            'influx_token',
+            config.get('influxdb_token', '')
+        ),
+        'INFLUX_ORG': config.get(
+            'influx_org',
+            config.get('influxdb_org', '')
+        ),
+        'INFLUX_BUCKET': config.get(
+            'influx_bucket',
+            config.get('influxdb_bucket', 'home_assistant')
+        ),
+        'INFLUX_FEATURES_BUCKET': config.get(
+            'influx_features_bucket', 'ml_heating_features'
+        ),
+        'INFLUX_METRICS_EXPORT_INTERVAL_CYCLES': str(
+            config.get('influx_metrics_export_interval_cycles', 5)
+        ),
+
+        # --- Add-on specific paths ---
         'UNIFIED_STATE_FILE': '/data/models/unified_thermal_state.json',
+        'UNIFIED_STATE_FILE_COOLING':
+            '/data/models/unified_thermal_state_cooling.json',
+        'CALIBRATION_BASELINE_FILE': config.get(
+            'calibration_baseline_file', '/data/calibrated_baseline.json'
+        ),
         'BACKUP_DIR': '/data/backups',
         'LOG_FILE_PATH': '/data/logs/ml_heating.log',
 
-        # Performance tuning
-        'CONFIDENCE_THRESHOLD': str(config.get('confidence_threshold', 0.7)),
-        'PHYSICS_VALIDATION_ENABLED': str(
-            config.get('physics_validation_enabled', True)
+        # --- Performance Tuning ---
+        'CONFIDENCE_THRESHOLD': str(
+            config.get('confidence_threshold', 2.0)
         ),
-        'SEASONAL_LEARNING_ENABLED': str(
-            config.get('seasonal_learning_enabled', True)
+        'TRAJECTORY_STEPS': str(config.get('trajectory_steps', 4)),
+        'GRACE_PERIOD_MAX_MINUTES': str(
+            config.get('grace_period_max_minutes', 15)
+        ),
+        'DEFROST_RECOVERY_GRACE_MINUTES': str(
+            config.get('defrost_recovery_grace_minutes', 45)
+        ),
+        'BLOCKING_POLL_INTERVAL_SECONDS': str(
+            config.get('blocking_poll_interval_seconds', 60)
         ),
 
-        # Logging and development
+        # --- Shadow Mode ---
+        'SHADOW_MODE': str(config.get('shadow_mode', False)).lower(),
+        'ML_HEATING_CONTROL_ENTITY_ID': config.get(
+            'ml_heating_control_entity', 'input_boolean.ml_heating'
+        ),
+
+        # --- Logging and Development ---
         'LOG_LEVEL': config.get('log_level', 'INFO'),
+        'DEBUG': '1' if config.get('debug', False) else '0',
         'ENABLE_DEV_API': str(config.get('enable_dev_api', False)),
         'DEV_API_KEY': config.get('dev_api_key', ''),
 
-        # Dashboard settings
+        # --- Dashboard ---
         'DASHBOARD_UPDATE_INTERVAL': str(
             config.get('dashboard_update_interval', 30)
         ),
@@ -173,38 +247,176 @@ def convert_addon_to_env(config):
         ),
         'DASHBOARD_THEME': config.get('dashboard_theme', 'auto'),
 
-        # Model management
+        # --- Model Management ---
         'AUTO_BACKUP_ENABLED': str(config.get('auto_backup_enabled', True)),
         'BACKUP_RETENTION_DAYS': str(config.get('backup_retention_days', 30)),
 
-        # Core ML parameters mapping to existing core variables
-        'HISTORY_STEPS': str(config.get('history_steps', 6)),
-        'HISTORY_STEP_MINUTES': str(config.get('history_step_minutes', 10)),
-        'TRAINING_LOOKBACK_HOURS': str(
-            config.get('training_lookback_hours', 168)
+        # --- Thermal Model Parameters ---
+        'THERMAL_TIME_CONSTANT': str(
+            config.get('thermal_time_constant', 4.0)
         ),
-        'PREDICTION_HORIZON_STEPS': str(
-            config.get('prediction_horizon_steps', 24)
+        'HEAT_LOSS_COEFFICIENT': str(
+            config.get('heat_loss_coefficient', 0.15)
+        ),
+        'OUTLET_EFFECTIVENESS': str(
+            config.get('outlet_effectiveness', 0.93)
+        ),
+        'OUTDOOR_COUPLING': str(config.get('outdoor_coupling', 0.3)),
+        'THERMAL_BRIDGE_FACTOR': str(
+            config.get('thermal_bridge_factor', 0.1)
+        ),
+        'EQUILIBRIUM_RATIO': str(config.get('equilibrium_ratio', 0.17)),
+        'TOTAL_CONDUCTANCE': str(config.get('total_conductance', 0.24)),
+        'SLAB_TIME_CONSTANT_HOURS': str(
+            config.get('slab_time_constant_hours', 1.0)
+        ),
+        'SOLAR_LAG_MINUTES': str(config.get('solar_lag_minutes', 45.0)),
+        'CLOUD_CORRECTION_MIN_FACTOR': str(
+            config.get('cloud_correction_min_factor', 0.1)
         ),
 
-        # Advanced Learning Features - Multi-lag learning
+        # --- External Heat Source Weights ---
+        'PV_HEAT_WEIGHT': str(config.get('pv_heat_weight', 0.0005)),
+        'FIREPLACE_HEAT_WEIGHT': str(
+            config.get('fireplace_heat_weight', 0.1)
+        ),
+        'TV_HEAT_WEIGHT': str(config.get('tv_heat_weight', 0.35)),
+
+        # --- Adaptive Learning Parameters ---
+        'ADAPTIVE_LEARNING_RATE': str(
+            config.get('adaptive_learning_rate', 0.01)
+        ),
+        'MIN_LEARNING_RATE': str(config.get('min_learning_rate', 0.001)),
+        'MAX_LEARNING_RATE': str(config.get('max_learning_rate', 0.01)),
+        'LEARNING_CONFIDENCE': str(config.get('learning_confidence', 3.0)),
+        'RECENT_ERRORS_WINDOW': str(
+            config.get('recent_errors_window', 10)
+        ),
+
+        # --- Hybrid Learning Strategy ---
+        'HYBRID_LEARNING_ENABLED': str(
+            config.get('hybrid_learning_enabled', True)
+        ).lower(),
+        'STABILITY_CLASSIFICATION_ENABLED': str(
+            config.get('stability_classification_enabled', True)
+        ).lower(),
+        'HIGH_CONFIDENCE_WEIGHT': str(
+            config.get('high_confidence_weight', 1.0)
+        ),
+        'LOW_CONFIDENCE_WEIGHT': str(
+            config.get('low_confidence_weight', 0.3)
+        ),
+        'LEARNING_PHASE_SKIP_WEIGHT': str(
+            config.get('learning_phase_skip_weight', 0.0)
+        ),
+
+        # --- Prediction Metrics ---
+        'PREDICTION_METRICS_ENABLED': str(
+            config.get('prediction_metrics_enabled', True)
+        ).lower(),
+        'METRICS_WINDOW_1H': str(config.get('metrics_window_1h', 12)),
+        'METRICS_WINDOW_6H': str(config.get('metrics_window_6h', 72)),
+        'METRICS_WINDOW_24H': str(config.get('metrics_window_24h', 288)),
+        'PREDICTION_ACCURACY_THRESHOLD': str(
+            config.get('prediction_accuracy_threshold', 0.3)
+        ),
+        'MAE_ENTITY_ID': config.get('mae_entity', 'sensor.ml_model_mae'),
+        'RMSE_ENTITY_ID': config.get('rmse_entity', 'sensor.ml_model_rmse'),
+
+        # --- Trajectory Prediction ---
+        'TRAJECTORY_PREDICTION_ENABLED': str(
+            config.get('trajectory_prediction_enabled', True)
+        ).lower(),
+        'WEATHER_FORECAST_INTEGRATION': str(
+            config.get('weather_forecast_integration', True)
+        ).lower(),
+        'PV_FORECAST_INTEGRATION': str(
+            config.get('pv_forecast_integration', True)
+        ).lower(),
+        'SOLAR_CORRECTION_ENABLED': str(
+            config.get('solar_correction_enabled', True)
+        ).lower(),
+        'CLOUD_COVER_CORRECTION_ENABLED': str(
+            config.get('cloud_cover_correction_enabled', False)
+        ).lower(),
+        'OVERSHOOT_DETECTION_ENABLED': str(
+            config.get('overshoot_detection_enabled', True)
+        ).lower(),
+
+        # --- Multi-Lag Learning ---
+        'ENABLE_MULTI_LAG_LEARNING': str(
+            config.get('enable_multi_lag_learning', True)
+        ).lower(),
         'PV_LAG_STEPS': str(config.get('pv_lag_steps', 4)),
         'FIREPLACE_LAG_STEPS': str(config.get('fireplace_lag_steps', 4)),
         'TV_LAG_STEPS': str(config.get('tv_lag_steps', 2)),
 
-        # Seasonal Adaptation
+        # --- Seasonal Adaptation ---
+        'ENABLE_SEASONAL_ADAPTATION': str(
+            config.get('enable_seasonal_adaptation',
+                       config.get('seasonal_learning_enabled', True))
+        ).lower(),
         'SEASONAL_LEARNING_RATE': str(
             config.get('seasonal_learning_rate', 0.01)
         ),
-        'MIN_SEASONAL_SAMPLES': str(config.get('min_seasonal_samples', 100)),
+        'MIN_SEASONAL_SAMPLES': str(
+            config.get('min_seasonal_samples', 100)
+        ),
 
-        # System Behavior
-        'GRACE_PERIOD_MAX_MINUTES': str(
-            config.get('grace_period_max_minutes', 30)
+        # --- Summer Learning ---
+        'ENABLE_SUMMER_LEARNING': str(
+            config.get('enable_summer_learning', True)
+        ).lower(),
+
+        # --- Historical Calibration ---
+        'STABILITY_TEMP_CHANGE_THRESHOLD': str(
+            config.get('stability_temp_change_threshold', 0.1)
         ),
-        'BLOCKING_POLL_INTERVAL_SECONDS': str(
-            config.get('blocking_poll_interval_seconds', 60)
+        'MIN_STABLE_PERIOD_MINUTES': str(
+            config.get('min_stable_period_minutes', 30)
         ),
+        'OPTIMIZATION_METHOD': config.get('optimization_method', 'L-BFGS-B'),
+        'PV_CALIBRATION_INDOOR_CEILING': str(
+            config.get('pv_calibration_indoor_ceiling', 23.0)
+        ),
+
+        # --- Delta Forecast Calibration ---
+        'ENABLE_DELTA_FORECAST_CALIBRATION': str(
+            config.get('enable_delta_forecast_calibration', True)
+        ).lower(),
+        'DELTA_CALIBRATION_MAX_OFFSET': str(
+            config.get('delta_calibration_max_offset', 10.0)
+        ),
+
+        # --- Learning History ---
+        'MAX_PREDICTION_HISTORY': str(
+            config.get('max_prediction_history', 700)
+        ),
+        'MAX_PARAMETER_HISTORY': str(
+            config.get('max_parameter_history', 700)
+        ),
+
+        # --- Indoor Trend Protection ---
+        'INDOOR_COOLING_TREND_THRESHOLD': str(
+            config.get('indoor_cooling_trend_threshold', -0.05)
+        ),
+        'INDOOR_COOLING_DAMPING_FACTOR': str(
+            config.get('indoor_cooling_damping_factor', 0.3)
+        ),
+        'INDOOR_WARMING_TREND_THRESHOLD': str(
+            config.get('indoor_warming_trend_threshold', 0.10)
+        ),
+        'INDOOR_WARMING_DAMPING_FACTOR': str(
+            config.get('indoor_warming_damping_factor', 0.3)
+        ),
+
+        # --- Heat Source Channels ---
+        'ENABLE_HEAT_SOURCE_CHANNELS': str(
+            config.get('enable_heat_source_channels', True)
+        ).lower(),
+        'ENABLE_MIXED_SOURCE_ATTRIBUTION': str(
+            config.get('enable_mixed_source_attribution', False)
+        ).lower(),
     }
 
     # Set environment variables for the ML system

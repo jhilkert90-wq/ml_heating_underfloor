@@ -31,8 +31,7 @@ load_dotenv()
 # Detect if running in Home Assistant addon environment
 def _is_addon_environment():
     """Detect if running in Home Assistant addon environment."""
-    #return os.getenv("SUPERVISOR_TOKEN") is not None
-    return False
+    return os.getenv("SUPERVISOR_TOKEN") is not None
 
 
 # Detect if running in a notebook/analysis environment

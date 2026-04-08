@@ -1,0 +1,462 @@
+name: "ML Heating Underfloor"
+version: "0.2.0"
+image: "ghcr.io/helgeerbe/ml_heating_underfloor"
+slug: "ml_heating_underfloor"
+description: "Physics-based machine learning heating control optimized for underfloor heating systems with slow thermal response"
+url: "https://github.com/helgeerbe/ml_heating"
+arch:
+  - aarch64
+  - amd64
+startup: services
+init: false
+map:
+  - addon_config:rw
+ingress: true
+ingress_port: 3001
+panel_icon: mdi:heat-pump
+panel_title: "ML Heating Underfloor"
+homeassistant: 2024.1.0
+privileged:
+  - SYS_RAWIO
+apparmor: false
+hassio_api: true
+homeassistant_api: true
+options:
+  # === Core Entity Configuration ===
+  # An input_number or sensor that holds the desired target indoor temperature
+  target_indoor_temp_entity: "input_number.soll_rt"
+  # The primary indoor temperature sensor that the system will try to maintain
+  indoor_temp_entity: "sensor.rt_mittelwert"
+  # The outdoor temperature sensor, preferably compensated or located near the heat pump
+  outdoor_temp_entity: "sensor.nibe_bt1_outdoor_temperature"
+  # The climate entity for your heating system, used to check if it's in 'heat' or 'auto' mode
+  heating_control_entity: "sensor.betriebsmodus_wp"
+  # The heat pump's actual outlet temperature sensor
+  outlet_temp_entity: "sensor.nibe_bt2_supply_temp_s1"
+  # The heat pump's inlet (return) temperature sensor
+  inlet_temp_entity: "sensor.nibe_eb100_ep14_bt3_return_temp"
+  # The heat pump's flow rate sensor (L/min)
+  flow_rate_entity: "input_number.hp_current_flow_rate"
+  # The heat pump's power consumption sensor (Watts)
+  power_consumption_entity: "sensor.nibe_el_leistung"
+  # Specific heat capacity of the fluid (kJ/kg·K). Default is 4.186 for water.
+  specific_heat_capacity: 4.186
+  # The entity this script will write its calculated target outlet temperature to.
+  # When shadow_mode=true, ML Heating publishes to this entity with _shadow appended.
+  target_outlet_temp_entity: "sensor.ml_vorlauftemperatur"
+  # The target outlet temperature that was actually set (by model or heat curve).
+  # Used for learning in both active and shadow modes.
+  actual_target_outlet_temp_entity: "sensor.ml_vorlauftemperatur"
+  # An external weather forecast temperature sensor (e.g., from OpenWeatherMap)
+  openweathermap_temp_entity: "weather.home"
+  # A sensor that provides the average temperature of rooms not affected by the fireplace
+  avg_other_rooms_temp_entity: "sensor.rt_mittelwert"
+  # The Home Assistant sensor that provides today's PV forecast with attributes
+  pv_forecast_entity: "sensor.ml_pv_forecast_watts"
+  # Living room temperature sensor (used for fireplace analysis only)
+  living_room_temp_entity: "sensor.rt_wz"
+
+  # === External Heat Sources ===
+  # A single aggregated sensor for total PV power generation
+  pv_power_entity: "sensor.pv_leistung_gefiltert"
+  # Home Assistant input_number for dynamic solar correction in percent
+  solar_correction_entity: "input_number.ml_heating_solar_correction"
+  # Fallback and clamping for solar correction input_number (in percent)
+  solar_correction_default_percent: 100.0
+  solar_correction_min_percent: 0.0
+  solar_correction_max_percent: 100.0
+  # A binary_sensor that is 'on' when the fireplace is active
+  fireplace_status_entity: "binary_sensor.kamin_an"
+  # A sensor or input_boolean that indicates if a TV or other significant internal heat source is on
+  tv_status_entity: "input_boolean.tv_an"
+
+  # === Blocking Detection ===
+  # A binary_sensor that is 'on' when Domestic Hot Water (DHW) is being heated
+  dhw_status_entity: "binary_sensor.warmwassermodus"
+  # A binary_sensor that is 'on' during a defrost cycle of the heat pump
+  defrost_status_entity: "binary_sensor.defrost_wp"
+  # A binary_sensor that is 'on' during a DHW tank disinfection cycle
+  disinfection_status_entity: "binary_sensor.warmwassermodus"
+  # A binary_sensor that is 'on' when the DHW boost heater is active
+  dhw_boost_heater_entity: "binary_sensor.warmwassermodus"
+
+  # === ML Learning Parameters ===
+  # Number of historical steps to use as features for the model
+  history_steps: 6
+  # The duration of each historical step in minutes
+  history_step_minutes: 10
+  # How many 5-minute steps into the future the model should predict (24 = 120 min)
+  prediction_horizon_steps: 24
+  # The number of hours of historical data to use for initial training
+  training_lookback_hours: 1800
+  # The time in minutes between each full cycle of learning and prediction
+  cycle_interval_minutes: 10
+  # The maximum allowable change (in degrees) for the outlet temperature setpoint in a single cycle
+  max_temp_change_per_cycle: 2
+  # Training data source: "influx", "ha_history", or "auto"
+  training_data_source: "auto"
+
+  # === Safety Configuration ===
+  # Absolute minimum allowed outlet temperature (in °C) - UNDERFLOOR: lower range
+  clamp_min_abs: 18.0
+  # Absolute maximum allowed outlet temperature (in °C) - UNDERFLOOR: max 35°C to protect floor
+  clamp_max_abs: 35.0
+
+  # === Cooling Mode Configuration ===
+  # Absolute minimum outlet temp in cooling mode (HP shutdown limit)
+  cooling_clamp_min_abs: 18.0
+  # Maximum outlet temp in cooling mode
+  cooling_clamp_max_abs: 24.0
+  # Minimum delta between inlet and outlet for HP operation in cooling (K)
+  min_cooling_delta_k: 2.0
+  # Safety margin above the HP shutdown limit to prevent short-cycling
+  cooling_shutdown_margin_k: 1.0
+
+  # === InfluxDB Configuration ===
+  # URL of your InfluxDB instance, including the protocol and port
+  influx_url: "http://192.168.0.223:8089"
+  # An InfluxDB API token with read access to the specified bucket
+  influx_token: ""
+  # The InfluxDB organization your Home Assistant data belongs to
+  influx_org: "home"
+  # The InfluxDB bucket where your Home Assistant data is stored
+  influx_bucket: "home_assistant"
+  # InfluxDB bucket for exporting generated ML metrics.
+  # When shadow_mode=true, ML Heating writes to this bucket with _shadow appended.
+  influx_features_bucket: "ml_heating_features"
+  # Export adaptive learning metrics to InfluxDB every N learning cycles
+  influx_metrics_export_interval_cycles: 5
+
+  # === Model Management ===
+  # Enable automatic model backups before updates
+  auto_backup_enabled: true
+  # Number of days to retain model backups
+  backup_retention_days: 30
+
+  # === Dashboard Configuration ===
+  # Interval in seconds for dashboard data updates
+  dashboard_update_interval: 30
+  # Display advanced performance metrics on the dashboard
+  show_advanced_metrics: true
+  # Theme for the dashboard (auto, light, or dark)
+  dashboard_theme: "auto"
+
+  # === Development Settings ===
+  # Whether to enable the development API for external access
+  enable_dev_api: false
+  # API key for authenticating with the development API
+  dev_api_key: ""
+  # The minimum level of log messages to display
+  log_level: "INFO"
+  # Set to true to enable detailed logging of feature vectors and model decisions
+  debug: false
+
+  # === Performance Tuning ===
+  # The physics model uses learning_confidence in range (0.1..10.0]
+  # System falls back to traditional heat curve when confidence drops below threshold
+  confidence_threshold: 2.0
+  # Number of hours to predict in the thermal trajectory (2-8 hours)
+  trajectory_steps: 4
+  # Maximum minutes to wait during grace period after blocking ends
+  grace_period_max_minutes: 15
+  # Extra grace period after HP defrost cycles (minutes)
+  defrost_recovery_grace_minutes: 45
+  # How often (seconds) to poll blocking entities during idle period
+  blocking_poll_interval_seconds: 60
+
+  # === Shadow Mode Configuration ===
+  # When enabled, ML runs as a dedicated shadow deployment without affecting
+  # the live target entity. HA outputs, generated Influx metrics, and the
+  # default unified state file are isolated automatically with _shadow suffixes.
+  shadow_mode: true
+  # Home Assistant input_boolean to enable/disable ML control dynamically
+  # When ON: ML actively controls heating, When OFF: Shadow mode (ML observes only)
+  ml_heating_control_entity: "input_boolean.ml_heating"
+
+  # === Thermal Equilibrium Model Parameters ===
+  # UNDERFLOOR-OPTIMIZED: These defaults are tuned for underfloor heating systems
+  # with slow thermal response and large thermal mass (screed/slab).
+
+  # Building thermal response time in hours - UNDERFLOOR: 4h typical for screed slab
+  thermal_time_constant: 4.0
+  # Heat loss rate per degree difference
+  heat_loss_coefficient: 0.15
+  # Heat pump outlet efficiency - UNDERFLOOR: 0.93 (high due to large surface area)
+  outlet_effectiveness: 0.93
+  # Outdoor temperature influence factor
+  outdoor_coupling: 0.3
+  # Thermal bridging losses factor
+  thermal_bridge_factor: 0.1
+  # Equilibrium ratio (dimensionless)
+  equilibrium_ratio: 0.17
+  # Total thermal conductance (1/hour)
+  total_conductance: 0.24
+  # UFH slab (Estrich) first-order thermal time constant (hours)
+  slab_time_constant_hours: 1.0
+  # Effective delay/smoothing window for solar gain (minutes)
+  solar_lag_minutes: 45.0
+  # Cloud-cover minimum attenuation factor
+  cloud_correction_min_factor: 0.1
+
+  # === External Heat Source Weights ===
+  # Solar heating contribution per watt of PV power - UNDERFLOOR: smaller weight
+  pv_heat_weight: 0.0005
+  # Fireplace heating contribution
+  fireplace_heat_weight: 0.1
+  # Electronics heating contribution when TV/devices are on
+  tv_heat_weight: 0.35
+
+  # === Adaptive Learning Parameters ===
+  # Base learning rate for thermal parameter adaptation - UNDERFLOOR: conservative
+  adaptive_learning_rate: 0.01
+  # Minimum allowed learning rate
+  min_learning_rate: 0.001
+  # Maximum allowed learning rate
+  max_learning_rate: 0.01
+  # Initial confidence level for learning algorithms
+  learning_confidence: 3.0
+  # Number of recent prediction errors to analyze for parameter updates
+  recent_errors_window: 10
+
+  # === Hybrid Learning Strategy ===
+  # Enable intelligent learning phase classification with weighted periods
+  hybrid_learning_enabled: true
+  # Enable stability classification for learning periods
+  stability_classification_enabled: true
+  # Weight for stable periods (high confidence learning)
+  high_confidence_weight: 1.0
+  # Weight for controlled transitions (low confidence learning)
+  low_confidence_weight: 0.3
+  # Weight for chaotic periods (skip learning)
+  learning_phase_skip_weight: 0.0
+
+  # === Prediction Metrics Tracking ===
+  # Enable comprehensive prediction accuracy tracking
+  prediction_metrics_enabled: true
+  # 1 hour window (12 x 5min samples)
+  metrics_window_1h: 12
+  # 6 hour window (72 x 5min samples)
+  metrics_window_6h: 72
+  # 24 hour window (288 x 5min samples)
+  metrics_window_24h: 288
+  # °C threshold for accuracy classification
+  prediction_accuracy_threshold: 0.3
+  # MAE sensor entity
+  mae_entity: "sensor.ml_model_mae"
+  # RMSE sensor entity
+  rmse_entity: "sensor.ml_model_rmse"
+
+  # === Trajectory Prediction ===
+  # Enable advanced trajectory prediction with forecast integration
+  trajectory_prediction_enabled: true
+  # Use weather forecasts in trajectory prediction - ESSENTIAL for underfloor
+  weather_forecast_integration: true
+  # Use PV forecasts in trajectory prediction - ESSENTIAL for underfloor
+  pv_forecast_integration: true
+  # Enable solar correction
+  solar_correction_enabled: true
+  # Enable cloud cover correction
+  cloud_cover_correction_enabled: false
+  # Enable trajectory-based overshoot detection
+  overshoot_detection_enabled: true
+
+  # === Advanced Learning Features ===
+  # Enable time-delayed learning for external heat sources (PV, fireplace, TV)
+  enable_multi_lag_learning: true
+  # Number of lag steps for PV effects (each step = 30 minutes)
+  pv_lag_steps: 4
+  # Number of lag steps for fireplace effects
+  fireplace_lag_steps: 4
+  # Number of lag steps for TV effects
+  tv_lag_steps: 2
+  # Enable automatic seasonal learning using cosine/sine modulation
+  enable_seasonal_adaptation: true
+  # Seasonal adaptation learning rate
+  seasonal_learning_rate: 0.01
+  # Minimum samples before seasonal learning starts
+  min_seasonal_samples: 100
+  # Enable learning from HVAC-off periods (typically summer)
+  enable_summer_learning: true
+
+  # === Historical Calibration System ===
+  # Calibrated baseline storage file path
+  calibration_baseline_file: "/data/calibrated_baseline.json"
+  # °C change threshold for stability filtering
+  stability_temp_change_threshold: 0.1
+  # Minimum duration for stable periods (minutes)
+  min_stable_period_minutes: 30
+  # Scipy optimization method
+  optimization_method: "L-BFGS-B"
+  # Indoor temperature ceiling for PV calibration
+  pv_calibration_indoor_ceiling: 23.0
+
+  # === Delta Temperature Forecast Calibration ===
+  # Enable delta calibration using local temperature offset
+  enable_delta_forecast_calibration: true
+  # Maximum allowed offset (°C) for safety
+  delta_calibration_max_offset: 10.0
+
+  # === Learning History Sizes ===
+  # Number of prediction records to keep in memory
+  max_prediction_history: 700
+  # Number of parameter update records to keep in memory
+  max_parameter_history: 700
+
+  # === Indoor Trend Protection ===
+  # Prevents HLC/OE from drifting when indoor temp moves due to setpoint changes
+  indoor_cooling_trend_threshold: -0.05
+  indoor_cooling_damping_factor: 0.3
+  indoor_warming_trend_threshold: 0.10
+  indoor_warming_damping_factor: 0.3
+
+  # === Heat Source Channel Architecture ===
+  # Enable decomposed heat-source learning with independent channels
+  enable_heat_source_channels: true
+  # Enable proportional mixed-source attribution
+  enable_mixed_source_attribution: true
+
+schema:
+  # Core Entity Configuration
+  target_indoor_temp_entity: "str"
+  indoor_temp_entity: "str"
+  outdoor_temp_entity: "str"
+  heating_control_entity: "str"
+  outlet_temp_entity: "str"
+  inlet_temp_entity: "str"
+  flow_rate_entity: "str"
+  power_consumption_entity: "str"
+  specific_heat_capacity: "float(1.0,10.0)"
+  target_outlet_temp_entity: "str"
+  actual_target_outlet_temp_entity: "str"
+  openweathermap_temp_entity: "str"
+  avg_other_rooms_temp_entity: "str"
+  pv_forecast_entity: "str"
+  living_room_temp_entity: "str"
+  # External Heat Sources
+  pv_power_entity: "str"
+  solar_correction_entity: "str"
+  solar_correction_default_percent: "float(0.0,100.0)"
+  solar_correction_min_percent: "float(0.0,100.0)"
+  solar_correction_max_percent: "float(0.0,100.0)"
+  fireplace_status_entity: "str"
+  tv_status_entity: "str"
+  # Blocking Detection
+  dhw_status_entity: "str"
+  defrost_status_entity: "str"
+  disinfection_status_entity: "str"
+  dhw_boost_heater_entity: "str"
+  # ML Learning Parameters
+  history_steps: "int(3,12)"
+  history_step_minutes: "int(5,30)"
+  prediction_horizon_steps: "int(12,96)"
+  training_lookback_hours: "int(24,2000)"
+  cycle_interval_minutes: "int(5,60)"
+  max_temp_change_per_cycle: "int(1,10)"
+  training_data_source: "list(auto|influx|ha_history)"
+  # Safety Configuration
+  clamp_min_abs: "float(10.0,25.0)"
+  clamp_max_abs: "float(25.0,55.0)"
+  # Cooling Mode Configuration
+  cooling_clamp_min_abs: "float(14.0,22.0)"
+  cooling_clamp_max_abs: "float(18.0,28.0)"
+  min_cooling_delta_k: "float(0.5,5.0)"
+  cooling_shutdown_margin_k: "float(0.0,3.0)"
+  # InfluxDB Configuration
+  influx_url: "str"
+  influx_token: "str"
+  influx_org: "str"
+  influx_bucket: "str"
+  influx_features_bucket: "str"
+  influx_metrics_export_interval_cycles: "int(1,100)"
+  # Model Management
+  auto_backup_enabled: "bool"
+  backup_retention_days: "int(1,365)"
+  # Dashboard Configuration
+  dashboard_update_interval: "int(5,300)"
+  show_advanced_metrics: "bool"
+  dashboard_theme: "list(auto|light|dark)"
+  # Development Settings
+  enable_dev_api: "bool"
+  dev_api_key: "str"
+  log_level: "list(DEBUG|INFO|WARNING|ERROR)"
+  debug: "bool"
+  # Performance Tuning
+  confidence_threshold: "float(0.1,10.0)"
+  trajectory_steps: "int(2,8)"
+  grace_period_max_minutes: "int(10,120)"
+  defrost_recovery_grace_minutes: "int(15,120)"
+  blocking_poll_interval_seconds: "int(30,300)"
+  # Shadow Mode
+  shadow_mode: "bool"
+  ml_heating_control_entity: "str"
+  # Thermal Equilibrium Model Parameters
+  thermal_time_constant: "float(1.0,100.0)"
+  heat_loss_coefficient: "float(0.005,1.2)"
+  outlet_effectiveness: "float(0.01,2.0)"
+  outdoor_coupling: "float(0.1,0.8)"
+  thermal_bridge_factor: "float(0.01,0.5)"
+  equilibrium_ratio: "float(0.05,0.9)"
+  total_conductance: "float(0.1,0.8)"
+  slab_time_constant_hours: "float(0.5,3.0)"
+  solar_lag_minutes: "float(0.0,180.0)"
+  cloud_correction_min_factor: "float(0.0,1.0)"
+  # External Heat Source Weights
+  pv_heat_weight: "float(0.0001,0.01)"
+  fireplace_heat_weight: "float(0.01,10.0)"
+  tv_heat_weight: "float(0.01,1.5)"
+  # Adaptive Learning Parameters
+  adaptive_learning_rate: "float(0.001,0.2)"
+  min_learning_rate: "float(0.0001,0.1)"
+  max_learning_rate: "float(0.001,0.5)"
+  learning_confidence: "float(0.1,10.0)"
+  recent_errors_window: "int(5,50)"
+  # Hybrid Learning Strategy
+  hybrid_learning_enabled: "bool"
+  stability_classification_enabled: "bool"
+  high_confidence_weight: "float(0.0,2.0)"
+  low_confidence_weight: "float(0.0,1.0)"
+  learning_phase_skip_weight: "float(0.0,1.0)"
+  # Prediction Metrics Tracking
+  prediction_metrics_enabled: "bool"
+  metrics_window_1h: "int(6,24)"
+  metrics_window_6h: "int(36,144)"
+  metrics_window_24h: "int(144,576)"
+  prediction_accuracy_threshold: "float(0.1,1.0)"
+  mae_entity: "str"
+  rmse_entity: "str"
+  # Trajectory Prediction
+  trajectory_prediction_enabled: "bool"
+  weather_forecast_integration: "bool"
+  pv_forecast_integration: "bool"
+  solar_correction_enabled: "bool"
+  cloud_cover_correction_enabled: "bool"
+  overshoot_detection_enabled: "bool"
+  # Advanced Learning Features
+  enable_multi_lag_learning: "bool"
+  pv_lag_steps: "int(1,8)"
+  fireplace_lag_steps: "int(1,8)"
+  tv_lag_steps: "int(1,6)"
+  enable_seasonal_adaptation: "bool"
+  seasonal_learning_rate: "float(0.001,0.1)"
+  min_seasonal_samples: "int(50,500)"
+  enable_summer_learning: "bool"
+  # Historical Calibration System
+  calibration_baseline_file: "str"
+  stability_temp_change_threshold: "float(0.05,0.5)"
+  min_stable_period_minutes: "int(15,120)"
+  optimization_method: "str"
+  pv_calibration_indoor_ceiling: "float(18.0,30.0)"
+  # Delta Temperature Forecast Calibration
+  enable_delta_forecast_calibration: "bool"
+  delta_calibration_max_offset: "float(1.0,20.0)"
+  # Learning History Sizes
+  max_prediction_history: "int(100,2000)"
+  max_parameter_history: "int(100,2000)"
+  # Indoor Trend Protection
+  indoor_cooling_trend_threshold: "float(-1.0,0.0)"
+  indoor_cooling_damping_factor: "float(0.0,1.0)"
+  indoor_warming_trend_threshold: "float(0.0,1.0)"
+  indoor_warming_damping_factor: "float(0.0,1.0)"
+  # Heat Source Channel Architecture
+  enable_heat_source_channels: "bool"
+  enable_mixed_source_attribution: "bool"
