@@ -255,5 +255,5 @@ class TestHeatingSystemStateChecker:
             should_continue = state_checker.check_heating_active(mock_ha_client, {})
             assert should_continue is False
             mock_logging.debug.assert_called_with(
-                "Failed to write HEATING_OFF state to HA.", exc_info=True
+                "Failed to write SYSTEM_OFF state to HA.", exc_info=True
             )

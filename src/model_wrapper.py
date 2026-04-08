@@ -53,6 +53,10 @@ class EnhancedModelWrapper:
         self.thermal_model = ThermalEquilibriumModel()
         self.learning_enabled = True
 
+        # Climate mode: "heating" (default) or "cooling".
+        # Set each cycle by main.py via set_climate_mode().
+        self._climate_mode = "heating"
+
         # Get thermal state manager
         self.state_manager = get_thermal_state_manager()
 
@@ -113,6 +117,18 @@ class EnhancedModelWrapper:
                 )
             ),
         )
+
+    # --- Climate mode helpers ---
+    def set_climate_mode(self, mode: str) -> None:
+        """Set the current climate mode ('heating' or 'cooling')."""
+        if mode not in ("heating", "cooling"):
+            mode = "heating"
+        self._climate_mode = mode
+
+    @property
+    def climate_mode(self) -> str:
+        """Return the current climate mode."""
+        return self._climate_mode
 
     def _calculate_fireplace_power_kw(
         self,
@@ -397,14 +413,16 @@ class EnhancedModelWrapper:
                 logging.warning(
                     "Failed to calculate optimal outlet temperature"
                 )
-                optimal_outlet_temp = 35.0  # Safe fallback
+                optimal_outlet_temp = config.get_fallback_outlet(
+                    self._climate_mode
+                )
 
             return optimal_outlet_temp, prediction_metadata
 
         except Exception as e:
             logging.error(f"Prediction failed: {e}", exc_info=True)
             # Fallback to safe temperature
-            fallback_temp = 35.0
+            fallback_temp = config.get_fallback_outlet(self._climate_mode)
             fallback_metadata = {
                 "prediction_method": "fallback_safe_temperature",
                 "error": str(e),
@@ -579,17 +597,40 @@ class EnhancedModelWrapper:
         # calibration.
         tolerance = 0.01  # °C
 
-        # Use natural system bounds. Let binary search and physics model
-        # handle optimal outlet temps.
-        outlet_min, outlet_max = config.CLAMP_MIN_ABS, config.CLAMP_MAX_ABS
+        # Use mode-aware outlet bounds.
+        outlet_min, outlet_max = config.get_outlet_bounds(self._climate_mode)
+        fallback_temp = config.get_fallback_outlet(self._climate_mode)
         
-        # SAFETY: If significant heating is required (target > current by more
-        # than 0.5°C), enforce a minimum floor of 25°C to prevent the model
-        # from suggesting cooling-range temperatures just because of high PV.
-        # A small gap (e.g. 0.13°C) near target can be handled by the model
-        # with the full CLAMP_MIN_ABS range available.
-        if target_indoor - current_indoor > 0.5:
-            outlet_min = max(outlet_min, 25.0)
+        if self._climate_mode == "cooling":
+            # COOLING MODE: outlet must be below room temperature.
+            # The HP needs at least MIN_COOLING_DELTA_K between room
+            # temperature and outlet to run. Clamp the effective max to
+            # (current_indoor - delta) so the search space makes physical
+            # sense.
+            indoor_based_max = current_indoor - config.MIN_COOLING_DELTA_K
+            outlet_max = min(outlet_max, indoor_based_max)
+            # Ensure min < max; if the room is already cool there is no
+            # scope for the HP to do useful work.
+            if outlet_min >= outlet_max:
+                logging.info(
+                    "❄️ Cooling: no viable outlet range "
+                    "(min=%.1f >= max=%.1f). "
+                    "Room already near target or too cool for HP.",
+                    outlet_min, outlet_max,
+                )
+                return outlet_min  # warmest valid cooling outlet; never below effective min
+            logging.info(
+                "❄️ Cooling mode bounds: outlet %.1f–%.1f°C "
+                "(indoor=%.1f°C, target=%.1f°C)",
+                outlet_min, outlet_max, current_indoor, target_indoor,
+            )
+        else:
+            # HEATING SAFETY: If significant heating is required
+            # (target > current by more than 0.5°C), enforce a minimum
+            # floor of 25°C to prevent the model from suggesting
+            # cooling-range temperatures just because of high PV.
+            if target_indoor - current_indoor > 0.5:
+                outlet_min = max(outlet_min, 25.0)
 
         logging.debug(
             f"🔧 Using natural bounds: outlet_min={outlet_min:.1f}°C, "
@@ -731,7 +772,7 @@ class EnhancedModelWrapper:
                         f"predict_thermal_trajectory returned invalid result "
                         f"for outlet={outlet_mid:.1f}°C - using fallback"
                     )
-                    return 35.0
+                    return fallback_temp
 
                 # Use the temperature at the END of the horizon for
                 # optimization
@@ -742,7 +783,7 @@ class EnhancedModelWrapper:
                     f"   Iteration {iteration+1}: "
                     f"predict_thermal_trajectory failed: {e}"
                 )
-                return 35.0  # Safe fallback
+                return fallback_temp  # Safe fallback
 
             # Calculate error from target
             error = predicted_indoor - target_indoor
@@ -886,13 +927,14 @@ class EnhancedModelWrapper:
             # Handle None return for final prediction
             if final_predicted is None:
                 logging.warning(
-                    "⚠️ Final prediction returned None, using fallback 35.0°C"
+                    "⚠️ Final prediction returned None, using fallback %.1f°C",
+                    fallback_temp,
                 )
-                return 35.0
+                return fallback_temp
 
         except Exception as e:
             logging.error(f"Final prediction failed: {e}")
-            return 35.0
+            return fallback_temp
 
         final_error = final_predicted - target_indoor
         logging.warning(
@@ -1034,9 +1076,8 @@ class EnhancedModelWrapper:
             for horizon, conditions in forecasts.items():
                 try:
                     # Use same precision as main binary search for consistency
-                    outlet_min, outlet_max = (
-                        config.CLAMP_MIN_ABS,
-                        config.CLAMP_MAX_ABS,
+                    outlet_min, outlet_max = config.get_outlet_bounds(
+                        self._climate_mode
                     )
                     tolerance = 0.1  # Same precision as main binary search
 
@@ -1647,9 +1688,10 @@ class EnhancedModelWrapper:
 
             # Final outlet temperature.
             corrected_outlet = outlet_temp + correction
+            clamp_min, clamp_max = config.get_outlet_bounds(self._climate_mode)
             corrected_outlet = max(
-                config.CLAMP_MIN_ABS,
-                min(config.CLAMP_MAX_ABS, corrected_outlet),
+                clamp_min,
+                min(clamp_max, corrected_outlet),
             )
 
             logging.info(
@@ -2238,6 +2280,7 @@ def simplified_outlet_prediction(
     Returns:
         Tuple of (outlet_temp, confidence, metadata)
     """
+    wrapper = None
     try:
         # Create enhanced model wrapper
         wrapper = get_enhanced_model_wrapper()
@@ -2288,7 +2331,10 @@ def simplified_outlet_prediction(
     except Exception as e:
         logging.error(f"Simplified prediction failed: {e}", exc_info=True)
         # Safe fallback
-        return 35.0, 2.0, {"error": str(e), "method": "fallback"}
+        fallback = config.get_fallback_outlet(
+            wrapper.climate_mode if wrapper else "heating"
+        )
+        return fallback, 2.0, {"error": str(e), "method": "fallback"}
 
 
 def _calculate_thermal_trust_metrics(

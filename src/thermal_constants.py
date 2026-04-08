@@ -34,8 +34,13 @@ class PhysicsConstants:
     MAX_OUTDOOR_TEMP = 50.0    # Extreme heat limit
     
     # Heat pump bounds (°C)
-    MIN_OUTLET_TEMP = 25.0     # Minimum heat pump outlet temperature
-    MAX_OUTLET_TEMP = 70.0     # Maximum safe heat pump outlet temperature
+    MIN_OUTLET_TEMP = 25.0     # Minimum heat pump outlet temperature (heating)
+    MAX_OUTLET_TEMP = 70.0     # Maximum safe heat pump outlet temperature (heating)
+    
+    # Cooling heat pump bounds (°C) — sourced from config to avoid drift
+    MIN_COOLING_OUTLET_TEMP = config.COOLING_CLAMP_MIN_ABS
+    MAX_COOLING_OUTLET_TEMP = config.COOLING_CLAMP_MAX_ABS
+    MIN_COOLING_DELTA_K = config.MIN_COOLING_DELTA_K
     
     # Physics bounds
     ABSOLUTE_ZERO_CELSIUS = -273.15  # Absolute zero in Celsius

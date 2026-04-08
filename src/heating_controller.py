@@ -852,24 +852,27 @@ class SensorDataManager:
 
 
 class HeatingSystemStateChecker:
-    """Checks heating system operational state"""
+    """Checks heating/cooling system operational state"""
     
     def check_heating_active(
         self, ha_client: HAClient, all_states: Dict
     ) -> bool:
         """
-        Check if heating system is active
+        Check if heating or cooling system is active
         
         Returns:
-            True if heating is active, False if cycle should be skipped
+            True if heating or cooling is active, False if cycle should be
+            skipped
         """
         heating_state = ha_client.get_state(
             config.HEATING_STATUS_ENTITY_ID, all_states
         )
         
-        if heating_state not in ("heat", "auto"):
+        climate_mode = config.get_climate_mode(heating_state)
+        
+        if climate_mode == "off":
             logging.info(
-                "Heating system not active (state: %s), skipping cycle.",
+                "Climate system not active (state: %s), skipping cycle.",
                 heating_state,
             )
             
@@ -882,8 +885,9 @@ class HeatingSystemStateChecker:
                 )
                 attributes_state.update(
                     {
-                        "state_description": f"Heating off ({heating_state})",
+                        "state_description": f"System off ({heating_state})",
                         "heating_state": heating_state,
+                        "climate_mode": climate_mode,
                         "last_updated": datetime.now(timezone.utc).isoformat(),
                     }
                 )
@@ -895,10 +899,33 @@ class HeatingSystemStateChecker:
                 )
             except Exception:
                 logging.debug(
-                    "Failed to write HEATING_OFF state to HA.",
+                    "Failed to write SYSTEM_OFF state to HA.",
                     exc_info=True,
                 )
                 
             return False  # Skip cycle
-            
+
+        if climate_mode == "cooling":
+            logging.info(
+                "❄️ Cooling mode active (state: %s)", heating_state
+            )
+        else:
+            logging.debug(
+                "🔥 Heating mode active (state: %s)", heating_state
+            )
+
         return True  # Continue with cycle
+
+    def get_climate_mode(
+        self, ha_client: HAClient, all_states: Dict
+    ) -> str:
+        """
+        Return the current climate mode string.
+
+        Returns:
+            "heating", "cooling", or "off"
+        """
+        heating_state = ha_client.get_state(
+            config.HEATING_STATUS_ENTITY_ID, all_states
+        )
+        return config.get_climate_mode(heating_state)
