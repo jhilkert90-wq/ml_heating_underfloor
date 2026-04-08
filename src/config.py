@@ -31,7 +31,13 @@ load_dotenv()
 # Detect if running in Home Assistant addon environment
 def _is_addon_environment():
     """Detect if running in Home Assistant addon environment."""
-    return os.getenv("SUPERVISOR_TOKEN") is not None
+    # Only treat as addon if SUPERVISOR_TOKEN is set AND HASS_TOKEN is not
+    # explicitly provided. An explicit HASS_TOKEN means the user configured
+    # standalone Docker mode, even if SUPERVISOR_TOKEN happens to be present.
+    return (
+        os.getenv("SUPERVISOR_TOKEN") is not None
+        and os.getenv("HASS_TOKEN") is None
+    )
 
 
 # Detect if running in a notebook/analysis environment
