@@ -49,6 +49,9 @@ def setup_data_directories():
         '/data/backups',
         '/data/logs',
         '/data/config',
+        # /config/ml_heating is the default location for the unified thermal
+        # state file in HA addon deployments (accessible via File Editor).
+        # Created preemptively so the runtime can write to it on first start.
         '/config/ml_heating',
     ]
 
