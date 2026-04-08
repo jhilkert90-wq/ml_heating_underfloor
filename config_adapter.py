@@ -48,7 +48,11 @@ def setup_data_directories():
         '/data/models',
         '/data/backups',
         '/data/logs',
-        '/data/config'
+        '/data/config',
+        # /config/ml_heating is the default location for the unified thermal
+        # state file in HA addon deployments (accessible via File Editor).
+        # Created preemptively so the runtime can write to it on first start.
+        '/config/ml_heating',
     ]
 
     for directory in directories:
@@ -202,9 +206,17 @@ def convert_addon_to_env(config):
         ),
 
         # --- Add-on specific paths ---
-        'UNIFIED_STATE_FILE': '/data/models/unified_thermal_state.json',
-        'UNIFIED_STATE_FILE_COOLING':
-            '/data/models/unified_thermal_state_cooling.json',
+        # unified_state_file defaults to /config/ml_heating/ so it is
+        # accessible from the HA File Editor add-on (same directory as
+        # configuration.yaml). Users can override via config option.
+        'UNIFIED_STATE_FILE': config.get(
+            'unified_state_file',
+            '/config/ml_heating/unified_thermal_state.json'
+        ),
+        'UNIFIED_STATE_FILE_COOLING': config.get(
+            'unified_state_file_cooling',
+            '/config/ml_heating/unified_thermal_state_cooling.json'
+        ),
         'CALIBRATION_BASELINE_FILE': config.get(
             'calibration_baseline_file', '/data/calibrated_baseline.json'
         ),
@@ -252,23 +264,25 @@ def convert_addon_to_env(config):
         'BACKUP_RETENTION_DAYS': str(config.get('backup_retention_days', 30)),
 
         # --- Thermal Model Parameters ---
+        # Defaults are calibrated baseline values used when no calibration
+        # file or unified thermal state file is available.
         'THERMAL_TIME_CONSTANT': str(
-            config.get('thermal_time_constant', 4.0)
+            config.get('thermal_time_constant', 4.390554703745845)
         ),
         'HEAT_LOSS_COEFFICIENT': str(
-            config.get('heat_loss_coefficient', 0.15)
+            config.get('heat_loss_coefficient', 0.1245214561975565)
         ),
         'OUTLET_EFFECTIVENESS': str(
-            config.get('outlet_effectiveness', 0.93)
+            config.get('outlet_effectiveness', 0.9526723072021629)
         ),
         'OUTDOOR_COUPLING': str(config.get('outdoor_coupling', 0.3)),
         'THERMAL_BRIDGE_FACTOR': str(
             config.get('thermal_bridge_factor', 0.1)
         ),
         'EQUILIBRIUM_RATIO': str(config.get('equilibrium_ratio', 0.17)),
-        'TOTAL_CONDUCTANCE': str(config.get('total_conductance', 0.24)),
+        'TOTAL_CONDUCTANCE': str(config.get('total_conductance', 0.8)),
         'SLAB_TIME_CONSTANT_HOURS': str(
-            config.get('slab_time_constant_hours', 1.0)
+            config.get('slab_time_constant_hours', 3.19)
         ),
         'SOLAR_LAG_MINUTES': str(config.get('solar_lag_minutes', 45.0)),
         'CLOUD_CORRECTION_MIN_FACTOR': str(
@@ -276,11 +290,20 @@ def convert_addon_to_env(config):
         ),
 
         # --- External Heat Source Weights ---
-        'PV_HEAT_WEIGHT': str(config.get('pv_heat_weight', 0.0005)),
+        'PV_HEAT_WEIGHT': str(
+            config.get('pv_heat_weight', 0.0020704649305198215)
+        ),
         'FIREPLACE_HEAT_WEIGHT': str(
-            config.get('fireplace_heat_weight', 0.1)
+            config.get('fireplace_heat_weight', 0.387)
         ),
         'TV_HEAT_WEIGHT': str(config.get('tv_heat_weight', 0.35)),
+        'DELTA_T_FLOOR': str(config.get('delta_t_floor', 2.3)),
+        'FP_DECAY_TIME_CONSTANT': str(
+            config.get('fp_decay_time_constant', 3.9144707244638868)
+        ),
+        'ROOM_SPREAD_DELAY_MINUTES': str(
+            config.get('room_spread_delay_minutes', 18.0)
+        ),
 
         # --- Adaptive Learning Parameters ---
         'ADAPTIVE_LEARNING_RATE': str(
