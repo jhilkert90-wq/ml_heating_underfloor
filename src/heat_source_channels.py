@@ -1259,11 +1259,15 @@ class HeatSourceChannelOrchestrator:
 
     def get_channel_state(self) -> Dict:
         """Return serialisable state for persistence."""
+        from datetime import datetime
+
+        now_iso = datetime.now().isoformat()
         return {
             name: {
                 "parameters": ch.get_state_parameters(),
                 "history_count": len(ch.history),
                 "history": ch.history[-ch._max_history:],
+                "last_saved": now_iso,
             }
             for name, ch in self.channels.items()
         }
@@ -1280,22 +1284,38 @@ class HeatSourceChannelOrchestrator:
         "room_spread_delay_minutes",
     })
 
-    def load_channel_state(self, state: Dict) -> None:
+    def load_channel_state(
+        self, state: Dict, baseline_calibration_date: Optional[str] = None,
+    ) -> None:
         """Restore channel state from persisted data.
 
-        Parameters listed in ``_BASELINE_MANAGED_PARAMS`` are skipped
-        because their authoritative value comes from baseline + delta
-        via ``sync_from_model_parameters``.  All other parameters and
-        the learning history are restored normally.
+        Parameters listed in ``_BASELINE_MANAGED_PARAMS`` are only
+        skipped when a **newer calibration** has been applied since the
+        channel state was last saved.  This preserves online learning
+        across normal restarts while still letting a fresh calibration
+        take precedence.
         """
         for name, ch_state in state.items():
             if name not in self.channels:
                 continue
 
             ch = self.channels[name]
+
+            # Decide whether calibration is newer than channel snapshot.
+            # If so, baseline wins for managed params; otherwise channel
+            # learning is restored.
+            skip_managed = False
+            if baseline_calibration_date:
+                last_saved = ch_state.get("last_saved")
+                if not last_saved:
+                    # Legacy state without timestamp — baseline wins.
+                    skip_managed = True
+                else:
+                    skip_managed = baseline_calibration_date > last_saved
+
             params = ch_state.get("parameters", {})
             for key, value in params.items():
-                if key in self._BASELINE_MANAGED_PARAMS:
+                if skip_managed and key in self._BASELINE_MANAGED_PARAMS:
                     continue
                 if hasattr(ch, key):
                     setattr(ch, key, value)

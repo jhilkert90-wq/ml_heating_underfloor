@@ -22,9 +22,9 @@ LABEL \
     org.opencontainers.image.vendor="Home Assistant Community Add-ons" \
     org.opencontainers.image.authors="ML Heating Contributors" \
     org.opencontainers.image.licenses="MIT" \
-    org.opencontainers.image.url="https://github.com/helgeerbe/ml_heating" \
-    org.opencontainers.image.source="https://github.com/helgeerbe/ml_heating" \
-    org.opencontainers.image.documentation="https://github.com/helgeerbe/ml_heating/blob/main/README.md" \
+    org.opencontainers.image.url="https://github.com/jhilkert90-wq/ml_heating" \
+    org.opencontainers.image.source="https://github.com/jhilkert90-wq/ml_heating" \
+    org.opencontainers.image.documentation="https://github.com/jhilkert90-wq/ml_heating/blob/main/README.md" \
     org.opencontainers.image.created=${BUILD_DATE} \
     org.opencontainers.image.revision=${BUILD_REF} \
     org.opencontainers.image.version=${BUILD_VERSION}

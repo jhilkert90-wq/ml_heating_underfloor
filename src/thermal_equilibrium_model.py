@@ -386,7 +386,17 @@ class ThermalEquilibriumModel:
             state_manager = get_thermal_state_manager()
             persisted_state = state_manager.get_heat_source_channel_state()
             if persisted_state:
-                self.orchestrator.load_channel_state(persisted_state)
+                # Pass calibration date so load_channel_state can decide
+                # whether a fresh calibration should override channel-
+                # learned params or whether to restore them.
+                thermal_state = state_manager.get_current_parameters()
+                cal_date = thermal_state.get(
+                    "baseline_parameters", {}
+                ).get("calibration_date")
+                self.orchestrator.load_channel_state(
+                    persisted_state,
+                    baseline_calibration_date=cal_date,
+                )
                 logging.info(
                     "🔥 Restored heat-source channel state from unified thermal state"
                 )

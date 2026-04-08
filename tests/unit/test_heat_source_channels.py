@@ -402,6 +402,100 @@ def test_load_channel_state_restores_history_and_ignores_legacy_missing_history(
     assert orch.channels["pv"].history == []
 
 
+def test_load_channel_state_restores_managed_params_on_normal_restart():
+    """On normal restart channel-learned managed params should be restored."""
+    orch = HeatSourceChannelOrchestrator()
+    # Seed with baseline values first
+    orch.sync_from_model_parameters({
+        "thermal_time_constant": 4.0,
+        "heat_loss_coefficient": 0.15,
+        "outlet_effectiveness": 0.93,
+        "slab_time_constant_hours": 1.0,
+    })
+
+    # Channel was saved AFTER calibration → channel learning wins
+    orch.load_channel_state(
+        {
+            "heat_pump": {
+                "parameters": {
+                    "outlet_effectiveness": 0.96,
+                    "heat_loss_coefficient": 0.12,
+                    "thermal_time_constant": 4.5,
+                },
+                "history": [],
+                "last_saved": "2026-04-08T10:00:00",
+            },
+        },
+        baseline_calibration_date="2026-04-07T08:00:00",
+    )
+
+    # Channel values restored (newer than calibration)
+    assert orch.channels["heat_pump"].outlet_effectiveness == pytest.approx(0.96)
+    assert orch.channels["heat_pump"].heat_loss_coefficient == pytest.approx(0.12)
+    assert orch.channels["heat_pump"].thermal_time_constant == pytest.approx(4.5)
+
+
+def test_load_channel_state_skips_managed_after_recalibration():
+    """After fresh calibration, managed params from stale channel are skipped."""
+    orch = HeatSourceChannelOrchestrator()
+    orch.sync_from_model_parameters({
+        "thermal_time_constant": 7.0,
+        "heat_loss_coefficient": 0.14,
+        "outlet_effectiveness": 0.85,
+        "slab_time_constant_hours": 3.0,
+    })
+
+    # Channel was saved BEFORE new calibration → calibration wins
+    orch.load_channel_state(
+        {
+            "heat_pump": {
+                "parameters": {
+                    "outlet_effectiveness": 0.70,
+                    "heat_loss_coefficient": 0.10,
+                    "thermal_time_constant": 4.0,
+                },
+                "history": [{"error": 0.01, "context": {}}],
+                "last_saved": "2026-04-06T12:00:00",
+            },
+        },
+        baseline_calibration_date="2026-04-07T08:00:00",
+    )
+
+    # Managed params kept at seeded (baseline) values, NOT overwritten
+    assert orch.channels["heat_pump"].outlet_effectiveness == pytest.approx(0.85)
+    assert orch.channels["heat_pump"].heat_loss_coefficient == pytest.approx(0.14)
+    assert orch.channels["heat_pump"].thermal_time_constant == pytest.approx(7.0)
+    # History IS restored regardless
+    assert len(orch.channels["heat_pump"].history) == 1
+
+
+def test_load_channel_state_legacy_no_timestamp_skips_managed():
+    """Legacy channel state without last_saved timestamp defaults to skip."""
+    orch = HeatSourceChannelOrchestrator()
+    orch.sync_from_model_parameters({
+        "outlet_effectiveness": 0.90,
+        "heat_loss_coefficient": 0.13,
+    })
+
+    orch.load_channel_state(
+        {
+            "heat_pump": {
+                "parameters": {
+                    "outlet_effectiveness": 0.70,
+                    "heat_loss_coefficient": 0.10,
+                },
+                "history": [],
+                # No "last_saved" key
+            },
+        },
+        baseline_calibration_date="2026-04-07T08:00:00",
+    )
+
+    # Managed params NOT overwritten (safe default when no timestamp)
+    assert orch.channels["heat_pump"].outlet_effectiveness == pytest.approx(0.90)
+    assert orch.channels["heat_pump"].heat_loss_coefficient == pytest.approx(0.13)
+
+
 @pytest.mark.parametrize(
     "param_name",
     [

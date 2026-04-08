@@ -1,9 +1,8 @@
 name: "ML Heating Underfloor"
 version: "0.2.0"
-image: "ghcr.io/helgeerbe/ml_heating_underfloor"
 slug: "ml_heating_underfloor"
 description: "Physics-based machine learning heating control optimized for underfloor heating systems with slow thermal response"
-url: "https://github.com/helgeerbe/ml_heating"
+url: "https://github.com/jhilkert90-wq/ml_heating"
 arch:
   - aarch64
   - amd64
