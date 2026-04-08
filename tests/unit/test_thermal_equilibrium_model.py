@@ -600,9 +600,11 @@ class TestHeatSourceChannelActivation:
         assert latest_record["record_type"] == "channel_update"
         assert latest_record["channel"] == "fireplace"
         assert latest_record["attributed_error"] == pytest.approx(1.0)
-        # Compressed records keep the 3 core snapshot params used for
-        # stability analysis; verbose fields like channel_parameter_changes
-        # and flat duplicate params are no longer persisted.
+        # All channel parameters are present in the flat snapshot
+        assert "fp_heat_output_kw" in latest_record
+        assert latest_record["fp_heat_output_kw"] == pytest.approx(
+            model.orchestrator.channels["fireplace"].fp_heat_output_kw
+        )
         assert "thermal_time_constant" in latest_record
         assert "heat_loss_coefficient" in latest_record
         assert "outlet_effectiveness" in latest_record

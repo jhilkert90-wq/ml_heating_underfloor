@@ -33,25 +33,35 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Context / history field allow-lists
 # ---------------------------------------------------------------------------
-# Only these context fields are persisted in prediction_history.  The full
-# context is available at runtime (in-memory) but the gradient replay code
-# only needs the subset below.
+# Context fields persisted in prediction_history.  Includes both the subset
+# needed for gradient replay AND decision-relevant sensor readings so the
+# history makes the system's choices visible/auditable.
 PREDICTION_CONTEXT_KEYS: Set[str] = {
+    # Gradient replay essentials
     "outlet_temp", "outdoor_temp", "pv_power", "fireplace_on", "tv_on",
     "current_indoor", "thermal_power", "avg_cloud_cover", "inlet_temp",
     "delta_t", "outdoor_forecast", "pv_forecast",
+    # Decision-visibility readings
+    "target_temp", "heat_pump_active", "indoor_temp_delta_60m",
+    "living_room_temp", "indoor_temp_gradient",
 }
 
-# Fields kept in parameter_history entries.  The rest (parameters_before,
-# parameters_after, channel_parameter_changes, redundant flat params) are
-# derived/duplicated and can be dropped.
+# Fields kept in parameter_history entries.  Triple-stored duplicates
+# (parameters_before, parameters_after, channel_parameter_changes) are
+# removed — the ``changes`` dict plus the flat snapshot already capture
+# everything.
 PARAMETER_HISTORY_KEYS: Set[str] = {
     "timestamp", "record_type", "channel", "learning_rate",
     "learning_confidence", "avg_recent_error", "raw_prediction_error",
     "attributed_error", "attribution_applied", "active_contributions",
     "heat_pump_frozen_by_fireplace", "gradients", "changes",
-    # The three flat snapshot params actually read for stability analysis:
+    # Full parameter snapshot — all channel params for visibility
     "thermal_time_constant", "heat_loss_coefficient", "outlet_effectiveness",
+    "pv_heat_weight", "tv_heat_weight", "solar_lag_minutes",
+    "slab_time_constant_hours", "delta_t_floor",
+    "cloud_factor_exponent", "solar_decay_tau_hours",
+    "fp_heat_output_kw", "fp_decay_time_constant",
+    "room_spread_delay_minutes",
 }
 
 # Context fields kept in heat-source channel history entries.
@@ -61,6 +71,9 @@ CHANNEL_HISTORY_CONTEXT_KEYS: Set[str] = {
     "fireplace_on", "delta_t", "avg_cloud_cover",
     "pv_power", "pv_power_current", "pv_power_history",
     "thermal_power", "heat_pump_active",
+    # Decision-visibility readings
+    "outlet_temp", "outdoor_temp", "current_indoor", "inlet_temp",
+    "target_temp", "tv_on",
 }
 
 
@@ -77,9 +90,9 @@ def _slim_parameter_history_record(record: Dict[str, Any]) -> Dict[str, Any]:
 def _slim_channel_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     """Return a trimmed copy of a channel-history entry for persistence.
 
-    Keeps only ``error`` and a slimmed ``context``; drops ``parameters``,
-    ``parameters_before``, ``parameters_after``, and ``changes`` which are
-    never read back from persisted channel history.
+    Keeps ``error``, slimmed ``context``, current ``parameters``, and
+    ``changes``.  Drops the redundant ``parameters_before`` and
+    ``parameters_after`` (derivable from ``parameters`` and ``changes``).
     """
     slimmed: Dict[str, Any] = {"error": entry.get("error")}
     ctx = entry.get("context")
@@ -87,6 +100,11 @@ def _slim_channel_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
         slimmed["context"] = {
             k: v for k, v in ctx.items() if k in CHANNEL_HISTORY_CONTEXT_KEYS
         }
+    # Keep channel parameters and change deltas for visibility
+    if "parameters" in entry:
+        slimmed["parameters"] = entry["parameters"]
+    if "changes" in entry:
+        slimmed["changes"] = entry["changes"]
     return slimmed
 
 

@@ -81,11 +81,10 @@ class TestThermalStateManager:
     def test_heat_source_channel_state_roundtrip(self, state_manager):
         """Heat-source channel state should preserve essential fields.
 
-        History entries are compressed on persistence: unread fields like
-        ``parameters``, ``parameters_before``, ``parameters_after`` and
-        ``changes`` are dropped, and context is trimmed to the fields
-        used by channel learning code.  This test verifies that the
-        essential data (error, relevant context) survives the round trip.
+        History entries are compressed on persistence: redundant fields
+        (``parameters_before``, ``parameters_after``) are dropped, but
+        ``parameters``, ``changes``, and relevant context survive so
+        that all channel params and decisions remain visible.
         """
         channel_state = {
             "fireplace": {
@@ -94,8 +93,11 @@ class TestThermalStateManager:
                 "history": [
                     {
                         "error": 0.5,
-                        "context": {"fireplace_on": 1},
+                        "context": {"fireplace_on": 1, "outlet_temp": 40.0},
                         "parameters": {"fp_heat_output_kw": 7.0},
+                        "parameters_before": {"fp_heat_output_kw": 6.5},
+                        "parameters_after": {"fp_heat_output_kw": 7.0},
+                        "changes": {"fp_heat_output_kw": {"delta": 0.5}},
                     }
                 ],
             },
@@ -116,14 +118,18 @@ class TestThermalStateManager:
         assert restored["fireplace"]["history_count"] == 12
         assert restored["pv"]["history_count"] == 9
 
-        # History entries keep error and relevant context
+        # History entries keep error, relevant context, parameters, changes
         fp_hist = restored["fireplace"]["history"]
         assert len(fp_hist) == 1
         assert fp_hist[0]["error"] == 0.5
         assert fp_hist[0]["context"]["fireplace_on"] == 1
+        assert fp_hist[0]["context"]["outlet_temp"] == 40.0
+        assert fp_hist[0]["parameters"] == {"fp_heat_output_kw": 7.0}
+        assert fp_hist[0]["changes"] == {"fp_heat_output_kw": {"delta": 0.5}}
 
-        # Unread fields are stripped during compression
-        assert "parameters" not in fp_hist[0]
+        # Redundant before/after snapshots are stripped
+        assert "parameters_before" not in fp_hist[0]
+        assert "parameters_after" not in fp_hist[0]
         assert restored["pv"]["history"] == []
 
     def test_add_prediction_record(self, state_manager):

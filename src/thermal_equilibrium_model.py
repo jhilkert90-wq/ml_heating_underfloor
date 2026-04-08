@@ -2496,14 +2496,12 @@ class ThermalEquilibriumModel:
                     name: abs(change["delta"])
                     for name, change in structured_changes.items()
                 },
-                # Core snapshot params needed by stability analysis
-                "thermal_time_constant": current_snapshot.get(
-                    "thermal_time_constant"),
-                "heat_loss_coefficient": current_snapshot.get(
-                    "heat_loss_coefficient"),
-                "outlet_effectiveness": current_snapshot.get(
-                    "outlet_effectiveness"),
             }
+            # Merge full parameter snapshot for visibility and stability
+            # analysis.  The persistence layer strips triple-stored
+            # duplicates (parameters_before/after, channel_parameter_changes)
+            # but keeps the flat snapshot.
+            history_record.update(current_snapshot)
             records.append(history_record)
 
         return records
