@@ -79,7 +79,14 @@ class TestThermalStateManager:
         assert learning_state["learning_confidence"] == 4.5
 
     def test_heat_source_channel_state_roundtrip(self, state_manager):
-        """Heat-source channel state should be saved and restored losslessly."""
+        """Heat-source channel state should preserve essential fields.
+
+        History entries are compressed on persistence: unread fields like
+        ``parameters``, ``parameters_before``, ``parameters_after`` and
+        ``changes`` are dropped, and context is trimmed to the fields
+        used by channel learning code.  This test verifies that the
+        essential data (error, relevant context) survives the round trip.
+        """
         channel_state = {
             "fireplace": {
                 "parameters": {"fp_heat_output_kw": 7.5},
@@ -101,7 +108,23 @@ class TestThermalStateManager:
 
         state_manager.set_heat_source_channel_state(channel_state)
 
-        assert state_manager.get_heat_source_channel_state() == channel_state
+        restored = state_manager.get_heat_source_channel_state()
+
+        # Top-level channel parameters survive intact
+        assert restored["fireplace"]["parameters"] == {"fp_heat_output_kw": 7.5}
+        assert restored["pv"]["parameters"] == {"pv_heat_weight": 0.0035}
+        assert restored["fireplace"]["history_count"] == 12
+        assert restored["pv"]["history_count"] == 9
+
+        # History entries keep error and relevant context
+        fp_hist = restored["fireplace"]["history"]
+        assert len(fp_hist) == 1
+        assert fp_hist[0]["error"] == 0.5
+        assert fp_hist[0]["context"]["fireplace_on"] == 1
+
+        # Unread fields are stripped during compression
+        assert "parameters" not in fp_hist[0]
+        assert restored["pv"]["history"] == []
 
     def test_add_prediction_record(self, state_manager):
         """Test adding a prediction record."""

@@ -10,13 +10,14 @@ Key features:
 - Version control friendly
 - Calibrated baseline + online learning state
 - Robust error handling and validation
+- Compressed history storage (prediction, parameter, channel histories)
 """
 
 import json
 import os
 import logging
 from copy import deepcopy
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Set
 from datetime import datetime
 import numpy as np
 
@@ -27,6 +28,66 @@ try:
 except ImportError:
     from thermal_config import ThermalParameterConfig
     from shadow_mode import get_effective_unified_state_file
+
+
+# ---------------------------------------------------------------------------
+# Context / history field allow-lists
+# ---------------------------------------------------------------------------
+# Only these context fields are persisted in prediction_history.  The full
+# context is available at runtime (in-memory) but the gradient replay code
+# only needs the subset below.
+PREDICTION_CONTEXT_KEYS: Set[str] = {
+    "outlet_temp", "outdoor_temp", "pv_power", "fireplace_on", "tv_on",
+    "current_indoor", "thermal_power", "avg_cloud_cover", "inlet_temp",
+    "delta_t", "outdoor_forecast", "pv_forecast",
+}
+
+# Fields kept in parameter_history entries.  The rest (parameters_before,
+# parameters_after, channel_parameter_changes, redundant flat params) are
+# derived/duplicated and can be dropped.
+PARAMETER_HISTORY_KEYS: Set[str] = {
+    "timestamp", "record_type", "channel", "learning_rate",
+    "learning_confidence", "avg_recent_error", "raw_prediction_error",
+    "attributed_error", "attribution_applied", "active_contributions",
+    "heat_pump_frozen_by_fireplace", "gradients", "changes",
+    # The three flat snapshot params actually read for stability analysis:
+    "thermal_time_constant", "heat_loss_coefficient", "outlet_effectiveness",
+}
+
+# Context fields kept in heat-source channel history entries.
+CHANNEL_HISTORY_CONTEXT_KEYS: Set[str] = {
+    "raw_prediction_error", "attributed_error", "attribution_applied",
+    "active_contributions", "heat_pump_frozen_by_fireplace",
+    "fireplace_on", "delta_t", "avg_cloud_cover",
+    "pv_power", "pv_power_current", "pv_power_history",
+    "thermal_power", "heat_pump_active",
+}
+
+
+def _slim_prediction_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a trimmed copy of a prediction context for persistence."""
+    return {k: v for k, v in context.items() if k in PREDICTION_CONTEXT_KEYS}
+
+
+def _slim_parameter_history_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a trimmed copy of a parameter-history record for persistence."""
+    return {k: v for k, v in record.items() if k in PARAMETER_HISTORY_KEYS}
+
+
+def _slim_channel_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a trimmed copy of a channel-history entry for persistence.
+
+    Keeps only ``error`` and a slimmed ``context``; drops ``parameters``,
+    ``parameters_before``, ``parameters_after``, and ``changes`` which are
+    never read back from persisted channel history.
+    """
+    slimmed: Dict[str, Any] = {"error": entry.get("error")}
+    ctx = entry.get("context")
+    if ctx is not None:
+        slimmed["context"] = {
+            k: v for k, v in ctx.items() if k in CHANNEL_HISTORY_CONTEXT_KEYS
+        }
+    return slimmed
 
 
 class ThermalStateManager:
@@ -157,6 +218,10 @@ class ThermalStateManager:
 
             # Validate and merge with default structure to handle schema migrations
             self.state = self._merge_with_defaults(loaded_state)
+
+            # Migrate: compress legacy verbose history entries in-place
+            self._compress_existing_histories()
+
             self.state["metadata"]["last_updated"] = datetime.now().isoformat()
 
             # Persist immediately so any new schema keys (migrations) are written
@@ -227,6 +292,47 @@ class ThermalStateManager:
             return default
 
         return merge_dict(merged, loaded_state)
+
+    def _compress_existing_histories(self) -> None:
+        """Migrate legacy verbose history entries to compressed format.
+
+        This runs once on load and trims fields that are no longer
+        persisted.  It is idempotent: already-compressed entries pass
+        through unchanged.
+        """
+        ls = self.state.get("learning_state", {})
+
+        # 1. Compress prediction_history contexts
+        pred_hist = ls.get("prediction_history", [])
+        for i, entry in enumerate(pred_hist):
+            ctx = entry.get("context")
+            if ctx is not None:
+                entry["context"] = _slim_prediction_context(ctx)
+            # Drop fields that are never read after storage
+            for key in ("model_internal_prediction",
+                        "parameters_at_prediction",
+                        "shadow_mode", "system_state",
+                        "learning_quality", "abs_error",
+                        "squared_error"):
+                entry.pop(key, None)
+
+        # 2. Compress parameter_history entries
+        param_hist = ls.get("parameter_history", [])
+        ls["parameter_history"] = [
+            _slim_parameter_history_record(record)
+            for record in param_hist
+        ]
+
+        # 3. Compress heat-source channel history entries
+        channels = ls.get("heat_source_channels", {})
+        for ch_name, ch_data in channels.items():
+            history = ch_data.get("history")
+            if isinstance(history, list):
+                ch_data["history"] = [
+                    _slim_channel_history_entry(entry)
+                    for entry in history
+                    if isinstance(entry, dict)
+                ]
 
     def _convert_numpy_types(self, obj) -> Any:
         """Convert numpy types and pandas objects to native types."""
@@ -386,9 +492,23 @@ class ThermalStateManager:
         self.save_state()
 
     def add_prediction_record(self, prediction_record: Dict) -> None:
-        """Add a prediction record to history."""
+        """Add a prediction record to history.
+
+        The record's ``context`` is slimmed down to the fields actually
+        needed for gradient replay, removing ~60% of per-entry bloat.
+        """
+        # Slim the context before persisting
+        slimmed = prediction_record.copy()
+        if "context" in slimmed:
+            slimmed["context"] = _slim_prediction_context(slimmed["context"])
+        # Drop fields that are never read after storage
+        for key in ("model_internal_prediction", "parameters_at_prediction",
+                     "shadow_mode", "system_state", "learning_quality",
+                     "abs_error", "squared_error"):
+            slimmed.pop(key, None)
+
         history = self.state["learning_state"]["prediction_history"]
-        history.append(prediction_record)
+        history.append(slimmed)
 
         # Keep manageable history size (sliding window)
         if len(history) > 200:
@@ -398,9 +518,15 @@ class ThermalStateManager:
         self.state["prediction_metrics"]["total_predictions"] += 1
 
     def add_parameter_history_record(self, parameter_record: Dict) -> None:
-        """Add a parameter history record."""
+        """Add a parameter history record.
+
+        Redundant fields (parameters_before, parameters_after,
+        channel_parameter_changes, and flat duplicate params) are stripped
+        before persisting.
+        """
+        slimmed = _slim_parameter_history_record(parameter_record)
         history = self.state["learning_state"]["parameter_history"]
-        history.append(parameter_record)
+        history.append(slimmed)
 
         # Keep manageable history size (sliding window)
         if len(history) > 500:
@@ -413,10 +539,28 @@ class ThermalStateManager:
         )
 
     def set_heat_source_channel_state(self, channel_state: Dict[str, Any]) -> None:
-        """Persist heat-source channel state."""
-        self.state["learning_state"]["heat_source_channels"] = deepcopy(
-            channel_state
-        )
+        """Persist heat-source channel state.
+
+        Channel history entries are slimmed before persisting: unread
+        fields (``parameters``, ``parameters_before``, ``parameters_after``,
+        ``changes``) are dropped and context is trimmed to the fields
+        actually used by channel learning code.
+        """
+        compressed = {}
+        for ch_name, ch_data in channel_state.items():
+            compressed_ch = {}
+            for key, value in ch_data.items():
+                if key == "history" and isinstance(value, list):
+                    compressed_ch[key] = [
+                        _slim_channel_history_entry(entry)
+                        for entry in value
+                        if isinstance(entry, dict)
+                    ]
+                else:
+                    compressed_ch[key] = deepcopy(value)
+            compressed[ch_name] = compressed_ch
+
+        self.state["learning_state"]["heat_source_channels"] = compressed
         self.save_state()
 
     # === OPERATIONAL STATE MANAGEMENT ===
