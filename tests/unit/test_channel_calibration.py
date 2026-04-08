@@ -288,11 +288,11 @@ class TestFilterPvDecayPeriods:
 class TestSlabTauCoOptimization:
 
     def test_bounds(self):
-        """Slab tau calibration is bounded [0.5, 3.0]h."""
+        """Slab tau calibration is bounded [0.5, 6.0]h (extended to accommodate large-mass slabs)."""
         from src.thermal_config import ThermalParameterConfig
         bounds = ThermalParameterConfig.get_bounds("slab_time_constant_hours")
         assert bounds[0] == 0.5
-        assert bounds[1] == 3.0
+        assert bounds[1] == 6.0
 
     def test_pump_on_approach_detection(self):
         """Slab tau detects pump-ON inlet approach toward outlet - delta_t_floor."""

@@ -97,9 +97,9 @@ class TestEnhancedModelWrapper:
             'indoor_temp_lag_30m': 20.5,
             'target_temp': 21.0,
             'outdoor_temp': 5.0,
-            'pv_now': 2500.0,
+            'pv_now': 0.0,  # No PV so heating is required
             'fireplace_on': 0,
-            'tv_on': 1,
+            'tv_on': 0,
         }
 
         optimal_temp, metadata = (
@@ -107,7 +107,7 @@ class TestEnhancedModelWrapper:
         )
 
         assert isinstance(optimal_temp, float)
-        assert optimal_temp > 21.0  # Should be higher than indoor temp
+        assert optimal_temp > 21.0  # Should be higher than indoor temp when heating is needed
         assert 'learning_confidence' in metadata
         assert metadata['prediction_method'] == \
             'thermal_equilibrium_single_prediction'

@@ -29,28 +29,28 @@ class ThermalParameterConfig:
     # UPDATED FOR TDD COMPLIANCE
     # physically reasonable ranges with realistic heat balance
     DEFAULTS = {
-        'outlet_temp_max': 35.0,           # °C
-        'outlet_temp_min': 0.0,           # °C
-        'thermal_time_constant': 4.0,      # hours
-        'equilibrium_ratio': 0.17,         # dimensionless
-        'total_conductance': 0.8,         # 1/hour
-        'pv_heat_weight': 0.0002,           # °C/W
-        'fireplace_heat_weight': 1.0,      # °C
-        'tv_heat_weight': 0.35,             # °C
-        'fp_heat_output_kw': 3.0,          # kW
-        'fp_decay_time_constant': 2.0,    # hours
-        'room_spread_delay_minutes': 30.0,  # minutes
+        'outlet_temp_max': 35.0,                    # °C
+        'outlet_temp_min': 0.0,                     # °C
+        'thermal_time_constant': 4.390554703745845,  # hours
+        'equilibrium_ratio': 0.17,                  # dimensionless
+        'total_conductance': 0.8,                   # 1/hour
+        'pv_heat_weight': 0.0020704649305198215,    # °C/W
+        'fireplace_heat_weight': 0.387,             # °C
+        'tv_heat_weight': 0.35,                     # °C
+        'fp_heat_output_kw': 3.0,                   # kW
+        'fp_decay_time_constant': 3.9144707244638868,  # hours
+        'room_spread_delay_minutes': 18.0,          # minutes
         'adaptive_learning_rate': 0.01,
         'learning_confidence': 3.0,
         'min_learning_rate': 0.001,
         'max_learning_rate': 0.1,
-        'heat_loss_coefficient': 0.15,      # 1/hour (Corrected baseline)
-        'outlet_effectiveness': 0.93,      # dimensionless
-        'delta_t_floor': 2.4,              # °C
-        'cloud_factor_exponent': 1.0,      # dimensionless
-        'solar_lag_minutes': 45.0,         # minutes
-        'solar_decay_tau_hours': 1.0,      # hours
-        'slab_time_constant_hours': 1.0,  # hours (UFH slab forced-convection time constant; data-fitted from 180m² floor)
+        'heat_loss_coefficient': 0.1245214561975565,  # 1/hour
+        'outlet_effectiveness': 0.9526723072021629,   # dimensionless
+        'delta_t_floor': 2.3,                       # °C
+        'cloud_factor_exponent': 1.0,               # dimensionless
+        'solar_lag_minutes': 45.0,                  # minutes
+        'solar_decay_tau_hours': 1.0,               # hours
+        'slab_time_constant_hours': 3.19,           # hours (UFH slab forced-convection time constant; data-fitted from 180m² floor)
     }
 
     # Parameter bounds (min, max) for optimization and validation
@@ -78,7 +78,7 @@ class ThermalParameterConfig:
         'cloud_factor_exponent': (0.1, 3.0),  # dimensionless
         'solar_lag_minutes': (0.0, 180.0),  # minutes
         'solar_decay_tau_hours': (0.0, 3.0),  # hours
-        'slab_time_constant_hours': (0.5, 3.0),  # hours (forced convection: 0.5h min to 3h max)
+        'slab_time_constant_hours': (0.5, 6.0),  # hours (forced convection: 0.5h min, extended for large-mass slabs)
     }
 
     # Parameter descriptions for documentation and debugging
