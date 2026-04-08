@@ -603,12 +603,12 @@ class EnhancedModelWrapper:
         
         if self._climate_mode == "cooling":
             # COOLING MODE: outlet must be below room temperature.
-            # The HP needs at least MIN_COOLING_DELTA_K between inlet and
-            # outlet to run.  Clamp the effective max to
+            # The HP needs at least MIN_COOLING_DELTA_K between room
+            # temperature and outlet to run. Clamp the effective max to
             # (current_indoor - delta) so the search space makes physical
             # sense.
-            inlet_based_max = current_indoor - config.MIN_COOLING_DELTA_K
-            outlet_max = min(outlet_max, inlet_based_max)
+            indoor_based_max = current_indoor - config.MIN_COOLING_DELTA_K
+            outlet_max = min(outlet_max, indoor_based_max)
             # Ensure min < max; if the room is already cool there is no
             # scope for the HP to do useful work.
             if outlet_min >= outlet_max:
@@ -618,7 +618,7 @@ class EnhancedModelWrapper:
                     "Room already near target or too cool for HP.",
                     outlet_min, outlet_max,
                 )
-                return outlet_max  # least aggressive cooling
+                return outlet_min  # warmest valid cooling outlet; never below effective min
             logging.info(
                 "❄️ Cooling mode bounds: outlet %.1f–%.1f°C "
                 "(indoor=%.1f°C, target=%.1f°C)",
@@ -2280,6 +2280,7 @@ def simplified_outlet_prediction(
     Returns:
         Tuple of (outlet_temp, confidence, metadata)
     """
+    wrapper = None
     try:
         # Create enhanced model wrapper
         wrapper = get_enhanced_model_wrapper()

@@ -128,6 +128,18 @@ def get_effective_unified_state_file(
     )
 
 
+def get_effective_cooling_state_file(
+    state_file: Optional[str] = None,
+    *,
+    shadow_deployment: Optional[bool] = None,
+) -> str:
+    """Return the cooling state file path for the current deployment."""
+    return get_shadow_output_file_path(
+        state_file or config.UNIFIED_STATE_FILE_COOLING,
+        shadow_deployment=shadow_deployment,
+    )
+
+
 def get_effective_influx_features_bucket(
     bucket_name: Optional[str] = None,
     *,

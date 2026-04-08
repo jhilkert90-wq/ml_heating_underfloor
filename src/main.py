@@ -985,9 +985,14 @@ def main():
             _wrapper = _get_wrapper()
             _wrapper.set_climate_mode(climate_mode)
             if climate_mode == "cooling":
+                from .unified_thermal_state_cooling import (
+                    get_cooling_state_manager,
+                )
+                _cooling_state = get_cooling_state_manager()
                 logging.info(
                     "❄️ COOLING MODE: ML will calculate cooling outlet "
-                    "temperature (outlet < inlet)"
+                    "temperature (outlet < inlet) — using cooling state %s",
+                    _cooling_state.state_file,
                 )
          
             if is_grace_period:

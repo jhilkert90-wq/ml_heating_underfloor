@@ -208,10 +208,11 @@ class TestModelWrapperCoolingMode:
             f"{config.COOLING_CLAMP_MAX_ABS}"
         )
 
-    def test_cooling_no_viable_range_returns_max(self, wrapper):
+    def test_cooling_no_viable_range_returns_safe_min(self, wrapper):
         """
         When the room is already cool (indoor - delta < effective_min),
-        there is no viable cooling range. Should return outlet_max.
+        there is no viable cooling range.  Should return outlet_min
+        (the warmest valid cooling outlet), never below effective min.
         """
         wrapper.set_climate_mode("cooling")
         wrapper._current_features = {
@@ -230,9 +231,13 @@ class TestModelWrapperCoolingMode:
             },
         )
 
-        # Should be the inlet-based max since no viable range
-        expected_max = 20.5 - config.MIN_COOLING_DELTA_K  # 18.5
-        assert result <= expected_max + 0.1
+        # Must never go below the effective cooling minimum.
+        effective_min = (
+            config.COOLING_CLAMP_MIN_ABS + config.COOLING_SHUTDOWN_MARGIN_K
+        )
+        assert result >= effective_min, (
+            f"Cooling outlet {result} below effective minimum {effective_min}"
+        )
 
     def test_heating_mode_uses_standard_bounds(self, wrapper):
         """In heating mode the binary search uses CLAMP_MIN/MAX_ABS."""

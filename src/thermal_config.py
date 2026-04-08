@@ -135,6 +135,82 @@ class ThermalParameterConfig:
         'slab_time_constant_hours': 'hours',
     }
 
+    # Cooling-mode default parameter values.
+    # In cooling mode the slab absorbs heat from the room, so several
+    # dynamics differ: the heat-pump operates in a narrow band (18-24°C),
+    # the slab time constant is shorter (cold water through warm slab),
+    # and external heat sources (solar, fireplace, TV) act as loads
+    # *against* cooling.
+    COOLING_DEFAULTS = {
+        'outlet_temp_max': 24.0,            # °C (cooling max)
+        'outlet_temp_min': 18.0,            # °C (HP shutdown limit)
+        'thermal_time_constant': 3.0,       # hours (cooling response is faster)
+        'equilibrium_ratio': 0.20,          # dimensionless (higher: outdoor heat gain)
+        'total_conductance': 0.6,           # 1/hour
+        'pv_heat_weight': 0.0003,           # °C/W (solar works against cooling)
+        'fireplace_heat_weight': 1.0,       # °C (works against cooling)
+        'tv_heat_weight': 0.35,             # °C (works against cooling)
+        'fp_heat_output_kw': 3.0,           # kW
+        'fp_decay_time_constant': 2.0,      # hours
+        'room_spread_delay_minutes': 30.0,  # minutes
+        'adaptive_learning_rate': 0.008,    # slightly conservative for cooling
+        'learning_confidence': 3.0,
+        'min_learning_rate': 0.001,
+        'max_learning_rate': 0.08,
+        'heat_loss_coefficient': 0.12,      # 1/hour (heat gain from outside)
+        'outlet_effectiveness': 0.90,       # dimensionless (cooling effectiveness)
+        'delta_t_floor': 2.0,               # °C (cooling delta-T floor)
+        'cloud_factor_exponent': 1.0,       # dimensionless
+        'solar_lag_minutes': 45.0,          # minutes
+        'solar_decay_tau_hours': 1.0,       # hours
+        'slab_time_constant_hours': 0.8,    # hours (cold water ↔ warm slab, faster exchange)
+    }
+
+    # Cooling-mode parameter bounds
+    COOLING_BOUNDS = {
+        'outlet_temp_max': (20.0, 26.0),
+        'outlet_temp_min': (16.0, 20.0),
+        'thermal_time_constant': (1.0, 50.0),
+        'equilibrium_ratio': (0.1, 0.9),
+        'total_conductance': (0.1, 0.8),
+        'pv_heat_weight': (0.0001, 0.005),
+        'fireplace_heat_weight': (0.01, 6.0),
+        'tv_heat_weight': (0.05, 1.5),
+        'fp_heat_output_kw': (0.5, 15.0),
+        'fp_decay_time_constant': (0.1, 5.0),
+        'room_spread_delay_minutes': (0.0, 180.0),
+        'adaptive_learning_rate': (0.001, 0.1),
+        'learning_confidence': (1.0, 5.0),
+        'min_learning_rate': (0.0001, 0.01),
+        'max_learning_rate': (0.01, 0.2),
+        'heat_loss_coefficient': (0.01, 1.0),
+        'outlet_effectiveness': (0.3, 2.0),
+        'delta_t_floor': (0.0, 8.0),
+        'cloud_factor_exponent': (0.1, 3.0),
+        'solar_lag_minutes': (0.0, 180.0),
+        'solar_decay_tau_hours': (0.0, 3.0),
+        'slab_time_constant_hours': (0.3, 2.5),
+    }
+
+    @classmethod
+    def get_cooling_default(cls, param_name: str) -> float:
+        """Get the default value for a cooling-mode thermal parameter."""
+        if param_name not in cls.COOLING_DEFAULTS:
+            raise KeyError(f"Unknown cooling parameter: {param_name}")
+        return cls.COOLING_DEFAULTS[param_name]
+
+    @classmethod
+    def get_cooling_bounds(cls, param_name: str) -> Tuple[float, float]:
+        """Get the bounds (min, max) for a cooling-mode thermal parameter."""
+        if param_name not in cls.COOLING_BOUNDS:
+            raise KeyError(f"Unknown cooling parameter: {param_name}")
+        return cls.COOLING_BOUNDS[param_name]
+
+    @classmethod
+    def get_all_cooling_defaults(cls) -> Dict[str, float]:
+        """Get all cooling-mode default parameter values."""
+        return cls.COOLING_DEFAULTS.copy()
+
     @classmethod
     def get_default(cls, param_name: str) -> float:
         """
