@@ -1,8 +1,9 @@
 name: "ML Heating Underfloor"
 version: "0.2.0"
 slug: "ml_heating_underfloor"
+image: "ghcr.io/jhilkert90-wq/ml_heating_underfloor-{arch}"
 description: "Physics-based machine learning heating control optimized for underfloor heating systems with slow thermal response"
-url: "https://github.com/jhilkert90-wq/ml_heating"
+url: "https://github.com/jhilkert90-wq/ml_heating_underfloor"
 arch:
   - aarch64
   - amd64
