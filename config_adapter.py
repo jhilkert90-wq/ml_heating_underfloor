@@ -8,6 +8,7 @@ for compatibility with the existing ML heating system.
 
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -447,6 +448,21 @@ def convert_addon_to_env(config):
         if value is not None and value != '':
             os.environ[key] = str(value)
 
+    # Write env vars to a shell-sourceable file so that child processes
+    # started later by run.sh (e.g. ``python3 -m src.main``) inherit them.
+    env_file_path = "/data/config/env_vars"
+    try:
+        os.makedirs(os.path.dirname(env_file_path), exist_ok=True)
+        with open(env_file_path, "w") as fh:
+            for key, value in env_vars.items():
+                if value is not None and value != '':
+                    fh.write(f"export {key}={shlex.quote(str(value))}\n")
+        # Restrict permissions – the file may contain tokens.
+        os.chmod(env_file_path, 0o600)
+        log_info(f"Environment file written to {env_file_path}")
+    except Exception as e:
+        log_warning(f"Failed to write environment file: {e}")
+
     log_info(
         f"Set {len([v for v in env_vars.values() if v])} environment variables"
     )
@@ -504,7 +520,7 @@ def validate_configuration(config):
         return False
 
     # Validate numeric ranges
-    learning_rate = config.get('learning_rate', 0.01)
+    learning_rate = config.get('adaptive_learning_rate', 0.01)
     if not (0.001 <= learning_rate <= 0.1):
         log_warning(
             f"Learning rate {learning_rate} outside recommended range "
@@ -605,7 +621,7 @@ def main():
         log_info(
             f"Outdoor Temp Entity: {addon_config.get('outdoor_temp_entity')}"
         )
-        log_info(f"Learning Rate: {addon_config.get('learning_rate')}")
+        log_info(f"Learning Rate: {addon_config.get('adaptive_learning_rate')}")
         log_info(
             f"Cycle Interval: "
             f"{addon_config.get('cycle_interval_minutes')} minutes"

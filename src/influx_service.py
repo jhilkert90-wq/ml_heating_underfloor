@@ -1322,7 +1322,7 @@ class InfluxService:
             self.write_api.write(bucket=write_bucket, org=write_org, record=p)
             logging.debug("Wrote thermodynamic metrics to InfluxDB")
         except Exception as e:
-            logging.exception("Failed to write thermodynamic metrics: %s", e)
+            logging.error("Failed to write thermodynamic metrics: %s", e)
 
 
 def create_influx_service():
