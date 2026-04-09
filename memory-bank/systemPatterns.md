@@ -368,6 +368,42 @@ attributed = orchestrator.attribute_error(error, context)
 - Per-channel prediction history enables monitoring which channel is accurate
 - Config flag `ENABLE_HEAT_SOURCE_CHANNELS` for safe rollout
 
+### 9. Cooling Mode Dual-State Pattern
+
+**Principle**: Heating and cooling modes have fundamentally different thermal dynamics and must use independent state to prevent learning cross-contamination.
+
+**Architecture** (`src/unified_thermal_state_cooling.py`):
+- `CoolingThermalStateManager` — separate singleton with own JSON persistence
+- Mode auto-detection via `config.get_climate_mode()` reading climate entity state
+- Mode-appropriate outlet bounds and fallback temperatures
+- Each mode has fully independent: learning state, calibration tracking, parameter deltas, buffer snapshots
+
+**Benefits**:
+- Heating-tuned parameters never contaminate cooling performance
+- Cooling can use faster time constants (cold water ↔ warm slab)
+- Independent convergence — each mode learns at its own pace
+- Shadow-mode support works independently per mode
+
+### 10. Trajectory Correction Gates Pattern
+
+**Principle**: Skip temperature corrections when the indoor temperature is already moving in the desired direction.
+
+**Implementation** (`src/model_wrapper.py`):
+- **Overshoot Gate**: When indoor temperature is falling naturally, skip upward corrections (overshoot will self-resolve)
+- **Undershoot Gate**: When indoor temperature is rising naturally, skip downward corrections
+- Projected temperature: `projected_indoor = current_indoor + TRAJECTORY_STEPS * indoor_trend_60m`
+- Symmetric design prevents oscillation from overcorrection
+
+### 11. State Compression Pattern
+
+**Principle**: Slim persistent state history using allow-list compression to bound file growth.
+
+**Implementation** (`src/unified_thermal_state.py`):
+- `PREDICTION_CONTEXT_KEYS`, `PARAMETER_HISTORY_KEYS`, `CHANNEL_HISTORY_CONTEXT_KEYS` define what to keep
+- Channel history retains: error, context, parameters, changes — drops parameters_before/after
+- Parameter history retains: flat snapshot, changes, gradients — drops triple-stored duplicates
+- Applied on persistence and migration
+
 ## Critical Implementation Patterns
 
 ### 7-Stage Prediction Pipeline

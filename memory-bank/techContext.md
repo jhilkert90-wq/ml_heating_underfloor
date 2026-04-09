@@ -4,9 +4,9 @@
 
 ### Core Technologies
 
-**Python 3.8+**
+**Python 3.11+**
 - **Primary Language**: Chosen for rich ML ecosystem and Home Assistant integration
-- **Version**: 3.8+ required for type hints and asyncio improvements
+- **Version**: 3.11+ required (per pyproject.toml) for modern type hints and performance improvements
 - **Virtual Environment**: `.venv` for isolated dependency management
 
 **Custom Metrics Framework**
@@ -78,7 +78,7 @@ jupyter>=1.0.0          # Notebook environment
 
 **Operating System Requirements**:
 - **Linux**: Primary target (systemd service support)
-- **Python 3.8+**: Language runtime
+- **Python 3.11+**: Language runtime
 - **systemd**: Service management (production deployment)
 - **Network Access**: Connectivity to Home Assistant and InfluxDB
 
@@ -169,6 +169,39 @@ Uses 1h cloud forecast (`cloud_cover_1h`). Prevents raw PV sensor spikes from ca
 **PV Smoothing**: Window shortened from 3h (18 readings) to `solar_decay_tau` (~30min, 3 readings) to exclude stale morning values.
 
 **Slab Passive Delta**: `inlet_temp - indoor_temp` exported as `slab_passive_delta` diagnostic. Positive = passive heating available.
+
+### Cooling Mode Architecture (April 2026)
+
+**Module**: `src/unified_thermal_state_cooling.py`
+
+**Problem Solved**: Heating and cooling modes have fundamentally different thermal dynamics — sharing the same state file caused learning cross-contamination where heating-tuned parameters degraded cooling performance and vice versa.
+
+**Architecture**:
+- `CoolingThermalStateManager` — dedicated state manager with own JSON file (`unified_thermal_state_cooling.json`)
+- Singleton access via `get_cooling_state_manager()`
+- Mode detection: `config.get_climate_mode()` returns `"heating"` / `"cooling"` / `"off"` based on `HEATING_STATUS_ENTITY_ID`
+- `config.get_outlet_bounds()` and `config.get_fallback_outlet()` return mode-appropriate values
+
+**Cooling-Specific Parameter Differences**:
+- `slab_time_constant_hours`: 0.8h (vs 3.19h heating) — cold water through warm slab exchanges heat faster
+- `outlet_temp_min/max`: 18–24°C (vs 0–35°C heating) — narrow cooling band
+- `thermal_time_constant`: 3.0h (vs 4.39h) — cooling response is faster
+- External heat sources act as loads *against* cooling (sign reversal)
+
+**State Isolation**: Each mode has:
+- Independent learning state (cycle count, confidence, parameter deltas)
+- Separate calibration tracking (date, cycles)
+- Own buffer state persistence for sensor snapshots
+- Shadow-mode support via `get_effective_cooling_state_file()`
+
+### Unified Thermal State Compression
+
+**Module**: `src/unified_thermal_state.py`
+
+Allow-list compression slims history entries on persistence and migration:
+- **Channel history** keeps: error, context, parameters, changes; drops parameters_before/after
+- **Parameter history** keeps: flat snapshot, changes, gradients; drops triple-stored before/after/channel_parameter_changes
+- Controlled by `PREDICTION_CONTEXT_KEYS`, `PARAMETER_HISTORY_KEYS`, `CHANNEL_HISTORY_CONTEXT_KEYS`
 
 ### Physics-Based Model Design
 
