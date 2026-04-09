@@ -1,0 +1,931 @@
+"""
+Heating Controller Module
+
+This module contains the main heating control logic extracted from main.py
+to improve code organization and maintainability.
+"""
+
+import logging
+import time
+from datetime import datetime, timezone
+from typing import Dict, List, Tuple, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .sensor_buffer import SensorBuffer
+
+from . import config
+from .ha_client import HAClient, get_sensor_attributes
+from .shadow_mode import get_shadow_output_entity_id
+from .state_manager import save_state, SystemState
+
+
+class BlockingStateManager:
+    """Manages blocking states (DHW, Defrost, etc.) and grace periods"""
+    
+    def __init__(self):
+        self.blocking_entities = [
+            config.DHW_STATUS_ENTITY_ID,
+            config.DEFROST_STATUS_ENTITY_ID,
+            config.DISINFECTION_STATUS_ENTITY_ID,
+            config.DHW_BOOST_HEATER_STATUS_ENTITY_ID,  # Add this line
+        ]
+        
+    def check_blocking_state(
+        self, ha_client: HAClient, all_states: Dict
+    ) -> Tuple[bool, List[str]]:
+        """
+        Check if any blocking processes are active
+        
+        Returns:
+            Tuple of (is_blocking, blocking_reasons)
+        """
+        blocking_reasons = [
+            e for e in self.blocking_entities
+            if ha_client.get_state(e, all_states, is_binary=True)
+        ]
+        is_blocking = bool(blocking_reasons)
+        
+        return is_blocking, blocking_reasons
+    
+    def handle_blocking_state(
+        self,
+        ha_client: HAClient,
+        is_blocking: bool,
+        blocking_reasons: List[str],
+        state: SystemState,
+    ) -> bool:
+        """
+        Handle blocking state persistence and HA sensor updates
+        
+        Returns:
+            True if cycle should be skipped
+        """
+        if is_blocking:
+            logging.info("Blocking process active (DHW/Defrost), skipping.")
+            
+            try:
+                heating_state_entity_id = get_shadow_output_entity_id(
+                    "sensor.ml_heating_state"
+                )
+                attributes_state = get_sensor_attributes(
+                    heating_state_entity_id
+                )
+                attributes_state.update(
+                    {
+                        "state_description": "Blocking activity - Skipping",
+                        "blocking_reasons": blocking_reasons,
+                        "last_updated": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                ha_client.set_state(
+                    heating_state_entity_id,
+                    2,
+                    attributes_state,
+                    round_digits=None,
+                )
+            except Exception:
+                logging.debug(
+                    "Failed to write BLOCKED state to HA.", exc_info=True
+                )
+            
+            # Save the blocking state for the next cycle
+            save_state(
+                last_is_blocking=True,
+                last_final_temp=state.last_final_temp,
+                last_blocking_reasons=blocking_reasons,
+                last_blocking_end_time=None,
+            )
+            return True  # Skip cycle
+        
+        return False  # Continue with cycle
+    
+    def handle_grace_period(
+        self,
+        ha_client: HAClient,
+        state: SystemState,
+        shadow_mode: Optional[bool] = None,
+    ) -> bool:
+        """
+        Handle grace period after blocking events end
+
+        Args:
+            ha_client: Home Assistant client
+            state: Current system state
+            shadow_mode: Dynamic shadow mode state (overrides
+                config.SHADOW_MODE if provided)
+        
+        Returns:
+            True if in grace period (skip cycle)
+        """
+        # SHADOW MODE OPTIMIZATION: Skip grace period entirely in shadow mode
+        # since ML heating is only observing and not controlling equipment.
+        # Use dynamic shadow_mode if provided, otherwise fall back to config.
+        is_shadow_mode = (
+            shadow_mode if shadow_mode is not None else config.SHADOW_MODE
+        )
+        
+        if is_shadow_mode:
+            logging.info(
+                "⏭️ SHADOW MODE: Skipping grace period (observation only)"
+            )
+            return False  # No grace period needed in shadow mode
+
+        last_is_blocking = state.last_is_blocking
+        last_blocking_end_time = state.last_blocking_end_time
+
+        if not last_is_blocking:
+            return False  # No grace period needed
+            
+        # Check if blocking just ended
+        is_blocking, _ = self.check_blocking_state(
+            ha_client, ha_client.get_all_states()
+        )
+        
+        if is_blocking:
+            return False  # Still blocking, no grace period
+            
+        # Mark the blocking end time if not already set
+        if last_blocking_end_time is None:
+            last_blocking_end_time = time.time()
+            try:
+                save_state(last_blocking_end_time=last_blocking_end_time)
+            except Exception:
+                logging.debug(
+                    "Failed to persist last_blocking_end_time.", exc_info=True
+                )
+
+        # Check if grace period has expired
+        age = time.time() - last_blocking_end_time
+        if age > config.GRACE_PERIOD_MAX_MINUTES * 60:
+            logging.info(
+                "Grace period expired (ended %.1f min ago); "
+                "skipping restore/wait.",
+                age / 60.0,
+            )
+            return False
+            
+        # Execute grace period logic
+        self._execute_grace_period(ha_client, state, age)
+        
+        # Clear blocking state after grace period
+        try:
+            save_state(last_is_blocking=False, last_blocking_end_time=None)
+        except Exception:
+            logging.debug(
+                "Failed to persist cleared blocking state.", exc_info=True
+            )
+            
+        return True  # Skip cycle
+    
+    def _execute_grace_period(
+        self, ha_client: HAClient, state: SystemState, age: float
+    ):
+        """Execute the grace period temperature restoration logic"""
+        logging.info("--- Grace Period Started ---")
+        logging.info(
+            "Blocking event ended %.1f min ago. Entering grace period to "
+            "allow system to stabilize.",
+            age / 60.0,
+        )
+
+        # Fetch current state for intelligent recovery
+        all_states = ha_client.get_all_states()
+        current_indoor = ha_client.get_state(
+            config.INDOOR_TEMP_ENTITY_ID, all_states
+        )
+        target_indoor = ha_client.get_state(
+            config.TARGET_INDOOR_TEMP_ENTITY_ID, all_states
+        )
+        outdoor_temp = ha_client.get_state(
+            config.OUTDOOR_TEMP_ENTITY_ID, all_states
+        )
+
+        wrapper = None
+        thermal_features = None
+
+        if (
+            current_indoor is None
+            or target_indoor is None
+            or outdoor_temp is None
+        ):
+            logging.warning(
+                "Cannot get sensor data for intelligent recovery, falling "
+                "back to old logic."
+            )
+            last_final_temp = state.last_final_temp
+            if last_final_temp is None:
+                logging.info(
+                    "No last_final_temp in persisted state; skipping "
+                    "restore/wait."
+                )
+                return
+            grace_target = last_final_temp
+        else:
+            from .model_wrapper import get_enhanced_model_wrapper
+            from .physics_features import build_physics_features
+            from .influx_service import create_influx_service
+
+            influx_service = create_influx_service()
+            features_df, _ = build_physics_features(
+                ha_client, influx_service
+            )
+            
+            if features_df is None or features_df.empty:
+                logging.warning("Could not build features for grace period.")
+                return
+
+            # Convert DataFrame row to dict for model wrapper
+            features_dict = features_df.iloc[0].to_dict()
+            
+            wrapper = get_enhanced_model_wrapper()
+            
+            thermal_features = wrapper._extract_thermal_features(features_dict)
+
+            from .temperature_control import GradualTemperatureControl
+
+            raw_grace_target = wrapper._calculate_required_outlet_temp(
+                float(current_indoor),
+                float(target_indoor),
+                float(outdoor_temp),
+                thermal_features,
+            )
+
+            # Apply gradual control to prevent sudden jumps (e.g. 65°C)
+            # after a DHW cycle. Use last_final_temp as baseline if available.
+            gradual_ctrl = GradualTemperatureControl()
+            temp_control_state = {
+                "last_final_temp": state.last_final_temp
+            }
+            current_outlet_for_gradual = ha_client.get_state(
+                config.ACTUAL_OUTLET_TEMP_ENTITY_ID, all_states
+            )
+            grace_target = gradual_ctrl.apply_gradual_control(
+                raw_grace_target,
+                current_outlet_for_gradual,
+                temp_control_state
+            )
+            if abs(grace_target - raw_grace_target) > 0.1:
+                logging.info(
+                    "Grace target clamped by gradual control: "
+                    "%.1f°C -> %.1f°C",
+                    raw_grace_target,
+                    grace_target,
+                )
+        actual_outlet_temp_start = ha_client.get_state(
+            config.ACTUAL_OUTLET_TEMP_ENTITY_ID,
+            ha_client.get_all_states(),
+        )
+
+        if actual_outlet_temp_start is None:
+            logging.warning(
+                "Cannot read actual_outlet_temp at grace start; skipping wait."
+            )
+            return
+
+        # Apply gradual control to prevent overshoot.
+        # This ensures that even if the model predicts a high temperature
+        # (e.g. 65°C) after a DHW cycle, we only increase by a safe amount
+        # (e.g. +2°C) from the previous setpoint.
+        from .temperature_control import GradualTemperatureControl
+        gradual_ctrl_final = GradualTemperatureControl()
+        # Convert SystemState to dict for compatibility with apply_gradual_control
+        if hasattr(state, "to_dict"):
+            state_dict = state.to_dict()
+        else:
+            state_dict = state.__dict__
+        grace_target = gradual_ctrl_final.apply_gradual_control(
+            grace_target,
+            actual_outlet_temp_start,
+            state_dict
+        )
+
+        delta0 = actual_outlet_temp_start - grace_target
+        if abs(delta0) < 1.0:
+            logging.info(
+                "Actual outlet (%.1f°C) is close to the new intelligent "
+                "target (%.1f°C); no wait needed.",
+                actual_outlet_temp_start,
+                grace_target,
+            )
+            return
+            
+        # Determine grace target and wait condition
+        wait_for_cooling = delta0 > 0
+
+        # SAFETY CHECK: If we are underheating (current < target), we should
+        # NEVER wait for the system to cool down during a grace period. This
+        # can happen if the model predicts a low required outlet temp (e.g.
+        # 20C) but the system is currently running hotter (e.g. 35C) and the
+        # house is cold. Waiting would cause a temperature drop.
+        try:
+            if wait_for_cooling and float(current_indoor) < float(
+                target_indoor
+            ):
+                logging.warning(
+                    "Grace Period Safety: Underheating detected "
+                    "(%.1f°C < %.1f°C) but model requests cooling "
+                    "(%.1f°C -> %.1f°C). Skipping wait to prevent heat loss.",
+                    float(current_indoor),
+                    float(target_indoor),
+                    actual_outlet_temp_start,
+                    grace_target,
+                )
+                return
+        except (ValueError, TypeError):
+            logging.warning(
+                "Could not compare indoor vs target temps for grace period "
+                "safety check."
+            )        
+            
+        logging.info(
+            "Intelligent recovery: setting new outlet target to %.1f°C "
+            "(current=%.1f°C, %s)",
+            grace_target,
+            actual_outlet_temp_start,
+            "cool-down" if wait_for_cooling else "warm-up",
+        )
+        target_output_entity_id = get_shadow_output_entity_id(
+            config.TARGET_OUTLET_TEMP_ENTITY_ID
+        )
+        
+        # Set the grace target temperature
+        ha_client.set_state(
+            target_output_entity_id,
+            grace_target,
+            get_sensor_attributes(target_output_entity_id),
+            round_digits=0,
+        )
+        
+        # Wait for temperature to reach target
+        self._wait_for_grace_target(
+            ha_client,
+            grace_target,
+            wait_for_cooling,
+            wrapper=wrapper,
+            thermal_features=thermal_features,
+        )
+        
+        logging.info("--- Grace Period Ended ---")
+    
+    def _wait_for_grace_target(
+        self,
+        ha_client: HAClient,
+        initial_grace_target: float,
+        wait_for_cooling: bool,
+        wrapper=None,
+        thermal_features=None,
+    ):
+        """Wait for outlet temperature to reach grace target"""
+        start_time = time.time()
+        max_seconds = config.GRACE_PERIOD_MAX_MINUTES * 60
+        
+        current_grace_target = initial_grace_target
+        
+        logging.info(
+            "Grace period: waiting for %s (timeout %d min).",
+            "actual <= target" if wait_for_cooling else "actual >= target",
+            config.GRACE_PERIOD_MAX_MINUTES,
+        )
+        
+        while True:
+            # Check for blocking reappearance
+            all_states_poll = ha_client.get_all_states()
+            is_blocking, blocking_reasons = self.check_blocking_state(
+                ha_client, all_states_poll
+            )
+            
+            if is_blocking:
+                logging.info(
+                    "Blocking reappeared during grace; aborting wait."
+                )
+                try:
+                    save_state(
+                        last_is_blocking=True,
+                        last_blocking_reasons=blocking_reasons,
+                        last_blocking_end_time=None,
+                    )
+                except Exception:
+                    logging.debug(
+                        "Failed to persist blocking restart.", exc_info=True
+                    )
+                break
+                
+            # Check outlet temperature
+            actual_outlet_temp = ha_client.get_state(
+                config.ACTUAL_OUTLET_TEMP_ENTITY_ID,
+                all_states_poll,
+            )
+            
+            if actual_outlet_temp is None:
+                logging.warning(
+                    "Cannot read actual_outlet_temp, exiting grace period."
+                )
+                break
+
+            # SAFETY CHECK: If we are underheating (current < target), we
+            # should NEVER wait for the system to cool down during a grace
+            # period. This check is repeated inside the loop because
+            # conditions might change (e.g. indoor temp drops further).
+            if wait_for_cooling:
+                try:
+                    current_indoor_poll = ha_client.get_state(
+                        config.INDOOR_TEMP_ENTITY_ID, all_states_poll
+                    )
+                    target_indoor_poll = ha_client.get_state(
+                        config.TARGET_INDOOR_TEMP_ENTITY_ID, all_states_poll
+                    )
+
+                    if (
+                        current_indoor_poll is not None
+                        and target_indoor_poll is not None
+                        and float(current_indoor_poll) < float(
+                            target_indoor_poll
+                        )
+                    ):
+                        logging.warning(
+                            "Grace Period Safety (Loop): Underheating "
+                            "detected (%.1f°C < %.1f°C) while waiting for "
+                            "cooling. Aborting wait to prevent heat loss.",
+                            float(current_indoor_poll),
+                            float(target_indoor_poll),
+                        )
+                        break
+                except (ValueError, TypeError):
+                    pass  # Ignore errors in safety check
+                
+            # --- Dynamic Target Recalculation ---
+            if wrapper and thermal_features:
+                try:
+                    current_indoor = ha_client.get_state(
+                        config.INDOOR_TEMP_ENTITY_ID, all_states_poll
+                    )
+                    target_indoor = ha_client.get_state(
+                        config.TARGET_INDOOR_TEMP_ENTITY_ID, all_states_poll
+                    )
+                    outdoor_temp = ha_client.get_state(
+                        config.OUTDOOR_TEMP_ENTITY_ID, all_states_poll
+                    )
+                    
+                    if (
+                        current_indoor is not None
+                        and target_indoor is not None
+                        and outdoor_temp is not None
+                    ):
+                        new_target = wrapper._calculate_required_outlet_temp(
+                            float(current_indoor),
+                            float(target_indoor),
+                            float(outdoor_temp),
+                            thermal_features,
+                        )
+                        
+                        # If target changed significantly, update it
+                        if abs(new_target - current_grace_target) >= 0.5:
+                            # Apply gradual control to the dynamic update as
+                            # well. Limit change to 0.5°C per update loop
+                            # (every 60s) to prevent runaway ramping.
+                            delta = new_target - current_grace_target
+                            max_dynamic_change = 0.5
+                            clamped_delta = max(
+                                -max_dynamic_change,
+                                min(delta, max_dynamic_change)
+                            )
+                            proposed_target = (
+                                current_grace_target + clamped_delta
+                            )
+
+                            # Global cap relative to initial grace target:
+                            # allow max ±1.0°C deviation from start of grace period
+                            max_deviation = 1.0
+                            final_target = max(
+                                initial_grace_target - max_deviation,
+                                min(
+                                    proposed_target,
+                                    initial_grace_target + max_deviation
+                                )
+                            )
+
+                            if (
+                                abs(final_target - current_grace_target)
+                                >= 0.1
+                            ):
+                                logging.info(
+                                    "Grace target updated: %.1f°C -> %.1f°C "
+                                    "(raw %.1f°C, initial %.1f°C) "
+                                    "(Indoor: %.1f->%.1f, Outdoor: %.1f)",
+                                    current_grace_target,
+                                    final_target,
+                                    new_target,
+                                    initial_grace_target,
+                                    float(current_indoor),
+                                    float(target_indoor),
+                                    float(outdoor_temp),
+                                )
+                                current_grace_target = final_target
+                                target_output_entity_id = (
+                                    get_shadow_output_entity_id(
+                                        config.TARGET_OUTLET_TEMP_ENTITY_ID
+                                    )
+                                )
+
+                                # Update HA entity
+                                ha_client.set_state(
+                                    target_output_entity_id,
+                                    current_grace_target,
+                                    get_sensor_attributes(
+                                        target_output_entity_id
+                                    ),
+                                    round_digits=0,
+                                )
+                except Exception as e:
+                    logging.warning(
+                        "Failed to recalculate grace target: %s", e
+                    )
+                
+            # Check if target reached
+            target_reached = False
+            if wait_for_cooling and actual_outlet_temp <= current_grace_target:
+                target_reached = True
+            elif (
+                not wait_for_cooling
+                and actual_outlet_temp >= current_grace_target
+            ):
+                target_reached = True
+                
+            if target_reached:
+                logging.info(
+                    "Actual outlet temp (%.1f°C) has reached grace target "
+                    "(%.1f°C). Resuming control.",
+                    actual_outlet_temp,
+                    current_grace_target,
+                )
+                break
+                
+            # Check timeout
+            elapsed = time.time() - start_time
+            if elapsed > max_seconds:
+                logging.warning(
+                    "Grace period timed out after %d minutes; proceeding.",
+                    config.GRACE_PERIOD_MAX_MINUTES,
+                )
+                break
+                
+            logging.info(
+                "Waiting for outlet to %s grace target (current: %.1f°C, "
+                "target: %.1f°C). Elapsed: %d/%d min",
+                "cool to" if wait_for_cooling else "warm to",
+                actual_outlet_temp,
+                current_grace_target,
+                int(elapsed / 60),
+                config.GRACE_PERIOD_MAX_MINUTES,
+            )
+            
+            time.sleep(config.BLOCKING_POLL_INTERVAL_SECONDS)
+
+    def poll_for_blocking(
+        self,
+        ha_client: HAClient,
+        state: SystemState,
+        sensor_buffer: Optional["SensorBuffer"] = None,
+    ) -> None:
+        """
+        Poll for blocking events during the idle period.
+        Also actively samples sensor data into the buffer if provided.
+        """
+        end_time = time.time() + config.CYCLE_INTERVAL_MINUTES * 60
+        while time.time() < end_time:
+            try:
+                all_states_poll = ha_client.get_all_states()
+
+                # --- Active Sampling ---
+                if sensor_buffer and all_states_poll:
+                    current_time = datetime.now(timezone.utc)
+
+                    # Helper to safely get float state
+                    def get_float_state(entity_id):
+                        try:
+                            val = ha_client.get_state(
+                                entity_id, all_states_poll
+                            )
+                            return float(val) if val is not None else None
+                        except (ValueError, TypeError):
+                            return None
+
+                    # Push new readings to buffer
+                    buffer_updates = {
+                        config.INDOOR_TEMP_ENTITY_ID: get_float_state(
+                            config.INDOOR_TEMP_ENTITY_ID
+                        ),
+                        config.ACTUAL_OUTLET_TEMP_ENTITY_ID: get_float_state(
+                            config.ACTUAL_OUTLET_TEMP_ENTITY_ID
+                        ),
+                        config.TARGET_OUTLET_TEMP_ENTITY_ID: get_float_state(
+                            config.TARGET_OUTLET_TEMP_ENTITY_ID
+                        ),
+                        config.OUTDOOR_TEMP_ENTITY_ID: get_float_state(
+                            config.OUTDOOR_TEMP_ENTITY_ID
+                        ),
+                        config.INLET_TEMP_ENTITY_ID: get_float_state(
+                            config.INLET_TEMP_ENTITY_ID
+                        ),
+                        config.FLOW_RATE_ENTITY_ID: get_float_state(
+                            config.FLOW_RATE_ENTITY_ID
+                        ),
+                    }
+
+                    count = 0
+                    for entity_id, value in buffer_updates.items():
+                        if value is not None:
+                            sensor_buffer.add_reading(
+                                entity_id, value, current_time
+                            )
+                            count += 1
+
+                    logging.debug(
+                        "Active sampling: buffered %d readings", count
+                    )
+
+            except Exception:
+                logging.warning(
+                    "Failed to poll HA during idle; will retry.", exc_info=True
+                )
+                time.sleep(config.BLOCKING_POLL_INTERVAL_SECONDS)
+                continue
+
+            is_blocking, blocking_reasons = self.check_blocking_state(
+                ha_client, all_states_poll
+            )
+
+            # Blocking started during idle -> persist and handle immediately.
+            if is_blocking and not state.last_is_blocking:
+                try:
+                    save_state(
+                        last_is_blocking=True,
+                        last_final_temp=state.last_final_temp,
+                        last_blocking_reasons=blocking_reasons,
+                        last_blocking_end_time=None,
+                    )
+                    logging.debug(
+                        "Blocking detected during idle poll; "
+                        "handling immediately."
+                    )
+                except Exception:
+                    logging.warning(
+                        "Failed to persist blocking start during idle poll.",
+                        exc_info=True,
+                    )
+                return
+
+            # Blocking ended during idle -> persist end time so grace will run.
+            if state.last_is_blocking and not is_blocking:
+                try:
+                    save_state(
+                        last_is_blocking=True,
+                        last_blocking_end_time=time.time(),
+                        last_blocking_reasons=[],
+                    )
+                    logging.debug(
+                        "Blocking ended during idle poll; "
+                        "will run grace on next loop."
+                    )
+                except Exception:
+                    logging.warning(
+                        "Failed to persist blocking end during idle poll.",
+                        exc_info=True,
+                    )
+                return
+
+            time.sleep(config.BLOCKING_POLL_INTERVAL_SECONDS)
+
+
+class SensorDataManager:
+    """Manages sensor data retrieval and validation"""
+    
+    def get_critical_sensors(
+        self, ha_client: HAClient, all_states: Dict
+    ) -> Tuple[Optional[Dict], List[str]]:
+        """
+        Retrieve and validate critical sensor data
+        
+        Returns:
+            Tuple of (sensor_data_dict, missing_sensors_list)
+        """
+        sensor_data = {
+            "target_indoor_temp": ha_client.get_state(
+                config.TARGET_INDOOR_TEMP_ENTITY_ID, all_states
+            ),
+            "actual_indoor": ha_client.get_state(
+                config.INDOOR_TEMP_ENTITY_ID, all_states
+            ),
+            "actual_outlet_temp": ha_client.get_state(
+                config.ACTUAL_OUTLET_TEMP_ENTITY_ID, all_states
+            ),
+            "avg_other_rooms_temp": ha_client.get_state(
+                config.AVG_OTHER_ROOMS_TEMP_ENTITY_ID, all_states
+            ),
+            "fireplace_on": ha_client.get_state(
+                config.FIREPLACE_STATUS_ENTITY_ID, all_states, is_binary=True
+            ),
+            "outdoor_temp": ha_client.get_state(
+                config.OUTDOOR_TEMP_ENTITY_ID, all_states
+            ),
+            "owm_temp": ha_client.get_state(
+                config.OPENWEATHERMAP_TEMP_ENTITY_ID, all_states
+            ),
+        }
+        
+        critical_sensors = [
+                (config.TARGET_INDOOR_TEMP_ENTITY_ID, sensor_data[
+                    "target_indoor_temp"
+                ]),
+                (config.INDOOR_TEMP_ENTITY_ID, sensor_data["actual_indoor"]),
+                (config.OUTDOOR_TEMP_ENTITY_ID, sensor_data["outdoor_temp"]),
+                (config.OPENWEATHERMAP_TEMP_ENTITY_ID, sensor_data["owm_temp"]),
+                (config.AVG_OTHER_ROOMS_TEMP_ENTITY_ID, sensor_data[
+                    "avg_other_rooms_temp"
+                ]),
+                (config.ACTUAL_OUTLET_TEMP_ENTITY_ID, sensor_data[
+                    "actual_outlet_temp"
+                ]),
+            ]
+        
+        missing_sensors = [
+                name for name, value in critical_sensors if value is None
+        ]
+        
+        if missing_sensors:
+            return None, missing_sensors
+            
+        return sensor_data, []
+    
+    def handle_missing_sensors(
+        self, ha_client: HAClient, missing_sensors: List[str]
+    ) -> bool:
+        """
+        Handle missing sensor data with appropriate HA state updates
+        
+        Returns:
+            True if cycle should be skipped
+        """
+        logging.warning(
+            "Critical sensors unavailable: %s. Skipping.",
+            ", ".join(missing_sensors),
+        )
+        
+        try:
+            heating_state_entity_id = get_shadow_output_entity_id(
+                "sensor.ml_heating_state"
+            )
+            attributes_state = get_sensor_attributes(
+                heating_state_entity_id
+            )
+            attributes_state.update(
+                {
+                    "state_description": "No data - missing critical sensors",
+                    "missing_sensors": missing_sensors,
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            ha_client.set_state(
+                heating_state_entity_id,
+                4,
+                attributes_state,
+                round_digits=None,
+            )
+        except Exception:
+            logging.debug(
+                "Failed to write NO_DATA state to HA.", exc_info=True
+            )
+            
+        return True  # Skip cycle
+
+    def get_sensor_data(
+        self, ha_client: HAClient, cycle_number: int
+    ) -> Tuple[Optional[Dict], List[str]]:
+        """
+        Retrieve sensor data with retry logic for robustness.
+        Returns (sensor_data, missing_sensors_list).
+        """
+        # Initial fetch
+        all_states = ha_client.get_all_states()
+        sensor_data, missing_sensors = self.get_critical_sensors(
+            ha_client, all_states
+        )
+
+        if not missing_sensors:
+            return sensor_data, []
+
+        # Retry logic
+        logging.error(
+            "🚨 STATE 4 - Critical sensors unavailable: %s",
+            ", ".join(missing_sensors),
+        )
+        # Log detailed sensor status for debugging
+        if sensor_data:
+            logging.error("📊 SENSOR DEBUG:")
+            for name, value in sensor_data.items():
+                status = "MISSING" if value is None else "OK"
+                logging.error(f"   {name}: {value} [{status}]")
+
+        logging.info("🔄 RETRY: Attempting fresh sensor read...")
+        try:
+            fresh_states = ha_client.get_all_states()
+            sensor_data_retry, missing_retry = self.get_critical_sensors(
+                ha_client, fresh_states
+            )
+
+            if missing_retry:
+                logging.error(
+                    "❌ CONFIRMED: Still missing after retry: %s",
+                    ", ".join(missing_retry),
+                )
+                return None, missing_retry
+            else:
+                logging.warning(
+                    "✅ RACE CONDITION: Retry found all sensors working! "
+                    "Using retry data."
+                )
+                return sensor_data_retry, []
+
+        except Exception as e:
+            logging.error("❌ RETRY FAILED: %s", e, exc_info=True)
+            return None, missing_sensors
+
+
+class HeatingSystemStateChecker:
+    """Checks heating/cooling system operational state"""
+    
+    def check_heating_active(
+        self, ha_client: HAClient, all_states: Dict
+    ) -> bool:
+        """
+        Check if heating or cooling system is active
+        
+        Returns:
+            True if heating or cooling is active, False if cycle should be
+            skipped
+        """
+        heating_state = ha_client.get_state(
+            config.HEATING_STATUS_ENTITY_ID, all_states
+        )
+        
+        climate_mode = config.get_climate_mode(heating_state)
+        
+        if climate_mode == "off":
+            logging.info(
+                "Climate system not active (state: %s), skipping cycle.",
+                heating_state,
+            )
+            
+            try:
+                heating_state_entity_id = get_shadow_output_entity_id(
+                    "sensor.ml_heating_state"
+                )
+                attributes_state = get_sensor_attributes(
+                    heating_state_entity_id
+                )
+                attributes_state.update(
+                    {
+                        "state_description": f"System off ({heating_state})",
+                        "heating_state": heating_state,
+                        "climate_mode": climate_mode,
+                        "last_updated": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                ha_client.set_state(
+                    heating_state_entity_id,
+                    6,
+                    attributes_state,
+                    round_digits=None,
+                )
+            except Exception:
+                logging.debug(
+                    "Failed to write SYSTEM_OFF state to HA.",
+                    exc_info=True,
+                )
+                
+            return False  # Skip cycle
+
+        if climate_mode == "cooling":
+            logging.info(
+                "❄️ Cooling mode active (state: %s)", heating_state
+            )
+        else:
+            logging.debug(
+                "🔥 Heating mode active (state: %s)", heating_state
+            )
+
+        return True  # Continue with cycle
+
+    def get_climate_mode(
+        self, ha_client: HAClient, all_states: Dict
+    ) -> str:
+        """
+        Return the current climate mode string.
+
+        Returns:
+            "heating", "cooling", or "off"
+        """
+        heating_state = ha_client.get_state(
+            config.HEATING_STATUS_ENTITY_ID, all_states
+        )
+        return config.get_climate_mode(heating_state)
