@@ -247,11 +247,11 @@ def render_log_viewer():
             lines_to_show = st.selectbox("Lines to show:", [50, 100, 200, 500])
         with col2:
             if st.button("🔄 Refresh Logs"):
-                st.experimental_rerun()
+                st.rerun()
         with col3:
             if st.button("❌ Close Logs"):
                 st.session_state['show_logs'] = False
-                st.experimental_rerun()
+                st.rerun()
         
         try:
             if os.path.exists(log_file):
