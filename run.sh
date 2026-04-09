@@ -19,6 +19,15 @@ if [[ -f "/etc/services.d" ]] || [[ -n "${SUPERVISOR_TOKEN}" ]]; then
         echo "[INFO] Initializing configuration..."
         python3 /app/config_adapter.py
         
+        # Source the environment file written by config_adapter so that
+        # all mapped configuration variables are available to src.main.
+        if [[ -f /data/config/env_vars ]]; then
+            source /data/config/env_vars
+            echo "[INFO] Sourced environment variables from /data/config/env_vars"
+        else
+            echo "[WARNING] Environment file /data/config/env_vars not found"
+        fi
+        
         # Setup data directories with proper permissions
         mkdir -p /data/{models,backups,logs,config}
         
