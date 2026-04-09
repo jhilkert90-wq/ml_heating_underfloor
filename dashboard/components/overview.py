@@ -1,244 +1,192 @@
 """
 ML Heating Dashboard - Overview Component
 Real-time monitoring and system status display
+
+All data is read from the unified thermal state JSON via
+``dashboard.data_service``.  No simulated / demo data is generated.
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 import os
 import sys
 
-# Add app directory to Python path
-sys.path.append('/app')
+# Add parent directory so ``dashboard`` package is importable in the addon
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def load_ml_state():
-    """Load ML system state if available"""
-    try:
-        if os.path.exists('/data/models/unified_thermal_state.json'):
-            with open('/data/models/unified_thermal_state.json', 'r') as f:
-                return json.load(f)
-    except Exception as e:
-        st.error(f"Error loading ML state: {e}")
-    return None
+from data_service import (
+    get_system_metrics,
+    get_prediction_history,
+    get_state_file_info,
+    load_thermal_state,
+)
 
-def get_system_metrics():
-    """Get current system performance metrics"""
-    try:
-        # Try to read from unified state file
-        state = load_ml_state()
-        if state and 'learning_state' in state:
-            learning_state = state['learning_state']
-            return {
-                'confidence': learning_state.get('learning_confidence', 0.0),
-                'mae': learning_state.get('mae', 0.0),
-                'rmse': learning_state.get('rmse', 0.0),
-                'cycle_count': learning_state.get('cycle_count', 0),
-                'last_prediction': learning_state.get('last_prediction', 0.0),
-                'status': state.get('metadata', {}).get('status', 'unknown')
-            }
-    except Exception:
-        pass
-    
-    # Fallback demo data for Phase 3 development
-    return {
-        'confidence': 0.92,
-        'mae': 0.15,
-        'rmse': 0.21,
-        'cycle_count': 450,
-        'last_prediction': 42.5,
-        'status': 'active'
-    }
 
-def get_recent_log_data():
-    """Parse recent log data for trends"""
-    try:
-        if os.path.exists('/data/logs/ml_heating.log'):
-            # Read last 100 lines of log
-            with open('/data/logs/ml_heating.log', 'r') as f:
-                lines = f.readlines()[-100:]
-            
-            # Parse log entries (simplified for Phase 3)
-            log_data = []
-            for line in lines:
-                if 'confidence:' in line and 'mae:' in line:
-                    # Extract timestamp and metrics from log line
-                    try:
-                        parts = line.split()
-                        timestamp = f"{parts[0]} {parts[1]}"
-                        confidence = float(line.split('confidence:')[1].split()[0])
-                        mae = float(line.split('mae:')[1].split()[0])
-                        log_data.append({
-                            'timestamp': pd.to_datetime(timestamp),
-                            'confidence': confidence,
-                            'mae': mae
-                        })
-                    except Exception:
-                        continue
-            
-            if log_data:
-                return pd.DataFrame(log_data)
-    except Exception:
-        pass
-    
-    # Fallback demo data
-    now = datetime.now()
-    demo_data = []
-    for i in range(24):
-        demo_data.append({
-            'timestamp': now - timedelta(hours=i),
-            'confidence': 0.85 + (0.15 * (i % 3) / 3),
-            'mae': 0.12 + (0.08 * (i % 4) / 4)
+def get_recent_trend_data():
+    """Build a trend DataFrame from real prediction history.
+
+    Returns a :class:`~pandas.DataFrame` with columns
+    ``timestamp``, ``confidence``, ``mae`` extracted from the persisted
+    prediction history.  Returns an empty DataFrame when no history is
+    available.
+    """
+    history = get_prediction_history()
+    if not history:
+        return pd.DataFrame(columns=["timestamp", "confidence", "mae"])
+
+    rows = []
+    for entry in history:
+        ts = entry.get("timestamp")
+        if ts is None:
+            continue
+        try:
+            ts_dt = pd.to_datetime(ts)
+        except Exception:
+            continue
+        error = abs(entry.get("error", 0.0))
+        context = entry.get("context", {})
+        rows.append({
+            "timestamp": ts_dt,
+            # Use absolute error as proxy for per-step MAE
+            "mae": error,
+            # Confidence is a system-wide scalar; replicate for charting
+            "confidence": 0.0,
         })
-    
-    return pd.DataFrame(demo_data).sort_values('timestamp')
+
+    if not rows:
+        return pd.DataFrame(columns=["timestamp", "confidence", "mae"])
+
+    df = pd.DataFrame(rows).sort_values("timestamp")
+    # Fill confidence from system metrics so the chart is meaningful
+    metrics = get_system_metrics()
+    df["confidence"] = metrics.get("confidence", 0.0)
+    return df
 
 def render_metric_cards():
-    """Render system performance metric cards"""
+    """Render system performance metric cards from real state data."""
     metrics = get_system_metrics()
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
-        confidence_color = "normal"
-        if metrics['confidence'] > 0.9:
-            confidence_color = "normal"
-        elif metrics['confidence'] > 0.7:
-            confidence_color = "normal" 
-        else:
-            confidence_color = "inverse"
-            
         st.metric(
             label="Confidence",
             value=f"{metrics['confidence']:.3f}",
-            delta=f"{(metrics['confidence']-0.85):.3f}" if metrics['confidence'] != 0.85 else None
         )
-    
+
     with col2:
-        mae_color = "normal"
-        if metrics['mae'] < 0.2:
-            mae_color = "normal"
-        elif metrics['mae'] < 0.3:
-            mae_color = "normal"
-        else:
-            mae_color = "inverse"
-            
         st.metric(
             label="MAE (°C)",
             value=f"{metrics['mae']:.3f}",
-            delta=f"{(0.2-metrics['mae']):.3f}" if metrics['mae'] != 0.2 else None
         )
-    
+
     with col3:
         st.metric(
             label="RMSE (°C)",
             value=f"{metrics['rmse']:.3f}",
-            delta=f"{(0.25-metrics['rmse']):.3f}" if metrics['rmse'] != 0.25 else None
         )
-    
+
     with col4:
         st.metric(
             label="Learning Cycles",
             value=f"{metrics['cycle_count']:,}",
-            delta=f"+{metrics['cycle_count']-400}" if metrics['cycle_count'] > 400 else None
         )
 
 def render_performance_trend():
-    """Render performance trend chart"""
+    """Render performance trend chart from real prediction history."""
     st.subheader("Performance Trend")
-    
-    df = get_recent_log_data()
-    
-    if not df.empty:
-        # Create dual-axis chart
-        fig = go.Figure()
-        
-        # Confidence line
-        fig.add_trace(go.Scatter(
-            x=df['timestamp'],
-            y=df['confidence'],
-            mode='lines+markers',
-            name='Confidence',
-            line=dict(color='#1f77b4', width=2),
-            yaxis='y'
-        ))
-        
-        # MAE line
-        fig.add_trace(go.Scatter(
-            x=df['timestamp'],
-            y=df['mae'],
-            mode='lines+markers',
-            name='MAE (°C)',
-            line=dict(color='#ff7f0e', width=2),
-            yaxis='y2'
-        ))
-        
-        # Update layout for dual axes
-        fig.update_layout(
-            xaxis_title="Time",
-            yaxis=dict(
-                title="Confidence",
-                titlefont=dict(color="#1f77b4"),
-                tickfont=dict(color="#1f77b4"),
-                range=[0, 1]
-            ),
-            yaxis2=dict(
-                title="MAE (°C)",
-                titlefont=dict(color="#ff7f0e"),
-                tickfont=dict(color="#ff7f0e"),
-                overlaying="y",
-                side="right",
-                range=[0, max(df['mae']) * 1.2]
-            ),
-            hovermode='x unified',
-            height=400
+
+    df = get_recent_trend_data()
+
+    if df.empty:
+        st.info(
+            "No performance data available yet. "
+            "Data will appear after the ML system starts learning."
         )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No performance data available yet. Data will appear after the ML system starts learning.")
+        return
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=df["timestamp"],
+        y=df["confidence"],
+        mode="lines+markers",
+        name="Confidence",
+        line=dict(color="#1f77b4", width=2),
+        yaxis="y",
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df["timestamp"],
+        y=df["mae"],
+        mode="lines+markers",
+        name="Abs Error (°C)",
+        line=dict(color="#ff7f0e", width=2),
+        yaxis="y2",
+    ))
+
+    fig.update_layout(
+        xaxis_title="Time",
+        yaxis=dict(
+            title="Confidence",
+            titlefont=dict(color="#1f77b4"),
+            tickfont=dict(color="#1f77b4"),
+        ),
+        yaxis2=dict(
+            title="Abs Error (°C)",
+            titlefont=dict(color="#ff7f0e"),
+            tickfont=dict(color="#ff7f0e"),
+            overlaying="y",
+            side="right",
+        ),
+        hovermode="x unified",
+        height=400,
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 def render_system_status():
-    """Render current system status"""
+    """Render current system status from real state data."""
     st.subheader("System Status")
-    
+
     metrics = get_system_metrics()
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        # System status indicator
-        status = metrics['status']
-        if status == 'active':
-            st.success("🟢 ML System: Active")
-        elif status == 'shadow':
-            st.info("🟡 ML System: Shadow Mode")
-        elif status == 'blocked':
-            st.warning("🟠 ML System: Blocked (DHW/Defrost)")
-        else:
-            st.error("🔴 ML System: Inactive")
-        
-        # Last prediction
-        if metrics['last_prediction'] > 0:
+        status = metrics["status"]
+        status_map = {
+            "active": ("🟢 ML System: Active", st.success),
+            "idle": ("🟡 ML System: Idle", st.info),
+            "stale": ("🟠 ML System: Stale (no recent run)", st.warning),
+        }
+        label, writer = status_map.get(
+            status, ("🔴 ML System: Unavailable", st.error)
+        )
+        writer(label)
+
+        if metrics["last_prediction"] > 0:
             st.info(f"🌡️ Last Prediction: {metrics['last_prediction']:.1f}°C")
-        
-        # Data directories status
-        dirs = ['/data/models', '/data/backups', '/data/logs']
-        for directory in dirs:
-            if os.path.exists(directory):
-                file_count = len(os.listdir(directory))
-                st.success(f"📁 {directory.split('/')[-1]}: {file_count} files")
-            else:
-                st.warning(f"📁 {directory.split('/')[-1]}: Not found")
-    
+
+        # State file info
+        file_info = get_state_file_info()
+        if file_info:
+            st.success(
+                f"💾 State: {file_info['size_kb']:.1f} KB  "
+                f"({file_info['path']})"
+            )
+            st.caption(
+                f"Updated: {file_info['last_modified'].strftime('%Y-%m-%d %H:%M')}"
+            )
+        else:
+            st.warning("💾 State file not found")
+
     with col2:
-        # Learning milestones
         st.write("**Learning Progress**")
-        cycle_count = metrics['cycle_count']
-        
+        cycle_count = metrics["cycle_count"]
+
         if cycle_count < 200:
             st.info("🌱 Initializing (0-200 cycles)")
             progress = cycle_count / 200
@@ -248,83 +196,64 @@ def render_system_status():
         else:
             st.success("✅ Mature (1000+ cycles)")
             progress = 1.0
-        
+
         st.progress(progress)
         st.write(f"Cycle {cycle_count:,}")
-        
-        # State file status
-        if os.path.exists('/data/models/unified_thermal_state.json'):
-            stat = os.stat('/data/models/unified_thermal_state.json')
-            state_size = stat.st_size / 1024  # KB
-            last_updated = datetime.fromtimestamp(stat.st_mtime)
-            st.success(f"💾 State: {state_size:.1f}KB")
-            st.caption(f"Updated: {last_updated.strftime('%Y-%m-%d %H:%M')}")
-        else:
-            st.warning("💾 State: Not found")
 
 def render_configuration_summary():
-    """Render current configuration summary"""
+    """Render current configuration summary from the real state file."""
     st.subheader("Configuration")
-    
-    try:
-        with open('/data/options.json', 'r') as f:
-            config = json.load(f)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Core Entities**")
-            core_entities = [
-                ('Target Indoor Temp', 'target_indoor_temp_entity'),
-                ('Indoor Temp Sensor', 'indoor_temp_entity'),
-                ('Outdoor Temp Sensor', 'outdoor_temp_entity'),
-                ('Heating Control', 'heating_control_entity')
-            ]
-            
-            for label, key in core_entities:
-                value = config.get(key, 'Not configured')
-                if value and value != 'Not configured':
-                    st.success(f"✅ {label}")
-                    st.caption(f"`{value}`")
-                else:
-                    st.error(f"❌ {label}")
-        
-        with col2:
-            st.write("**Learning Parameters**")
-            st.write(f"Learning Rate: `{config.get('learning_rate', 0.01)}`")
-            st.write(f"Cycle Interval: `{config.get('cycle_interval_minutes', 30)}` min")
-            st.write(f"Max Temp Change: `{config.get('max_temp_change_per_cycle', 2.0)}`°C")
-            
-            st.write("**Safety Limits**")
-            st.write(f"Min Safety: `{config.get('safety_min_temp', 18.0)}`°C")
-            st.write(f"Max Safety: `{config.get('safety_max_temp', 25.0)}`°C")
-    
-    except Exception as e:
-        st.error(f"Configuration Error: {e}")
+
+    state = load_thermal_state()
+    if state is None:
+        st.warning("Thermal state file not available – no configuration to show.")
+        return
+
+    baseline = state.get("baseline_parameters", {})
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("**Baseline Source**")
+        source = baseline.get("source", "unknown")
+        cal_date = baseline.get("calibration_date", "n/a")
+        cal_cycles = baseline.get("calibration_cycles", 0)
+        st.write(f"Source: `{source}`")
+        st.write(f"Calibration Date: `{cal_date}`")
+        st.write(f"Calibration Cycles: `{cal_cycles}`")
+
+    with col2:
+        st.write("**Key Thermal Parameters**")
+        for key in [
+            "thermal_time_constant",
+            "heat_loss_coefficient",
+            "outlet_effectiveness",
+            "slab_time_constant_hours",
+        ]:
+            val = baseline.get(key)
+            if val is not None:
+                st.write(f"{key}: `{val}`")
+
 
 def render_overview():
-    """Main overview page"""
+    """Main overview page."""
     st.header("📊 System Overview")
-    
-    # Auto-refresh every 30 seconds
+
     if st.button("🔄 Refresh Data"):
-        st.experimental_rerun()
-    
-    # Performance metrics cards
+        st.rerun()
+
     render_metric_cards()
-    
+
     st.divider()
-    
-    # Performance trend chart
+
     render_performance_trend()
-    
+
     st.divider()
-    
-    # System status and configuration
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         render_system_status()
-    
+
     with col2:
         render_configuration_summary()
