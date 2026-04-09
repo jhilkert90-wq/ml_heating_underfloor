@@ -51,7 +51,7 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=$(grep '^version:' ml_heating_underfloor/config.yaml | sed 's/version: *"\(.*\)"/\1/')" >> "$GITHUB_OUTPUT"
+            echo "version=$(grep '^version:' ml_heating_underfloor/config.yaml | sed 's/version: *[\"]*\([^\"]*\)[\"]*$/\1/' | tr -d ' ')" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build and push
