@@ -1038,18 +1038,6 @@ class ThermalEquilibriumModel:
             "actual": actual_temp,
             "error": prediction_error,
             "context": prediction_context.copy(),
-            "model_internal_prediction": predicted_temp_at_cycle_end,
-            "parameters_at_prediction": {
-                "thermal_time_constant": self.thermal_time_constant,
-                "heat_loss_coefficient": self.heat_loss_coefficient,
-                "outlet_effectiveness": self.outlet_effectiveness,
-                "solar_lag_minutes": self.solar_lag_minutes,
-            },
-            "shadow_mode": config.SHADOW_MODE,
-            "system_state": system_state,
-            "learning_quality": self._assess_learning_quality(
-                prediction_context, prediction_error
-            ),
             "fireplace_active": bool(
                 prediction_context.get("fireplace_on", 0)
             ),
@@ -2503,19 +2491,16 @@ class ThermalEquilibriumModel:
                 "heat_pump_frozen_by_fireplace": bool(
                     event.get("heat_pump_frozen_by_fireplace", False)
                 ),
-                "parameters_before": self._normalize_parameter_snapshot(
-                    event.get("parameters_before")
-                ),
-                "parameters_after": self._normalize_parameter_snapshot(
-                    event.get("parameters_after")
-                ),
-                "channel_parameter_changes": structured_changes,
                 "gradients": {},
                 "changes": {
                     name: abs(change["delta"])
                     for name, change in structured_changes.items()
                 },
             }
+            # Merge full parameter snapshot for visibility and stability
+            # analysis.  The persistence layer strips triple-stored
+            # duplicates (parameters_before/after, channel_parameter_changes)
+            # but keeps the flat snapshot.
             history_record.update(current_snapshot)
             records.append(history_record)
 

@@ -79,7 +79,13 @@ class TestThermalStateManager:
         assert learning_state["learning_confidence"] == 4.5
 
     def test_heat_source_channel_state_roundtrip(self, state_manager):
-        """Heat-source channel state should be saved and restored losslessly."""
+        """Heat-source channel state should preserve essential fields.
+
+        History entries are compressed on persistence: redundant fields
+        (``parameters_before``, ``parameters_after``) are dropped, but
+        ``parameters``, ``changes``, and relevant context survive so
+        that all channel params and decisions remain visible.
+        """
         channel_state = {
             "fireplace": {
                 "parameters": {"fp_heat_output_kw": 7.5},
@@ -87,8 +93,11 @@ class TestThermalStateManager:
                 "history": [
                     {
                         "error": 0.5,
-                        "context": {"fireplace_on": 1},
+                        "context": {"fireplace_on": 1, "outlet_temp": 40.0},
                         "parameters": {"fp_heat_output_kw": 7.0},
+                        "parameters_before": {"fp_heat_output_kw": 6.5},
+                        "parameters_after": {"fp_heat_output_kw": 7.0},
+                        "changes": {"fp_heat_output_kw": {"delta": 0.5}},
                     }
                 ],
             },
@@ -101,7 +110,27 @@ class TestThermalStateManager:
 
         state_manager.set_heat_source_channel_state(channel_state)
 
-        assert state_manager.get_heat_source_channel_state() == channel_state
+        restored = state_manager.get_heat_source_channel_state()
+
+        # Top-level channel parameters survive intact
+        assert restored["fireplace"]["parameters"] == {"fp_heat_output_kw": 7.5}
+        assert restored["pv"]["parameters"] == {"pv_heat_weight": 0.0035}
+        assert restored["fireplace"]["history_count"] == 12
+        assert restored["pv"]["history_count"] == 9
+
+        # History entries keep error, relevant context, parameters, changes
+        fp_hist = restored["fireplace"]["history"]
+        assert len(fp_hist) == 1
+        assert fp_hist[0]["error"] == 0.5
+        assert fp_hist[0]["context"]["fireplace_on"] == 1
+        assert fp_hist[0]["context"]["outlet_temp"] == 40.0
+        assert fp_hist[0]["parameters"] == {"fp_heat_output_kw": 7.0}
+        assert fp_hist[0]["changes"] == {"fp_heat_output_kw": {"delta": 0.5}}
+
+        # Redundant before/after snapshots are stripped
+        assert "parameters_before" not in fp_hist[0]
+        assert "parameters_after" not in fp_hist[0]
+        assert restored["pv"]["history"] == []
 
     def test_add_prediction_record(self, state_manager):
         """Test adding a prediction record."""
