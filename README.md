@@ -25,10 +25,13 @@ The primary goal is to improve upon traditional heat curves by creating a **self
 
 -   **Physics-Based Machine Learning:** Uses ThermalEquilibriumModel that understands thermodynamic principles while learning your house's unique characteristics from real data
 -   **Online Learning:** Continuously adapts after every heating cycle - learns from what actually happened vs what was predicted
+-   **Heating & Cooling Modes:** Full support for both heating and cooling with independent thermal parameters, separate state files, and mode-specific learning. Cooling mode is activated automatically when the climate entity reports "cool"
+-   **Heat Source Channel Architecture:** Decomposed learning with independent channels for heat pump, solar, fireplace, and TV — prevents parameter cross-contamination when multiple heat sources are active simultaneously
 -   **Live Performance Tracking:** Real-time confidence and accuracy monitoring that adapts to actual prediction performance
 -   **Delta Forecast Calibration:** Advanced forecasting integration with weather and PV power predictions
 -   **Seasonal Adaptation:** Automatic parameter adjustment learns seasonal variations without manual recalibration
 -   **Active & Shadow Modes:** Can run in active mode (controlling heating) or shadow mode (calculating but not applying, for safe testing and comparison)
+-   **State Compression:** Efficient allow-list compression of thermal state history to reduce file size while retaining all essential learning context
 -   **Home Assistant Integration:** Seamless bi-directional integration - reads sensors, writes control temperatures, publishes metrics and diagnostics
 -   **InfluxDB Historical Data:** Leverages your existing Home Assistant/InfluxDB setup for initial calibration and historical feature engineering
 
@@ -36,6 +39,7 @@ The primary goal is to improve upon traditional heat curves by creating a **self
 
 -   **Enhanced Model Wrapper:** Intelligent prediction system that replaces complex control logic with simplified outlet temperature prediction
 -   **Gentle Trajectory Correction:** Intelligent additive correction system that prevents outlet temperature spikes during thermal trajectory deviations, using proven heat curve automation logic (5°C/8°C/12°C per degree) instead of aggressive multiplicative factors
+-   **Overshoot & Undershoot Gates:** Projected-temperature gates that skip corrections when indoor temperature is already moving in the right direction, preventing overcorrection oscillation
 -   **Smart Rounding:** Tests both floor and ceiling temperatures, predicts outcomes, chooses the one that gets closest to target
 -   **Gradual Temperature Control:** Limits maximum temperature change per cycle to protect heat pump from abrupt setpoint jumps
 -   **Differential-Based Effectiveness:** Heat transfer effectiveness scales with outlet-indoor temperature differential for accurate low-differential scenarios
@@ -139,7 +143,7 @@ For advanced users, developers, or non-Home Assistant deployments:
 
 #### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.11 or higher
 - Home Assistant with REST API access
 - InfluxDB with Home Assistant data (for initial calibration)
 - Systemd (for service deployment)
@@ -157,6 +161,9 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Or for development (includes test dependencies)
+pip install -e ".[dev]"
 ```
 
 #### 2. Configure Environment
@@ -300,11 +307,16 @@ The controller uses **ThermalEquilibriumModel** - a physics-based machine learni
 - Thermal time constant: How quickly the house responds to heating changes
 - Heat loss coefficient: Rate of heat loss to outdoor environment
 - Outlet effectiveness: Efficiency of heat transfer from outlet to indoor air
+- Slab time constant: Thermal inertia of the underfloor heating slab
+- Delta-T floor: Minimum temperature difference for effective heat transfer
 
-**External Heat Sources (automatically calibrated):**
-- PV solar warming: Heat gain from solar power generation
-- Fireplace heating rate: Contribution from secondary heat sources
-- TV/electronics heat: Heat from appliances and devices
+**External Heat Sources (automatically calibrated via channel architecture):**
+- PV solar warming: Heat gain from solar power generation (with solar lag and cloud-aware discount)
+- Fireplace heating rate: Contribution with exponential decay after shutdown
+- TV/electronics heat: Additive heat contribution from appliances
+- Each source has its own independent learning channel preventing cross-contamination
+
+> 📖 **For a deep-dive into all thermal parameters**, see [docs/THERMAL_PARAMETER_REFERENCE.md](docs/THERMAL_PARAMETER_REFERENCE.md)
 
 **Enhanced Learning Features:**
 - Adaptive learning: Parameters adjust based on prediction accuracy
@@ -371,6 +383,24 @@ ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID=sensor.ml_vorlauftemperatur
 ```
 
 Switch to active mode when you're confident in ML performance through shadow mode observation.
+
+### Heating & Cooling Modes
+
+The system supports both **heating** and **cooling** operation with fully independent thermal parameters and learning:
+
+**Heating Mode** (default):
+- Optimizes outlet temperature to warm the house
+- Uses heating-specific parameter defaults and bounds
+- State persisted in `unified_thermal_state.json`
+
+**Cooling Mode**:
+- Activated automatically when `HEATING_STATUS_ENTITY_ID` reports "cool"
+- Uses dedicated cooling parameters (faster slab response, narrower outlet range 18–24°C)
+- Independent state file (`unified_thermal_state_cooling.json`) prevents learning cross-contamination
+- External heat sources (solar, fireplace, TV) act as loads *against* cooling
+- Separate calibration tracking and learning confidence
+
+Mode detection is automatic — no manual switching required.
 
 ### Monitoring & Diagnostics
 
@@ -481,36 +511,54 @@ python3 -m src.main
 ```
 ml_heating/
 ├── src/
-│   ├── main.py                     # Main control loop
-│   ├── thermal_equilibrium_model.py # ThermalEquilibriumModel
-│   ├── model_wrapper.py            # Enhanced prediction wrapper
-│   ├── physics_features.py         # Feature engineering
-│   ├── physics_calibration.py      # Historical training
-│   ├── heat_source_channels.py     # Multi-source heat channel learning (PV, fireplace, etc.)
-│   ├── ha_client.py                # Home Assistant integration (manages sensor publishing)
-│   ├── influx_service.py           # InfluxDB queries
-│   ├── state_manager.py            # State persistence
-│   ├── prediction_metrics.py       # Performance tracking
-│   ├── adaptive_learning_metrics_schema.py # Defines the schema for learning metrics
-│   ├── thermal_*.py                # Thermal parameter system
-│   └── config.py                   # Configuration
-├── ml_heating/                     # Stable Home Assistant Add-on
-│   ├── config.yaml                 # Production configuration
-│   └── README.md                   # Add-on documentation
-├── ml_heating_dev/                 # Alpha Home Assistant Add-on
-│   ├── config.yaml                 # Development configuration
-│   └── README.md                   # Development add-on docs
-├── notebooks/                      # Analysis notebooks
-│   ├── development/                # Development notebooks
-│   ├── monitoring/                 # Monitoring notebooks
-│   └── archive/                    # Historical notebooks
-├── tests/                          # Unit tests
-├── docs/                           # Documentation
-├── .env                            # Your configuration (not in git)
-├── .env_sample                     # Configuration template
-├── requirements.txt                # Python dependencies
-├── RELEASE_TODO.md                 # Release preparation checklist
-└── README.md                       # This file
+│   ├── main.py                         # Main control loop
+│   ├── thermal_equilibrium_model.py    # ThermalEquilibriumModel (physics core)
+│   ├── model_wrapper.py                # Enhanced 7-stage prediction pipeline
+│   ├── physics_features.py             # Feature engineering
+│   ├── physics_calibration.py          # Historical training & calibration
+│   ├── heat_source_channels.py         # Multi-source channel architecture (HP, PV, FP, TV)
+│   ├── heating_controller.py           # Control orchestration
+│   ├── temperature_control.py          # Temperature management & PV smoothing
+│   ├── ha_client.py                    # Home Assistant integration (sensor publishing)
+│   ├── ha_history_service.py           # HA history data retrieval
+│   ├── influx_service.py               # InfluxDB queries
+│   ├── state_manager.py                # State persistence
+│   ├── unified_thermal_state.py        # Unified thermal state (heating)
+│   ├── unified_thermal_state_cooling.py# Unified thermal state (cooling)
+│   ├── prediction_metrics.py           # Performance tracking
+│   ├── prediction_context.py           # Unified prediction context
+│   ├── adaptive_fireplace_learning.py  # Adaptive fireplace learning
+│   ├── adaptive_learning_metrics_schema.py # Learning metrics schema
+│   ├── forecast_analytics.py           # Forecast analysis
+│   ├── multi_heat_source_physics.py    # Multi-source physics
+│   ├── sensor_buffer.py                # Sensor data buffering
+│   ├── shadow_mode.py                  # Shadow mode logic
+│   ├── thermal_config.py               # Central parameter configuration
+│   ├── thermal_constants.py            # Physical constants
+│   ├── thermal_parameters.py           # Parameter management
+│   ├── thermal_state_validator.py      # State validation
+│   ├── utils_metrics.py                # Custom MAE/RMSE metrics
+│   └── config.py                       # Environment configuration
+├── ml_heating/                         # Stable Home Assistant Add-on
+│   ├── config.yaml                     # Production configuration
+│   └── README.md                       # Add-on documentation
+├── ml_heating_dev/                     # Alpha Home Assistant Add-on
+│   ├── config.yaml                     # Development configuration
+│   └── README.md                       # Development add-on docs
+├── notebooks/                          # Analysis notebooks
+│   ├── development/                    # Development notebooks
+│   ├── monitoring/                     # Monitoring notebooks
+│   └── archive/                        # Historical notebooks
+├── tests/                              # Test suite (unit/ & integration/)
+├── docs/                               # Documentation
+├── memory-bank/                        # Project context & knowledge base
+├── .env                                # Your configuration (not in git)
+├── .env_sample                         # Configuration template
+├── pyproject.toml                      # Project metadata & dev dependencies
+├── requirements.txt                    # Python dependencies
+├── CHANGELOG.md                        # Version history
+├── RELEASE_TODO.md                     # Release preparation checklist
+└── README.md                           # This file
 ```
 
 ## Troubleshooting
