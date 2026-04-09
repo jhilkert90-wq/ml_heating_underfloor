@@ -8,6 +8,7 @@ for compatibility with the existing ML heating system.
 
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -455,9 +456,9 @@ def convert_addon_to_env(config):
         with open(env_file_path, "w") as fh:
             for key, value in env_vars.items():
                 if value is not None and value != '':
-                    # Shell-escape single quotes in values
-                    escaped = str(value).replace("'", "'\\''")
-                    fh.write(f"export {key}='{escaped}'\n")
+                    fh.write(f"export {key}={shlex.quote(str(value))}\n")
+        # Restrict permissions – the file may contain tokens.
+        os.chmod(env_file_path, 0o600)
         log_info(f"Environment file written to {env_file_path}")
     except Exception as e:
         log_warning(f"Failed to write environment file: {e}")
