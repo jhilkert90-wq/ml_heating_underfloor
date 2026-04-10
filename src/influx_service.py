@@ -63,9 +63,8 @@ class InfluxService:
         write_bucket = self._get_generated_metrics_bucket(bucket)
         write_org = getattr(config, "INFLUX_ORG", None)
         try:
-            # Try writing a test point and immediately deleting it is
-            # not practical.  Instead we do a simple write of a known
-            # measurement that won't pollute real data.
+            # Write a test point to verify permissions.  Uses a dedicated
+            # health-check measurement to avoid polluting real data.
             p = (
                 Point("ml_healthcheck")
                 .tag("source", "startup_check")

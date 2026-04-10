@@ -39,7 +39,8 @@ def _sanitize_for_json(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: _sanitize_for_json(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        return type(obj)(_sanitize_for_json(v) for v in obj)
+        sanitized = [_sanitize_for_json(v) for v in obj]
+        return type(obj)(sanitized) if isinstance(obj, tuple) else sanitized
     if isinstance(obj, np.integer):
         return int(obj)
     if isinstance(obj, np.floating):
