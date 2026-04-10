@@ -106,6 +106,13 @@ def main():
 
     influx_service = create_influx_service()
 
+    # --- InfluxDB Write Permission Check ---
+    # Verify early that the token can write to the features bucket
+    try:
+        influx_service.check_write_permission()
+    except Exception as e:
+        logging.warning("InfluxDB write permission check skipped: %s", e)
+
     # --- Sensor Buffer Initialization ---
     # Initialize the circular buffer for sensor smoothing
     sensor_buffer = SensorBuffer(max_age_minutes=120)
@@ -1468,7 +1475,18 @@ def main():
                     thermodynamic_metrics
                 )
             except Exception as e:
-                logging.warning("Failed to log thermodynamic metrics: %s", e)
+                error_msg = str(e)
+                if "unauthorized" in error_msg.lower() or "401" in error_msg:
+                    logging.error(
+                        "Failed to write thermodynamic metrics: %s. "
+                        "Check that INFLUX_TOKEN has write permission to "
+                        "INFLUX_FEATURES_BUCKET.",
+                        e,
+                    )
+                else:
+                    logging.warning(
+                        "Failed to log thermodynamic metrics: %s", e
+                    )
 
 
             # --- Update ML State sensor ---

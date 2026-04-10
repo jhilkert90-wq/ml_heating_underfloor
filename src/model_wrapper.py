@@ -2143,89 +2143,136 @@ class EnhancedModelWrapper:
 
     def _export_metrics_to_influxdb(self):
         """Export adaptive learning metrics to InfluxDB for monitoring."""
+        export_failures = []
+
         try:
             # Create InfluxDB service
             influx_service = create_influx_service()
+        except Exception as e:
+            logging.warning("Failed to create InfluxDB service: %s", e)
+            return
 
-            # Export prediction metrics
-            prediction_metrics = self.prediction_metrics.get_metrics()
-            if prediction_metrics:
+        # Export prediction metrics
+        prediction_metrics = self.prediction_metrics.get_metrics()
+        if prediction_metrics:
+            try:
                 influx_service.write_prediction_metrics(prediction_metrics)
                 logging.debug("✅ Exported prediction metrics to InfluxDB")
+            except Exception as e:
+                export_failures.append("prediction_metrics")
+                logging.warning(
+                    "⚠️ Failed to export prediction metrics to InfluxDB: %s", e
+                )
 
-            # Export thermal learning metrics
-            if hasattr(self.thermal_model, "get_adaptive_learning_metrics"):
+        # Export thermal learning metrics
+        if hasattr(self.thermal_model, "get_adaptive_learning_metrics"):
+            try:
                 influx_service.write_thermal_learning_metrics(
                     self.thermal_model
                 )
                 logging.debug(
                     "✅ Exported thermal learning metrics to InfluxDB"
                 )
+            except Exception as e:
+                export_failures.append("thermal_learning")
+                logging.warning(
+                    "⚠️ Failed to export thermal learning metrics to "
+                    "InfluxDB: %s", e
+                )
 
-            # Export feature importance
-            if hasattr(self.thermal_model, "get_feature_importance"):
-                importances = self.thermal_model.get_feature_importance()
-                if importances:
+        # Export feature importance
+        if hasattr(self.thermal_model, "get_feature_importance"):
+            importances = self.thermal_model.get_feature_importance()
+            if importances:
+                try:
                     influx_service.write_feature_importances(importances)
-                    logging.debug("✅ Exported feature importance to InfluxDB")
+                    logging.debug(
+                        "✅ Exported feature importance to InfluxDB"
+                    )
+                except Exception as e:
+                    export_failures.append("feature_importances")
+                    logging.warning(
+                        "⚠️ Failed to export feature importances to "
+                        "InfluxDB: %s", e
+                    )
 
-            # Export learning phase metrics (if available)
-            learning_phase_data = {
-                "current_learning_phase": "high_confidence",  # Simplified
-                "stability_score": min(
-                    1.0, self.thermal_model.learning_confidence / 5.0
-                ),
-                "learning_weight_applied": 1.0,
-                "stable_period_duration_min": 30,
-                "learning_updates_24h": {
-                    "high_confidence": min(288, self.cycle_count),
-                    "low_confidence": 0,
-                    "skipped": 0,
-                },
-                "learning_efficiency_pct": 85.0,
-                "correction_stability": 0.9,
-                "false_learning_prevention_pct": 95.0,
-            }
+        # Export learning phase metrics (if available)
+        learning_phase_data = {
+            "current_learning_phase": "high_confidence",  # Simplified
+            "stability_score": min(
+                1.0, self.thermal_model.learning_confidence / 5.0
+            ),
+            "learning_weight_applied": 1.0,
+            "stable_period_duration_min": 30,
+            "learning_updates_24h": {
+                "high_confidence": min(288, self.cycle_count),
+                "low_confidence": 0,
+                "skipped": 0,
+            },
+            "learning_efficiency_pct": 85.0,
+            "correction_stability": 0.9,
+            "false_learning_prevention_pct": 95.0,
+        }
+        try:
             influx_service.write_learning_phase_metrics(learning_phase_data)
             logging.debug("✅ Exported learning phase metrics to InfluxDB")
+        except Exception as e:
+            export_failures.append("learning_phase")
+            logging.warning(
+                "⚠️ Failed to export learning phase metrics to InfluxDB: %s",
+                e,
+            )
 
-            # Export basic trajectory metrics (simplified)
-            trajectory_data = {
-                "prediction_horizon": "4h",
-                "trajectory_accuracy": {
-                    "mae_1h": prediction_metrics.get("1h", {}).get("mae", 0.0),
-                    "mae_2h": prediction_metrics.get("6h", {}).get("mae", 0.0)
-                    * 1.2,
-                    "mae_4h": prediction_metrics.get("24h", {}).get("mae", 0.0)
-                    * 1.5,
-                },
-                "overshoot_prevention": {
-                    "overshoot_predicted": False,
-                    "prevented_24h": 0,
-                    "undershoot_prevented_24h": 0,
-                },
-                "convergence": {
-                    "avg_time_minutes": 45.0,
-                    "accuracy_percentage": 87.5,
-                },
-                "forecast_integration": {
-                    "weather_available": False,
-                    "pv_available": True,
-                    "quality_score": 0.8,
-                },
-            }
+        # Export basic trajectory metrics (simplified)
+        trajectory_data = {
+            "prediction_horizon": "4h",
+            "trajectory_accuracy": {
+                "mae_1h": prediction_metrics.get("1h", {}).get("mae", 0.0),
+                "mae_2h": prediction_metrics.get("6h", {}).get("mae", 0.0)
+                * 1.2,
+                "mae_4h": prediction_metrics.get("24h", {}).get("mae", 0.0)
+                * 1.5,
+            },
+            "overshoot_prevention": {
+                "overshoot_predicted": False,
+                "prevented_24h": 0,
+                "undershoot_prevented_24h": 0,
+            },
+            "convergence": {
+                "avg_time_minutes": 45.0,
+                "accuracy_percentage": 87.5,
+            },
+            "forecast_integration": {
+                "weather_available": False,
+                "pv_available": True,
+                "quality_score": 0.8,
+            },
+        }
+        try:
             influx_service.write_trajectory_prediction_metrics(trajectory_data)
             logging.debug(
                 "✅ Exported trajectory prediction metrics to InfluxDB"
             )
-
-            logging.info(
-                f"📊 Exported all adaptive learning metrics to InfluxDB "
-                f"(cycle {self.cycle_count})"
+        except Exception as e:
+            export_failures.append("trajectory")
+            logging.warning(
+                "⚠️ Failed to export trajectory metrics to InfluxDB: %s", e
             )
 
-        except Exception as e:
-            logging.warning(f"Failed to export metrics to InfluxDB: {e}")
+        if export_failures:
+            logging.warning(
+                "⚠️ InfluxDB export partially failed (cycle %d): %s. "
+                "Check INFLUX_TOKEN has write permission to "
+                "INFLUX_FEATURES_BUCKET.",
+                self.cycle_count,
+                ", ".join(export_failures),
+            )
+        else:
+            logging.info(
+                "📊 Exported all adaptive learning metrics to InfluxDB "
+                "(cycle %d)",
+                self.cycle_count,
+            )
 
     def _save_learning_state(self):
         """Save current thermal learning state to persistent storage."""

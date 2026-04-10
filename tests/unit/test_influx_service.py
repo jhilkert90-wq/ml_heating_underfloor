@@ -197,3 +197,53 @@ def test_explicit_generated_metrics_bucket_is_shadow_suffixed(
     assert influx_service.write_api.write.call_args.kwargs["bucket"] == (
         "manual_features_shadow"
     )
+
+
+def test_write_methods_re_raise_on_failure(influx_service):
+    """Write methods must re-raise exceptions so callers can detect failures."""
+    influx_service.write_api.write = MagicMock(
+        side_effect=Exception("401 Unauthorized")
+    )
+
+    with pytest.raises(Exception, match="401 Unauthorized"):
+        influx_service.write_feature_importances({"feat1": 0.5})
+
+    with pytest.raises(Exception, match="401 Unauthorized"):
+        influx_service.write_prediction_metrics({"1h": {"mae": 0.1}})
+
+    mock_model = MagicMock()
+    mock_model.get_adaptive_learning_metrics.return_value = {
+        "current_parameters": {}
+    }
+    with pytest.raises(Exception, match="401 Unauthorized"):
+        influx_service.write_thermal_learning_metrics(mock_model)
+
+    with pytest.raises(Exception, match="401 Unauthorized"):
+        influx_service.write_thermodynamic_metrics(
+            {"cop_realtime": 3.5, "thermal_power_kw": 5.0}
+        )
+
+    with pytest.raises(Exception, match="401 Unauthorized"):
+        influx_service.write_learning_phase_metrics({
+            "current_learning_phase": "test",
+        })
+
+    with pytest.raises(Exception, match="401 Unauthorized"):
+        influx_service.write_trajectory_prediction_metrics({
+            "prediction_horizon": "4h",
+            "trajectory_accuracy": {"mae_1h": 0.1},
+        })
+
+
+def test_check_write_permission_success(influx_service):
+    """Write permission check should return True when write succeeds."""
+    influx_service.write_api.write = MagicMock()
+    assert influx_service.check_write_permission() is True
+
+
+def test_check_write_permission_unauthorized(influx_service):
+    """Write permission check should return False on 401 and log a warning."""
+    influx_service.write_api.write = MagicMock(
+        side_effect=Exception("(401) unauthorized")
+    )
+    assert influx_service.check_write_permission() is False

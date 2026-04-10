@@ -188,3 +188,34 @@ def test_log_feature_importance_uses_shadow_entity_in_shadow_deployment(
     ha_client.log_feature_importance({"feat1": 0.8, "feat2": 0.2})
 
     assert mock_set_state.call_args.args[0] == "sensor.ml_feature_importance_shadow"
+
+
+@patch('src.ha_client.requests')
+def test_set_state_sanitizes_numpy_types(mock_requests, ha_client):
+    """Numpy types in attributes must be converted to native Python types."""
+    import numpy as np
+
+    attributes = {
+        "final_temp": np.float64(21.0),
+        "confidence": np.float64(5.0),
+        "count": np.int64(42),
+        "is_active": np.bool_(True),
+        "nested": {"value": np.float64(3.14)},
+        "list_vals": [np.float64(1.0), np.float64(2.0)],
+        "plain_string": "hello",
+    }
+
+    ha_client.set_state("sensor.test", np.float64(22.5), attributes)
+
+    call_kwargs = mock_requests.post.call_args
+    payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+
+    # All numpy types should be converted to plain Python
+    attrs = payload["attributes"]
+    assert type(attrs["final_temp"]) is float
+    assert type(attrs["confidence"]) is float
+    assert type(attrs["count"]) is int
+    assert type(attrs["is_active"]) is bool
+    assert type(attrs["nested"]["value"]) is float
+    assert all(type(v) is float for v in attrs["list_vals"])
+    assert attrs["plain_string"] == "hello"

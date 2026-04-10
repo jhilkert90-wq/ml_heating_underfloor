@@ -151,7 +151,7 @@ This section details all available configuration parameters for the ML Heating C
 #### InfluxDB Connection
 
 *   **INFLUX_URL**: URL of your InfluxDB instance, including the protocol and port (e.g., `https://influxdb.example.com:8086`).
-*   **INFLUX_TOKEN**: An InfluxDB API token with read access to the specified bucket where your Home Assistant data is stored.
+*   **INFLUX_TOKEN**: An InfluxDB API token with **read and write** access. Read access is needed for the historical data bucket (`INFLUX_BUCKET`), and write access is needed for the generated metrics bucket (`INFLUX_FEATURES_BUCKET`). If the token only has read access, InfluxDB metric exports will fail with a 401 Unauthorized error.
 *   **INFLUX_ORG**: The InfluxDB organization your Home Assistant data belongs to.
 *   **INFLUX_BUCKET**: The InfluxDB bucket where your Home Assistant data is stored (e.g., `home_assistant/autogen`).
 
