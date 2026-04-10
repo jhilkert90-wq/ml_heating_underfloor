@@ -255,12 +255,25 @@ INFLUX_METRICS_EXPORT_INTERVAL_CYCLES = 5
    - Verify InfluxDB service is running
    - Check network connectivity
 
-2. **Schema Validation Errors**
+2. **401 Unauthorized / Write Permission Denied**
+   - The `INFLUX_TOKEN` must have **both read and write** access
+   - Read access is needed for `INFLUX_BUCKET` (historical sensor data)
+   - Write access is needed for `INFLUX_FEATURES_BUCKET` (ML metrics export)
+   - In InfluxDB, create a token with read+write permissions for both buckets
+   - The add-on checks write permissions on startup and logs a warning if denied
+
+3. **Bucket Not Found (404)**
+   - Ensure the `INFLUX_FEATURES_BUCKET` bucket exists in InfluxDB
+   - Default bucket name is `ml_heating_features`
+   - In shadow mode, the bucket name gets `_shadow` appended automatically
+   - Create the bucket manually in InfluxDB if it doesn't exist
+
+4. **Schema Validation Errors**
    - Review data types in metrics (float vs int vs bool)
    - Check for required fields in measurement data
    - Validate timestamp format
 
-3. **Export Frequency**
+5. **Export Frequency**
    - Adjust `EXPORT_FREQUENCY` in model_wrapper.py
    - Monitor CPU/network impact of frequent exports
    - Consider InfluxDB retention policies

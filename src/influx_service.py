@@ -53,6 +53,56 @@ class InfluxService:
                 pass
             self.client = None
 
+    def check_write_permission(self, bucket: Optional[str] = None) -> bool:
+        """Check if we can write to the features bucket.
+
+        Attempts a harmless health-check and a dry-run write to detect
+        authentication or missing-bucket errors early.  Returns True when
+        the write succeeds, False otherwise (errors are logged as warnings).
+        """
+        write_bucket = self._get_generated_metrics_bucket(bucket)
+        write_org = getattr(config, "INFLUX_ORG", None)
+        try:
+            # Write a test point to verify permissions.  Uses a dedicated
+            # health-check measurement to avoid polluting real data.
+            p = (
+                Point("ml_healthcheck")
+                .tag("source", "startup_check")
+                .field("ok", True)
+            )
+            self.write_api.write(
+                bucket=write_bucket, org=write_org, record=p
+            )
+            logging.info(
+                "✅ InfluxDB write permission verified for bucket '%s'",
+                write_bucket,
+            )
+            return True
+        except Exception as e:
+            error_msg = str(e)
+            if "unauthorized" in error_msg.lower() or "401" in error_msg:
+                logging.warning(
+                    "⚠️ InfluxDB WRITE PERMISSION DENIED for bucket '%s'. "
+                    "The INFLUX_TOKEN does not have write access. "
+                    "Metrics export to InfluxDB will fail. "
+                    "Please update the token with read+write permissions.",
+                    write_bucket,
+                )
+            elif "not found" in error_msg.lower() or "404" in error_msg:
+                logging.warning(
+                    "⚠️ InfluxDB bucket '%s' NOT FOUND. "
+                    "Please create the bucket in InfluxDB or update "
+                    "INFLUX_FEATURES_BUCKET in your configuration.",
+                    write_bucket,
+                )
+            else:
+                logging.warning(
+                    "⚠️ InfluxDB write check failed for bucket '%s': %s",
+                    write_bucket,
+                    e,
+                )
+            return False
+
     def get_pv_forecast(self) -> list[float]:
         """
         Retrieves the PV (photovoltaic) power forecast for the next 4 hours.
@@ -618,6 +668,7 @@ class InfluxService:
             logging.exception(
                 "Failed to write feature importances to InfluxDB: %s", e
             )
+            raise
 
     def write_prediction_metrics(
         self,
@@ -746,6 +797,7 @@ class InfluxService:
             logging.exception(
                 "Failed to write prediction metrics to InfluxDB: %s", e
             )
+            raise
 
     def write_thermal_learning_metrics(
         self,
@@ -950,6 +1002,7 @@ class InfluxService:
             logging.exception(
                 "Failed to write thermal learning metrics to InfluxDB: %s", e
             )
+            raise
 
     def write_learning_phase_metrics(
         self,
@@ -1053,6 +1106,7 @@ class InfluxService:
             logging.exception(
                 "Failed to write learning phase metrics to InfluxDB: %s", e
             )
+            raise
 
     def write_trajectory_prediction_metrics(
         self,
@@ -1170,6 +1224,7 @@ class InfluxService:
                 "InfluxDB: %s",
                 e
             )
+            raise
 
     def write_shadow_mode_benchmarks(
         self,
@@ -1274,6 +1329,7 @@ class InfluxService:
             logging.exception(
                 "Failed to write shadow mode benchmark data to InfluxDB: %s", e
             )
+            raise
 
     def write_thermodynamic_metrics(
         self,
@@ -1323,6 +1379,7 @@ class InfluxService:
             logging.debug("Wrote thermodynamic metrics to InfluxDB")
         except Exception as e:
             logging.error("Failed to write thermodynamic metrics: %s", e)
+            raise
 
 
 def create_influx_service():

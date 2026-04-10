@@ -11,6 +11,7 @@ import warnings
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import requests
 
 # Support both package-relative and direct import for notebooks
@@ -26,6 +27,29 @@ except ImportError:
         get_base_output_entity_id,
         get_shadow_output_entity_id,
     )
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    """Convert numpy types to native Python types for JSON serialization.
+
+    Recursively walks dicts/lists and converts numpy scalars (float64,
+    int64, bool_, etc.) to their plain-Python equivalents so that
+    ``json.dumps`` and Home Assistant can handle them without surprises.
+    """
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        sanitized = [_sanitize_for_json(v) for v in obj]
+        return type(obj)(sanitized) if isinstance(obj, tuple) else sanitized
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 
 class HAClient:
@@ -156,6 +180,10 @@ class HAClient:
         else:
             state_value = value
 
+        # Convert numpy types to native Python for JSON serialization
+        state_value = _sanitize_for_json(state_value)
+        clean_attributes = _sanitize_for_json(attributes or {})
+
         # The state must be sent as a string.
         payload = {
             "state": (
@@ -163,7 +191,7 @@ class HAClient:
                 if isinstance(state_value, float) and round_digits is not None
                 else str(state_value)
             ),
-            "attributes": attributes or {},
+            "attributes": clean_attributes,
         }
         try:
             logging.debug(
