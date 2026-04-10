@@ -55,8 +55,35 @@ touch /data/logs/ml_heating.log
 # Start the ML heating system
 echo "[INFO] Starting ML heating system..."
 
-# Change to app directory and start the main application
+# Change to app directory
 cd /app
 
-# Execute the main application directly
-exec python3 -m src.main
+# Start the health check server in the background (port 3002)
+echo "[INFO] Starting health check server on port 3002..."
+python3 /app/dashboard/health.py &
+HEALTH_PID=$!
+
+# Start the Streamlit dashboard in the background (port 3001 = ingress_port)
+echo "[INFO] Starting Streamlit dashboard on port 3001 (ingress)..."
+streamlit run /app/dashboard/app.py \
+    --server.port=3001 \
+    --server.address=0.0.0.0 \
+    --server.headless=true \
+    --server.enableCORS=false \
+    --server.enableXsrfProtection=false \
+    --browser.gatherUsageStats=false &
+DASHBOARD_PID=$!
+
+# Execute the main ML application in the foreground
+echo "[INFO] Starting ML backend..."
+python3 -m src.main &
+ML_PID=$!
+
+# Wait for any process to exit and propagate the signal
+wait -n $HEALTH_PID $DASHBOARD_PID $ML_PID
+EXIT_CODE=$?
+echo "[ERROR] A process exited unexpectedly with code $EXIT_CODE"
+
+# Clean up remaining processes
+kill $HEALTH_PID $DASHBOARD_PID $ML_PID 2>/dev/null
+exit $EXIT_CODE

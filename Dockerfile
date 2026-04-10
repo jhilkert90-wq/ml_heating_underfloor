@@ -89,8 +89,8 @@ RUN mkdir -p /data/models \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3002/health || exit 1
 
-# Expose ports (health check and optional dev API)
-EXPOSE 3002 3003
+# Expose ports (ingress/dashboard, health check, and optional dev API)
+EXPOSE 3001 3002 3003
 
 # Use simple entrypoint
 CMD ["/app/run.sh"]
