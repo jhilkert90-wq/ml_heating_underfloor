@@ -6,7 +6,8 @@ from src.heat_source_channels import HeatSourceChannelOrchestrator
 
 
 def _context(fireplace_on=0, pv_power=0, tv_on=0,
-             thermal_power=2.0, delta_t=3.0):
+             thermal_power=2.0, delta_t=3.0, current_indoor=23.0,
+             target_temp=22.0):
     return {
         "fireplace_on": fireplace_on,
         "pv_power": pv_power,
@@ -14,7 +15,8 @@ def _context(fireplace_on=0, pv_power=0, tv_on=0,
         "tv_on": tv_on,
         "thermal_power": thermal_power,
         "delta_t": delta_t,
-        "current_indoor": 20.0,
+        "current_indoor": current_indoor,
+        "target_temp": target_temp,
         "outdoor_temp": 5.0,
         "outlet_temp": 30.0,
     }

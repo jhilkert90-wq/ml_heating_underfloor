@@ -464,6 +464,19 @@ ENABLE_MIXED_SOURCE_ATTRIBUTION: bool = (
     == "true"
 )
 
+# --- Decay Window & Safety Thresholds ---
+# Multiplier applied to thermal_time_constant for PV room-heat decay window.
+# After PV drops below threshold, HP learning is frozen for
+# thermal_time_constant × PV_ROOM_DECAY_MULTIPLIER hours (~8.7h at τ=4.37h).
+PV_ROOM_DECAY_MULTIPLIER: float = float(
+    os.getenv("PV_ROOM_DECAY_MULTIPLIER", "2.0")
+)
+# Indoor temp margin above target_temp at which PV/FP decay is cancelled
+# early — residual heat from the external source has dissipated.
+DECAY_CANCEL_MARGIN: float = float(
+    os.getenv("DECAY_CANCEL_MARGIN", "0.1")
+)
+
 
 # --- Climate Mode Helpers ---
 def get_climate_mode(heating_state: str | None) -> str:

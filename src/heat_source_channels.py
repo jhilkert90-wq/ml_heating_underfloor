@@ -823,6 +823,12 @@ class HeatSourceChannelOrchestrator:
         # misattributed to the HP channel.
         self._fireplace_off_cycle_count: int = 0
         self._fireplace_was_on: bool = False
+        # Track PV state transitions for post-off decay routing.
+        # When PV drops below threshold, we keep routing learning to the
+        # PV channel for a decay window (thermal_time_constant × multiplier)
+        # to prevent residual room heat from PV being misattributed to HP.
+        self._pv_off_cycle_count: int = 0
+        self._pv_was_active: bool = False
 
     def sync_from_model_parameters(self, parameters: Dict[str, float]) -> None:
         """Seed channel parameters from the current thermal-model state."""
@@ -927,7 +933,16 @@ class HeatSourceChannelOrchestrator:
         active_contributions: Dict[str, float],
         attribution_applied: bool,
         heat_pump_frozen_by_fireplace: bool,
+        heat_pump_frozen_by_pv_decay: bool = False,
     ) -> Dict:
+        """Build the context used by per-channel learning updates.
+
+        `heat_pump_frozen_by_pv_decay` is intentionally optional so existing
+        callers that do not compute or track PV-decay freeze state continue to
+        behave as before. In those paths, omitting the argument means "no
+        heat-pump freeze due to PV decay" and the stored learning-context flag
+        defaults to ``False``.
+        """
         learning_context = context.copy()
         learning_context["raw_prediction_error"] = context.get(
             "raw_prediction_error", attributed_error
@@ -938,6 +953,9 @@ class HeatSourceChannelOrchestrator:
         learning_context[
             "heat_pump_frozen_by_fireplace"
         ] = heat_pump_frozen_by_fireplace
+        learning_context[
+            "heat_pump_frozen_by_pv_decay"
+        ] = heat_pump_frozen_by_pv_decay
         return learning_context
 
     def _record_channel_learning(
@@ -1030,24 +1048,75 @@ class HeatSourceChannelOrchestrator:
         fp_channel = self.channels.get("fireplace")
         cycle_min = getattr(config, "CYCLE_INTERVAL_MINUTES", 10)
         fp_tau_h = getattr(fp_channel, "fp_decay_time_constant", 0.75) if fp_channel else 0.75
-        decay_window_cycles = max(1, int((fp_tau_h * 3 * 60) / cycle_min))
+        fp_decay_window_cycles = max(1, int((fp_tau_h * 3 * 60) / cycle_min))
 
         if fireplace_on:
             self._fireplace_was_on = True
             self._fireplace_off_cycle_count = 0
         elif self._fireplace_was_on:
             self._fireplace_off_cycle_count += 1
-            if self._fireplace_off_cycle_count > decay_window_cycles:
+            if self._fireplace_off_cycle_count > fp_decay_window_cycles:
                 self._fireplace_was_on = False
                 self._fireplace_off_cycle_count = 0
 
         fp_in_decay = (
             not fireplace_on
             and self._fireplace_was_on
-            and self._fireplace_off_cycle_count <= decay_window_cycles
+            and self._fireplace_off_cycle_count <= fp_decay_window_cycles
         )
-        # When FP is in decay window, treat it as active for routing
-        any_external_active = fireplace_on or fp_in_decay or pv_active or tv_on
+
+        # --- PV post-off decay window ---
+        # When PV drops below threshold, continue routing learning to the
+        # PV channel for a decay window of thermal_time_constant × multiplier
+        # so that residual room heat from PV is not misattributed to HP.
+        hp_channel = self.channels.get("heat_pump")
+        ttc = getattr(hp_channel, "thermal_time_constant", 4.0) if hp_channel else 4.0
+        pv_decay_multiplier = getattr(config, "PV_ROOM_DECAY_MULTIPLIER", 2.0)
+        pv_decay_window_cycles = max(1, int((ttc * pv_decay_multiplier * 60) / cycle_min))
+
+        if pv_active:
+            self._pv_was_active = True
+            self._pv_off_cycle_count = 0
+        elif self._pv_was_active:
+            self._pv_off_cycle_count += 1
+            if self._pv_off_cycle_count > pv_decay_window_cycles:
+                self._pv_was_active = False
+                self._pv_off_cycle_count = 0
+
+        pv_in_decay = (
+            not pv_active
+            and self._pv_was_active
+            and self._pv_off_cycle_count <= pv_decay_window_cycles
+        )
+
+        # --- Early decay cancellation ---
+        # If indoor temp has returned to near target, residual heat from
+        # the external source has dissipated — cancel decay early so HP
+        # can resume learning safely.
+        current_indoor = _to_float(context.get("current_indoor", 0.0))
+        target_temp = _to_float(context.get("target_temp", 22.0))
+        decay_cancel_margin = getattr(config, "DECAY_CANCEL_MARGIN", 0.1)
+
+        if fp_in_decay and current_indoor <= target_temp + decay_cancel_margin:
+            logger.debug(
+                "FP decay cancelled early: indoor %.2f <= target %.2f + %.1f",
+                current_indoor, target_temp, decay_cancel_margin,
+            )
+            fp_in_decay = False
+            self._fireplace_was_on = False
+            self._fireplace_off_cycle_count = 0
+
+        if pv_in_decay and current_indoor <= target_temp + decay_cancel_margin:
+            logger.debug(
+                "PV decay cancelled early: indoor %.2f <= target %.2f + %.1f",
+                current_indoor, target_temp, decay_cancel_margin,
+            )
+            pv_in_decay = False
+            self._pv_was_active = False
+            self._pv_off_cycle_count = 0
+
+        # When FP or PV is in decay window, treat it as active for routing
+        any_external_active = fireplace_on or fp_in_decay or pv_active or pv_in_decay or tv_on
 
         raw_context = context.copy()
         raw_context["raw_prediction_error"] = error
@@ -1098,7 +1167,7 @@ class HeatSourceChannelOrchestrator:
                     False,
                     update_events,
                 )
-            if pv_active:
+            if pv_active or pv_in_decay:
                 self._record_channel_learning(
                     "pv",
                     error,
@@ -1120,7 +1189,7 @@ class HeatSourceChannelOrchestrator:
                 )
             routed = (
                 (["fireplace"] if (fireplace_on or fp_in_decay) else [])
-                + (["pv"] if pv_active else [])
+                + (["pv"] if (pv_active or pv_in_decay) else [])
                 + (["tv"] if tv_on else [])
             )
             self._log_channel_parameter_updates(update_events)
@@ -1131,15 +1200,31 @@ class HeatSourceChannelOrchestrator:
 
         active_contributions = self._get_active_contributions(raw_context)
         heat_pump_frozen_by_fireplace = False
+        heat_pump_frozen_by_pv_decay = False
         if (fireplace_on or fp_in_decay) and "heat_pump" in active_contributions:
             heat_pump_frozen_by_fireplace = True
             active_contributions.pop("heat_pump", None)
+            logger.debug(
+                "HP frozen during FP/FP-decay (indoor=%.2f, target=%.2f)",
+                current_indoor, target_temp,
+            )
+        if pv_in_decay and "heat_pump" in active_contributions:
+            heat_pump_frozen_by_pv_decay = True
+            active_contributions.pop("heat_pump", None)
+            logger.debug(
+                "HP frozen during PV decay cycle %d/%d (indoor=%.2f, target=%.2f)",
+                self._pv_off_cycle_count, pv_decay_window_cycles,
+                current_indoor, target_temp,
+            )
         # If FP is in post-off decay, ensure it appears in active_contributions
         if fp_in_decay and "fireplace" not in active_contributions:
             active_contributions["fireplace"] = 0.5  # partial weight during decay
+        # If PV is in post-off decay, ensure it appears in active_contributions
+        if pv_in_decay and "pv" not in active_contributions:
+            active_contributions["pv"] = 0.5  # partial weight during decay
 
         if not active_contributions:
-            if heat_pump_active and not fireplace_on and not fp_in_decay:
+            if heat_pump_active and not fireplace_on and not fp_in_decay and not pv_in_decay:
                 fallback_contributions = {"heat_pump": 1.0}
                 learning_context = self._build_learning_context(
                     raw_context,
@@ -1189,6 +1274,7 @@ class HeatSourceChannelOrchestrator:
                 active_contributions=active_contributions,
                 attribution_applied=attribution_applied,
                 heat_pump_frozen_by_fireplace=heat_pump_frozen_by_fireplace,
+                heat_pump_frozen_by_pv_decay=heat_pump_frozen_by_pv_decay,
             )
             self._record_channel_learning(
                 channel_name,
@@ -1262,7 +1348,7 @@ class HeatSourceChannelOrchestrator:
         from datetime import datetime
 
         now_iso = datetime.now().isoformat()
-        return {
+        result = {
             name: {
                 "parameters": ch.get_state_parameters(),
                 "history_count": len(ch.history),
@@ -1271,6 +1357,14 @@ class HeatSourceChannelOrchestrator:
             }
             for name, ch in self.channels.items()
         }
+        # Persist orchestrator-level decay tracking so it survives restarts
+        result["_orchestrator"] = {
+            "fireplace_was_on": self._fireplace_was_on,
+            "fireplace_off_cycle_count": self._fireplace_off_cycle_count,
+            "pv_was_active": self._pv_was_active,
+            "pv_off_cycle_count": self._pv_off_cycle_count,
+        }
+        return result
 
     # Parameters whose authority is baseline + delta in unified_thermal_state.
     # load_channel_state must NOT overwrite these from channel snapshots.
@@ -1296,6 +1390,8 @@ class HeatSourceChannelOrchestrator:
         take precedence.
         """
         for name, ch_state in state.items():
+            if name == "_orchestrator":
+                continue
             if name not in self.channels:
                 continue
 
@@ -1325,6 +1421,13 @@ class HeatSourceChannelOrchestrator:
                 ch.history = [
                     record for record in restored_history if isinstance(record, dict)
                 ][-ch._max_history:]
+
+        # Restore orchestrator-level decay tracking
+        orch_state = state.get("_orchestrator", {})
+        self._fireplace_was_on = orch_state.get("fireplace_was_on", False)
+        self._fireplace_off_cycle_count = orch_state.get("fireplace_off_cycle_count", 0)
+        self._pv_was_active = orch_state.get("pv_was_active", False)
+        self._pv_off_cycle_count = orch_state.get("pv_off_cycle_count", 0)
 
     def attribute_error(
         self, error: float, context: Dict
