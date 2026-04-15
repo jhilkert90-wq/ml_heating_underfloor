@@ -91,6 +91,51 @@ class GradualTemperatureControl:
         return final_temp
 
 
+def apply_ema_smoothing(
+    new_temp: float,
+    last_final_temp: Optional[float],
+) -> float:
+    """Apply exponential moving average smoothing to the outlet temperature.
+
+    Reduces cycle-to-cycle oscillation caused by fluctuating inputs (e.g. PV)
+    while still tracking the trend.  For large deltas (recovery / ramp-up)
+    the EMA is bypassed so the system can react quickly.
+
+    Args:
+        new_temp: The outlet temperature after gradual control.
+        last_final_temp: The previous cycle's final outlet temperature
+            (persisted in state).  ``None`` on first cycle.
+
+    Returns:
+        Smoothed outlet temperature, rounded to 0.1 °C.
+    """
+    alpha = config.OUTLET_SMOOTHING_ALPHA
+    bypass = config.OUTLET_SMOOTHING_BYPASS
+
+    if last_final_temp is None or alpha >= 1.0:
+        return new_temp
+
+    delta = abs(new_temp - last_final_temp)
+    if delta > bypass:
+        logging.debug(
+            "EMA smoothing bypassed: delta %.2f°C > bypass %.1f°C",
+            delta,
+            bypass,
+        )
+        return new_temp
+
+    smoothed = alpha * new_temp + (1.0 - alpha) * last_final_temp
+    smoothed = round(smoothed, 1)
+    logging.debug(
+        "EMA smoothing: %.2f°C → %.1f°C (last=%.1f, α=%.2f)",
+        new_temp,
+        smoothed,
+        last_final_temp,
+        alpha,
+    )
+    return smoothed
+
+
 class SmartRounding:
     """Handles smart temperature rounding using thermal model predictions"""
     

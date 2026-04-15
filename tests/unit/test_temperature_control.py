@@ -1,7 +1,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from src.temperature_control import (OnlineLearning, TemperatureControlManager, GradualTemperatureControl, SmartRounding, TemperaturePredictor)
+from src.temperature_control import (OnlineLearning, TemperatureControlManager, GradualTemperatureControl, SmartRounding, TemperaturePredictor, apply_ema_smoothing)
 
 
 @pytest.fixture
@@ -255,4 +255,55 @@ def test_smart_rounding_none_prediction(mock_get_wrapper, smart_rounding):
 
     rounded_temp = smart_rounding.apply_smart_rounding(42.4, 21.0)
     assert rounded_temp == round(42.4)  # Should use standard rounding
+
+
+# --- EMA Outlet Smoothing Tests ---
+
+
+@patch('src.temperature_control.config')
+def test_ema_smoothing_basic(mock_config):
+    """EMA blends new value with last value using alpha."""
+    mock_config.OUTLET_SMOOTHING_ALPHA = 0.3
+    mock_config.OUTLET_SMOOTHING_BYPASS = 2.0
+    # 0.3 * 25.0 + 0.7 * 24.0 = 7.5 + 16.8 = 24.3
+    result = apply_ema_smoothing(25.0, 24.0)
+    assert result == 24.3
+
+
+@patch('src.temperature_control.config')
+def test_ema_smoothing_bypass_large_delta(mock_config):
+    """EMA is bypassed when delta exceeds the bypass threshold."""
+    mock_config.OUTLET_SMOOTHING_ALPHA = 0.3
+    mock_config.OUTLET_SMOOTHING_BYPASS = 2.0
+    # delta = 3.0 > 2.0 → bypass
+    result = apply_ema_smoothing(27.0, 24.0)
+    assert result == 27.0
+
+
+@patch('src.temperature_control.config')
+def test_ema_smoothing_no_history(mock_config):
+    """First cycle (no last_final_temp) passes through unchanged."""
+    mock_config.OUTLET_SMOOTHING_ALPHA = 0.3
+    mock_config.OUTLET_SMOOTHING_BYPASS = 2.0
+    result = apply_ema_smoothing(24.5, None)
+    assert result == 24.5
+
+
+@patch('src.temperature_control.config')
+def test_ema_smoothing_alpha_one_disables(mock_config):
+    """Alpha=1.0 means no smoothing (pass-through)."""
+    mock_config.OUTLET_SMOOTHING_ALPHA = 1.0
+    mock_config.OUTLET_SMOOTHING_BYPASS = 2.0
+    result = apply_ema_smoothing(25.0, 24.0)
+    assert result == 25.0
+
+
+@patch('src.temperature_control.config')
+def test_ema_smoothing_rounds_to_0_1(mock_config):
+    """Result is rounded to 0.1°C."""
+    mock_config.OUTLET_SMOOTHING_ALPHA = 0.3
+    mock_config.OUTLET_SMOOTHING_BYPASS = 2.0
+    # 0.3 * 24.17 + 0.7 * 24.0 = 7.251 + 16.8 = 24.051 → 24.1
+    result = apply_ema_smoothing(24.17, 24.0)
+    assert result == 24.1
 

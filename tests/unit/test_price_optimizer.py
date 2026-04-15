@@ -503,6 +503,51 @@ class TestParsePriceEntries:
         optimizer._parse_price_entries(raw, now_local)
         assert len(optimizer._price_entries) == 24  # only valid ones
 
+    def test_parse_sets_price_tz_from_entries(self, optimizer):
+        """_price_tz is extracted from the first Tibber entry's tzinfo."""
+        mesz = timezone(timedelta(hours=2))
+        today = date(2026, 4, 14)
+        raw = _make_hourly_entries(today, tz=mesz)
+        now_local = datetime(2026, 4, 14, 10, 0, tzinfo=mesz)
+        optimizer._parse_price_entries(raw, now_local)
+        assert optimizer._price_tz == mesz
+
+    def test_to_local_uses_price_tz(self, optimizer):
+        """_to_local converts to the Tibber timezone, not system TZ."""
+        mesz = timezone(timedelta(hours=2))
+        today = date(2026, 4, 14)
+        raw = _make_hourly_entries(today, tz=mesz)
+        now_local = datetime(2026, 4, 14, 10, 0, tzinfo=mesz)
+        optimizer._parse_price_entries(raw, now_local)
+
+        # A UTC midnight should become 02:00 MESZ
+        utc_midnight = datetime(2026, 4, 14, 0, 0, tzinfo=timezone.utc)
+        local = optimizer._to_local(utc_midnight)
+        assert local.utcoffset() == timedelta(hours=2)
+        assert local.hour == 2
+
+    def test_to_local_fallback_when_no_entries(self, optimizer):
+        """_to_local falls back to system TZ before any entries are parsed."""
+        utc_time = datetime(2026, 4, 14, 10, 0, tzinfo=timezone.utc)
+        local = optimizer._to_local(utc_time)
+        # Should not crash, returns some timezone-aware datetime
+        assert local.tzinfo is not None
+
+    def test_day_boundary_with_mesz(self, optimizer):
+        """Day filtering uses Tibber's TZ, not UTC — key bug-fix test."""
+        mesz = timezone(timedelta(hours=2))
+        today = date(2026, 4, 14)
+        tomorrow = date(2026, 4, 15)
+        raw = _make_hourly_entries(today, tz=mesz) + _make_hourly_entries(
+            tomorrow, tz=mesz
+        )
+        now_local = datetime(2026, 4, 14, 23, 30, tzinfo=mesz)
+        optimizer._parse_price_entries(raw, now_local)
+
+        # At 23:30 MESZ (21:30 UTC), today's prices should be April 14
+        prices = optimizer.get_today_prices(now_local)
+        assert len(prices) == 24
+
 
 class TestGetCurrentPrice:
     """Test time-based current price lookup."""
@@ -593,9 +638,9 @@ class TestGetPriceDataForFeatures:
     """Test the dict format returned for model_wrapper consumption."""
 
     def test_returns_correct_format(self, optimizer):
-        today = date(2026, 4, 14)
+        today = date.today()
         raw = _make_hourly_entries(today)
-        now_local = datetime(2026, 4, 14, 10, 0, tzinfo=LOCAL_TZ)
+        now_local = datetime(today.year, today.month, today.day, 10, 0, tzinfo=LOCAL_TZ)
         optimizer._parse_price_entries(raw, now_local)
 
         data = optimizer.get_price_data_for_features()

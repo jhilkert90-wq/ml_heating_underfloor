@@ -341,6 +341,12 @@ options:
   # Cache refresh interval (minutes) for Tibber service call
   price_cache_refresh_minutes: 60
 
+  # === Outlet Smoothing ===
+  # EMA smoothing factor (0.0 = max smoothing, 1.0 = no smoothing)
+  outlet_smoothing_alpha: 0.3
+  # Skip smoothing when change exceeds this threshold (°C) for fast recovery
+  outlet_smoothing_bypass: 2.0
+
 schema:
   # Core Entity Configuration
   target_indoor_temp_entity: "str"
@@ -498,3 +504,6 @@ schema:
   price_target_offset: "float(0.0,1.0)"
   price_expensive_overshoot: "float(0.0,1.0)"
   price_cache_refresh_minutes: "int(15,1440)"
+  # Outlet Smoothing
+  outlet_smoothing_alpha: "float(0.0,1.0)"
+  outlet_smoothing_bypass: "float(0.5,5.0)"

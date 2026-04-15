@@ -278,6 +278,12 @@ CYCLE_INTERVAL_MINUTES: int = int(os.getenv("CYCLE_INTERVAL_MINUTES", "10"))
 MAX_TEMP_CHANGE_PER_CYCLE: int = int(
     os.getenv("MAX_TEMP_CHANGE_PER_CYCLE", "2")
 )
+OUTLET_SMOOTHING_ALPHA: float = float(
+    os.getenv("OUTLET_SMOOTHING_ALPHA", "0.3")
+)
+OUTLET_SMOOTHING_BYPASS: float = float(
+    os.getenv("OUTLET_SMOOTHING_BYPASS", "2.0")
+)
 # Maximum minutes to wait during the grace period after blocking ends.
 GRACE_PERIOD_MAX_MINUTES: int = int(
     os.getenv("GRACE_PERIOD_MAX_MINUTES", "15")

@@ -12,7 +12,7 @@ handled transparently — percentile calculations always use every entry
 for the current calendar day.
 """
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
@@ -73,6 +73,8 @@ class PriceOptimizer:
         self._cache_time: Optional[datetime] = None
         self._cache_date: Optional[date] = None
         self._has_tomorrow: bool = False
+        # Timezone extracted from Tibber price timestamps (e.g. MESZ +02:00)
+        self._price_tz: Optional[tzinfo] = None
 
     # ------------------------------------------------------------------
     # Tibber price cache
@@ -157,6 +159,7 @@ class PriceOptimizer:
 
         entries.sort(key=lambda e: e[0])
         self._price_entries = entries
+        self._price_tz = entries[0][0].tzinfo
 
         now_utc = datetime.now(timezone.utc)
         self._cache_time = now_utc
@@ -245,11 +248,15 @@ class PriceOptimizer:
     # Timezone helper
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _to_local(dt: datetime) -> datetime:
-        """Convert *dt* to the local timezone (``astimezone(None)``)."""
+    def _to_local(self, dt: datetime) -> datetime:
+        """Convert *dt* to the price timezone (from Tibber entries).
+
+        Falls back to system local time when no prices have been parsed yet.
+        """
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
+        if self._price_tz is not None:
+            return dt.astimezone(self._price_tz)
         return dt.astimezone()
 
     # ------------------------------------------------------------------

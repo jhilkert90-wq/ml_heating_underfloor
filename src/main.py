@@ -43,6 +43,7 @@ from .heating_controller import (
 )
 from .sensor_buffer import SensorBuffer
 from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
+from .temperature_control import apply_ema_smoothing
 
 
 def main():
@@ -1279,6 +1280,10 @@ def main():
                         max_change,
                         final_temp,
                     )
+
+            # --- EMA outlet smoothing ---
+            last_final = state.get("last_final_temp")
+            final_temp = apply_ema_smoothing(final_temp, last_final)
 
             # Final prediction is now handled by ThermalEquilibriumModel in
             # model_wrapper

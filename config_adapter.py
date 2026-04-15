@@ -441,6 +441,34 @@ def convert_addon_to_env(config):
         'ENABLE_MIXED_SOURCE_ATTRIBUTION': str(
             config.get('enable_mixed_source_attribution', False)
         ).lower(),
+
+        # --- Electricity Price Optimization ---
+        'ELECTRICITY_PRICE_ENABLED': str(
+            config.get('electricity_price_enabled', False)
+        ).lower(),
+        'PRICE_CHEAP_PERCENTILE': str(
+            config.get('price_cheap_percentile', 33)
+        ),
+        'PRICE_EXPENSIVE_PERCENTILE': str(
+            config.get('price_expensive_percentile', 67)
+        ),
+        'PRICE_TARGET_OFFSET': str(
+            config.get('price_target_offset', 0.2)
+        ),
+        'PRICE_EXPENSIVE_OVERSHOOT': str(
+            config.get('price_expensive_overshoot', 0.2)
+        ),
+        'PRICE_CACHE_REFRESH_MINUTES': str(
+            config.get('price_cache_refresh_minutes', 60)
+        ),
+
+        # --- Outlet Smoothing ---
+        'OUTLET_SMOOTHING_ALPHA': str(
+            config.get('outlet_smoothing_alpha', 0.3)
+        ),
+        'OUTLET_SMOOTHING_BYPASS': str(
+            config.get('outlet_smoothing_bypass', 2.0)
+        ),
     }
 
     # Set environment variables for the ML system
