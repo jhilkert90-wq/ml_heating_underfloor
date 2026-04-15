@@ -76,6 +76,17 @@ class PhysicsConstants:
     # Step size for TV heat weight gradients
     TV_HEAT_WEIGHT_EPSILON = 0.05
 
+    # Solar gain saturation cap (°C)
+    # Represents the maximum direct temperature-equivalent indoor warming
+    # contribution that solar gain may add to the model in a single
+    # calculation step. This value is applied as an additive temperature term
+    # after solar input has already been converted into its °C-equivalent
+    # contribution, and should be used to clamp that additive term:
+    #   solar_contribution_c = min(raw_solar_contribution_c, MAX_SOLAR_CONTRIBUTION)
+    # It is not a scaling factor, percentage, or raw irradiance/power limit.
+    # Prevents unbounded solar gain from causing outlet collapse.
+    MAX_SOLAR_CONTRIBUTION = 3.0
+
     # Cold Weather Protection Thresholds
     # °C - Outdoor temperature below which we dampen parameter updates
     COLD_WEATHER_PROTECTION_THRESHOLD = 5.0

@@ -778,75 +778,100 @@ def main():
                                 )
                             logging.debug(log_msg)
 
-                            # Build forecast-aware outdoor array:
-                            # [current, +1h, +2h, ..., +TRAJECTORY_STEPS h]
-                            _learn_outdoor_now = prediction_context.get(
-                                "outdoor_temp", 10.0
+                            # Use persisted prediction from previous cycle
+                            # when available (active mode only). This avoids
+                            # re-running the trajectory and uses the exact
+                            # value the model committed to.
+                            _stored_pred = state.get(
+                                "last_predicted_indoor"
                             )
-                            _learn_outdoor_arr = (
-                                [_learn_outdoor_now]
-                                + prediction_context.get(
-                                    "outdoor_forecast",
-                                    [_learn_outdoor_now] * config.TRAJECTORY_STEPS,
+                            if (
+                                _stored_pred is not None
+                                and not was_shadow_mode_cycle
+                            ):
+                                model_predicted_temp = float(_stored_pred)
+                                learning_mode = (
+                                    "active_mode_persisted_prediction"
                                 )
-                            )
-                            _learn_pv_forecast = prediction_context.get(
-                                "pv_forecast", None
-                            )
-                            trajectory = (
-                                wrapper.thermal_model
-                                .predict_thermal_trajectory(
-                                    current_indoor=last_indoor_temp,
-                                    target_indoor=last_indoor_temp,
-                                    outlet_temp=actual_applied_temp,
-                                    outdoor_temp=_learn_outdoor_arr,
-                                    time_horizon_hours=float(
-                                        config.TRAJECTORY_STEPS
-                                    ),
-                                    time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
-                                    pv_power=prediction_context.get(
-                                        "pv_power", 0.0
-                                    ),
-                                    pv_forecasts=_learn_pv_forecast,
-                                    fireplace_on=prediction_context.get(
-                                        "fireplace_on", 0.0
-                                    ),
-                                    tv_on=prediction_context.get("tv_on", 0.0),
-                                    cloud_cover_pct=prediction_context.get(
-                                        "avg_cloud_cover", 50.0
-                                    ),
-                                    inlet_temp=prediction_context.get(
-                                        "inlet_temp"
-                                    ),
-                                    delta_t_floor=prediction_context.get(
-                                        "delta_t", 0.0
-                                    ),
-                                    # thermal_power intentionally omitted: the
-                                    # instantaneous sensor reading is near-zero
-                                    # during transitions and would trigger the
-                                    # energy-only formula (T_eq = T_outdoor +
-                                    # P/HLC), ignoring outlet_temp entirely and
-                                    # producing a ~5°C equilibrium. Use the
-                                    # outlet-based formula instead.
-                                    thermal_power=None,
+                                logging.debug(
+                                    "♻️ Using persisted predicted indoor "
+                                    "%.2f°C from previous cycle "
+                                    "(skipping trajectory re-run)",
+                                    model_predicted_temp,
                                 )
-                            )
+                            else:
+                                # Fallback: re-run trajectory (shadow mode
+                                # or first cycle without stored prediction).
 
-                            predicted_indoor_temp = (
-                                trajectory["trajectory"][0]
-                                if trajectory and trajectory.get("trajectory")
-                                else last_indoor_temp
-                            )
-
-                            if predicted_indoor_temp is None:
-                                logging.warning(
-                                    "Skipping online learning (%s): "
-                                    "prediction returned None",
-                                    learning_mode
+                                # Build forecast-aware outdoor array:
+                                # [current, +1h, +2h, ..., +TRAJECTORY_STEPS h]
+                                _learn_outdoor_now = prediction_context.get(
+                                    "outdoor_temp", 10.0
                                 )
-                                continue
+                                _learn_outdoor_arr = (
+                                    [_learn_outdoor_now]
+                                    + prediction_context.get(
+                                        "outdoor_forecast",
+                                        [_learn_outdoor_now] * config.TRAJECTORY_STEPS,
+                                    )
+                                )
+                                _learn_pv_forecast = prediction_context.get(
+                                    "pv_forecast", None
+                                )
+                                trajectory = (
+                                    wrapper.thermal_model
+                                    .predict_thermal_trajectory(
+                                        current_indoor=last_indoor_temp,
+                                        target_indoor=last_indoor_temp,
+                                        outlet_temp=actual_applied_temp,
+                                        outdoor_temp=_learn_outdoor_arr,
+                                        time_horizon_hours=float(
+                                            config.TRAJECTORY_STEPS
+                                        ),
+                                        time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
+                                        pv_power=prediction_context.get(
+                                            "pv_power", 0.0
+                                        ),
+                                        pv_forecasts=_learn_pv_forecast,
+                                        fireplace_on=prediction_context.get(
+                                            "fireplace_on", 0.0
+                                        ),
+                                        tv_on=prediction_context.get("tv_on", 0.0),
+                                        cloud_cover_pct=prediction_context.get(
+                                            "avg_cloud_cover", 50.0
+                                        ),
+                                        inlet_temp=prediction_context.get(
+                                            "inlet_temp"
+                                        ),
+                                        delta_t_floor=prediction_context.get(
+                                            "delta_t", 0.0
+                                        ),
+                                        # thermal_power intentionally omitted: the
+                                        # instantaneous sensor reading is near-zero
+                                        # during transitions and would trigger the
+                                        # energy-only formula (T_eq = T_outdoor +
+                                        # P/HLC), ignoring outlet_temp entirely and
+                                        # producing a ~5°C equilibrium. Use the
+                                        # outlet-based formula instead.
+                                        thermal_power=None,
+                                    )
+                                )
 
-                            model_predicted_temp = predicted_indoor_temp
+                                predicted_indoor_temp = (
+                                    trajectory["trajectory"][0]
+                                    if trajectory and trajectory.get("trajectory")
+                                    else last_indoor_temp
+                                )
+
+                                if predicted_indoor_temp is None:
+                                    logging.warning(
+                                        "Skipping online learning (%s): "
+                                        "prediction returned None",
+                                        learning_mode
+                                    )
+                                    continue
+
+                                model_predicted_temp = predicted_indoor_temp
 
                         except Exception as e:
                             logging.warning(
@@ -1686,6 +1711,11 @@ def main():
                 "last_avg_other_rooms_temp": avg_other_rooms_temp,
                 "last_fireplace_on": fireplace_on,
                 "last_final_temp": final_temp,
+                "last_predicted_indoor": (
+                    applied_prediction
+                    if 'applied_prediction' in locals()
+                    else None
+                ),
                 "last_is_blocking": is_blocking,
                 "last_blocking_reasons": (
                     blocking_reasons if is_blocking else []

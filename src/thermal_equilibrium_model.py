@@ -816,16 +816,24 @@ class ThermalEquilibriumModel:
         # This accounts for the difference between direct sunlight and diffuse radiation
         cloud_factor = self._calculate_cloud_factor(cloud_cover_pct)
         pv_weight_adjusted = self.external_source_weights.get("pv", 0.0) * cloud_factor
-        heat_from_pv = effective_pv * pv_weight_adjusted
+        raw_heat_from_pv = effective_pv * pv_weight_adjusted
+        # tanh saturation: caps solar contribution to prevent unbounded
+        # gain from collapsing the outlet temperature during PV spikes.
+        cap = PhysicsConstants.MAX_SOLAR_CONTRIBUTION
+        if cap > 0 and raw_heat_from_pv != 0:
+            heat_from_pv = cap * np.tanh(raw_heat_from_pv / cap)
+        else:
+            heat_from_pv = raw_heat_from_pv
         if not _suppress_logging and getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False):
             logging.debug(
                 "☁️ Cloud cover=%.0f%%, factor=%.3f, PV weight %.5f → %.5f, "
-                "heat_from_pv=%.4f kW (effective_pv=%.0fW)",
+                "heat_from_pv=%.4f kW (raw=%.4f, effective_pv=%.0fW)",
                 cloud_cover_pct,
                 cloud_factor,
                 self.external_source_weights.get("pv", 0.0),
                 pv_weight_adjusted,
                 heat_from_pv,
+                raw_heat_from_pv,
                 effective_pv,
             )
 

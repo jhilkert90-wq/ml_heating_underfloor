@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "ML Heating Contributors"}
+    {name = "helgeerbe"},
+    {name = "jhilkert90-wq (underfloor adaptation)"}
 ]
 dynamic = ["dependencies"]
 

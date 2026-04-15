@@ -29,6 +29,12 @@ class SystemState:
     last_avg_other_rooms_temp: Optional[float] = None
     last_fireplace_on: bool = False
     last_final_temp: Optional[float] = None
+    # Stores the raw indoor temperature predicted during the previous run.
+    # This is populated when a prediction is generated and persisted so a
+    # later run can reuse it as part of the persisted prediction optimization.
+    # Unlike `last_final_temp`, which is the final selected/output temperature
+    # after downstream decision logic, this field keeps the model prediction.
+    last_predicted_indoor: Optional[float] = None
     last_is_blocking: bool = False
     last_blocking_reasons: List[str] = field(default_factory=list)
     last_blocking_end_time: Optional[float] = None

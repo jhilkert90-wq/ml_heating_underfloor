@@ -1654,33 +1654,35 @@ class EnhancedModelWrapper:
                 else:
                     temp_error = 0.0
 
-            # USER FEEDBACK: Implement exponential correction based on
-            # deviation from target. This ensures a strong pull towards the
-            # target when the temperature is far away, and a gentler approach
-            # as it gets closer.
+            # COOLING SAFETY NET: When room is already above target,
+            # never apply a positive correction (which would raise outlet).
+            # This is a redundant guard alongside the projected-indoor gates.
+            if current_indoor > target_indoor and temp_error > 0:
+                logging.info(
+                    "🛡️ Cooling guard: room %.2f°C > target %.1f°C, "
+                    "zeroing positive temp_error %.2f°C",
+                    current_indoor, target_indoor, temp_error,
+                )
+                temp_error = 0.0
 
-            # k controls the aggression of the exponential curve. A higher
-            # value means a more aggressive response to temperature deviations.
-            # k = 1.5 due to under floor heating 
-    
-            k = 1.5
-            raw_aggression = np.exp(k * initial_deviation)
-
-            # Clamp aggression to prevent runaway correction
-            aggression_factor = min(raw_aggression, 3.0)
+            # Physics-based aggression scaled by slab time constant.
+            # Slower slabs (higher τ) get gentler corrections to avoid
+            # overcorrecting before the slab has responded.
+            slab_tau = max(
+                self.thermal_model.slab_time_constant_hours, 0.5
+            )
+            aggression_factor = min(
+                1.0 + initial_deviation / slab_tau, 2.0
+            )
 
             # Physics-based scaling using house thermal characteristics.
             if self.thermal_model.outlet_effectiveness > 0.01:
-                # REVERTED: Reduced base scale multiplier from 0.5 back to 0.3
-                # and added hard clamp to prevent explosion when effectiveness
-                # is very low (e.g. < 0.05).
-                # scale multiplier = 1.1 due to under floor heating
                 raw_scale = (
                     1.0 / self.thermal_model.outlet_effectiveness
                 ) * 1.1
                 base_scale = min(raw_scale, 2.5)
             else:
-                base_scale = 2.5 # Fallback (reduced from 10.0)
+                base_scale = 2.5
 
             physics_scale = base_scale
 
@@ -1693,7 +1695,6 @@ class EnhancedModelWrapper:
             # Calculate the final correction, applying aggression only when
             # undershooting.
             if temp_error > 0:
-                # Apply exponential aggression when we are below target.
                 correction = (
                     temp_error
                     * physics_scale
@@ -1701,13 +1702,14 @@ class EnhancedModelWrapper:
                     * aggression_factor
                 )
                 logging.info(
-                    "   Exponential Correction for undershoot: "
-                    f"aggression_factor={aggression_factor:.2f}x"
+                    "   Slab-scaled correction for undershoot: "
+                    f"aggression={aggression_factor:.2f}x "
+                    f"(slab_tau={slab_tau:.2f}h)"
                 )
             else:
-                # When overshooting, apply a gentle, non-exponential correction
-                # to prevent the system from pulling back too hard.
-                overshoot_dampening = 0.4
+                # When overshooting, scale dampening by slab time constant.
+                # Slower slabs need gentler pull-back.
+                overshoot_dampening = 0.4 / max(slab_tau, 1.0)
                 correction = (
                     temp_error
                     * physics_scale
@@ -1715,8 +1717,8 @@ class EnhancedModelWrapper:
                     * overshoot_dampening
                 )
                 logging.info(
-                    "   Gentle Correction for overshoot: dampened by "
-                    f"{overshoot_dampening:.0%}"
+                    "   Gentle correction for overshoot: dampening="
+                    f"{overshoot_dampening:.2f} (slab_tau={slab_tau:.2f}h)"
                 )
 
             # Clamp the correction to a reasonable maximum to prevent extreme

@@ -1,5 +1,12 @@
 # ML Heating Control for Home Assistant
 
+> **Fork Notice**
+> This project is a fork of [helgeerbe/ml_heating](https://github.com/helgeerbe/ml_heating),
+> adapted for **underfloor heating (Fußbodenheizung)** systems with slow thermal
+> response characteristics. The original project by [@helgeerbe](https://github.com/helgeerbe)
+> targets radiator heating systems. All credit for the core architecture, physics model,
+> and online learning system goes to the original author.
+
 > **Warning**
 > This project is an initial test and proof of concept heating controller. However, heating systems are critical infrastructure - always monitor its behavior and ensure you have safety mechanisms in place. Use at your own risk.
 
@@ -99,15 +106,14 @@ The primary goal is to improve upon traditional heat curves by creating a **self
 
 ## Installation
 
+[repository-url]: https://github.com/jhilkert90-wq/ml_heating_underfloor
+
 ### Home Assistant Add-on Installation (Recommended)
 
 #### 1. Add Repository to Home Assistant
 1. Navigate to **Settings** → **Add-ons** → **Add-on Store**
 2. Click the **⋮** menu → **Repositories**
-3. Add this repository URL:
-   ```
-   https://github.com/helgeerbe/ml_heating
-   ```
+3. Add this repository URL: [https://github.com/jhilkert90-wq/ml_heating_underfloor][repository-url]
 4. Click **Add** and wait for repository to load
 
 #### 2. Choose Your Channel
@@ -152,8 +158,8 @@ For advanced users, developers, or non-Home Assistant deployments:
 
 ```bash
 # Clone the repository
-git clone https://github.com/helgeerbe/ml_heating.git
-cd ml_heating
+git clone https://github.com/jhilkert90-wq/ml_heating_underfloor.git
+cd ml_heating_underfloor
 
 # Create virtual environment
 python3 -m venv .venv
@@ -638,4 +644,12 @@ See LICENSE file for details.
 
 ## Acknowledgments
 
-This project builds on thermodynamic principles and machine learning techniques to create a practical, production-ready heating controller. Special thanks to the Home Assistant and InfluxDB communities for their excellent integration capabilities.
+This project is a fork of [ml_heating](https://github.com/helgeerbe/ml_heating) by [@helgeerbe](https://github.com/helgeerbe), originally designed for radiator heating systems. The entire core architecture — including the ThermalEquilibriumModel, online learning system, heat source channels, and Home Assistant integration — was created by helgeerbe and is used under the MIT License.
+
+This fork adapts the system for **underfloor heating (Fußbodenheizung)** with:
+- Extended thermal time constants for slab thermal mass
+- UFH-specific slab model with first-order lag
+- Adjusted default parameters for slow-response systems
+- Independent calibration data for underfloor systems
+
+Special thanks to the Home Assistant and InfluxDB communities for their excellent integration capabilities.
