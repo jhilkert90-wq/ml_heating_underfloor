@@ -327,6 +327,20 @@ options:
   # Enable proportional mixed-source attribution
   enable_mixed_source_attribution: true
 
+  # === Electricity Price Optimization (Tibber) ===
+  # Master feature flag — when false, no price code paths execute
+  electricity_price_enabled: false
+  # Percentile below which prices are classified as CHEAP
+  price_cheap_percentile: 33
+  # Percentile above which prices are classified as EXPENSIVE
+  price_expensive_percentile: 67
+  # Temperature shift magnitude (°C) for cheap/expensive periods
+  price_target_offset: 0.2
+  # Tighter future overshoot threshold during EXPENSIVE periods (°C)
+  price_expensive_overshoot: 0.2
+  # Cache refresh interval (minutes) for Tibber service call
+  price_cache_refresh_minutes: 60
+
 schema:
   # Core Entity Configuration
   target_indoor_temp_entity: "str"
@@ -477,3 +491,10 @@ schema:
   # Heat Source Channel Architecture
   enable_heat_source_channels: "bool"
   enable_mixed_source_attribution: "bool"
+  # Electricity Price Optimization
+  electricity_price_enabled: "bool"
+  price_cheap_percentile: "int(10,50)"
+  price_expensive_percentile: "int(50,90)"
+  price_target_offset: "float(0.0,1.0)"
+  price_expensive_overshoot: "float(0.0,1.0)"
+  price_cache_refresh_minutes: "int(15,1440)"

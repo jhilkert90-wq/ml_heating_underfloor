@@ -218,6 +218,43 @@ FIREPLACE_STATUS_ENTITY_ID: str = os.getenv(
     "FIREPLACE_STATUS_ENTITY_ID", "binary_sensor.fireplace_active"
 )
 
+# --- Electricity Price Integration ---
+# Tibber (or similar) electricity price sensor. The sensor state holds the
+# current price in EUR/kWh, and the 'today'/'tomorrow' attributes contain
+# 24-element hourly price arrays.
+ELECTRICITY_PRICE_ENTITY_ID: str = os.getenv(
+    "ELECTRICITY_PRICE_ENTITY_ID", "sensor.electricity_price_johanness_home"
+)
+ELECTRICITY_PRICE_ENABLED: bool = (
+    os.getenv("ELECTRICITY_PRICE_ENABLED", "false").lower() == "true"
+)
+# Percentile thresholds for classifying price levels from daily prices.
+PRICE_CHEAP_PERCENTILE: float = float(
+    os.getenv("PRICE_CHEAP_PERCENTILE", "33")
+)
+PRICE_EXPENSIVE_PERCENTILE: float = float(
+    os.getenv("PRICE_EXPENSIVE_PERCENTILE", "67")
+)
+# Target temperature offset (°C) applied during cheap/expensive periods.
+PRICE_TARGET_OFFSET: float = float(
+    os.getenv("PRICE_TARGET_OFFSET", "0.2")
+)
+# Future trajectory overshoot threshold during expensive periods (°C above
+# target).  Tighter than the normal 0.5°C to reduce outlet earlier.
+PRICE_EXPENSIVE_OVERSHOOT: float = float(
+    os.getenv("PRICE_EXPENSIVE_OVERSHOOT", "0.2")
+)
+# How often (minutes) to re-fetch prices from the Tibber service.
+# Also refreshes after 13:00 if tomorrow's prices are not yet cached.
+PRICE_CACHE_REFRESH_MINUTES: int = int(
+    os.getenv("PRICE_CACHE_REFRESH_MINUTES", "60")
+)
+
+# --- Output Sensors ---
+FEATURES_ENTITY_ID: str = os.getenv(
+    "FEATURES_ENTITY_ID", "sensor.ml_heating_features"
+)
+
 # --- Tuning & Debug Parameters ---
 # DEBUG: Set to "1" to enable verbose logging for development.
 # CONFIDENCE_THRESHOLD: A critical tuning parameter. If the model's

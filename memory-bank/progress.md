@@ -1,6 +1,29 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 7, 2026
+## 🎯 CURRENT STATUS - July 2025
+
+### ✅ **ELECTRICITY PRICE-AWARE OPTIMIZATION**
+
+**System Status**: **IMPLEMENTED** — Tibber price-based target shifting with feature flag. Default disabled (`ELECTRICITY_PRICE_ENABLED=false`).
+
+**Test Suite**: **29/29 new tests passing**, 0 regressions in existing tests (107 pass, 4 pre-existing failures).
+
+**Implementation**:
+- ✅ `PriceOptimizer` class: percentile-based CHEAP/NORMAL/EXPENSIVE classification
+- ✅ Binary search target shifted ±0.2°C (CHEAP → +0.2, EXPENSIVE → -0.2)
+- ✅ Trajectory correction: EXPENSIVE tightens future overshoot to +0.2°C (from +0.5)
+- ✅ main.py integration: reads Tibber sensor, passes to prediction, publishes sensors
+- ✅ `sensor.ml_heating_features`: exports all last-run features
+- ✅ `sensor.ml_heating_price_level`: exports price classification
+- ✅ `sensor.ml_heating_learning`: now always exports all channel params
+- ✅ Feature flag: zero behaviour change when disabled
+- ✅ Learning safety: target-based shift, no parameter corruption
+
+**Files**: `src/price_optimizer.py` (new), `src/config.py`, `src/model_wrapper.py`, `src/ha_client.py`, `src/main.py`, `tests/unit/test_price_optimizer.py` (new), `docs/PRICE_OPTIMIZATION_INTEGRATION.md` (new)
+
+**Future**: Option F (Thermal Pre-Charging with look-ahead) saved for later phase.
+
+## 🎯 PREVIOUS STATUS - April 7, 2026
 
 ### ✅ **UNIFIED COOLING THERMAL STATE**
 

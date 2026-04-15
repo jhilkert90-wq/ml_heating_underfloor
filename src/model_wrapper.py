@@ -370,8 +370,34 @@ class EnhancedModelWrapper:
             target_indoor = features.get("target_temp", 21.0)
             outdoor_temp = features.get("outdoor_temp", 10.0)
 
+            # --- Electricity Price Integration ---
+            # Shift binary search target based on price level.
+            # Learning always uses the original target_indoor.
+            target_adjusted = target_indoor
+            price_info = {}
+            if getattr(config, "ELECTRICITY_PRICE_ENABLED", False):
+                from .price_optimizer import PriceLevel, get_price_optimizer
+
+                optimizer = get_price_optimizer()
+                price_data = features.get("_electricity_price")
+                if price_data is not None:
+                    level = optimizer.classify_price(
+                        price_data["current_price"],
+                        price_data["today"],
+                    )
+                    offset = optimizer.get_target_offset(level)
+                    target_adjusted = target_indoor + offset
+                    price_info = optimizer.get_price_info()
+                    if offset != 0.0:
+                        logging.info(
+                            "💰 Price %s: target %.1f → %.1f°C (offset %+.1f)",
+                            level.value, target_indoor, target_adjusted, offset,
+                        )
+
             # Store current indoor for trajectory correction
             self._current_indoor = current_indoor
+            # Store price thresholds for trajectory correction
+            self._price_info = price_info
 
             # Extract enhanced thermal intelligence features
             thermal_features = self._extract_thermal_features(features)
@@ -379,7 +405,7 @@ class EnhancedModelWrapper:
             # Calculate required outlet temperature using iterative approach
             optimal_outlet_temp = self._calculate_required_outlet_temp(
                 current_indoor,
-                target_indoor,
+                target_adjusted,
                 outdoor_temp,
                 thermal_features,
             )
@@ -407,7 +433,10 @@ class EnhancedModelWrapper:
                 "prediction_method": "thermal_equilibrium_single_prediction",
                 "cycle_count": self.cycle_count,
                 "predicted_indoor": predicted_indoor,
+                "target_temp_original": target_indoor,
+                "target_temp_adjusted": target_adjusted,
             }
+            prediction_metadata.update(price_info)
 
             if optimal_outlet_temp is None:
                 logging.warning(
@@ -1312,6 +1341,19 @@ class EnhancedModelWrapper:
             tolerance_hours = cycle_hours * 2  # 2 extra time steps
             sensor_precision_tolerance = 0.1  # °C — must match binary search convergence tolerance
 
+            # Price-aware future overshoot threshold.  During expensive
+            # electricity periods a tighter limit catches overshoot earlier,
+            # reducing outlet and saving money.
+            _price_info = getattr(self, "_price_info", {})
+            _price_level = _price_info.get("price_level", "normal")
+            if _price_level == "expensive":
+                _expensive_overshoot = getattr(
+                    config, "PRICE_EXPENSIVE_OVERSHOOT", 0.2
+                )
+                future_overshoot_tolerance = _expensive_overshoot
+            else:
+                future_overshoot_tolerance = 0.5  # existing default
+
             # DEBUG: Log trajectory details for diagnosis
             trajectory_temps = trajectory.get("trajectory", [])
             first_step_temp = (
@@ -1384,13 +1426,11 @@ class EnhancedModelWrapper:
 
                 if not immediate_overshoot:
                     # Immediate cycle is safe - allow relaxed boundaries for
-                    # future. Allow up to 0.5°C overshoot in future steps (vs
-                    # 0.1°C strict). This enables "fast push" strategies where
-                    # we heat aggressively now knowing we can back off in the
-                    # next cycle.
+                    # future. During expensive electricity, tighten to catch
+                    # overshoot earlier and reduce outlet.
                     temp_boundary_violation = (
                         min_temp <= target_indoor - sensor_precision_tolerance
-                        or max_temp >= target_indoor + 0.5  # Relaxed overshoot
+                        or max_temp >= target_indoor + future_overshoot_tolerance
                     )
 
                     # Log if we are ignoring a future overshoot that would have
@@ -1399,7 +1439,7 @@ class EnhancedModelWrapper:
                         max_temp
                         >= target_indoor + sensor_precision_tolerance
                     ) and (
-                        max_temp < target_indoor + 0.5
+                        max_temp < target_indoor + future_overshoot_tolerance
                     ):
                         logging.debug(
                             f"Ignoring minor future overshoot "
@@ -2097,29 +2137,42 @@ class EnhancedModelWrapper:
                 "last_updated": datetime.now().isoformat(),
             }
 
-            if ha_metrics["heat_source_channels_enabled"]:
-                ha_metrics.update(
-                    {
-                        "delta_t_floor": thermal_metrics.get(
-                            "delta_t_floor", 0.0
-                        ),
-                        "cloud_factor_exponent": thermal_metrics.get(
-                            "cloud_factor_exponent", 1.0
-                        ),
-                        "solar_decay_tau_hours": thermal_metrics.get(
-                            "solar_decay_tau_hours", 0.0
-                        ),
-                        "fp_heat_output_kw": thermal_metrics.get(
-                            "fp_heat_output_kw", 0.0
-                        ),
-                        "fp_decay_time_constant": thermal_metrics.get(
-                            "fp_decay_time_constant", 0.0
-                        ),
-                        "room_spread_delay_minutes": thermal_metrics.get(
-                            "room_spread_delay_minutes", 0.0
-                        ),
-                    }
-                )
+            # Always export all channel-specific parameters
+            ha_metrics.update(
+                {
+                    "delta_t_floor": thermal_metrics.get(
+                        "delta_t_floor", 0.0
+                    ),
+                    "cloud_factor_exponent": thermal_metrics.get(
+                        "cloud_factor_exponent", 1.0
+                    ),
+                    "solar_decay_tau_hours": thermal_metrics.get(
+                        "solar_decay_tau_hours", 0.0
+                    ),
+                    "fp_heat_output_kw": thermal_metrics.get(
+                        "fp_heat_output_kw", 0.0
+                    ),
+                    "fp_decay_time_constant": thermal_metrics.get(
+                        "fp_decay_time_constant", 0.0
+                    ),
+                    "room_spread_delay_minutes": thermal_metrics.get(
+                        "room_spread_delay_minutes", 0.0
+                    ),
+                }
+            )
+
+            # Per-channel diagnostics
+            orchestrator = getattr(self.thermal_model, "orchestrator", None)
+            if orchestrator is not None:
+                for ch_name, channel in orchestrator.channels.items():
+                    prefix = f"ch_{ch_name}"
+                    ha_metrics[f"{prefix}_history_count"] = len(
+                        getattr(channel, "history", [])
+                    )
+                    hist = getattr(channel, "history", [])
+                    ha_metrics[f"{prefix}_last_error"] = (
+                        hist[-1].get("error", 0.0) if hist else 0.0
+                    )
 
             # Slab passive delta: inlet_temp − indoor → passive heating signal
             _feats = getattr(self, "_current_features", {}) or {}
@@ -2311,7 +2364,8 @@ def get_enhanced_model_wrapper() -> EnhancedModelWrapper:
 
 
 def simplified_outlet_prediction(
-    features: pd.DataFrame, current_temp: float, target_temp: float
+    features: pd.DataFrame, current_temp: float, target_temp: float,
+    price_data: Optional[Dict] = None,
 ) -> Tuple[float, float, Dict]:
     """
     SIMPLIFIED outlet temperature prediction using Enhanced Model Wrapper.
@@ -2323,6 +2377,7 @@ def simplified_outlet_prediction(
         features: Input features DataFrame
         current_temp: Current indoor temperature
         target_temp: Target indoor temperature
+        price_data: Optional electricity price dict from ha_client
 
     Returns:
         Tuple of (outlet_temp, confidence, metadata)
@@ -2345,6 +2400,10 @@ def simplified_outlet_prediction(
         # The lag feature should come from history, not be forced to current.
         # features_dict["indoor_temp_lag_30m"] = current_temp
         features_dict["target_temp"] = target_temp
+
+        # Inject electricity price data for PriceOptimizer
+        if price_data is not None:
+            features_dict["_electricity_price"] = price_data
 
         logging.info(
             f"DEBUG: Wrapper params: "

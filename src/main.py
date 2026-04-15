@@ -1167,6 +1167,17 @@ def main():
                 continue
 
             # --- Step 3: Prediction ---
+            # Read electricity price for price-aware optimization
+            price_data = None
+            if getattr(config, "ELECTRICITY_PRICE_ENABLED", False):
+                try:
+                    from .price_optimizer import get_price_optimizer
+                    optimizer = get_price_optimizer()
+                    optimizer.refresh_prices_if_needed(ha_client)
+                    price_data = optimizer.get_price_data_for_features()
+                except Exception as exc:
+                    logging.warning("Failed to read electricity price: %s", exc)
+
             # Use the Enhanced Model Wrapper for simplified outlet
             # temperature prediction. This replaces the complex Heat Balance
             # Controller with a single prediction call.
@@ -1176,7 +1187,8 @@ def main():
 
             suggested_temp, confidence, metadata = (
                 simplified_outlet_prediction(
-                    features, prediction_indoor_temp, target_indoor_temp
+                    features, prediction_indoor_temp, target_indoor_temp,
+                    price_data=price_data,
                 )
             )
             final_temp = suggested_temp
@@ -1682,6 +1694,37 @@ def main():
             save_state(**state_to_save)
             # Update in-memory state so the idle poll uses fresh data
             state.update(state_to_save)
+
+            # --- Publish auxiliary sensors ---
+            try:
+                ha_client.publish_last_run_features(features_dict)
+            except Exception:
+                logging.debug(
+                    "Failed to publish features sensor.", exc_info=True
+                )
+
+            if price_data is not None:
+                try:
+                    # Price info is flattened into metadata by
+                    # calculate_optimal_outlet_temp
+                    price_info = {
+                        k: metadata.get(k)
+                        for k in (
+                            "price_eur_kwh",
+                            "price_level",
+                            "price_cheap_threshold",
+                            "price_expensive_threshold",
+                            "price_target_offset",
+                        )
+                        if metadata.get(k) is not None
+                    }
+                    if price_info:
+                        ha_client.publish_price_level(price_info)
+                except Exception:
+                    logging.debug(
+                        "Failed to publish price level sensor.",
+                        exc_info=True,
+                    )
 
         except Exception as e:
             logging.error("Error in main loop: %s", e, exc_info=True)

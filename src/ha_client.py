@@ -146,6 +146,133 @@ class HAClient:
         except (TypeError, ValueError):
             return state
 
+    def call_tibber_get_prices(
+        self,
+        start: str,
+        end: str,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Call the tibber.get_prices HA service and return price entries.
+
+        Args:
+            start: ISO-format start time (e.g. '2026-04-14 00:00:00').
+            end:   ISO-format end time.
+
+        Returns:
+            List of ``{"start_time": str, "price": float}`` dicts for the
+            first (auto-detected) Tibber home, or *None* on failure.
+        """
+        svc_url = f"{self.url}/api/services/tibber/get_prices"
+        body = {"start": start, "end": end}
+
+        try:
+            resp = requests.post(
+                svc_url,
+                headers=self.headers,
+                json=body,
+                timeout=15,
+                params={"return_response": "true"},
+            )
+            resp.raise_for_status()
+            svc_resp = resp.json().get("service_response", {})
+        except Exception as exc:
+            logging.warning("tibber.get_prices service call failed: %s", exc)
+            return None
+
+        prices_by_home = svc_resp.get("prices", svc_resp)
+        if not isinstance(prices_by_home, dict) or not prices_by_home:
+            logging.warning(
+                "tibber.get_prices returned unexpected format: %s",
+                type(prices_by_home),
+            )
+            return None
+
+        # Auto-detect: take the first home's price list
+        first_home_prices = next(iter(prices_by_home.values()))
+        if not isinstance(first_home_prices, list):
+            logging.warning(
+                "tibber.get_prices: first home value is not a list"
+            )
+            return None
+
+        return first_home_prices
+
+    # --- Legacy sensor-based price reading (deprecated) -----------------
+
+    def get_electricity_price(
+        self,
+        states_cache: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Read current electricity price from HA sensor state.
+
+        .. deprecated::
+            Use :meth:`call_tibber_get_prices` via the PriceOptimizer cache
+            instead.  This method is kept as a fallback.
+
+        Returns a dict with:
+          current_price: float (EUR/kWh)
+          today:         list of hourly prices
+          tomorrow:      list of hourly prices (may be empty before ~13:00)
+
+        Returns None if the sensor is missing or unavailable.
+        """
+        entity_id = config.ELECTRICITY_PRICE_ENTITY_ID
+        if states_cache:
+            data = states_cache.get(entity_id)
+        else:
+            url = f"{self.url}/api/states/{entity_id}"
+            try:
+                resp = requests.get(url, headers=self.headers, timeout=10)
+                resp.raise_for_status()
+                data = resp.json()
+            except requests.RequestException as exc:
+                logging.warning("Failed to read electricity price: %s", exc)
+                return None
+
+        if data is None:
+            return None
+
+        state = data.get("state")
+        if state in (None, "unknown", "unavailable"):
+            return None
+
+        try:
+            current_price = float(state)
+        except (TypeError, ValueError):
+            logging.warning(
+                "Electricity price state is not numeric: %s", state
+            )
+            return None
+
+        attrs = data.get("attributes", {})
+        today = attrs.get("today", [])
+        tomorrow = attrs.get("tomorrow", [])
+
+        # Tibber stores prices as list of dicts with 'total' key, or plain floats
+        def _extract_prices(raw: Any) -> List[float]:
+            if not isinstance(raw, list):
+                return []
+            result = []
+            for item in raw:
+                if isinstance(item, dict):
+                    val = item.get("total", item.get("value"))
+                    if val is not None:
+                        try:
+                            result.append(float(val))
+                        except (TypeError, ValueError):
+                            pass
+                else:
+                    try:
+                        result.append(float(item))
+                    except (TypeError, ValueError):
+                        pass
+            return result
+
+        return {
+            "current_price": current_price,
+            "today": _extract_prices(today),
+            "tomorrow": _extract_prices(tomorrow),
+        }
+
     def set_state(
         self,
         entity_id: str,
@@ -499,15 +626,25 @@ class HAClient:
             "last_updated": now_utc
         })
 
-        if learning_metrics.get("heat_source_channels_enabled", False):
-            attributes_learning.update({
-                "delta_t_floor": learning_metrics.get("delta_t_floor", 0.0),
-                "cloud_factor_exponent": learning_metrics.get("cloud_factor_exponent", 1.0),
-                "solar_decay_tau_hours": learning_metrics.get("solar_decay_tau_hours", 0.0),
-                "fp_heat_output_kw": learning_metrics.get("fp_heat_output_kw", 0.0),
-                "fp_decay_time_constant": learning_metrics.get("fp_decay_time_constant", 0.0),
-                "room_spread_delay_minutes": learning_metrics.get("room_spread_delay_minutes", 0.0),
-            })
+        # Always export all channel-specific parameters (not just when channels enabled)
+        attributes_learning.update({
+            "delta_t_floor": learning_metrics.get("delta_t_floor", 0.0),
+            "cloud_factor_exponent": learning_metrics.get("cloud_factor_exponent", 1.0),
+            "solar_decay_tau_hours": learning_metrics.get("solar_decay_tau_hours", 0.0),
+            "fp_heat_output_kw": learning_metrics.get("fp_heat_output_kw", 0.0),
+            "fp_decay_time_constant": learning_metrics.get("fp_decay_time_constant", 0.0),
+            "room_spread_delay_minutes": learning_metrics.get("room_spread_delay_minutes", 0.0),
+        })
+
+        # Per-channel diagnostics (history count, last error)
+        for ch_name in ("heat_pump", "pv", "fireplace", "tv"):
+            prefix = f"ch_{ch_name}"
+            attributes_learning[f"{prefix}_history_count"] = learning_metrics.get(
+                f"{prefix}_history_count", 0
+            )
+            attributes_learning[f"{prefix}_last_error"] = learning_metrics.get(
+                f"{prefix}_last_error", 0.0
+            )
 
         # State is the learning confidence score (no redundant attribute)
         learning_confidence = learning_metrics.get("learning_confidence", 0.0)
@@ -607,6 +744,59 @@ class HAClient:
         # This would need access to individual prediction errors with sign
         # For now, return 0.0 as placeholder
         return 0.0
+
+    def publish_last_run_features(
+        self, features_dict: Dict[str, Any]
+    ) -> None:
+        """Publish all last-run features to sensor.ml_heating_features.
+
+        State is current indoor temperature; all feature keys become
+        attributes so they are visible in HA Developer Tools.
+        """
+        entity_id = get_shadow_output_entity_id(
+            config.FEATURES_ENTITY_ID,
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
+        attrs = get_sensor_attributes(entity_id)
+        now_utc = datetime.now(timezone.utc).isoformat()
+
+        # Copy all features as attributes
+        for key, value in features_dict.items():
+            attrs[key] = _sanitize_for_json(value)
+        attrs["last_updated"] = now_utc
+
+        # State = indoor temp (most useful primary value)
+        state_value = features_dict.get(
+            "living_room_temp",
+            features_dict.get("indoor_temp_lag_30m", 0.0),
+        )
+        self.set_state(entity_id, state_value, attrs, round_digits=2)
+        logging.debug("Published %d features to %s", len(features_dict), entity_id)
+
+    def publish_price_level(
+        self, price_info: Dict[str, object]
+    ) -> None:
+        """Publish electricity price classification to HA."""
+        entity_id = get_shadow_output_entity_id(
+            "sensor.ml_heating_price_level",
+            shadow_deployment=getattr(config, "SHADOW_MODE", False),
+        )
+        attrs = get_sensor_attributes(entity_id)
+        attrs.update({
+            "price_eur_kwh": price_info.get("price_eur_kwh"),
+            "price_level": price_info.get("price_level", "normal"),
+            "cheap_threshold": price_info.get("price_cheap_threshold"),
+            "expensive_threshold": price_info.get("price_expensive_threshold"),
+            "target_offset": price_info.get("price_target_offset", 0.0),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        })
+        # State is the price level string
+        self.set_state(
+            entity_id,
+            price_info.get("price_eur_kwh", 0.0),
+            attrs,
+            round_digits=4,
+        )
 
     def get_history_bulk(
         self,
@@ -753,6 +943,18 @@ def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
             "unit_of_measurement": "kW",
             "icon": "mdi:flash",
             "device_class": "power",
+        },
+        "sensor.ml_heating_features": {
+            "unique_id": "ml_heating_features",
+            "friendly_name": "ML Heating Features",
+            "unit_of_measurement": "°C",
+            "device_class": "temperature",
+            "icon": "mdi:feature-search-outline",
+        },
+        "sensor.ml_heating_price_level": {
+            "unique_id": "ml_heating_price_level",
+            "friendly_name": "ML Heating Price Level",
+            "icon": "mdi:currency-eur",
         },
     }
 

@@ -1,5 +1,21 @@
 # Active Context - Current Work & Decision State
 
+### 💰 **ELECTRICITY PRICE-AWARE OPTIMIZATION — July 2025**
+
+#### ✅ **Implemented — Feature-flagged, default disabled**
+- **Approach**: Shifted binary search target (NOT comfort band widening). CHEAP → target+0.2°C, EXPENSIVE → target-0.2°C. Convergence precision unchanged at ±0.01°C.
+- **Trajectory**: EXPENSIVE tightens future overshoot from +0.5°C to +0.2°C. Immediate overshoot always +0.1°C.
+- **Learning safety**: Uses original target for learning context — no parameter corruption.
+- **Tibber sensor**: `sensor.electricity_price_johanness_home` — state=current EUR/kWh, attrs `today`/`tomorrow` = 24h price lists.
+- **New sensors**: `sensor.ml_heating_features` (all features), `sensor.ml_heating_price_level` (classification).
+- **Tests**: 29/29 passing, 0 regressions.
+- **Future**: Option F (Thermal Pre-Charging with 24h look-ahead + slab time constant) saved for later.
+
+### ✅ **PV→HP Learning Drift Bug — Fixed**
+- **Problem**: PV sunny days caused OE to monotonically increase, HLC to decrease. Root cause: fireplace decay routing unconditionally routed to HP when no external source active.
+- **Fix**: 7 changes across heat_source_channels.py, temperature_control.py. FP decay now properly attributed. HP_ACTIVE_POWER_THRESHOLD safety net removed (too aggressive).
+- **Tests**: 10/10 FP decay routing, 63 heat source channels (3 pre-existing failures).
+
 ### ❄️ **UNIFIED COOLING THERMAL STATE — April 7, 2026**
 
 #### ✅ **Dedicated Cooling State File (`unified_thermal_state_cooling.py`)**
