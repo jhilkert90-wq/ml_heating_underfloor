@@ -463,12 +463,13 @@ class TestParsePriceEntries:
         optimizer._parse_price_entries(raw, now_local)
         assert len(optimizer._price_entries) == 24
 
-    def test_parse_15min_entries(self, optimizer):
+    def test_parse_15min_entries_merged_to_hourly(self, optimizer):
         today = date(2026, 4, 14)
         raw = _make_15min_entries(today)
         now_local = datetime(2026, 4, 14, 10, 0, tzinfo=LOCAL_TZ)
         optimizer._parse_price_entries(raw, now_local)
-        assert len(optimizer._price_entries) == 96
+        # 96 quarter-hourly entries should be merged to 24 hourly entries
+        assert len(optimizer._price_entries) == 24
 
     def test_parse_sets_cache_metadata(self, optimizer):
         today = date(2026, 4, 14)
@@ -549,6 +550,57 @@ class TestParsePriceEntries:
         assert len(prices) == 24
 
 
+class TestMergeToHourly:
+    """Test the 15-min → 60-min merge logic in _merge_to_hourly_if_needed."""
+
+    def test_hourly_entries_unchanged(self):
+        """60-min input is returned as-is."""
+        tz = LOCAL_TZ
+        entries = [
+            (datetime(2026, 4, 14, h, 0, tzinfo=tz), 0.10 + 0.01 * h)
+            for h in range(24)
+        ]
+        result = PriceOptimizer._merge_to_hourly_if_needed(entries)
+        assert result == entries
+
+    def test_15min_entries_merged(self):
+        """96 quarter-hourly entries become 24 hourly entries."""
+        tz = LOCAL_TZ
+        entries = []
+        for slot in range(96):
+            h, m = divmod(slot * 15, 60)
+            dt = datetime(2026, 4, 14, h, m, 0, tzinfo=tz)
+            entries.append((dt, 0.10 + 0.001 * slot))
+        result = PriceOptimizer._merge_to_hourly_if_needed(entries)
+        assert len(result) == 24
+        # Each hourly entry should be the mean of its 4 quarter-hour slots
+        for i, (ts, avg_price) in enumerate(result):
+            assert ts.minute == 0
+            assert ts.hour == i
+            # Slots for hour i: i*4, i*4+1, i*4+2, i*4+3
+            expected = sum(0.10 + 0.001 * (i * 4 + j) for j in range(4)) / 4
+            assert avg_price == pytest.approx(expected)
+
+    def test_single_entry_unchanged(self):
+        """A single entry is returned as-is (can't detect resolution)."""
+        entry = [(datetime(2026, 4, 14, 10, 0, tzinfo=LOCAL_TZ), 0.15)]
+        assert PriceOptimizer._merge_to_hourly_if_needed(entry) == entry
+
+    def test_partial_hour_averaged(self):
+        """Incomplete hour (e.g. 3 of 4 slots) is still averaged correctly."""
+        tz = LOCAL_TZ
+        entries = [
+            (datetime(2026, 4, 14, 10, 0, tzinfo=tz), 0.10),
+            (datetime(2026, 4, 14, 10, 15, tzinfo=tz), 0.12),
+            (datetime(2026, 4, 14, 10, 30, tzinfo=tz), 0.14),
+            # missing 10:45
+        ]
+        result = PriceOptimizer._merge_to_hourly_if_needed(entries)
+        assert len(result) == 1
+        assert result[0][0].hour == 10
+        assert result[0][1] == pytest.approx(0.12)  # mean of 0.10, 0.12, 0.14
+
+
 class TestGetCurrentPrice:
     """Test time-based current price lookup."""
 
@@ -564,16 +616,18 @@ class TestGetCurrentPrice:
         expected = 0.10 + 0.01 * 10  # hour 10
         assert price == pytest.approx(expected)
 
-    def test_15min_finds_correct_slot(self, optimizer):
+    def test_15min_merged_finds_correct_hour(self, optimizer):
         today = date(2026, 4, 14)
         raw = _make_15min_entries(today)
         now_local = datetime(2026, 4, 14, 10, 0, tzinfo=LOCAL_TZ)
         optimizer._parse_price_entries(raw, now_local)
 
-        # At 10:35 → slot 10:30 (slot index 42)
+        # At 10:35, merged hourly entry for 10:00 should be returned.
+        # Original 15-min slots 40-43 have prices 0.10+0.001*{40,41,42,43};
+        # their mean is 0.10 + 0.001 * 41.5 = 0.1415.
         query = datetime(2026, 4, 14, 10, 35, tzinfo=LOCAL_TZ)
         price = optimizer.get_current_price(query)
-        expected = 0.10 + 0.001 * 42  # slot 42
+        expected = 0.10 + 0.001 * 41.5  # average of slots 40-43
         assert price == pytest.approx(expected)
 
     def test_before_first_entry_returns_none(self, optimizer):
@@ -619,7 +673,7 @@ class TestGetTodayPrices:
         # Should only return today's 24 entries
         assert len(prices) == 24
 
-    def test_filters_to_today_15min(self, optimizer):
+    def test_filters_to_today_15min_merged(self, optimizer):
         today = date(2026, 4, 14)
         tomorrow = date(2026, 4, 15)
         raw = _make_15min_entries(today) + _make_15min_entries(tomorrow)
@@ -628,7 +682,8 @@ class TestGetTodayPrices:
 
         query = datetime(2026, 4, 14, 14, 0, tzinfo=LOCAL_TZ)
         prices = optimizer.get_today_prices(query)
-        assert len(prices) == 96
+        # 15-min data merged → 24 hourly entries per day
+        assert len(prices) == 24
 
     def test_empty_cache_returns_empty(self, optimizer):
         assert optimizer.get_today_prices() == []

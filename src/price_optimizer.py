@@ -7,9 +7,9 @@ target offset so the thermal model heats slightly more during cheap
 periods and slightly less during expensive ones.
 
 Prices are fetched via the ``tibber.get_prices`` HA service call and
-cached in-memory.  Both 15-minute and 60-minute price resolutions are
-handled transparently — percentile calculations always use every entry
-for the current calendar day.
+cached in-memory.  If the service returns 15-minute resolution data it
+is automatically merged to 60-minute (hourly) entries by averaging the
+prices within each clock hour.
 """
 import logging
 from datetime import date, datetime, timedelta, timezone, tzinfo
@@ -144,7 +144,12 @@ class PriceOptimizer:
         now_local: datetime,
     ) -> None:
         """Parse raw Tibber entries into ``_price_entries`` and update cache
-        metadata."""
+        metadata.
+
+        If the raw data has 15-minute resolution it is automatically
+        merged to 60-minute (hourly) entries by averaging the prices
+        within each clock hour.
+        """
         entries: List[Tuple[datetime, float]] = []
         for item in raw_entries:
             try:
@@ -158,6 +163,7 @@ class PriceOptimizer:
             return
 
         entries.sort(key=lambda e: e[0])
+        entries = self._merge_to_hourly_if_needed(entries)
         self._price_entries = entries
         self._price_tz = entries[0][0].tzinfo
 
@@ -177,6 +183,47 @@ class PriceOptimizer:
         )
 
     # ------------------------------------------------------------------
+    # 15-min → 60-min merge
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _merge_to_hourly_if_needed(
+        entries: List[Tuple[datetime, float]],
+    ) -> List[Tuple[datetime, float]]:
+        """Merge 15-minute price entries to hourly by averaging.
+
+        Detection: if the first two entries are exactly 15 minutes apart
+        the data is treated as quarter-hourly.  Entries are grouped by
+        their clock hour (truncated to HH:00) and the mean price of each
+        group becomes the hourly price.
+
+        If the data is already hourly (or any other resolution) the
+        entries are returned unchanged.
+        """
+        if len(entries) < 2:
+            return entries
+        delta = entries[1][0] - entries[0][0]
+        if delta != timedelta(minutes=15):
+            return entries
+
+        # Group by the start of each clock hour
+        hourly: Dict[datetime, List[float]] = {}
+        for ts, price in entries:
+            hour_start = ts.replace(minute=0, second=0, microsecond=0)
+            hourly.setdefault(hour_start, []).append(price)
+
+        merged = [
+            (hour_start, sum(prices) / len(prices))
+            for hour_start, prices in sorted(hourly.items())
+        ]
+        logger.info(
+            "Merged %d quarter-hourly entries → %d hourly entries",
+            len(entries),
+            len(merged),
+        )
+        return merged
+
+    # ------------------------------------------------------------------
     # Current price and today's prices from cache
     # ------------------------------------------------------------------
 
@@ -185,8 +232,7 @@ class PriceOptimizer:
     ) -> Optional[float]:
         """Return the price that is active at *now*.
 
-        Finds the last entry whose ``start_time ≤ now``.  Works for both
-        15-minute and 60-minute resolutions.
+        Finds the last entry whose ``start_time ≤ now``.
         """
         if not self._price_entries:
             return None
@@ -210,8 +256,8 @@ class PriceOptimizer:
     ) -> List[float]:
         """Return all prices for today's calendar day.
 
-        Used for percentile-based classification.  Returns 24 entries for
-        hourly data or 96 for 15-minute data — the classifier handles both.
+        Used for percentile-based classification.  Returns 24 hourly entries.
+        Quarter-hourly input is merged to hourly during parsing.
         """
         if not self._price_entries:
             return []
