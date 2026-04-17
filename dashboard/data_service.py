@@ -18,17 +18,45 @@ logger = logging.getLogger(__name__)
 # Default state file locations (addon vs local development)
 _STATE_FILE_CANDIDATES = [
     os.environ.get("UNIFIED_STATE_FILE", ""),
+    "/config/ml_heating/unified_thermal_state.json",
     "/opt/ml_heating/unified_thermal_state.json",
     "/data/models/unified_thermal_state.json",
     os.path.join(os.path.dirname(os.path.dirname(__file__)),
                  "unified_thermal_state.json"),
 ]
 
+_SHADOW_SUFFIX = "_shadow"
+
+
+def _shadow_variant(path: str) -> str:
+    """Return the shadow-mode variant of a state file path.
+
+    Inserts ``_shadow`` before the file extension, e.g.
+    ``unified_thermal_state.json`` → ``unified_thermal_state_shadow.json``.
+    """
+    if not path:
+        return path
+    dot = path.rfind(".")
+    if dot == -1:
+        return f"{path}{_SHADOW_SUFFIX}"
+    return f"{path[:dot]}{_SHADOW_SUFFIX}{path[dot:]}"
+
 
 def _find_state_file() -> Optional[str]:
-    """Locate the unified thermal state JSON file."""
+    """Locate the unified thermal state JSON file.
+
+    For each candidate path the shadow-mode variant
+    (e.g. ``*_shadow.json``) is checked first so that the dashboard
+    automatically picks up shadow deployments.
+    """
     for candidate in _STATE_FILE_CANDIDATES:
-        if candidate and os.path.isfile(candidate):
+        if not candidate:
+            continue
+        # Shadow deployments write to a suffixed file – prefer it.
+        shadow = _shadow_variant(candidate)
+        if os.path.isfile(shadow):
+            return shadow
+        if os.path.isfile(candidate):
             return candidate
     return None
 
