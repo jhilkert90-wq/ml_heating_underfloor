@@ -20,6 +20,7 @@ sys.path.insert(
 
 from data_service import (
     _find_state_file,
+    _shadow_variant,
     load_thermal_state,
     get_system_metrics,
     _empty_metrics,
@@ -181,6 +182,53 @@ class TestLoadThermalState:
         import data_service as ds
         monkeypatch.setattr(ds, "_STATE_FILE_CANDIDATES", [str(path)])
         assert load_thermal_state() is None
+
+    def test_prefers_shadow_variant(self, tmp_path, monkeypatch):
+        """When a shadow file exists alongside the base file, the shadow
+        variant should be returned by ``_find_state_file``."""
+        base = tmp_path / "unified_thermal_state.json"
+        shadow = tmp_path / "unified_thermal_state_shadow.json"
+        base.write_text(json.dumps(_make_state(cycle_count=1)))
+        shadow.write_text(json.dumps(_make_state(cycle_count=99)))
+
+        import data_service as ds
+        monkeypatch.setattr(
+            ds, "_STATE_FILE_CANDIDATES", [str(base)]
+        )
+        found = _find_state_file()
+        assert found == str(shadow)
+
+        state = load_thermal_state()
+        assert state["learning_state"]["cycle_count"] == 99
+
+    def test_falls_back_to_base_when_no_shadow(self, tmp_path, monkeypatch):
+        """When only the base file exists, it should be returned."""
+        base = tmp_path / "unified_thermal_state.json"
+        base.write_text(json.dumps(_make_state(cycle_count=7)))
+
+        import data_service as ds
+        monkeypatch.setattr(
+            ds, "_STATE_FILE_CANDIDATES", [str(base)]
+        )
+        found = _find_state_file()
+        assert found == str(base)
+
+
+class TestShadowVariant:
+    def test_json_suffix(self):
+        assert _shadow_variant("/a/b/state.json") == "/a/b/state_shadow.json"
+
+    def test_no_extension(self):
+        assert _shadow_variant("/a/b/state") == "/a/b/state_shadow"
+
+    def test_empty_string(self):
+        assert _shadow_variant("") == ""
+
+    def test_dotted_directory(self):
+        assert (
+            _shadow_variant("/path/v1.0/state.json")
+            == "/path/v1.0/state_shadow.json"
+        )
 
 
 # ---------------------------------------------------------------------------
