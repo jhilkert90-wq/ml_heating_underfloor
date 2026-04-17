@@ -36,10 +36,10 @@ def _shadow_variant(path: str) -> str:
     """
     if not path:
         return path
-    dot = path.rfind(".")
-    if dot == -1:
+    root, ext = os.path.splitext(path)
+    if not ext:
         return f"{path}{_SHADOW_SUFFIX}"
-    return f"{path[:dot]}{_SHADOW_SUFFIX}{path[dot:]}"
+    return f"{root}{_SHADOW_SUFFIX}{ext}"
 
 
 def _find_state_file() -> Optional[str]:

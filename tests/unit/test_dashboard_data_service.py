@@ -224,6 +224,12 @@ class TestShadowVariant:
     def test_empty_string(self):
         assert _shadow_variant("") == ""
 
+    def test_dotted_directory(self):
+        assert (
+            _shadow_variant("/path/v1.0/state.json")
+            == "/path/v1.0/state_shadow.json"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Tests: get_system_metrics
