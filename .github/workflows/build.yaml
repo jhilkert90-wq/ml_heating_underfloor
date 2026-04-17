@@ -37,11 +37,38 @@ jobs:
           echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Bumped version: ${CURRENT} -> ${NEW_VERSION}"
 
+      - name: Sync changelog to addon
+        id: sync_changelog
+        run: |
+          ADDON_CHANGELOG="ml_heating_underfloor/CHANGELOG.md"
+          MAIN_CHANGELOG="CHANGELOG.md"
+          NEW_VERSION="${{ steps.bump.outputs.version }}"
+          TODAY=$(date +%Y-%m-%d)
+
+          # Extract the [Unreleased] section from the main changelog (content between
+          # the first ## [Unreleased] heading and the next ## heading).
+          UNRELEASED=$(awk '/^## \[Unreleased\]/{found=1; next} found && /^## \[/{exit} found{print}' "$MAIN_CHANGELOG")
+
+          if [ -n "$UNRELEASED" ]; then
+            # Prepend a new versioned section to the addon changelog, after the first line (title).
+            TITLE=$(head -1 "$ADDON_CHANGELOG")
+            REST=$(tail -n +2 "$ADDON_CHANGELOG")
+            printf '%s\n\n## [%s] - %s\n%s\n%s\n' \
+              "$TITLE" "$NEW_VERSION" "$TODAY" "$UNRELEASED" "$REST" > "$ADDON_CHANGELOG"
+            echo "changelog_updated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No [Unreleased] section found in main CHANGELOG.md — skipping addon changelog update."
+            echo "changelog_updated=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ml_heating_underfloor/config.yaml
+          if [ "${{ steps.sync_changelog.outputs.changelog_updated }}" = "true" ]; then
+            git add ml_heating_underfloor/CHANGELOG.md
+          fi
           git commit -m "Bump version to ${{ steps.bump.outputs.version }} [skip ci]"
           git push
 
