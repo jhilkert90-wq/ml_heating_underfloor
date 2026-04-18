@@ -2170,7 +2170,8 @@ class ThermalEquilibriumModel:
                 trend_weight = np.exp(
                     -elapsed_hours / config.TREND_DECAY_TAU_HOURS
                 )
-                # delta_60m is °C/60 min → scale to per-step contribution
+                # Scale: delta_60m is °C per 60 min; multiply by
+                # time_step_hours to get the per-step contribution.
                 trend_bias = indoor_trend_60m * time_step_hours * trend_weight
                 trend_bias = np.clip(trend_bias, -0.05, 0.05)
                 temp_change += trend_bias
