@@ -1,4 +1,4 @@
-name: AI Code Review (GPT-5.4)
+name: AI Code Review (GitHub Copilot)
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  models: read
 
 jobs:
   ai-review:
@@ -49,7 +50,7 @@ jobs:
         if: steps.pr_diff.outputs.file_count != '0'
         id: review
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           pip install openai==1.* 2>/dev/null
 
@@ -66,13 +67,18 @@ jobs:
               Path("/tmp/review_result.json").write_text(json.dumps({"skip": True}))
               sys.exit(0)
 
-          api_key = os.environ.get("OPENAI_API_KEY", "")
-          if not api_key:
-              print("::warning::OPENAI_API_KEY not set. Skipping AI review.")
+          # Use the GitHub Copilot API — no separate API key needed,
+          # the built-in GITHUB_TOKEN provides access via Copilot premium requests.
+          github_token = os.environ.get("GITHUB_TOKEN", "")
+          if not github_token:
+              print("::warning::GITHUB_TOKEN not available. Skipping AI review.")
               Path("/tmp/review_result.json").write_text(json.dumps({"skip": True}))
               sys.exit(0)
 
-          client = OpenAI(api_key=api_key)
+          client = OpenAI(
+              base_url="https://api.githubcopilot.com",
+              api_key=github_token,
+          )
 
           diff = Path("/tmp/pr_diff.txt").read_text(errors="replace")[:25000]
           changed_files = Path("/tmp/changed_files.txt").read_text(errors="replace")
@@ -132,7 +138,7 @@ jobs:
 
           try:
               resp = client.chat.completions.create(
-                  model="gpt-5.4",
+                  model="gpt-4o",  # Available via GitHub Copilot premium requests
                   messages=[{"role": "user", "content": prompt}],
                   temperature=0.1,
                   max_tokens=3000,
@@ -187,7 +193,7 @@ jobs:
           icon = {"approve": "✅", "request_changes": "🔴", "comment": "💬"}.get(verdict, "💬")
           severity_icon = {"critical": "🔴", "warning": "⚠️", "suggestion": "💡"}
 
-          body = f"## {icon} AI Code Review (GPT-5.4)\n\n"
+          body = f"## {icon} AI Code Review (GitHub Copilot)\n\n"
           body += f"**Verdict: {verdict.upper().replace('_', ' ')}**\n\n"
           body += f"{summary}\n\n"
 
@@ -208,7 +214,7 @@ jobs:
               body += "\n"
 
           body += "---\n"
-          body += "*This review was generated automatically by GPT-5.4. "
+          body += "*This review was generated automatically by GitHub Copilot (gpt-4o). "
           body += "You can reject suggestions by dismissing or replying to this comment. "
           body += "To re-run the review, push a new commit or re-run the workflow.*\n"
 

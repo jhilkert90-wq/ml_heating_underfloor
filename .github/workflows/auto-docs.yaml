@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  models: read
 
 jobs:
   update-docs:
@@ -62,7 +63,7 @@ jobs:
       - name: Update documentation with AI
         if: steps.diff.outputs.code_changes != '0'
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Install dependencies
           pip install openai==1.* 2>/dev/null
@@ -80,12 +81,17 @@ jobs:
               print("::warning::openai package not available. Skipping AI documentation update.")
               sys.exit(0)
 
-          api_key = os.environ.get("OPENAI_API_KEY", "")
-          if not api_key:
-              print("::warning::OPENAI_API_KEY not set. Skipping AI documentation update.")
+          # Use the GitHub Copilot API — no separate API key needed,
+          # the built-in GITHUB_TOKEN provides access via Copilot premium requests.
+          github_token = os.environ.get("GITHUB_TOKEN", "")
+          if not github_token:
+              print("::warning::GITHUB_TOKEN not available. Skipping AI documentation update.")
               sys.exit(0)
 
-          client = OpenAI(api_key=api_key)
+          client = OpenAI(
+              base_url="https://api.githubcopilot.com",
+              api_key=github_token,
+          )
 
           # Read inputs
           diff = Path("/tmp/commit_diff.txt").read_text(errors="replace")[:10000]
@@ -150,7 +156,7 @@ jobs:
 
           try:
               resp = client.chat.completions.create(
-                  model="gpt-4.1",  # Fallback model; gpt-5.4 used in review workflow
+                  model="gpt-4o",  # Available via GitHub Copilot premium requests
                   messages=[{"role": "user", "content": prompt}],
                   temperature=0.2,
                   max_tokens=4000,
