@@ -156,7 +156,8 @@ jobs:
 
           try:
               resp = client.chat.completions.create(
-                  model="gpt-4o",  # Available via GitHub Copilot premium requests
+                  model="gpt-4o",  # gpt-4o is available via GitHub Copilot API (https://api.githubcopilot.com).
+                  # To list available models: GET https://api.githubcopilot.com/models with GITHUB_TOKEN.
                   messages=[{"role": "user", "content": prompt}],
                   temperature=0.2,
                   max_tokens=4000,
