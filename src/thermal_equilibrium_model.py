@@ -2027,6 +2027,12 @@ class ThermalEquilibriumModel:
         # delta_t_floor; defaults to 0 to preserve backward-compat behaviour.
         measured_delta_t = float(external_sources.get("delta_t_floor", 0.0))
         delta_t_floor = self._resolve_delta_t_floor(measured_delta_t)
+        # Observed indoor trend (°C over last 60 min) — captures unmeasured
+        # heat sources (solar through windows, body heat, appliances, thermal
+        # mass).  Applied as a decaying bias in the step loop below.
+        indoor_trend_60m = float(
+            external_sources.get("indoor_temp_delta_60m", 0.0)
+        )
         # _resolve_delta_t_floor already substitutes the HP channel's learned
         # value (~2 °C) when measured < 1.0, so no hardcoded fallback needed.
 
@@ -2155,6 +2161,19 @@ class ThermalEquilibriumModel:
                 -time_step_hours / time_constant_hours
             )
             temp_change = (equilibrium_temp - current_temp) * approach_factor
+
+            # Trend momentum: indoor_temp_delta_60m captures unmeasured heat
+            # sources.  Apply as decaying bias — full strength at t=0, fading
+            # exponentially because conditions (sun angle, occupancy) change.
+            if abs(indoor_trend_60m) > 0.01:
+                elapsed_hours = (step + 1) * time_step_hours
+                trend_weight = np.exp(
+                    -elapsed_hours / config.TREND_DECAY_TAU_HOURS
+                )
+                # delta_60m is °C/60 min → scale to per-step contribution
+                trend_bias = indoor_trend_60m * time_step_hours * trend_weight
+                trend_bias = np.clip(trend_bias, -0.05, 0.05)
+                temp_change += trend_bias
 
             if step > 0:
                 momentum_factor = np.exp(
