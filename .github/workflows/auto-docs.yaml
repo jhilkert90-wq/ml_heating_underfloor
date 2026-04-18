@@ -51,7 +51,7 @@ jobs:
           echo "$COMMIT_MSG" > /tmp/commit_msg.txt
 
           # Check if there are meaningful code changes
-          CODE_CHANGES=$(echo "$CHANGED_FILES" | grep -E '\.(py|yaml|yml|toml|sh|md)$' | wc -l)
+          CODE_CHANGES=$(echo "$CHANGED_FILES" | grep -E '\.(py|yaml|yml|toml|sh|md)$' | wc -l | xargs)
           echo "code_changes=$CODE_CHANGES" >> "$GITHUB_OUTPUT"
           echo "commit_date=$COMMIT_DATE" >> "$GITHUB_OUTPUT"
           echo "commit_author=$COMMIT_AUTHOR" >> "$GITHUB_OUTPUT"
