@@ -1313,6 +1313,11 @@ class EnhancedModelWrapper:
                     if hasattr(self, "_current_features")
                     else 0.0
                 ),
+                indoor_temp_delta_60m=(
+                    self._current_features.get("indoor_temp_delta_60m", 0.0)
+                    if hasattr(self, "_current_features")
+                    else 0.0
+                ),
             )
 
             _it = (

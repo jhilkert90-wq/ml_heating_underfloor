@@ -543,7 +543,6 @@ class HAClient:
         )
 
         # Log Mean Absolute Error (MAE)
-        logging.debug("Logging MAE")
         attributes_mae = get_sensor_attributes(mae_entity_id)
         attributes_mae["last_updated"] = now_utc
         self.set_state(
@@ -554,7 +553,6 @@ class HAClient:
         )
 
         # Log Root Mean Squared Error (RMSE)
-        logging.debug("Logging RMSE")
         attributes_rmse = get_sensor_attributes(rmse_entity_id)
         attributes_rmse["last_updated"] = now_utc
         self.set_state(
