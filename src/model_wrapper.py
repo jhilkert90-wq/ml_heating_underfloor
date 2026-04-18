@@ -788,8 +788,12 @@ class EnhancedModelWrapper:
                         cloud_cover_pct=self._avg_cloud_cover,
                         inlet_temp=_inlet,
                         delta_t_floor=_dtf,
-                        indoor_temp_delta_60m=_features.get(
-                            "indoor_temp_delta_60m", 0.0
+                        indoor_temp_delta_60m=(
+                            self._current_features.get(
+                                "indoor_temp_delta_60m", 0.0
+                            )
+                            if hasattr(self, "_current_features")
+                            else 0.0
                         ),
                     )
                 )
