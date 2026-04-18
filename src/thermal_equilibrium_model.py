@@ -2163,8 +2163,9 @@ class ThermalEquilibriumModel:
             temp_change = (equilibrium_temp - current_temp) * approach_factor
 
             # Trend momentum: indoor_temp_delta_60m captures unmeasured heat
-            # sources.  Apply as decaying bias — full strength at t=0, fading
-            # exponentially because conditions (sun angle, occupancy) change.
+            # sources.  Apply as decaying bias — strongest at the first step
+            # (slightly decayed by one Δt) and fading exponentially because
+            # conditions (sun angle, occupancy) change.
             if abs(indoor_trend_60m) > 0.01:
                 elapsed_hours = (step + 1) * time_step_hours
                 trend_weight = np.exp(
