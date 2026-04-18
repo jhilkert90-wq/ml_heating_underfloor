@@ -1,5 +1,26 @@
 # Active Context - Current Work & Decision State
 
+### 🌡️ **INDOOR TEMPERATURE TREND BIAS IN TRAJECTORY — April 2026**
+
+#### ✅ **Implemented — Decaying momentum bias in predict_thermal_trajectory()**
+- **Problem**: Physics model has no concept of momentum — doesn't know room is actively warming/cooling from unmeasured sources (solar through windows at angles PV panels don't capture, body heat, appliances, thermal mass releasing stored energy). Example: indoor 23.3°C, target 22.6°C, `indoor_temp_delta_60m = +0.08` — model predicts cooling toward equilibrium but reality shows the room is still warming.
+- **Solution**: `indoor_temp_delta_60m` (°C/60min observed trend) applied as exponentially decaying bias in the trajectory step loop. Full strength at t=0, fading with `TREND_DECAY_TAU_HOURS` (default 1.5h). Clamped ±0.05°C/step, gated on abs > 0.01.
+- **Files**: `src/thermal_equilibrium_model.py` (extraction + step loop), `src/model_wrapper.py` (both callers), `src/config.py` (`TREND_DECAY_TAU_HOURS`)
+- **Safety**: Doesn't affect learning. Clamped per-step. Signed (works for both warming/cooling). Decays exponentially.
+
+### 🐛 **BUG FIXES — April 2026**
+
+#### ✅ **Bug 1: Dashboard Plotly `titlefont` crash**
+- **Problem**: Plotly 6.x removed `titlefont` property → `ValueError` crash on every dashboard load
+- **Fix**: `titlefont` → `title_font` in `dashboard/components/overview.py`
+
+#### ✅ **Bug 2: Pump off when outlet = inlet — NOT A BUG**
+- **Confirmed**: When pump is off because outlet temp equals inlet temp, there is no heating and no cooling is possible/sensible in winter. Summer cooling mode exists separately.
+
+#### ✅ **Bug 3: Noisy "Logging MAE"/"Logging RMSE" debug messages**
+- **Problem**: `logging.debug("Logging MAE")` and `logging.debug("Logging RMSE")` in `ha_client.py` produce low-value noise every 10-minute cycle
+- **Fix**: Removed both debug statements. HA state updates already provide sufficient logging.
+
 ### 💰 **ELECTRICITY PRICE-AWARE OPTIMIZATION — July 2025**
 
 #### ✅ **Implemented — Feature-flagged, default disabled**

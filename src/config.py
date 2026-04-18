@@ -278,6 +278,9 @@ CYCLE_INTERVAL_MINUTES: int = int(os.getenv("CYCLE_INTERVAL_MINUTES", "10"))
 MAX_TEMP_CHANGE_PER_CYCLE: int = int(
     os.getenv("MAX_TEMP_CHANGE_PER_CYCLE", "2")
 )
+TREND_DECAY_TAU_HOURS: float = max(
+    0.1, float(os.getenv("TREND_DECAY_TAU_HOURS", "1.5"))
+)
 OUTLET_SMOOTHING_ALPHA: float = float(
     os.getenv("OUTLET_SMOOTHING_ALPHA", "0.3")
 )

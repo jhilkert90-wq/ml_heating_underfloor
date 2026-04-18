@@ -131,12 +131,12 @@ def render_performance_trend():
         xaxis_title="Time",
         yaxis=dict(
             title="Confidence",
-            titlefont=dict(color="#1f77b4"),
+            title_font=dict(color="#1f77b4"),
             tickfont=dict(color="#1f77b4"),
         ),
         yaxis2=dict(
             title="Abs Error (°C)",
-            titlefont=dict(color="#ff7f0e"),
+            title_font=dict(color="#ff7f0e"),
             tickfont=dict(color="#ff7f0e"),
             overlaying="y",
             side="right",

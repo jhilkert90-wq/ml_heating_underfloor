@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Indoor Temperature Trend Bias in Trajectory Prediction**: `predict_thermal_trajectory()` now incorporates `indoor_temp_delta_60m` as a decaying momentum bias. Observed indoor temperature trend (°C over last 60 min) captures unmeasured heat sources (solar through windows, body heat, appliances, thermal mass) that the physics model cannot see. The bias uses exponential decay controlled by `TREND_DECAY_TAU_HOURS` (default 1.5h) so near-future predictions strongly reflect observed momentum while far-future predictions rely on physics.
+  - New config variable `TREND_DECAY_TAU_HOURS` (default `1.5`, env-overridable) controls decay time constant.
+  - Trend bias is clamped to ±0.05°C per step and gated on `abs(trend) > 0.01` to prevent floating-point noise.
+  - Passed from both binary search optimization and trajectory verification callers in `model_wrapper.py`.
+
+### Fixed
+- **Dashboard `titlefont` crash**: Replaced deprecated Plotly `titlefont` → `title_font` in `dashboard/components/overview.py` confidence/error dual-axis chart. Plotly 6.x removed `titlefont`, causing `ValueError` on every dashboard load.
+- **Noisy "Logging MAE"/"Logging RMSE" debug messages**: Removed unnecessary `logging.debug("Logging MAE")` and `logging.debug("Logging RMSE")` in `ha_client.py` that produced low-value noise every 10-minute cycle. The actual HA state updates and their results already provide sufficient logging.
+
+### Added
 - **Electricity Price-Aware Optimization**: Tibber-integrated price classification that shifts the binary search target temperature based on current electricity price relative to today's distribution.
   - `PriceOptimizer` class with percentile-based classification (CHEAP/NORMAL/EXPENSIVE) using daily price arrays from Tibber sensor.
   - CHEAP → target +0.2°C (heat more), EXPENSIVE → target −0.2°C (heat less), NORMAL → unchanged. Convergence precision stays at ±0.01°C.

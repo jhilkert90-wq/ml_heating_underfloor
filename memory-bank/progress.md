@@ -1,6 +1,25 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - July 2025
+## 🎯 CURRENT STATUS - April 2026
+
+### ✅ **INDOOR TEMPERATURE TREND BIAS + BUG FIXES**
+
+**System Status**: **IMPLEMENTED** — Trajectory prediction now respects observed indoor temperature momentum. Dashboard crash fixed. Logging noise reduced.
+
+**Test Suite**: **649 passed** (16 pre-existing failures unrelated to changes)
+
+**Implementation**:
+- ✅ `predict_thermal_trajectory()` extracts `indoor_temp_delta_60m` from `**external_sources`
+- ✅ Decaying trend bias in step loop: `trend_bias = delta_60m × time_step × e^(-elapsed/τ)`, clamped ±0.05°C, gated on abs > 0.01
+- ✅ `TREND_DECAY_TAU_HOURS` config (default 1.5h, env-overridable)
+- ✅ Passed from binary search caller and trajectory verification caller in `model_wrapper.py`
+- ✅ Bug 1: `titlefont` → `title_font` in `dashboard/components/overview.py`
+- ✅ Bug 2: Pump off when outlet=inlet confirmed as correct behavior (not a bug)
+- ✅ Bug 3: Removed noisy "Logging MAE"/"Logging RMSE" debug messages from `ha_client.py`
+
+**Files**: `src/thermal_equilibrium_model.py`, `src/model_wrapper.py`, `src/config.py`, `dashboard/components/overview.py`, `src/ha_client.py`
+
+## 🎯 PREVIOUS STATUS - July 2025
 
 ### ✅ **ELECTRICITY PRICE-AWARE OPTIMIZATION**
 

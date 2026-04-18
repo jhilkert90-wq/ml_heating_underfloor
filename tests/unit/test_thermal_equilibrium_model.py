@@ -886,3 +886,100 @@ class TestSlabPumpGate:
         # passive branch ignores it.  Both should give identical results.
         result_b = slab_model.predict_thermal_trajectory(**kwargs)
         assert result_a["trajectory"] == result_b["trajectory"]
+
+
+class TestIndoorTrendBias:
+    """Tests for the indoor_temp_delta_60m trend momentum bias in
+    predict_thermal_trajectory()."""
+
+    def test_positive_trend_shifts_first_step_warmer(self, clean_model):
+        """A positive indoor_temp_delta_60m should make the first predicted
+        temperature warmer than a baseline with no trend."""
+        common = dict(
+            current_indoor=22.0,
+            target_indoor=22.0,
+            outlet_temp=30.0,
+            outdoor_temp=5.0,
+            time_horizon_hours=1,
+            time_step_minutes=10,
+            inlet_temp=28.0,
+            delta_t_floor=2.0,
+        )
+        baseline = clean_model.predict_thermal_trajectory(**common)
+        with_trend = clean_model.predict_thermal_trajectory(
+            **common, indoor_temp_delta_60m=0.5,
+        )
+        # First step should be warmer with a positive trend
+        assert with_trend["trajectory"][0] > baseline["trajectory"][0], (
+            "Positive trend should shift the first step warmer"
+        )
+
+    def test_negative_trend_shifts_first_step_cooler(self, clean_model):
+        """A negative indoor_temp_delta_60m should make the first predicted
+        temperature cooler than a baseline with no trend."""
+        common = dict(
+            current_indoor=22.0,
+            target_indoor=22.0,
+            outlet_temp=30.0,
+            outdoor_temp=5.0,
+            time_horizon_hours=1,
+            time_step_minutes=10,
+            inlet_temp=28.0,
+            delta_t_floor=2.0,
+        )
+        baseline = clean_model.predict_thermal_trajectory(**common)
+        with_trend = clean_model.predict_thermal_trajectory(
+            **common, indoor_temp_delta_60m=-0.5,
+        )
+        assert with_trend["trajectory"][0] < baseline["trajectory"][0], (
+            "Negative trend should shift the first step cooler"
+        )
+
+    def test_trend_bias_decays_over_time(self, clean_model):
+        """The per-step trend contribution should decrease over successive
+        steps (exponential decay)."""
+        common = dict(
+            current_indoor=22.0,
+            target_indoor=22.0,
+            outlet_temp=30.0,
+            outdoor_temp=5.0,
+            time_horizon_hours=2,
+            time_step_minutes=10,
+            inlet_temp=28.0,
+            delta_t_floor=2.0,
+        )
+        baseline = clean_model.predict_thermal_trajectory(**common)
+        with_trend = clean_model.predict_thermal_trajectory(
+            **common, indoor_temp_delta_60m=0.5,
+        )
+        bl = baseline["trajectory"]
+        tr = with_trend["trajectory"]
+        # Compute the *incremental* delta (per-step trend contribution)
+        # by differencing cumulative deltas at successive steps.
+        cumulative = [t - b for t, b in zip(tr, bl)]
+        early_incr = cumulative[0]  # first step contribution
+        late_incr = cumulative[-1] - cumulative[-2]  # last step contribution
+        assert early_incr > late_incr, (
+            f"Per-step trend bias should decay: early {early_incr:.6f} "
+            f"should exceed late {late_incr:.6f}"
+        )
+
+    def test_small_trend_below_gate_has_no_effect(self, clean_model):
+        """Trend values with abs < 0.01 should be gated out (no effect)."""
+        common = dict(
+            current_indoor=22.0,
+            target_indoor=22.0,
+            outlet_temp=30.0,
+            outdoor_temp=5.0,
+            time_horizon_hours=1,
+            time_step_minutes=10,
+            inlet_temp=28.0,
+            delta_t_floor=2.0,
+        )
+        baseline = clean_model.predict_thermal_trajectory(**common)
+        with_tiny_trend = clean_model.predict_thermal_trajectory(
+            **common, indoor_temp_delta_60m=0.005,
+        )
+        assert baseline["trajectory"] == with_tiny_trend["trajectory"], (
+            "Trend below 0.01 gate should have zero effect"
+        )
