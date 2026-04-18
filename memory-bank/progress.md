@@ -1,6 +1,24 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 2026
+## 🎯 CURRENT STATUS - April 18, 2026
+
+### ✅ **CRITICAL FIX: Binary Search _features NameError + Debug Logging**
+
+**System Status**: **FIXED** — Binary search now correctly resolves `indoor_temp_delta_60m` from `self._current_features` instead of undefined `_features`. Previously every binary search iteration failed with `NameError`, falling back to max outlet (35°C). Debug logging added to verify fix in production.
+
+**Test Suite**: **31 thermal model tests passed** (16 pre-existing failures in other areas unrelated to changes)
+
+**Implementation**:
+- ✅ Fixed `_features` → `self._current_features` with `hasattr` guard in binary search trajectory call (L791)
+- ✅ Added debug log before trajectory call (first iteration): shows `inlet_temp`, `delta_t_floor`, `indoor_temp_delta_60m`, horizon, outlet_mid
+- ✅ Added debug log after successful trajectory (first iteration): shows predicted indoor, trajectory steps, start→end temperatures
+- ✅ Extracted `_trend_60m` variable to avoid repeating the `hasattr` guard in the trajectory call
+- ✅ Updated CHANGELOG.md (root + addon) with fix and debug logging entries
+- ✅ Updated memory-bank (activeContext.md, progress.md)
+
+**Files**: `src/model_wrapper.py`, `CHANGELOG.md`, `ml_heating_underfloor/CHANGELOG.md`, `memory-bank/activeContext.md`, `memory-bank/progress.md`
+
+## 🎯 PREVIOUS STATUS - April 2026
 
 ### ✅ **INDOOR TEMPERATURE TREND BIAS + BUG FIXES**
 

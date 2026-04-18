@@ -9,8 +9,12 @@
   - Passed from both binary search optimization and trajectory verification callers in `model_wrapper.py`.
 
 ### Fixed
+- **Critical: Binary search `_features` NameError causing 35°C fallback**: `predict_thermal_trajectory` failed every binary search iteration with `name '_features' is not defined`, causing silent fallback to max outlet temperature (35°C). The gradual temperature control then capped/smoothed this down, masking the root cause but producing suboptimal heating decisions. Fixed by replacing bare `_features.get(...)` with `self._current_features.get(...)` using the safe `hasattr` guard pattern used elsewhere.
 - **Dashboard `titlefont` crash**: Replaced deprecated Plotly `titlefont` → `title_font` in `dashboard/components/overview.py` confidence/error dual-axis chart. Plotly 6.x removed `titlefont`, causing `ValueError` on every dashboard load.
 - **Noisy "Logging MAE"/"Logging RMSE" debug messages**: Removed unnecessary `logging.debug("Logging MAE")` and `logging.debug("Logging RMSE")` in `ha_client.py` that produced low-value noise every 10-minute cycle. The actual HA state updates and their results already provide sufficient logging.
+
+### Added
+- **Binary search diagnostic logging**: Added debug logs on first iteration of binary search to show resolved `inlet_temp`, `delta_t_floor`, `indoor_temp_delta_60m`, optimization horizon, and trajectory result (steps, start→end temperatures). Helps verify the `_features` fix is working correctly in production.
 
 ### Added
 - **Electricity Price-Aware Optimization**: Tibber-integrated price classification that shifts the binary search target temperature based on current electricity price relative to today's distribution.
