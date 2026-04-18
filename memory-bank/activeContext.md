@@ -1,5 +1,14 @@
 # Active Context - Current Work & Decision State
 
+### 🔧 **CRITICAL BUG FIX: Binary Search _features NameError — April 18, 2026**
+
+#### ✅ **Fixed — Binary search trajectory now works correctly**
+- **Problem**: `predict_thermal_trajectory` failed every binary search iteration with `name '_features' is not defined`. Line 791 in `model_wrapper.py` referenced bare `_features` which was never defined in the binary search scope. This caused the binary search to always fall back to max outlet (35°C). Gradual temperature control then capped/smoothed it, masking the issue but producing suboptimal heating.
+- **Root cause**: When `indoor_temp_delta_60m` was added as a parameter to the trajectory call in the binary search, the variable name `_features` was used instead of `self._current_features`.
+- **Fix**: Replaced `_features.get("indoor_temp_delta_60m", 0.0)` with `self._current_features.get(...)` guarded by `hasattr(self, "_current_features")`, matching the pattern used in the trajectory verification caller (L1316-1319).
+- **Verification logging**: Added debug logs on first binary search iteration to show resolved feature values (`inlet_temp`, `delta_t_floor`, `indoor_temp_delta_60m`, horizon, outlet_mid) and trajectory result (steps, start→end). This confirms the fix is working in production logs.
+- **Files**: `src/model_wrapper.py`
+
 ### 🌡️ **INDOOR TEMPERATURE TREND BIAS IN TRAJECTORY — April 2026**
 
 #### ✅ **Implemented — Decaying momentum bias in predict_thermal_trajectory()**

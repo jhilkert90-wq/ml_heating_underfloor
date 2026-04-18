@@ -771,6 +771,25 @@ class EnhancedModelWrapper:
                 # predict_thermal_trajectory can interpolate it correctly over
                 # the hourly source grid (0h, 1h, 2h, ...).
 
+                _trend_60m = (
+                    self._current_features.get(
+                        "indoor_temp_delta_60m", 0.0
+                    )
+                    if hasattr(self, "_current_features")
+                    else 0.0
+                )
+
+                # Log resolved slab/trend features on first iteration
+                if iteration == 0:
+                    logging.debug(
+                        "🔍 Binary search features: "
+                        "inlet_temp=%s, delta_t_floor=%.2f, "
+                        "indoor_temp_delta_60m=%.4f, "
+                        "horizon=%.1fh, outlet_mid=%.1f°C",
+                        _inlet, _dtf, _trend_60m,
+                        optimization_horizon, outlet_mid,
+                    )
+
                 trajectory_result = (
                     self.thermal_model.predict_thermal_trajectory(
                         current_indoor=current_indoor,
@@ -788,9 +807,7 @@ class EnhancedModelWrapper:
                         cloud_cover_pct=self._avg_cloud_cover,
                         inlet_temp=_inlet,
                         delta_t_floor=_dtf,
-                        indoor_temp_delta_60m=_features.get(
-                            "indoor_temp_delta_60m", 0.0
-                        ),
+                        indoor_temp_delta_60m=_trend_60m,
                     )
                 )
 
@@ -809,6 +826,17 @@ class EnhancedModelWrapper:
                 # Use the temperature at the END of the horizon for
                 # optimization
                 predicted_indoor = trajectory_result["trajectory"][-1]
+
+                # Log trajectory success on first iteration to confirm fix
+                if iteration == 0:
+                    traj = trajectory_result["trajectory"]
+                    logging.debug(
+                        "✅ Binary search trajectory OK (iter 1): "
+                        "outlet=%.1f°C → predicted=%.2f°C "
+                        "(steps=%d, start=%.2f→end=%.2f)",
+                        outlet_mid, predicted_indoor,
+                        len(traj), traj[0], traj[-1],
+                    )
 
             except Exception as e:
                 logging.error(
