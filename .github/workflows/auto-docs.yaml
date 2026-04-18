@@ -1,0 +1,226 @@
+name: Auto-Update Documentation
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'memory-bank/**'
+      - 'CHANGELOG.md'
+      - 'ml_heating_underfloor/CHANGELOG.md'
+      - 'docs/PROJECT_SUMMARY.md'
+
+permissions:
+  contents: write
+  models: read
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    # Skip commits made by this workflow to prevent loops
+    if: "!contains(github.event.head_commit.message, '[skip docs]') && !contains(github.event.head_commit.message, '[skip ci]')"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 2  # Need previous commit for diff
+
+      - name: Get commit diff
+        id: diff
+        run: |
+          # Get the diff of the latest commit (excluding auto-generated files)
+          DIFF=$(git diff HEAD~1 HEAD -- \
+            ':!memory-bank/' \
+            ':!CHANGELOG.md' \
+            ':!ml_heating_underfloor/CHANGELOG.md' \
+            ':!docs/PROJECT_SUMMARY.md' \
+            ':!*.json' \
+            ':!*.csv' \
+            | head -c 12000)
+
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep -v '^memory-bank/' | grep -v '^CHANGELOG.md' | head -50)
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          COMMIT_DATE=$(git log -1 --pretty=%ci)
+
+          # Save to files to avoid shell escaping issues
+          echo "$DIFF" > /tmp/commit_diff.txt
+          echo "$CHANGED_FILES" > /tmp/changed_files.txt
+          echo "$COMMIT_MSG" > /tmp/commit_msg.txt
+
+          # Check if there are meaningful code changes
+          CODE_CHANGES=$(echo "$CHANGED_FILES" | grep -E '\.(py|yaml|yml|toml|sh|md)$' | wc -l | xargs)
+          echo "code_changes=$CODE_CHANGES" >> "$GITHUB_OUTPUT"
+          echo "commit_date=$COMMIT_DATE" >> "$GITHUB_OUTPUT"
+          echo "commit_author=$COMMIT_AUTHOR" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if no code changes
+        if: steps.diff.outputs.code_changes == '0'
+        run: echo "No meaningful code changes detected. Skipping documentation update."
+
+      - name: Update documentation with AI
+        if: steps.diff.outputs.code_changes != '0'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Install dependencies
+          pip install openai==1.* 2>/dev/null
+
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import os
+          import sys
+          from datetime import datetime
+          from pathlib import Path
+
+          try:
+              from openai import OpenAI
+          except ImportError:
+              print("::warning::openai package not available. Skipping AI documentation update.")
+              sys.exit(0)
+
+          # Use the GitHub Copilot API — no separate API key needed,
+          # the built-in GITHUB_TOKEN provides access via Copilot premium requests.
+          github_token = os.environ.get("GITHUB_TOKEN", "")
+          if not github_token:
+              print("::warning::GITHUB_TOKEN not available. Skipping AI documentation update.")
+              sys.exit(0)
+
+          client = OpenAI(
+              base_url="https://api.githubcopilot.com",
+              api_key=github_token,
+          )
+
+          # Read inputs
+          diff = Path("/tmp/commit_diff.txt").read_text(errors="replace")[:10000]
+          changed_files = Path("/tmp/changed_files.txt").read_text(errors="replace")
+          commit_msg = Path("/tmp/commit_msg.txt").read_text(errors="replace").strip()
+
+          # Read current docs
+          changelog = Path("CHANGELOG.md").read_text(errors="replace")[:4000]
+          active_ctx = Path("memory-bank/activeContext.md").read_text(errors="replace")[:4000]
+          progress = Path("memory-bank/progress.md").read_text(errors="replace")[:4000]
+
+          today = datetime.now().strftime("%Y-%m-%d")
+          # ── Prompt ──
+          prompt = f"""You are a documentation assistant for an ML heating control system (Home Assistant add-on).
+          A new commit has been pushed. Analyze the changes and produce THREE updated documents.
+
+          ## Commit Info
+          - Message: {commit_msg}
+          - Changed files: {changed_files}
+          - Date: {today}
+
+          ## Diff (truncated)
+          ```
+          {diff[:8000]}
+          ```
+
+          ## Current CHANGELOG.md [Unreleased] section (first 4000 chars)
+          ```
+          {changelog}
+          ```
+
+          ## Current memory-bank/activeContext.md (first 4000 chars)
+          ```
+          {active_ctx}
+          ```
+
+          ## Current memory-bank/progress.md (first 4000 chars)
+          ```
+          {progress}
+          ```
+
+          ## Instructions
+          Return a JSON object with exactly three keys. Do NOT include markdown code fences around the JSON.
+
+          1. "changelog_entry": A string to APPEND under the existing [Unreleased] section.
+             - Use Keep a Changelog categories (Added/Changed/Fixed/Removed).
+             - Only include entries for genuinely new changes NOT already in the [Unreleased] section.
+             - If no new entries are needed, return an empty string.
+             - Do NOT reproduce the entire changelog. Only return the NEW lines to add.
+
+          2. "active_context_update": The FULL updated content for memory-bank/activeContext.md.
+             - Keep the existing structure but add/update a section for this commit.
+             - Put the newest change at the top.
+             - Keep relevant recent context; archive old items (keep last ~5 items).
+
+          3. "progress_update": A string to PREPEND as a new status section at the top of progress.md
+             (after the title line). Include date, what changed, and test status if applicable.
+             If no meaningful update is needed, return an empty string.
+
+          Return ONLY the JSON object, no extra text.
+          """
+
+          try:
+              resp = client.chat.completions.create(
+                  model="gpt-4.1",  # gpt-4.1 via GitHub Copilot API (https://api.githubcopilot.com).
+                  # To list available models: GET https://api.githubcopilot.com/models with GITHUB_TOKEN.
+                  messages=[{"role": "user", "content": prompt}],
+                  temperature=0.2,
+                  max_tokens=4000,
+              )
+              content = resp.choices[0].message.content.strip()
+              # Strip markdown code fences if present
+              if content.startswith("```"):
+                  content = content.split("\n", 1)[1]
+                  if content.endswith("```"):
+                      content = content[:-3]
+                  elif "```" in content:
+                      content = content[:content.rfind("```")]
+
+              result = json.loads(content)
+          except Exception as e:
+              print(f"::warning::AI call failed: {e}")
+              sys.exit(0)
+
+          # ── Apply changelog update ──
+          entry = result.get("changelog_entry", "").strip()
+          if entry:
+              cl = Path("CHANGELOG.md").read_text()
+              marker = "## [Unreleased]"
+              idx = cl.find(marker)
+              if idx != -1:
+                  insert_pos = idx + len(marker)
+                  # Find the end of the existing unreleased section header line
+                  newline = cl.find("\n", insert_pos)
+                  if newline != -1:
+                      updated = cl[:newline + 1] + "\n" + entry + "\n" + cl[newline + 1:]
+                      Path("CHANGELOG.md").write_text(updated)
+                      print("✅ Updated CHANGELOG.md")
+
+          # ── Apply activeContext.md update ──
+          ctx = result.get("active_context_update", "").strip()
+          if ctx:
+              Path("memory-bank/activeContext.md").write_text(ctx + "\n")
+              print("✅ Updated memory-bank/activeContext.md")
+
+          # ── Apply progress.md update ──
+          prog = result.get("progress_update", "").strip()
+          if prog:
+              current = Path("memory-bank/progress.md").read_text()
+              lines = current.split("\n", 1)
+              title = lines[0] if lines else "# ML Heating System - Current Progress"
+              rest = lines[1] if len(lines) > 1 else ""
+              updated = title + "\n\n" + prog + "\n" + rest
+              Path("memory-bank/progress.md").write_text(updated)
+              print("✅ Updated memory-bank/progress.md")
+
+          print("Documentation update complete.")
+          PYTHON_SCRIPT
+
+      - name: Commit documentation updates
+        if: steps.diff.outputs.code_changes != '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md memory-bank/activeContext.md memory-bank/progress.md
+          if git diff --cached --quiet; then
+            echo "No documentation changes to commit."
+          else
+            git commit -m "docs: auto-update documentation and memory bank [skip docs]"
+            git push
+            echo "✅ Documentation changes committed and pushed."
+          fi

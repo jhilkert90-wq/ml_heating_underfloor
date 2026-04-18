@@ -1,0 +1,258 @@
+name: AI Code Review (GitHub Copilot)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  models: read
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    # Skip draft PRs and bot-generated PRs
+    if: "!github.event.pull_request.draft && github.event.pull_request.user.login != 'github-actions[bot]'"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: pr_diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Fetch the base branch
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+
+          # Get the diff
+          DIFF=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD -- \
+            ':!*.json' ':!*.csv' ':!*.lock' ':!*.png' ':!*.jpg' \
+            | head -c 30000)
+
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD | head -80)
+          STAT=$(git diff --stat origin/${{ github.event.pull_request.base.ref }}...HEAD | tail -1)
+
+          echo "$DIFF" > /tmp/pr_diff.txt
+          echo "$CHANGED_FILES" > /tmp/changed_files.txt
+
+          # Count meaningful changes
+          FILE_COUNT=$(echo "$CHANGED_FILES" | grep -c -E '\.(py|yaml|yml|toml|sh|js|ts)$' || true)
+          echo "file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "stat=$STAT" >> "$GITHUB_OUTPUT"
+
+      - name: Run AI Code Review
+        if: steps.pr_diff.outputs.file_count != '0'
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pip install openai==1.* 2>/dev/null
+
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          try:
+              from openai import OpenAI
+          except ImportError:
+              print("::warning::openai package not available. Skipping AI review.")
+              Path("/tmp/review_result.json").write_text(json.dumps({"skip": True}))
+              sys.exit(0)
+
+          # Use the GitHub Copilot API — no separate API key needed,
+          # the built-in GITHUB_TOKEN provides access via Copilot premium requests.
+          github_token = os.environ.get("GITHUB_TOKEN", "")
+          if not github_token:
+              print("::warning::GITHUB_TOKEN not available. Skipping AI review.")
+              Path("/tmp/review_result.json").write_text(json.dumps({"skip": True}))
+              sys.exit(0)
+
+          client = OpenAI(
+              base_url="https://api.githubcopilot.com",
+              api_key=github_token,
+          )
+
+          diff = Path("/tmp/pr_diff.txt").read_text(errors="replace")[:25000]
+          changed_files = Path("/tmp/changed_files.txt").read_text(errors="replace")
+
+          pr_title = os.environ.get("PR_TITLE", "")
+          pr_body = os.environ.get("PR_BODY", "")[:2000]
+
+          prompt = f"""You are a senior software engineer reviewing a pull request for an ML heating
+          control system (Python, Home Assistant add-on). This system controls underfloor heating
+          using thermal equilibrium models, adaptive learning, and physics-based predictions.
+
+          ## PR Info
+          - Title: {pr_title}
+          - Description: {pr_body}
+          - Changed files: {changed_files}
+
+          ## Diff
+          ```diff
+          {diff}
+          ```
+
+          ## Review Guidelines
+          Focus on:
+          1. **Bugs & Logic Errors**: Off-by-one, wrong variable references, missing None checks
+          2. **Security**: Secrets exposure, injection, unsafe eval/exec
+          3. **Performance**: Unnecessary loops, missing caching, O(n²) where O(n) possible
+          4. **Thermal Model Correctness**: Physics formulas, unit conversions, safety bounds
+          5. **Error Handling**: Missing try/except, silent failures, unhandled edge cases
+          6. **Code Quality**: Naming, duplication, complexity, test coverage gaps
+
+          Do NOT flag:
+          - Style preferences (formatting, quotes)
+          - Minor import order issues
+          - Comments about pre-existing code not changed in this PR
+
+          ## Output Format
+          Return a JSON object (no markdown fences) with:
+          {{
+            "summary": "2-3 sentence overall assessment",
+            "verdict": "approve" | "request_changes" | "comment",
+            "issues": [
+              {{
+                "severity": "critical" | "warning" | "suggestion",
+                "file": "path/to/file.py",
+                "line_hint": "approximate line or code snippet for context",
+                "description": "What's wrong and how to fix it"
+              }}
+            ],
+            "positive": ["List of good things about this PR"]
+          }}
+
+          - Use "approve" if no critical/warning issues found.
+          - Use "request_changes" if there are critical issues.
+          - Use "comment" if there are only warnings or suggestions.
+          - Keep issues list concise (max 10 most important).
+          """
+
+          try:
+              resp = client.chat.completions.create(
+                  model="gpt-5.4",  # gpt-5.4 via GitHub Copilot API (https://api.githubcopilot.com).
+                  # To list available models: GET https://api.githubcopilot.com/models with GITHUB_TOKEN.
+                  messages=[{"role": "user", "content": prompt}],
+                  temperature=0.1,
+                  max_tokens=3000,
+              )
+              content = resp.choices[0].message.content.strip()
+              if content.startswith("```"):
+                  content = content.split("\n", 1)[1]
+                  if content.endswith("```"):
+                      content = content[:-3]
+                  elif "```" in content:
+                      content = content[:content.rfind("```")]
+              result = json.loads(content)
+              result["skip"] = False
+          except Exception as e:
+              print(f"::warning::AI review failed: {e}")
+              result = {"skip": True, "error": str(e)}
+
+          Path("/tmp/review_result.json").write_text(json.dumps(result, indent=2))
+          print(json.dumps(result, indent=2))
+          PYTHON_SCRIPT
+
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+      - name: Post review comment
+        if: steps.pr_diff.outputs.file_count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path("/tmp/review_result.json").read_text())
+
+          if result.get("skip"):
+              print("Review was skipped, nothing to post.")
+              sys.exit(0)
+
+          pr_number = os.environ["PR_NUMBER"]
+          verdict = result.get("verdict", "comment")
+          summary = result.get("summary", "No summary provided.")
+          issues = result.get("issues", [])
+          positives = result.get("positive", [])
+
+          # Build the comment body
+          icon = {"approve": "✅", "request_changes": "🔴", "comment": "💬"}.get(verdict, "💬")
+          severity_icon = {"critical": "🔴", "warning": "⚠️", "suggestion": "💡"}
+
+          body = f"## {icon} AI Code Review (GitHub Copilot)\n\n"
+          body += f"**Verdict: {verdict.upper().replace('_', ' ')}**\n\n"
+          body += f"{summary}\n\n"
+
+          if issues:
+              body += "### Issues Found\n\n"
+              for i, issue in enumerate(issues, 1):
+                  sev = severity_icon.get(issue.get("severity", "suggestion"), "💡")
+                  body += f"{i}. {sev} **{issue.get('severity', 'suggestion').upper()}** "
+                  body += f"— `{issue.get('file', 'unknown')}`"
+                  if issue.get("line_hint"):
+                      body += f" (near `{issue['line_hint']}`)"
+                  body += f"\n   {issue.get('description', '')}\n\n"
+
+          if positives:
+              body += "### ✨ Positives\n\n"
+              for p in positives:
+                  body += f"- {p}\n"
+              body += "\n"
+
+          body += "---\n"
+          body += "*This review was generated automatically by GitHub Copilot (gpt-5.4). "
+          body += "You can reject suggestions by dismissing or replying to this comment. "
+          body += "To re-run the review, push a new commit or re-run the workflow.*\n"
+
+          # Post as PR comment using gh CLI
+          comment_file = "/tmp/review_comment.md"
+          Path(comment_file).write_text(body)
+
+          subprocess.run(
+              ["gh", "pr", "comment", pr_number, "--body-file", comment_file],
+              check=True
+          )
+          print(f"✅ Posted review comment on PR #{pr_number}")
+
+          # If verdict is request_changes, also submit a review
+          if verdict == "request_changes":
+              review_body = "AI Code Review found critical issues that should be addressed before merging."
+              subprocess.run(
+                  ["gh", "pr", "review", pr_number,
+                   "--request-changes", "--body", review_body],
+                  check=True
+              )
+              print(f"🔴 Requested changes on PR #{pr_number}")
+          elif verdict == "approve":
+              review_body = "AI Code Review passed — no critical issues found."
+              subprocess.run(
+                  ["gh", "pr", "review", pr_number,
+                   "--approve", "--body", review_body],
+                  check=True
+              )
+              print(f"✅ Approved PR #{pr_number}")
+
+          PYTHON_SCRIPT
+
+      - name: Upload review log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-log
+          path: /tmp/review_result.json
+          retention-days: 30
