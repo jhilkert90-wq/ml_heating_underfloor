@@ -46,6 +46,15 @@ from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
 from .temperature_control import apply_ema_smoothing
 
 
+def _bool_arg(parsed_args, name: str) -> bool:
+    return getattr(parsed_args, name, False) is True
+
+
+def _str_arg(parsed_args, name: str):
+    value = getattr(parsed_args, name, None)
+    return value if isinstance(value, str) else None
+
+
 def main():
     """
     The main function that orchestrates the heating control logic.
@@ -82,9 +91,6 @@ def main():
     args = parser.parse_args()
     # Load environment variables and configure logging.
     load_dotenv()
-    def _bool_arg(parsed_args, name: str) -> bool:
-        return getattr(parsed_args, name, False) is True
-
     log_level = (
         logging.DEBUG if _bool_arg(args, "debug") or config.DEBUG else logging.INFO
     )
@@ -316,10 +322,7 @@ def main():
             print("No backups found.")
         return
 
-    restore_backup = getattr(args, "restore_backup", None)
-    if not isinstance(restore_backup, str):
-        restore_backup = None
-
+    restore_backup = _str_arg(args, "restore_backup")
     if restore_backup:
         from .unified_thermal_state import get_thermal_state_manager
         state_manager = get_thermal_state_manager()
