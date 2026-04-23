@@ -46,6 +46,16 @@ from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
 from .temperature_control import apply_ema_smoothing
 
 
+def _bool_arg(parsed_args, name: str) -> bool:
+    value = getattr(parsed_args, name, False)
+    return value if isinstance(value, bool) else False
+
+
+def _str_arg(parsed_args, name: str) -> str | None:
+    value = getattr(parsed_args, name, None)
+    return value if isinstance(value, str) else None
+
+
 def main():
     """
     The main function that orchestrates the heating control logic.
@@ -82,7 +92,9 @@ def main():
     args = parser.parse_args()
     # Load environment variables and configure logging.
     load_dotenv()
-    log_level = logging.DEBUG if args.debug or config.DEBUG else logging.INFO
+    log_level = (
+        logging.DEBUG if _bool_arg(args, "debug") or config.DEBUG else logging.INFO
+    )
 
     # Configure logging to ensure output goes to stdout for systemd capture
     import sys
@@ -165,7 +177,7 @@ def main():
         logging.info("🎯 ACTIVE MODE: ML actively controls heating system")
 
     # --- Thermal Model Calibration ---
-    if args.calibrate_physics:
+    if _bool_arg(args, "calibrate_physics"):
         try:
             from .physics_calibration import backup_existing_calibration
 
@@ -199,7 +211,7 @@ def main():
         return
 
     # --- Export Calibration Data Only ---
-    if args.calibrate_physics_export_only:
+    if _bool_arg(args, "calibrate_physics_export_only"):
         try:
             from .physics_calibration import (
                 fetch_historical_data_for_calibration,
@@ -285,7 +297,7 @@ def main():
         return
 
     # --- Thermal Model Validation ---
-    if args.validate_physics:
+    if _bool_arg(args, "validate_physics"):
         try:
             result = validate_thermal_model()
             if result:
@@ -298,7 +310,7 @@ def main():
             )
         return
 
-    if args.list_backups:
+    if _bool_arg(args, "list_backups"):
         from .unified_thermal_state import get_thermal_state_manager
         import json
         state_manager = get_thermal_state_manager()
@@ -311,17 +323,18 @@ def main():
             print("No backups found.")
         return
 
-    if args.restore_backup:
+    restore_backup = _str_arg(args, "restore_backup")
+    if restore_backup:
         from .unified_thermal_state import get_thermal_state_manager
         state_manager = get_thermal_state_manager()
         success, message = state_manager.restore_from_backup(
-            args.restore_backup
+            restore_backup
         )
         if success:
-            print(f"Successfully restored from backup: {args.restore_backup}")
+            print(f"Successfully restored from backup: {restore_backup}")
             print(message)
         else:
-            print(f"Failed to restore from backup: {args.restore_backup}")
+            print(f"Failed to restore from backup: {restore_backup}")
             print(message)
         return
 
@@ -388,6 +401,8 @@ def main():
             # Fetch all states from Home Assistant at once to minimize
             # API calls.
             all_states = ha_client.get_all_states()
+
+            thermodynamic_metrics_written_in_sensor_update = False
 
             # --- Update Sensor Buffer ---
             if all_states:
@@ -482,6 +497,25 @@ def main():
                             get_sensor_attributes(thermal_power_entity_id),
                             round_digits=3
                         )
+
+                        try:
+                            influx_service.write_thermodynamic_metrics(
+                                thermo_metrics
+                            )
+                            thermodynamic_metrics_written_in_sensor_update = True
+                        except Exception as e:
+                            error_msg = str(e)
+                            if "unauthorized" in error_msg.lower() or "401" in error_msg:
+                                logging.error(
+                                    "Failed to write thermodynamic metrics: %s. "
+                                    "Check that INFLUX_TOKEN has write permission to "
+                                    "INFLUX_FEATURES_BUCKET.",
+                                    e,
+                                )
+                            else:
+                                logging.warning(
+                                    "Failed to log thermodynamic metrics: %s", e
+                                )
 
                         logging.debug(
                             "Thermodynamic sensors updated: COP=%.2f, "
@@ -1503,32 +1537,33 @@ def main():
 
             # --- Log Thermodynamic Metrics (Feature/Sensor-Update) ---
             # Log COP, Power, and Delta T to InfluxDB for efficiency tracking
-            try:
-                thermodynamic_metrics = {
-                    "cop_realtime": features_dict.get("cop_realtime", 0.0),
-                    "thermal_power_kw": features_dict.get(
-                        "thermal_power_kw", 0.0
-                    ),
-                    "delta_t": features_dict.get("delta_t", 0.0),
-                    "flow_rate": features_dict.get("flow_rate", 0.0),
-                    "inlet_temp": features_dict.get("inlet_temp", 0.0),
-                }
-                influx_service.write_thermodynamic_metrics(
-                    thermodynamic_metrics
-                )
-            except Exception as e:
-                error_msg = str(e)
-                if "unauthorized" in error_msg.lower() or "401" in error_msg:
-                    logging.error(
-                        "Failed to write thermodynamic metrics: %s. "
-                        "Check that INFLUX_TOKEN has write permission to "
-                        "INFLUX_FEATURES_BUCKET.",
-                        e,
+            if not thermodynamic_metrics_written_in_sensor_update:
+                try:
+                    thermodynamic_metrics = {
+                        "cop_realtime": features_dict.get("cop_realtime", 0.0),
+                        "thermal_power_kw": features_dict.get(
+                            "thermal_power_kw", 0.0
+                        ),
+                        "delta_t": features_dict.get("delta_t", 0.0),
+                        "flow_rate": features_dict.get("flow_rate", 0.0),
+                        "inlet_temp": features_dict.get("inlet_temp", 0.0),
+                    }
+                    influx_service.write_thermodynamic_metrics(
+                        thermodynamic_metrics
                     )
-                else:
-                    logging.warning(
-                        "Failed to log thermodynamic metrics: %s", e
-                    )
+                except Exception as e:
+                    error_msg = str(e)
+                    if "unauthorized" in error_msg.lower() or "401" in error_msg:
+                        logging.error(
+                            "Failed to write thermodynamic metrics: %s. "
+                            "Check that INFLUX_TOKEN has write permission to "
+                            "INFLUX_FEATURES_BUCKET.",
+                            e,
+                        )
+                    else:
+                        logging.warning(
+                            "Failed to log thermodynamic metrics: %s", e
+                        )
 
 
             # --- Update ML State sensor ---

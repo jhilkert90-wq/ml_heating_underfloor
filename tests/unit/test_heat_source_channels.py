@@ -225,8 +225,8 @@ def test_subthreshold_current_pv_still_falls_back_to_heat_pump():
             heat_pump_active=False,
             thermal_power=0.0,
             delta_t=0.0,
-            pv_power=450.0,
-            pv_power_current=450.0,
+            pv_power=45.0,
+            pv_power_current=45.0,
         ),
     )
 
@@ -750,8 +750,8 @@ def test_pv_routing_smoothed_above_threshold(mixed_source_attribution_enabled):
     heat is still affecting the room."""
     orch = HeatSourceChannelOrchestrator()
     ctx = make_context(
-        pv_power=1300,              # smoothed: above 500 W threshold
-        pv_power_current=200,       # current: below 500 W threshold
+        pv_power=130,               # smoothed: above 50 W threshold
+        pv_power_current=20,        # current: below 50 W threshold
         heat_pump_active=False,
     )
     min_records = _get_min_records_for_learning()
@@ -761,7 +761,7 @@ def test_pv_routing_smoothed_above_threshold(mixed_source_attribution_enabled):
     events = orch.route_learning(0.05, ctx)
     learned = {e["channel"] for e in events}
     assert "pv" in learned, (
-        f"PV smoothed=1300W > 500W threshold, PV should learn. Got: {learned}"
+        f"PV smoothed=130W > 50W threshold, PV should learn. Got: {learned}"
     )
 
 
@@ -770,8 +770,8 @@ def test_pv_routing_both_below_threshold(mixed_source_attribution_enabled):
     PV should NOT be active."""
     orch = HeatSourceChannelOrchestrator()
     ctx = make_context(
-        pv_power=200,               # smoothed: below 500 W
-        pv_power_current=100,       # current: below 500 W
+        pv_power=20,                # smoothed: below 50 W
+        pv_power_current=10,        # current: below 50 W
         heat_pump_active=False,
     )
     min_records = _get_min_records_for_learning()
@@ -790,8 +790,8 @@ def test_pv_routing_current_above_smoothed_below(mixed_source_attribution_enable
     PV should still be active (max of the two)."""
     orch = HeatSourceChannelOrchestrator()
     ctx = make_context(
-        pv_power=300,               # smoothed: below 500 W
-        pv_power_current=800,       # current: above 500 W
+        pv_power=30,                # smoothed: below 50 W
+        pv_power_current=80,        # current: above 50 W
         heat_pump_active=False,
     )
     min_records = _get_min_records_for_learning()
@@ -801,5 +801,5 @@ def test_pv_routing_current_above_smoothed_below(mixed_source_attribution_enable
     events = orch.route_learning(0.05, ctx)
     learned = {e["channel"] for e in events}
     assert "pv" in learned, (
-        f"PV current=800W > 500W threshold, PV should learn. Got: {learned}"
+        f"PV current=80W > 50W threshold, PV should learn. Got: {learned}"
     )

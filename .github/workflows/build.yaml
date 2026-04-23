@@ -39,27 +39,72 @@ jobs:
 
       - name: Sync changelog to addon
         id: sync_changelog
+        env:
+          ADDON_CHANGELOG: ml_heating_underfloor/CHANGELOG.md
+          MAIN_CHANGELOG: CHANGELOG.md
+          NEW_VERSION: ${{ steps.bump.outputs.version }}
         run: |
-          ADDON_CHANGELOG="ml_heating_underfloor/CHANGELOG.md"
-          MAIN_CHANGELOG="CHANGELOG.md"
-          NEW_VERSION="${{ steps.bump.outputs.version }}"
-          TODAY=$(date +%Y-%m-%d)
+          python3 <<'PY'
+          import os
+          from datetime import date
+          from pathlib import Path
 
-          # Extract the [Unreleased] section from the main changelog (content between
-          # the first ## [Unreleased] heading and the next ## heading).
-          UNRELEASED=$(awk '/^## \[Unreleased\]/{found=1; next} found && /^## \[/{exit} found{print}' "$MAIN_CHANGELOG")
+          addon_changelog = Path(os.environ["ADDON_CHANGELOG"])
+          main_changelog = Path(os.environ["MAIN_CHANGELOG"])
+          new_version = os.environ["NEW_VERSION"]
+          today = date.today().isoformat()
 
-          if [ -n "$UNRELEASED" ]; then
-            # Prepend a new versioned section to the addon changelog, after the first line (title).
-            TITLE=$(head -1 "$ADDON_CHANGELOG")
-            REST=$(tail -n +2 "$ADDON_CHANGELOG")
-            printf '%s\n\n## [%s] - %s\n%s\n%s\n' \
-              "$TITLE" "$NEW_VERSION" "$TODAY" "$UNRELEASED" "$REST" > "$ADDON_CHANGELOG"
-            echo "changelog_updated=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No [Unreleased] section found in main CHANGELOG.md — skipping addon changelog update."
-            echo "changelog_updated=false" >> "$GITHUB_OUTPUT"
-          fi
+          def set_output(name: str, value: str) -> None:
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as fh:
+                  fh.write(f"{name}={value}\n")
+
+          main_lines = main_changelog.read_text(encoding="utf-8").splitlines()
+
+          try:
+              unreleased_index = main_lines.index("## [Unreleased]")
+          except ValueError:
+              print("No [Unreleased] section found in main CHANGELOG.md — skipping addon changelog update.")
+              set_output("changelog_updated", "false")
+              raise SystemExit(0)
+
+          next_version_index = len(main_lines)
+          for i in range(unreleased_index + 1, len(main_lines)):
+              if main_lines[i].startswith("## ["):
+                  next_version_index = i
+                  break
+
+          unreleased_lines = main_lines[unreleased_index + 1:next_version_index]
+          unreleased_body = "\n".join(unreleased_lines).strip()
+
+          if not unreleased_body:
+              print("No [Unreleased] entries found in main CHANGELOG.md — skipping addon changelog update.")
+              set_output("changelog_updated", "false")
+              raise SystemExit(0)
+
+          addon_lines = addon_changelog.read_text(encoding="utf-8").splitlines()
+          title = addon_lines[0] if addon_lines else "# Changelog - ML Heating Underfloor"
+          rest_lines = addon_lines[1:]
+          while rest_lines and rest_lines[0] == "":
+              rest_lines.pop(0)
+
+          new_addon_lines = [
+              title,
+              "",
+              f"## [{new_version}] - {today}",
+              "",
+              *unreleased_body.splitlines(),
+              "",
+          ]
+          if rest_lines:
+              new_addon_lines.extend(rest_lines)
+          addon_changelog.write_text("\n".join(new_addon_lines).rstrip() + "\n", encoding="utf-8")
+
+          new_main_lines = main_lines[:unreleased_index + 1] + [""] + main_lines[next_version_index:]
+          main_changelog.write_text("\n".join(new_main_lines).rstrip() + "\n", encoding="utf-8")
+
+          print(f"Moved [Unreleased] entries into addon changelog version {new_version} and reset root [Unreleased].")
+          set_output("changelog_updated", "true")
+          PY
 
       - name: Commit version bump
         run: |
@@ -67,6 +112,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ml_heating_underfloor/config.yaml
           if [ "${{ steps.sync_changelog.outputs.changelog_updated }}" = "true" ]; then
+            git add CHANGELOG.md
             git add ml_heating_underfloor/CHANGELOG.md
           fi
           git commit -m "Bump version to ${{ steps.bump.outputs.version }} [skip ci]"

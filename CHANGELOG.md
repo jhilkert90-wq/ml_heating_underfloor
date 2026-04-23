@@ -13,13 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Trend bias is clamped to ±0.05°C per step and gated on `abs(trend) > 0.01` to prevent floating-point noise.
   - Passed from both binary search optimization and trajectory verification callers in `model_wrapper.py`.
 - **Binary search diagnostic logging**: Added debug logs on first iteration of binary search to show resolved `inlet_temp`, `delta_t_floor`, `indoor_temp_delta_60m`, optimization horizon, and trajectory result (steps, start→end temperatures). Helps verify the `_features` fix is working correctly in production.
-
-### Fixed
-- **Critical: Binary search `_features` NameError causing 35°C fallback**: `predict_thermal_trajectory` failed every binary search iteration with `name '_features' is not defined`, causing silent fallback to max outlet temperature (35°C). The gradual temperature control then capped/smoothed this down, masking the root cause but producing suboptimal heating decisions. Fixed by replacing bare `_features.get(...)` with `self._current_features.get(...)` using the safe `hasattr` guard pattern used elsewhere.
-- **Dashboard `titlefont` crash**: Replaced deprecated Plotly `titlefont` → `title_font` in `dashboard/components/overview.py` confidence/error dual-axis chart. Plotly 6.x removed `titlefont`, causing `ValueError` on every dashboard load.
-- **Noisy "Logging MAE"/"Logging RMSE" debug messages**: Removed unnecessary `logging.debug("Logging MAE")` and `logging.debug("Logging RMSE")` in `ha_client.py` that produced low-value noise every 10-minute cycle. The actual HA state updates and their results already provide sufficient logging.
-
-### Added
 - **Electricity Price-Aware Optimization**: Tibber-integrated price classification that shifts the binary search target temperature based on current electricity price relative to today's distribution.
   - `PriceOptimizer` class with percentile-based classification (CHEAP/NORMAL/EXPENSIVE) using daily price arrays from Tibber sensor.
   - CHEAP → target +0.2°C (heat more), EXPENSIVE → target −0.2°C (heat less), NORMAL → unchanged. Convergence precision stays at ±0.01°C.
@@ -31,8 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`sensor.ml_heating_price_level`**: New HA sensor showing current price classification, thresholds, and target offset.
 - **Enhanced `sensor.ml_heating_learning`**: Now exports ALL learnable parameters unconditionally (previously gated behind `ENABLE_HEAT_SOURCE_CHANNELS`), plus per-channel diagnostics (`ch_{name}_history_count`, `ch_{name}_last_error`).
 - **29 unit tests** for price optimizer: classification, offsets, trajectory thresholds, feature flag, integration with binary search, singleton, edge cases.
-
-### Added
 - **Heat Source Channel Architecture (Phase 2-4)**: Decomposed heat-source learning with independent channels for heat pump, solar/PV, fireplace, and TV/electronics. Each channel has its own learnable parameters and prediction history, preventing cross-contamination of learned parameters.
   - `HeatSourceChannel` abstract base class with `estimate_heat_contribution()`, `estimate_decay_contribution()`, `get_learnable_parameters()`, and `apply_gradient_update()` methods. Channels self-learn via `_learn_from_recent()` triggered on each `record_learning()` call.
   - `HeatPumpChannel`: wraps existing slab model (outlet effectiveness, slab time constant, delta-T floor).
@@ -46,16 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Orchestrator integration (Steps 10-11)**: `ThermalEquilibriumModel` initializes orchestrator when `ENABLE_HEAT_SOURCE_CHANNELS` is true and routes learning through it in `update_prediction_feedback()`.
 - **New module**: `src/heat_source_channels.py` — 4 channel implementations + orchestrator.
 - **Comprehensive scenario tests**: Evening (Step 17: PV 3000→0 W), morning (PV 0→3000 W with slab residual heat), solar decay τ, fireplace independent learning, and orchestrator integration — 36 tests total.
-
-### Fixed
-- **Test `test_learning_isolation`**: Fixed `test_hp_params_update_when_no_contamination` to provide enough prediction feedback records (≥ `RECENT_ERRORS_WINDOW`) and use pump-ON context (`delta_t=5.0`) so gradient adaptation is actually triggered.
-
 - **UFH Slab (Estrich) Thermal Model**: First-order lag between commanded outlet temperature and effective heating temperature: `T_slab(t+Δt) = T_slab(t) + Δt/τ_slab · (T_cmd − T_slab)`. `T_slab(0)` is initialised from `inlet_temp` (Rücklauf = current slab state). This prevents the trajectory model from applying a cold outlet command instantly to the room, which caused spurious `+15°C` corrections in cycles with PV-recovery paths.
 - **`slab_time_constant_hours` as learnable parameter**: New adaptive parameter (default 1.0 h, bounds 0.25–4.0 h) using the same finite-difference gradient framework as all other parameters (`_calculate_parameter_gradient`). Gradient is non-zero only when `inlet_temp ≠ outlet_cmd` (transient phases), zero at equilibrium — correct physics.
-- **`solar_lag_minutes_delta` persistence fix**: `solar_lag_minutes` learning updates were accumulated in-memory but never persisted across restarts. Both `solar_lag_minutes_delta` and the new `slab_time_constant_delta` are now written to `unified_thermal_state.json` via `_save_learning_to_thermal_state`.
-- **`inlet_temp` in prediction context**: `inlet_temp` (Rücklauf) is now included in the `prediction_context` dict stored in `prediction_history`, enabling the slab gradient to be reconstructed from historical records.
 - **`SLAB_TIME_CONSTANT_HOURS` config variable**: Overridable via environment variable, default `1.0`.
 - **Test suite** (`tests/unit/test_slab_model.py`): 6 test classes covering slab dynamics (buffering, monotonicity, backward-compat), gradient observability (non-zero at disequilibrium, zero at equilibrium), parameter update/clipping, persistence of both new delta keys, and config bounds.
+- **`slab_passive_delta` sensor**: New diagnostic metric (`inlet_temp - indoor_temp`) exported to HA. Positive = slab warmer than room (passive heating available), negative = slab absorbing heat. Visible in thermal features and HA sensor attributes.
+- **`_search_delta_t_floor`**: Internal variable ensuring both binary search pre-check, loop, and trajectory verification use the same (potentially simulated) delta_t value per cycle.
+- **`PV_CALIBRATION_INDOOR_CEILING` config variable**: Indoor temperature ceiling (default 23.0°C) for filtering blind-contaminated PV calibration periods. When automated blinds close (rooms ≥ 22.9°C), real solar heating drops 70–90% while the roof PV sensor still reads high — this causes the optimizer to push `pv_heat_weight` to its lower bound. Periods with `indoor_temp >= ceiling` are now excluded from PV Pass 2 calibration.
+- **`LIVING_ROOM_TEMP_ENTITY_ID` in InfluxDB query**: Living room temperature sensor now included in the Flux query entity filter, ensuring indoor temperature data is available for calibration.
 
 ### Changed
 - `predict_thermal_trajectory`: new optional `inlet_temp` parameter; when provided the slab model is active; when `None` the existing behaviour is preserved (backward-compatible).
@@ -68,11 +57,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `thermal_config.py`: `pv_heat_weight` default 0.0005 → 0.0002, bounds (0.0005, 0.005) → (0.0001, 0.005).
 - `influx_service.py`: Flux query entity filter now includes `LIVING_ROOM_TEMP_ENTITY_ID`.
 - `config.py`: Removed duplicate `LIVING_ROOM_TEMP_ENTITY_ID` definition.
+- `inlet_temp` is now included in the `prediction_context` dict stored in `prediction_history`, enabling the slab gradient to be reconstructed from historical records.
 
 ### Fixed
+- **Critical: Binary search `_features` NameError causing 35°C fallback**: `predict_thermal_trajectory` failed every binary search iteration with `name '_features' is not defined`, causing silent fallback to max outlet temperature (35°C). The gradual temperature control then capped/smoothed this down, masking the root cause but producing suboptimal heating decisions. Fixed by replacing bare `_features.get(...)` with `self._current_features.get(...)` using the safe `hasattr` guard pattern used elsewhere.
+- **Dashboard `titlefont` crash**: Replaced deprecated Plotly `titlefont` → `title_font` in `dashboard/components/overview.py` confidence/error dual-axis chart. Plotly 6.x removed `titlefont`, causing `ValueError` on every dashboard load.
+- **Noisy "Logging MAE"/"Logging RMSE" debug messages**: Removed unnecessary `logging.debug("Logging MAE")` and `logging.debug("Logging RMSE")` in `ha_client.py` that produced low-value noise every 10-minute cycle. The actual HA state updates and their results already provide sufficient logging.
+- **Test `test_learning_isolation`**: Fixed `test_hp_params_update_when_no_contamination` to provide enough prediction feedback records (≥ `RECENT_ERRORS_WINDOW`) and use pump-ON context (`delta_t=5.0`) so gradient adaptation is actually triggered.
+- **`solar_lag_minutes_delta` persistence**: `solar_lag_minutes` learning updates were accumulated in-memory but never persisted across restarts. Both `solar_lag_minutes_delta` and the new `slab_time_constant_delta` are now written to `unified_thermal_state.json` via `_save_learning_to_thermal_state`.
 - **Control Stability:** Fixed "Deadbeat Control" oscillation by decoupling the control interval (30m) from the optimization horizon (4h). This prevents excessive outlet temperature spikes when correcting small deviations.
 - **HP-off outlet spike (35°C)**: When heat pump is off (`delta_t < 1.0`), the binary search now simulates "HP on" using the learned `delta_t_floor` (~2.55°C) from the HP channel. Previously, all outlet candidates produced identical slab-passive trajectories → "unreachable" → outlet spiked to max 35°C pointlessly. The simulated HP-on delta_t lets candidates differentiate so the binary search converges to a sensible setpoint that tells NIBE when to start heating.
-- **PV routing at sunset**: `_is_pv_active()` now uses `max(pv_power_current, pv_power_smoothed)` against the 500W threshold. This captures solar thermal lag where smoothed PV stays high after instantaneous PV drops.
+- **PV routing at sunset**: `_is_pv_active()` now uses `max(pv_power_current, pv_power_smoothed)` against `PV_LEARNING_THRESHOLD` (default 50, in watts). This captures solar thermal lag where smoothed PV stays high after instantaneous PV drops.
 - **PV smoothing window**: Shortened from 3h (18 readings) to `solar_decay_tau` (~30min, 3 readings) in `temperature_control.py`. The old 3h window included stale morning PV values in the afternoon.
 - **Slab pump-on gate**: Pump-ON branch now requires `measured_delta_t >= 1.0` in addition to `outlet_temp > t_slab`. Prevents slab model from entering active heating when HP is actually off (delta_t ≈ 0 but outlet reads higher than inlet due to stale setpoint).
 - **Cloud discount on PV scalar**: Applied 1h cloud forecast discount to the PV scalar in `_extract_thermal_features()` before it enters the binary search. Raw sensor spikes during brief sun breaks (e.g. 4kW) no longer cause the binary search to snap outlet to 18°C, preventing 6am–11am outlet oscillation (21.8–24.9°C).
@@ -82,16 +77,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`calibrate_delta_t_floor` sensitivity**: Raised minimum delta_t threshold from 0.5 → 1.0°C and minimum calibration result from 0.5 → 1.0°C. Prevents floor from converging to sub-1°C values where HP is effectively off.
 - **PV decay period detection**: Replaced single-step sharp-drop filter with 6-step (30 min) sliding-window crossing detection in `filter_pv_decay_periods()`. Old method required an exact single-step PV drop below threshold, missing gradual sunset transitions. New method detects when a 6-reading window crosses from above to below the PV threshold.
 - **`cloud_cover_pct` calibration default**: Changed all 4 hardcoded fallback values from 50.0 → 0.0. When cloud cover data is unavailable, assuming clear sky (0%) is physically correct — the calibration should learn the actual heating at the measured PV power, not discount it by an assumed 50% cloud cover.
-
-### Added
-- **`slab_passive_delta` sensor**: New diagnostic metric (`inlet_temp - indoor_temp`) exported to HA. Positive = slab warmer than room (passive heating available), negative = slab absorbing heat. Visible in thermal features and HA sensor attributes.
-- **`_search_delta_t_floor`**: Internal variable ensuring both binary search pre-check, loop, and trajectory verification use the same (potentially simulated) delta_t value per cycle.
-- **`PV_CALIBRATION_INDOOR_CEILING` config variable**: Indoor temperature ceiling (default 23.0°C) for filtering blind-contaminated PV calibration periods. When automated blinds close (rooms ≥ 22.9°C), real solar heating drops 70–90% while the roof PV sensor still reads high — this causes the optimizer to push `pv_heat_weight` to its lower bound. Periods with `indoor_temp >= ceiling` are now excluded from PV Pass 2 calibration.
-- **`LIVING_ROOM_TEMP_ENTITY_ID` in InfluxDB query**: Living room temperature sensor now included in the Flux query entity filter, ensuring indoor temperature data is available for calibration.
-
-### Technical Achievements
-
-
 
 ## [0.2.0] - 2026-02-10
 
@@ -124,20 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test suite failures for outdoor coupling and thermal physics validation
 - Heat input calculations using corrected physics formula: T_eq = (eff × outlet + loss × outdoor + external) / (eff + loss)
 
-### Technical Achievements
-- **Overnight Stability Enhanced**: Gentle trajectory corrections prevent system over-reaction during PV shutdown and weather changes
-- **Conservative Control**: 0.5°C trajectory error now produces reasonable +2.5°C outlet adjustment instead of temperature doubling
-- **Real-time Adaptation**: Trajectory verification uses actual changing forecasts instead of static assumptions
-- **User-Aligned Logic**: Trajectory corrections based on proven heat curve automation patterns already in successful use
-- **Production Ready**: All 36 critical thermal model tests passing (100% success rate)
-- **Physics Compliance**: System now respects thermodynamics and energy conservation
-- **Accuracy**: Temperature predictions now physically realistic and mathematically correct
-- **Reliability**: Binary search convergence eliminates maximum temperature requests
-- **Energy Efficiency**: Heat pump operates optimally instead of maximum unnecessarily
-
 ## [0.2.0-beta.3] - 2025-12-03
 
-### Added - Week 3 Persistent Learning Optimization Complete 🚀
+### Added
 - **Unified Model Wrapper Architecture**: Consolidated enhanced_model_wrapper.py into single model_wrapper.py with EnhancedModelWrapper class
 - **Persistent Thermal Learning**: Automatic state persistence across Home Assistant restarts with warm/cold start detection
 - **ThermalEquilibriumModel Integration**: Physics-based thermal parameter adaptation with confidence tracking
@@ -165,16 +139,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backward compatibility preserved for all existing interfaces
 - Learning state persistence across system restarts
 
-### Technical Achievements
-- **Code Quality**: 2 redundant files eliminated, 50% reduction in wrapper complexity
-- **Test Coverage**: 100% pass rate maintained across 29 critical tests
-- **Performance**: Eliminated unused code paths and simplified execution flow
-- **Maintainability**: Single source of truth for all model wrapper operations
-- **Architecture**: Clean consolidation with zero functionality regression
-
 ## [0.2.0-beta.2] - 2025-12-03
 
-### Added - Week 2 Multi-Heat-Source Integration Complete 🎯
+### Added
 - **Thermal Equilibrium Model with Adaptive Learning**: Real-time parameter adaptation with 96% accuracy
 - **Enhanced Physics Features Integration**: 34 total thermal intelligence features for ±0.1°C control precision  
 - **Multi-Heat-Source Physics Engine**: Complete coordination system for PV (1.5kW), fireplace (6kW), electronics (0.5kW)
@@ -200,25 +167,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0-beta.1] - 2025-12-02
 
-### Added - Week 1 Enhanced Features Foundation 🔧
+### Added
 - **Enhanced Physics Features**: 15 new thermal momentum features (thermal gradients, extended lag analysis, cyclical time encoding)
 - **Comprehensive Test Suite**: 18/18 enhanced feature tests passing with mathematical validation
 - **Backward Compatibility**: 100% preservation of original 19 features with zero regressions
 - **Performance Optimization**: <50ms feature build time with minimal memory impact
 - **Advanced Feature Engineering**: P0/P1 priority thermal intelligence capabilities
+- Version strategy and development workflow documentation
+- Changelog standards and commit message conventions
+- Professional GitHub Issues management system
+- Memory bank documentation with Week 2 completion milestone
+- Comprehensive technical achievement summaries and performance metrics
 
 ### Changed
 - Extended physics features from 19 to 34 total thermal intelligence features
 - Enhanced thermal momentum detection with multi-timeframe analysis
 - Improved predictive control through delta features and cyclical encoding
 - Upgraded test coverage to include comprehensive edge case validation
-
-### Added - Documentation and Workflow Standards 📚
-- Version strategy and development workflow documentation
-- Changelog standards and commit message conventions
-- Professional GitHub Issues management system
-- Memory bank documentation with Week 2 completion milestone
-- Comprehensive technical achievement summaries and performance metrics
 
 ## [0.0.1-dev.1] - 2024-11-27
 
@@ -237,15 +202,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Physics validation and safety constraints
 - Professional project documentation and issue templates
 
-### Changed
-- Nothing yet
-
-### Deprecated
-- Nothing yet
-
-### Removed
-- Nothing yet
-
 ### Fixed
 - Home Assistant add-on discovery issue by implementing proper semantic versioning
 - Add-on configuration validation and schema structure
@@ -255,16 +211,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - InfluxDB token-based authentication
 - AppArmor disabled for system-level heat pump control access
 
----
-
-## Version History Notes
-
-This changelog started with version 0.0.1-dev.1 as the project transitions from internal development to structured release management. Previous development history is captured in the Git commit log and project documentation.
-
-### Versioning Strategy
-- **0.0.x-dev.N**: Development builds for testing and iteration
-- **0.0.x**: Development releases for broader beta testing  
-- **0.x.0**: Beta releases with feature-complete functionality
-- **x.0.0**: Production releases for general use
-
-See `memory-bank/versionStrategy.md` for complete versioning guidelines.
+[Unreleased]: https://github.com/jhilkert90-wq/ml_heating_underfloor/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jhilkert90-wq/ml_heating_underfloor/compare/v0.2.0-beta.3...v0.2.0
+[0.2.0-beta.3]: https://github.com/jhilkert90-wq/ml_heating_underfloor/compare/v0.2.0-beta.2...v0.2.0-beta.3
+[0.2.0-beta.2]: https://github.com/jhilkert90-wq/ml_heating_underfloor/compare/v0.2.0-beta.1...v0.2.0-beta.2
+[0.2.0-beta.1]: https://github.com/jhilkert90-wq/ml_heating_underfloor/compare/v0.0.1-dev.1...v0.2.0-beta.1
+[0.0.1-dev.1]: https://github.com/jhilkert90-wq/ml_heating_underfloor/releases/tag/v0.0.1-dev.1

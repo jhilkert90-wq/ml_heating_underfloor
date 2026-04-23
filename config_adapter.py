@@ -316,6 +316,10 @@ def convert_addon_to_env(config):
         'RECENT_ERRORS_WINDOW': str(
             config.get('recent_errors_window', 10)
         ),
+        'LEARNING_DEAD_ZONE': str(config.get('learning_dead_zone', 0.01)),
+        'PV_LEARNING_THRESHOLD': str(
+            config.get('pv_learning_threshold', 50)
+        ),
 
         # --- Hybrid Learning Strategy ---
         'HYBRID_LEARNING_ENABLED': str(

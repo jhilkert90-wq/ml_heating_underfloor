@@ -624,25 +624,25 @@ class HAClient:
             "last_updated": now_utc
         })
 
-        # Always export all channel-specific parameters (not just when channels enabled)
-        attributes_learning.update({
-            "delta_t_floor": learning_metrics.get("delta_t_floor", 0.0),
-            "cloud_factor_exponent": learning_metrics.get("cloud_factor_exponent", 1.0),
-            "solar_decay_tau_hours": learning_metrics.get("solar_decay_tau_hours", 0.0),
-            "fp_heat_output_kw": learning_metrics.get("fp_heat_output_kw", 0.0),
-            "fp_decay_time_constant": learning_metrics.get("fp_decay_time_constant", 0.0),
-            "room_spread_delay_minutes": learning_metrics.get("room_spread_delay_minutes", 0.0),
-        })
+        if learning_metrics.get("heat_source_channels_enabled", False):
+            attributes_learning.update({
+                "delta_t_floor": learning_metrics.get("delta_t_floor", 0.0),
+                "cloud_factor_exponent": learning_metrics.get("cloud_factor_exponent", 1.0),
+                "solar_decay_tau_hours": learning_metrics.get("solar_decay_tau_hours", 0.0),
+                "fp_heat_output_kw": learning_metrics.get("fp_heat_output_kw", 0.0),
+                "fp_decay_time_constant": learning_metrics.get("fp_decay_time_constant", 0.0),
+                "room_spread_delay_minutes": learning_metrics.get("room_spread_delay_minutes", 0.0),
+            })
 
-        # Per-channel diagnostics (history count, last error)
-        for ch_name in ("heat_pump", "pv", "fireplace", "tv"):
-            prefix = f"ch_{ch_name}"
-            attributes_learning[f"{prefix}_history_count"] = learning_metrics.get(
-                f"{prefix}_history_count", 0
-            )
-            attributes_learning[f"{prefix}_last_error"] = learning_metrics.get(
-                f"{prefix}_last_error", 0.0
-            )
+            # Per-channel diagnostics (history count, last error)
+            for ch_name in ("heat_pump", "pv", "fireplace", "tv"):
+                prefix = f"ch_{ch_name}"
+                attributes_learning[f"{prefix}_history_count"] = learning_metrics.get(
+                    f"{prefix}_history_count", 0
+                )
+                attributes_learning[f"{prefix}_last_error"] = learning_metrics.get(
+                    f"{prefix}_last_error", 0.0
+                )
 
         # State is the learning confidence score (no redundant attribute)
         learning_confidence = learning_metrics.get("learning_confidence", 0.0)

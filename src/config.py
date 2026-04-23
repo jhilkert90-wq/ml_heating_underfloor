@@ -366,6 +366,8 @@ ML_HEATING_CONTROL_ENTITY_ID: str = os.getenv(
 # Adaptive Learning Parameters (Priority 3 - Advanced Tuning)
 # Error analysis window size
 RECENT_ERRORS_WINDOW: int = int(os.getenv("RECENT_ERRORS_WINDOW", "10"))
+LEARNING_DEAD_ZONE: float = float(os.getenv("LEARNING_DEAD_ZONE", "0.01"))
+PV_LEARNING_THRESHOLD: float = float(os.getenv("PV_LEARNING_THRESHOLD", "50"))
 
 # --- Hybrid Learning Strategy (Phase 2 Enhancement) ---
 # Enable intelligent learning phase classification with weighted periods
