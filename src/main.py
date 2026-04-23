@@ -82,10 +82,12 @@ def main():
     args = parser.parse_args()
     # Load environment variables and configure logging.
     load_dotenv()
-    def _bool_arg(name: str) -> bool:
-        return getattr(args, name, False) is True
+    def _bool_arg(parsed_args, name: str) -> bool:
+        return getattr(parsed_args, name, False) is True
 
-    log_level = logging.DEBUG if _bool_arg("debug") or config.DEBUG else logging.INFO
+    log_level = (
+        logging.DEBUG if _bool_arg(args, "debug") or config.DEBUG else logging.INFO
+    )
 
     # Configure logging to ensure output goes to stdout for systemd capture
     import sys
@@ -168,7 +170,7 @@ def main():
         logging.info("🎯 ACTIVE MODE: ML actively controls heating system")
 
     # --- Thermal Model Calibration ---
-    if _bool_arg("calibrate_physics"):
+    if _bool_arg(args, "calibrate_physics"):
         try:
             from .physics_calibration import backup_existing_calibration
 
@@ -202,7 +204,7 @@ def main():
         return
 
     # --- Export Calibration Data Only ---
-    if _bool_arg("calibrate_physics_export_only"):
+    if _bool_arg(args, "calibrate_physics_export_only"):
         try:
             from .physics_calibration import (
                 fetch_historical_data_for_calibration,
@@ -288,7 +290,7 @@ def main():
         return
 
     # --- Thermal Model Validation ---
-    if _bool_arg("validate_physics"):
+    if _bool_arg(args, "validate_physics"):
         try:
             result = validate_thermal_model()
             if result:
@@ -301,7 +303,7 @@ def main():
             )
         return
 
-    if _bool_arg("list_backups"):
+    if _bool_arg(args, "list_backups"):
         from .unified_thermal_state import get_thermal_state_manager
         import json
         state_manager = get_thermal_state_manager()
@@ -396,7 +398,7 @@ def main():
             # API calls.
             all_states = ha_client.get_all_states()
 
-            thermodynamic_metrics_exported = False
+            thermodynamic_metrics_written_in_sensor_update = False
 
             # --- Update Sensor Buffer ---
             if all_states:
@@ -496,7 +498,7 @@ def main():
                             influx_service.write_thermodynamic_metrics(
                                 thermo_metrics
                             )
-                            thermodynamic_metrics_exported = True
+                            thermodynamic_metrics_written_in_sensor_update = True
                         except Exception as e:
                             error_msg = str(e)
                             if "unauthorized" in error_msg.lower() or "401" in error_msg:
@@ -1531,7 +1533,7 @@ def main():
 
             # --- Log Thermodynamic Metrics (Feature/Sensor-Update) ---
             # Log COP, Power, and Delta T to InfluxDB for efficiency tracking
-            if not thermodynamic_metrics_exported:
+            if not thermodynamic_metrics_written_in_sensor_update:
                 try:
                     thermodynamic_metrics = {
                         "cop_realtime": features_dict.get("cop_realtime", 0.0),
