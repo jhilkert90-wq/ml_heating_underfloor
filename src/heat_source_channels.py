@@ -453,7 +453,9 @@ class SolarChannel(HeatSourceChannel):
     """
 
     # PV must exceed this threshold for the channel to learn.
-    PV_LEARNING_THRESHOLD = 500.0  # Watts
+    PV_LEARNING_THRESHOLD = float(
+        getattr(config, "PV_LEARNING_THRESHOLD", 50.0)
+    )  # Watts
 
     def __init__(self):
         super().__init__("pv")
