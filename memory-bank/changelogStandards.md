@@ -3,7 +3,6 @@
 ## Changelog Format (Keep a Changelog Standard)
 
 We follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format for consistent, readable changelogs.
-There is also an industry standard for this format — see [keepachangelog.com](https://keepachangelog.com/en/1.0.0/).
 
 ### Key Rules
 
