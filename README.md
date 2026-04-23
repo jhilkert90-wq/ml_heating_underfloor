@@ -627,6 +627,10 @@ sudo systemctl restart ml_heating.service
 
 The model continues learning in shadow mode, so you can analyze what went wrong and switch back when ready.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a full version history.
+
 ## Contributing
 
 Contributions are welcome! Areas for improvement:

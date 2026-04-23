@@ -3,6 +3,15 @@
 ## Changelog Format (Keep a Changelog Standard)
 
 We follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format for consistent, readable changelogs.
+There is also an industry standard for this format — see [keepachangelog.com](https://keepachangelog.com/en/1.0.0/).
+
+### Key Rules
+
+1. **One section per type per version**: Each version block must contain at most one `### Added`, one `### Changed`, one `### Fixed`, etc. Never repeat a section heading within the same version.
+2. **Only standard section headings**: Use only `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. Do not add custom sections like `Technical Achievements`, `Performance`, etc.
+3. **Omit empty sections**: If a version has no deprecations, do not include a `### Deprecated` section with "Nothing yet".
+4. **Each version shows only its own changes**: Do not duplicate or carry over entries from previous versions.
+5. **Version comparison links**: Add `[version]: url` link definitions at the bottom of the file so version headings become clickable links.
 
 ### Changelog File Structure
 
@@ -18,26 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Features in development, not yet released
 
-## [0.0.1-dev.1] - 2024-XX-XX
+## [0.0.1-dev.1] - 2024-11-27
 ### Added
 - Initial Home Assistant add-on structure
 - Basic ML heating control functionality
 - Dashboard with overview and control panels
 
-### Changed
-- Nothing yet
-
-### Deprecated
-- Nothing yet
-
-### Removed
-- Nothing yet
-
 ### Fixed
 - Fixed add-on discovery issue with proper semantic versioning
 
 ### Security
-- Nothing yet
+- Secure API key authentication for development access
+
+[Unreleased]: https://github.com/jhilkert90-wq/ml_heating_underfloor/compare/v0.0.1-dev.1...HEAD
+[0.0.1-dev.1]: https://github.com/jhilkert90-wq/ml_heating_underfloor/releases/tag/v0.0.1-dev.1
 ```
 
 ### Section Definitions
@@ -200,15 +203,16 @@ This release is recommended for production use.
 ## Workflow Integration
 
 ### **Before Every Commit**
-1. **Update changelog**: Add entry to [Unreleased] section
+1. **Update changelog**: Add entry to [Unreleased] section under the correct single section heading
 2. **Follow commit convention**: Use proper type(scope): description format
 3. **Be descriptive**: Explain what and why, not just what
 
 ### **Before Every Release**
-1. **Review changelog**: Move [Unreleased] entries to versioned section
-2. **Add release notes**: Summarize major changes and impact
+1. **Review changelog**: Move [Unreleased] entries to a new versioned section heading (e.g. `## [0.3.0] - 2026-05-01`)
+2. **Add release date**: Include the date in the version heading
 3. **Update version**: In config.yaml and any other version files
-4. **Tag properly**: Follow Git tag strategy from version standards
+4. **Update comparison links**: Add a link definition for the new version at the bottom of CHANGELOG.md
+5. **Tag properly**: Follow Git tag strategy from version standards
 
 ### **Changelog Automation**
 Future consideration: Use tools like `conventional-changelog` to auto-generate changelogs from commit messages.
@@ -218,7 +222,7 @@ Future consideration: Use tools like `conventional-changelog` to auto-generate c
 ### **Changelog Quality**
 - **User-focused**: Write for users, not developers
 - **Specific**: Include relevant details without being too technical
-- **Grouped**: Related changes should be grouped together
+- **Grouped**: All Added items in one `### Added` block, all Fixed in one `### Fixed` block, etc.
 - **Prioritized**: Most important changes first in each section
 
 ### **Commit Quality**
