@@ -47,10 +47,11 @@ from .temperature_control import apply_ema_smoothing
 
 
 def _bool_arg(parsed_args, name: str) -> bool:
-    return getattr(parsed_args, name, False) is True
+    value = getattr(parsed_args, name, False)
+    return value if isinstance(value, bool) else False
 
 
-def _str_arg(parsed_args, name: str):
+def _str_arg(parsed_args, name: str) -> str | None:
     value = getattr(parsed_args, name, None)
     return value if isinstance(value, str) else None
 

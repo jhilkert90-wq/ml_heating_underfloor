@@ -44,7 +44,7 @@ jobs:
           MAIN_CHANGELOG: CHANGELOG.md
           NEW_VERSION: ${{ steps.bump.outputs.version }}
         run: |
-          python <<'PY'
+          python3 <<'PY'
           import os
           from datetime import date
           from pathlib import Path
