@@ -758,7 +758,6 @@ class TestProjectedTempOvershootGate:
         )
         # Should apply correction (outlet lowered)
         assert result < 28.0
-
     def test_skip_with_zero_trend_but_small_overshoot(self, wrapper, monkeypatch):
         """Zero trend (flat) but current indoor 22.05 — projected = 22.05 < 22.1."""
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
@@ -793,3 +792,36 @@ class TestProjectedTempOvershootGate:
         # max_severity = 22.3 - 22.1 = 0.2, min_severity = 21.9 - 21.8 = 0.1
         # max wins → checks projected = 22.5 + 4*(-0.2) = 21.7 < 22.1 → skip
         assert result == 28.0
+
+
+# ---------------------------------------------------------------------------
+# Drift detection regression coverage
+# ---------------------------------------------------------------------------
+
+class TestPredictionDriftDetection:
+    """Regression tests for drift-triggered confidence handling."""
+
+    def test_drift_reset_restores_normal_confidence_cap(self):
+        wrapper = model_wrapper.EnhancedModelWrapper.__new__(
+            model_wrapper.EnhancedModelWrapper
+        )
+        wrapper.prediction_metrics = MagicMock()
+        wrapper.thermal_model = MagicMock()
+        wrapper.state_manager = MagicMock()
+        wrapper._drift_counter = 12
+
+        wrapper.prediction_metrics.get_metrics.return_value = {
+            "1h": {"mae": 0.6},
+            "all": {"mae": 0.5},
+        }
+        wrapper.thermal_model.learning_confidence = 7.5
+        wrapper.thermal_model._max_learning_confidence = 10.0
+
+        wrapper._check_prediction_drift()
+
+        assert wrapper._drift_counter == 0
+        assert wrapper.thermal_model._max_learning_confidence == 5.0
+        assert wrapper.thermal_model.learning_confidence == 5.0
+        wrapper.state_manager.update_learning_state.assert_called_once_with(
+            learning_confidence=5.0
+        )

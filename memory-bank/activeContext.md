@@ -1,5 +1,32 @@
 # Active Context - Current Work & Decision State
 
+### 🔧 **HOLISTIC AUDIT: Drift Detection, Metrics, Auto-Doc — April 24, 2026**
+
+#### ✅ **Drift Detection Fixed — model_wrapper.py**
+- **Problem**: `_check_prediction_drift()` had two bugs: (1) read non-existent keys `mae_recent`/`mae_all_time` from `get_metrics()` which returns `'1h'`/`'all'` dicts — method never fired; (2) direction was backwards — reduced confidence on drift (slowing learning) instead of boosting it.
+- **Fix**: Corrected keys to `metrics['1h']['mae']` / `metrics['all']['mae']`. Reversed direction: now boosts confidence by +2.0 capped at 10.0 (`min(10.0, current + 2.0)`). Added dynamic `_max_learning_confidence` attribute to `ThermalEquilibriumModel` (10.0 during drift, restored to 5.0 when drift subsides). When drift subsides, boosted confidence is immediately clamped back to 5.0 and persisted; on restart, restored confidence is also clipped to the normal cap.
+- **Files**: `src/model_wrapper.py`, `src/thermal_equilibrium_model.py`
+
+#### ✅ **Prediction Metrics Persistence Fixed — prediction_metrics.py**
+- **Problem**: `_save_to_state()` only wrote `total_predictions` count to unified state. `accuracy_stats` and `recent_performance` sections remained at initialization zeros despite predictions being tracked.
+- **Fix**: After writing prediction count, now calls `get_metrics(refresh_cache=True)` and `get_recent_performance(10)`, mapping results to `accuracy_stats` (MAE/RMSE per 1h/6h/24h/all window) and `recent_performance` (last 10 MAE, max error, count). Persisted keys keep the established schema (`mae_all_time`, `rmse_all_time`) so HA export and unified-state readers consume live values again.
+- **Files**: `src/prediction_metrics.py`, `src/unified_thermal_state.py`
+
+#### ✅ **Startup Sensor Validation Retry — main.py**
+- **Problem**: `_sensor_validation_done` was set before the validation block finished, so one transient exception during startup disabled all future validation attempts for the session.
+- **Fix**: `_sensor_validation_done = True` now happens only after a successful validation pass. Transient failures log a warning and the next cycle retries the validation.
+- **Files**: `src/main.py`
+
+#### ✅ **last_run_features Normalization Logging — unified_thermal_state.py**
+- **Problem**: The new `to_dict()` normalization path silently swallowed conversion failures and allowed non-dict decoded JSON values to slip through.
+- **Fix**: Failed `to_dict()` conversions now log a warning with the exception, and all normalized values are re-validated so only dictionaries are persisted.
+- **Files**: `src/unified_thermal_state.py`
+
+#### ✅ **Copilot Auto-Documentation Instructions — .github/copilot-instructions.md**
+- **Problem**: Changelog, memory-bank, and documentation updates required manual prompting every session.
+- **Fix**: Created `.github/copilot-instructions.md` with mandatory post-implementation documentation rule. Copilot now automatically updates `CHANGELOG.md`, `memory-bank/progress.md`, and `memory-bank/activeContext.md` after every code change, in every session, without prompting.
+- **Files**: `.github/copilot-instructions.md`
+
 ### 🔧 **CRITICAL BUG FIX: Binary Search _features NameError — April 18, 2026**
 
 #### ✅ **Fixed — Binary search trajectory now works correctly**

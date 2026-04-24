@@ -104,6 +104,38 @@ class PredictionMetrics:
             # Also update the prediction count in metrics section
             self.state_manager.state["prediction_metrics"]["total_predictions"] = len(prediction_list)
             
+            # Compute and persist accuracy stats and recent performance
+            try:
+                metrics = self.get_metrics(refresh_cache=True)
+                accuracy_stats = self.state_manager.state[
+                    "prediction_metrics"
+                ].setdefault("accuracy_stats", {})
+                accuracy_stats.update({
+                    "mae_1h": metrics.get('1h', {}).get('mae', 0.0),
+                    "rmse_1h": metrics.get('1h', {}).get('rmse', 0.0),
+                    "mae_6h": metrics.get('6h', {}).get('mae', 0.0),
+                    "rmse_6h": metrics.get('6h', {}).get('rmse', 0.0),
+                    "mae_24h": metrics.get('24h', {}).get('mae', 0.0),
+                    "rmse_24h": metrics.get('24h', {}).get('rmse', 0.0),
+                    "mae_all_time": metrics.get('all', {}).get(
+                        'mae', 0.0
+                    ),
+                    "rmse_all_time": metrics.get('all', {}).get(
+                        'rmse', 0.0
+                    ),
+                })
+                recent = self.get_recent_performance(10)
+                recent_performance = self.state_manager.state[
+                    "prediction_metrics"
+                ].setdefault("recent_performance", {})
+                recent_performance.update({
+                    "last_10_mae": recent.get('mae', 0.0),
+                    "last_10_max_error": recent.get('max_error', 0.0),
+                    "last_10_count": recent.get('count', 0),
+                })
+            except Exception as exc:
+                logging.debug("Failed to compute accuracy stats for state: %s", exc)
+            
             # Save unified state
             self.state_manager.save_state()
             

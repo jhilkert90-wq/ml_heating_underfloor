@@ -627,3 +627,124 @@ def test_main_shadow_deployment_writes_shadow_output_entities(
     )
     mock_save_state.assert_called()
     mock_poll_blocking.assert_called_once()
+
+
+@patch("src.main.get_sensor_attributes")
+@patch("src.main.build_physics_features", return_value=({}, []))
+@patch("src.main.create_ha_client")
+@patch("src.main.create_influx_service")
+@patch("src.main.simplified_outlet_prediction")
+@patch("src.main.load_state")
+@patch("src.main.save_state")
+def test_main_retries_startup_sensor_validation_after_transient_failure(
+    mock_save_state,
+    mock_load_state,
+    mock_simplified_outlet_prediction,
+    mock_create_influx_service,
+    mock_create_ha_client,
+    mock_build_features,
+    mock_get_attributes,
+):
+    """Startup sensor validation should retry after a transient failure."""
+    mock_ha_instance = MagicMock()
+    mock_create_ha_client.return_value = mock_ha_instance
+    mock_get_attributes.side_effect = lambda *args: {}
+
+    mock_influx_instance = MagicMock()
+    mock_create_influx_service.return_value = mock_influx_instance
+
+    class FlakyStates(dict):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._fail_keys_once = True
+            self.validation_key_calls = 0
+
+        def keys(self):
+            self.validation_key_calls += 1
+            if self._fail_keys_once:
+                self._fail_keys_once = False
+                raise RuntimeError("transient startup failure")
+            return super().keys()
+
+    with patch.object(config, "SHADOW_MODE", False), patch.object(
+        config, "INDOOR_TEMP_ENTITY_ID", "sensor.test_indoor_temp"
+    ), patch.object(
+        config,
+        "AVG_OTHER_ROOMS_TEMP_ENTITY_ID",
+        "sensor.test_avg_other_rooms_temp",
+    ):
+        flaky_states = FlakyStates({
+            config.HEATING_STATUS_ENTITY_ID: {"state": "heat"},
+            config.ML_HEATING_CONTROL_ENTITY_ID: {"state": "on"},
+            config.TARGET_INDOOR_TEMP_ENTITY_ID: {"state": "21.0"},
+            config.INDOOR_TEMP_ENTITY_ID: {"state": "20.5"},
+            config.OUTDOOR_TEMP_ENTITY_ID: {"state": "10.0"},
+            config.ACTUAL_OUTLET_TEMP_ENTITY_ID: {"state": "45.0"},
+            config.AVG_OTHER_ROOMS_TEMP_ENTITY_ID: {"state": "20.0"},
+            config.FIREPLACE_STATUS_ENTITY_ID: {"state": "off"},
+            config.OPENWEATHERMAP_TEMP_ENTITY_ID: {"state": "9.0"},
+            config.DHW_STATUS_ENTITY_ID: {"state": "off"},
+            config.DEFROST_STATUS_ENTITY_ID: {"state": "off"},
+            config.DISINFECTION_STATUS_ENTITY_ID: {"state": "off"},
+            config.DHW_BOOST_HEATER_STATUS_ENTITY_ID: {"state": "off"},
+            config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID: {"state": "35.0"},
+            config.TV_STATUS_ENTITY_ID: {"state": "off"},
+            config.PV_POWER_ENTITY_ID: {"state": "0.0"},
+            config.PV_FORECAST_ENTITY_ID: {
+                "state": "0.0",
+                "attributes": {},
+            },
+        })
+
+        mock_ha_instance.get_all_states.side_effect = [
+            flaky_states,
+            flaky_states,
+            flaky_states,
+            flaky_states,
+            KeyboardInterrupt("End of test loop"),
+        ]
+
+        def get_state_side_effect(entity_id, states_dict, is_binary=False):
+            entity_info = states_dict.get(entity_id)
+            if not entity_info:
+                return None
+            state = entity_info.get("state")
+            if is_binary:
+                return state == "on"
+            try:
+                return float(state)
+            except (ValueError, TypeError):
+                return state
+
+        mock_ha_instance.get_state.side_effect = get_state_side_effect
+
+        mock_load_state.return_value = SystemState()
+        mock_simplified_outlet_prediction.return_value = (
+            35.0,
+            0.9,
+            {"predicted_indoor": 21.1},
+        )
+
+        from src import main
+
+        with patch.object(main, "time") as mock_time, patch(
+            "src.model_wrapper.get_enhanced_model_wrapper"
+        ) as mock_get_wrapper, patch.object(
+            BlockingStateManager, "poll_for_blocking"
+        ) as mock_poll_blocking:
+            mock_wrapper = MagicMock()
+            mock_get_wrapper.return_value = mock_wrapper
+            mock_wrapper.predict_indoor_temp.return_value = 21.0
+
+            mock_time.time.side_effect = [1000.0 + idx for idx in range(20)]
+            mock_time.sleep.return_value = None
+
+            with patch("sys.argv", ["main.py"]):
+                try:
+                    main.main()
+                except KeyboardInterrupt:
+                    pass
+
+    assert flaky_states.validation_key_calls == 2
+    mock_save_state.assert_called()
+    mock_poll_blocking.assert_called()

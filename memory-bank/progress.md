@@ -1,6 +1,29 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 18, 2026
+## 🎯 CURRENT STATUS - April 24, 2026
+
+### ✅ **HOLISTIC AUDIT: Bug Fixes, Drift Detection, Metrics Persistence, Auto-Doc**
+
+**System Status**: **IMPLEMENTED** — Comprehensive audit fixing 12+ issues across error handling, drift detection, prediction metrics, and developer workflow.
+
+**Test Suite**: **49 local tests passed** for touched model/state/main slices, including 5 new regression tests for the reviewed bugs. Pre-existing workspace-level failures remain limited to unrelated `streamlit` / environment gaps.
+
+**Implementation**:
+- ✅ Fixed indoor temp log bug (wrong indentation of shadow-mode else branch in main.py)
+- ✅ Added startup sensor validation on first cycle and ensured it retries after transient failures instead of disabling itself permanently (main.py)
+- ✅ Replaced bare `except Exception` in ha_client.py with specific exceptions + warning logs
+- ✅ Replaced bare `except Exception` in dashboard/health.py with specific exceptions + warning logs
+- ✅ Fixed JSON string corruption root cause in unified_thermal_state.py (validates `last_run_features`, re-validates decoded JSON, logs failed `to_dict()` conversions)
+- ✅ Removed dead grace period duplication in main.py
+- ✅ Fixed drift detection: corrected metric keys (`1h`/`all` instead of `mae_recent`/`mae_all_time`), reversed direction to boost confidence +2.0 (cap 10.0), and clamp back to 5.0 when drift subsides
+- ✅ Added dynamic `_max_learning_confidence` to ThermalEquilibriumModel and clamp restored confidence to the normal cap on restart
+- ✅ Fixed prediction metrics always zero: `_save_to_state()` now writes `accuracy_stats` and `recent_performance` to unified state using established `mae_all_time` / `rmse_all_time` keys
+- ✅ Created `.github/copilot-instructions.md` for automatic changelog/memory-bank/docs updates every session
+- ✅ Added focused regression coverage for metrics persistence, drift reset, restart clamping, startup validation retry, and `last_run_features` conversion warnings
+
+**Files**: `src/model_wrapper.py`, `src/thermal_equilibrium_model.py`, `src/prediction_metrics.py`, `src/main.py`, `src/ha_client.py`, `src/unified_thermal_state.py`, `dashboard/health.py`, `.github/copilot-instructions.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`, `tests/unit/test_unified_thermal_state.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_thermal_equilibrium_model_confidence.py`, `tests/integration/test_main.py`
+
+## 🎯 PREVIOUS STATUS - April 18, 2026
 
 ### ✅ **CRITICAL FIX: Binary Search _features NameError + Debug Logging**
 

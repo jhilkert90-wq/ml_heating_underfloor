@@ -13,7 +13,7 @@ Key features:
 """
 
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from datetime import datetime
 
 import numpy as np
@@ -1922,6 +1922,11 @@ class EnhancedModelWrapper:
                 cycle_count=self.cycle_count
             )
 
+            # --- Drift detection ---
+            # If recent MAE is persistently much worse than the all-time
+            # baseline, reset learning confidence to allow re-adaptation.
+            self._check_prediction_drift()
+
             # Export Influx metrics at the configured cadence to limit write
             # volume while keeping Home Assistant updates real-time.
             if self.cycle_count % self._get_influx_export_interval_cycles() == 0:
@@ -1954,6 +1959,115 @@ class EnhancedModelWrapper:
 
         except Exception as e:
             logging.error(f"Learning from feedback failed: {e}", exc_info=True)
+
+    def _compute_model_health(
+        self,
+        thermal_metrics: Dict[str, Any],
+        prediction_metrics: Dict[str, Any],
+    ) -> str:
+        """Compute model health considering both confidence and MAE trend.
+
+        Base health comes from learning_confidence, but is downgraded by
+        one level when the MAE improvement percentage is significantly
+        negative, preventing contradictory reports like health='excellent'
+        while the model is actively degrading.
+        """
+        confidence = thermal_metrics.get("learning_confidence", 0)
+        if confidence >= 4.0:
+            base_health = "excellent"
+        elif confidence >= 3.0:
+            base_health = "good"
+        elif confidence >= 2.0:
+            base_health = "fair"
+        else:
+            return "poor"
+
+        # Check if MAE trend is significantly negative (degrading)
+        improvement_pct = (
+            prediction_metrics.get("trends", {})
+            .get("mae_improvement_percentage", 0.0)
+        )
+        is_improving = (
+            prediction_metrics.get("trends", {})
+            .get("is_improving", True)
+        )
+        if not is_improving and improvement_pct < -10.0:
+            # Downgrade by one level
+            downgrade = {
+                "excellent": "good",
+                "good": "fair",
+                "fair": "poor",
+            }
+            downgraded = downgrade.get(base_health, base_health)
+            logging.info(
+                "Model health downgraded %s → %s "
+                "(MAE improvement: %.1f%%)",
+                base_health,
+                downgraded,
+                improvement_pct,
+            )
+            return downgraded
+
+        return base_health
+
+    def _check_prediction_drift(self) -> None:
+        """Detect sustained prediction drift and boost learning confidence.
+
+        If the recent MAE (1h window) exceeds 1.5× the all-time MAE for
+        at least 50 consecutive cycles, the learning confidence is boosted
+        by +2.0 (capped at 10.0) to allow faster re-adaptation to changed
+        conditions (e.g. seasonal transitions).  When drift subsides the
+        confidence cap returns to the normal 5.0.
+        """
+        try:
+            metrics = self.prediction_metrics.get_metrics()
+            recent_mae = metrics.get('1h', {}).get('mae', 0.0)
+            all_time_mae = metrics.get('all', {}).get('mae', 0.0)
+
+            if all_time_mae <= 0 or recent_mae <= 0:
+                return
+
+            drift_ratio = recent_mae / all_time_mae
+            if not hasattr(self, '_drift_counter'):
+                self._drift_counter = 0
+
+            if drift_ratio > 1.5:
+                self._drift_counter += 1
+            else:
+                self._drift_counter = 0
+                # Drift subsided — restore normal confidence cap
+                self.thermal_model._max_learning_confidence = 5.0
+                if self.thermal_model.learning_confidence > 5.0:
+                    self.thermal_model.learning_confidence = 5.0
+                    self.state_manager.update_learning_state(
+                        learning_confidence=5.0
+                    )
+
+            # Require sustained degradation (50 cycles ≈ ~4 hours at 5-min
+            # intervals) before triggering to avoid reacting to transients.
+            if self._drift_counter >= 50:
+                current_conf = self.thermal_model.learning_confidence
+                new_conf = min(10.0, current_conf + 2.0)
+                logging.warning(
+                    "📈 Prediction drift detected: recent MAE=%.4f is "
+                    "%.1f× all-time MAE=%.4f over %d consecutive cycles. "
+                    "Boosting learning confidence %.2f → %.2f to "
+                    "accelerate re-adaptation.",
+                    recent_mae,
+                    drift_ratio,
+                    all_time_mae,
+                    self._drift_counter,
+                    current_conf,
+                    new_conf,
+                )
+                self.thermal_model.learning_confidence = new_conf
+                self.thermal_model._max_learning_confidence = 10.0
+                self.state_manager.update_learning_state(
+                    learning_confidence=new_conf
+                )
+                self._drift_counter = 0
+        except Exception as e:
+            logging.debug("Drift detection check failed: %s", e)
 
     def export_metrics_to_ha(self):
         """Export metrics to Home Assistant sensors."""
@@ -2154,20 +2268,12 @@ class EnhancedModelWrapper:
                         "mae_improvement_percentage", 0.0
                     )
                 ),
-                # Model health summary
-                "model_health": (
-                    "excellent"
-                    if thermal_metrics.get("learning_confidence", 0) >= 4.0
-                    else (
-                        "good"
-                        if thermal_metrics.get("learning_confidence", 0) >= 3.0
-                        else (
-                            "fair"
-                            if thermal_metrics.get("learning_confidence", 0)
-                            >= 2.0
-                            else "poor"
-                        )
-                    )
+                # Model health summary — based on learning confidence,
+                # but downgraded when MAE trend is persistently negative
+                # to avoid contradictory reporting (e.g. health='excellent'
+                # while is_improving=False with -35% improvement).
+                "model_health": self._compute_model_health(
+                    thermal_metrics, prediction_metrics
                 ),
                 # Total predictions tracked
                 "total_predictions": len(self.prediction_metrics.predictions),

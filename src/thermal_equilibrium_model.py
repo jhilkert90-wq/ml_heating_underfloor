@@ -197,9 +197,20 @@ class ThermalEquilibriumModel:
                 self._initialize_learning_attributes()
 
                 # Restore learning history from saved state
-                self.learning_confidence = max(
-                    learning_state.get("learning_confidence", 3.0), 0.1
+                restored_confidence = learning_state.get(
+                    "learning_confidence", 3.0
                 )
+                self.learning_confidence = float(np.clip(
+                    restored_confidence,
+                    0.1,
+                    self._max_learning_confidence,
+                ))
+                if self.learning_confidence != restored_confidence:
+                    logging.info(
+                        "   - Clamped restored learning confidence: %.3f → %.3f",
+                        restored_confidence,
+                        self.learning_confidence,
+                    )
                 self.prediction_history = list(learning_state.get(
                     "prediction_history", []
                 ))
@@ -658,6 +669,7 @@ class ThermalEquilibriumModel:
         )
         self.confidence_decay_rate = PhysicsConstants.CONFIDENCE_DECAY_RATE
         self.confidence_boost_rate = PhysicsConstants.CONFIDENCE_BOOST_RATE
+        self._max_learning_confidence = 5.0
         self.recent_errors_window = config.RECENT_ERRORS_WINDOW
 
         self.thermal_time_constant_bounds = ThermalParameterConfig.get_bounds(
@@ -1087,7 +1099,8 @@ class ThermalEquilibriumModel:
                 self.learning_confidence *= self.confidence_decay_rate
 
             self.learning_confidence = float(
-                np.clip(self.learning_confidence, 0.1, 5.0)
+                np.clip(self.learning_confidence, 0.1,
+                        self._max_learning_confidence)
             )
             self._adapt_parameters_from_recent_errors()
             self._sync_model_from_orchestrator()

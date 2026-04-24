@@ -3,6 +3,7 @@
 Simple health check endpoint for ML Heating Add-on
 """
 
+import logging
 import os
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -43,7 +44,10 @@ class HealthHandler(BaseHTTPRequestHandler):
                     return 'active'
                 else:
                     return 'inactive'
-            except Exception:
+            except OSError as exc:
+                logging.warning(
+                    "ML system health check failed: %s", exc
+                )
                 return 'error'
         return 'not_started'
     
@@ -54,7 +58,10 @@ class HealthHandler(BaseHTTPRequestHandler):
                 with open('/data/options.json', 'r') as f:
                     json.load(f)
                 return 'valid'
-            except Exception:
+            except (json.JSONDecodeError, OSError) as exc:
+                logging.warning(
+                    "Config validation failed: %s", exc
+                )
                 return 'invalid'
         return 'missing'
 

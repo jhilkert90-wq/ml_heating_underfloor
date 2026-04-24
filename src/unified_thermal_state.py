@@ -200,14 +200,18 @@ class ThermalStateManager:
                 "total_predictions": 0,
                 "accuracy_stats": {
                     "mae_1h": 0.0,
+                    "rmse_1h": 0.0,
                     "mae_6h": 0.0,
+                    "rmse_6h": 0.0,
                     "mae_24h": 0.0,
+                    "rmse_24h": 0.0,
                     "mae_all_time": 0.0,
                     "rmse_all_time": 0.0
                 },
                 "recent_performance": {
                     "last_10_mae": 0.0,
-                    "last_10_max_error": 0.0
+                    "last_10_max_error": 0.0,
+                    "last_10_count": 0
                 }
             },
             "operational_state": {
@@ -590,6 +594,50 @@ class ThermalStateManager:
 
         for key, value in kwargs.items():
             if key in operational:
+                # Prevent last_run_features from being stored as a
+                # non-dict type (e.g. DataFrame, JSON string, Series).
+                # This is the root cause of the double-encoding bug
+                # where features_dict gets serialized as a JSON string
+                # and then re-serialized by json.dump().
+                if key == "last_run_features" and value is not None:
+                    if isinstance(value, str):
+                        import json as _json
+                        try:
+                            value = _json.loads(value)
+                        except (ValueError, TypeError):
+                            logging.warning(
+                                "last_run_features was a non-JSON string, "
+                                "discarding"
+                            )
+                            value = {}
+                    if hasattr(value, "to_dict") and not isinstance(
+                        value, dict
+                    ):
+                        try:
+                            if hasattr(value, "iloc"):
+                                value = value.iloc[0].to_dict()
+                            else:
+                                value = value.to_dict()
+                        except (
+                            AttributeError,
+                            IndexError,
+                            KeyError,
+                            TypeError,
+                            ValueError,
+                        ) as exc:
+                            logging.warning(
+                                "Failed to normalize last_run_features via "
+                                "to_dict(): %s",
+                                exc,
+                            )
+                            value = {}
+                    if not isinstance(value, dict):
+                        logging.warning(
+                            "last_run_features has unexpected type %s, "
+                            "discarding",
+                            type(value).__name__,
+                        )
+                        value = {}
                 operational[key] = value
 
         operational["last_run_time"] = datetime.now().isoformat()

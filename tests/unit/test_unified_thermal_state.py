@@ -3,6 +3,7 @@ import pytest
 import os
 import src.unified_thermal_state
 
+from src.prediction_metrics import PredictionMetrics
 from src.unified_thermal_state import (
     ThermalStateManager, get_thermal_state_manager
 )
@@ -147,6 +148,45 @@ class TestThermalStateManager:
 
         op_state = state_manager.get_operational_state()
         assert op_state["last_prediction"] == 25.0
+
+    def test_prediction_metrics_persist_all_time_metric_keys(
+        self, state_manager
+    ):
+        """Persisted accuracy stats should use the established schema keys."""
+        metrics = PredictionMetrics(state_manager=state_manager)
+
+        metrics.add_prediction(predicted=20.0, actual=21.0)
+
+        accuracy_stats = state_manager.state["prediction_metrics"][
+            "accuracy_stats"
+        ]
+        recent = state_manager.state["prediction_metrics"][
+            "recent_performance"
+        ]
+        assert accuracy_stats["mae_all_time"] == pytest.approx(1.0)
+        assert accuracy_stats["rmse_all_time"] == pytest.approx(1.0)
+        assert recent["last_10_count"] == 1
+
+    def test_update_operational_state_logs_failed_last_run_features_conversion(
+        self, state_manager, caplog
+    ):
+        """Broken DataFrame-like inputs should be discarded with a warning."""
+
+        class BrokenFrame:
+            def to_dict(self):
+                raise ValueError("broken frame")
+
+        caplog.set_level("WARNING")
+
+        state_manager.update_operational_state(
+            last_run_features=BrokenFrame()
+        )
+
+        assert (
+            state_manager.state["operational_state"]["last_run_features"]
+            == {}
+        )
+        assert "last_run_features" in caplog.text
 
     def test_reset_learning_state(self, state_manager):
         """Test resetting the learning state."""

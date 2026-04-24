@@ -2,12 +2,14 @@ import pytest
 import numpy as np
 import sys
 import os
+from unittest.mock import patch
 
 # Add src directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from src.thermal_equilibrium_model import ThermalEquilibriumModel
 from src.thermal_constants import PhysicsConstants
+from src.unified_thermal_state import ThermalStateManager
 
 @pytest.fixture
 def clean_model():
@@ -97,3 +99,22 @@ class TestConfidenceBoosting:
         finally:
             # Restore method
             model._adapt_parameters_from_recent_errors = original_adapt
+
+
+def test_restored_learning_confidence_respects_normal_cap(tmp_path):
+    """Restarting should not preserve a stale drift-only confidence boost."""
+    state_manager = ThermalStateManager(
+        state_file=str(tmp_path / "thermal_state.json")
+    )
+    state_manager.state["baseline_parameters"]["source"] = "calibrated"
+    state_manager.state["learning_state"]["learning_confidence"] = 8.0
+    state_manager.save_state()
+
+    with patch(
+        "src.unified_thermal_state.get_thermal_state_manager",
+        return_value=state_manager,
+    ):
+        model = ThermalEquilibriumModel()
+
+    assert model._max_learning_confidence == 5.0
+    assert model.learning_confidence == 5.0

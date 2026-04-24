@@ -352,8 +352,10 @@ class HAClient:
             )
             resp.raise_for_status()
             data = resp.json()["service_response"]
-        except Exception:
-            # Return a default value if the API call fails.
+        except (requests.RequestException, KeyError, ValueError) as exc:
+            logging.debug(
+                "Weather forecast request failed: %s", exc
+            )
             return [0.0] * 6
 
         try:
@@ -394,8 +396,10 @@ class HAClient:
             )
             resp.raise_for_status()
             data = resp.json()["service_response"]
-        except Exception:
-            # Return default 50% cloud cover if API call fails
+        except (requests.RequestException, KeyError, ValueError) as exc:
+            logging.debug(
+                "Cloud cover forecast request failed: %s", exc
+            )
             return [50.0] * 6
 
         try:

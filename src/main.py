@@ -353,6 +353,11 @@ def main():
         logging.error(
             f"❌ FAILED to export initial metrics to HA: {e}", exc_info=True
         )
+
+    # --- Startup Sensor Validation ---
+    # Will run once on the first cycle when all_states is available.
+    _sensor_validation_done = False
+
     # Define blocking_entities outside try block so it's available in
     # exception handler
     blocking_entities = [
@@ -403,6 +408,73 @@ def main():
             all_states = ha_client.get_all_states()
 
             thermodynamic_metrics_written_in_sensor_update = False
+
+            # --- One-time Startup Sensor Validation ---
+            # Verify configured sensor entity IDs exist in HA on first
+            # successful fetch. Missing sensors (especially fireplace/TV)
+            # lead to permanently empty learning channels.
+            if all_states and not _sensor_validation_done:
+                try:
+                    # all_states can be a list of dicts (HA API) or a dict
+                    # of dicts (test mocks) — extract entity IDs from both.
+                    if isinstance(all_states, list):
+                        _known_ids = {
+                            s.get("entity_id")
+                            for s in all_states
+                            if isinstance(s, dict)
+                        }
+                    elif isinstance(all_states, dict):
+                        _known_ids = set(all_states.keys())
+                    else:
+                        _known_ids = set()
+
+                    _critical_sensors = {
+                        "INDOOR_TEMP": config.INDOOR_TEMP_ENTITY_ID,
+                        "OUTDOOR_TEMP": config.OUTDOOR_TEMP_ENTITY_ID,
+                        "OUTLET_TEMP": config.ACTUAL_OUTLET_TEMP_ENTITY_ID,
+                        "TARGET_INDOOR": config.TARGET_INDOOR_TEMP_ENTITY_ID,
+                        "HEATING_STATUS": config.HEATING_STATUS_ENTITY_ID,
+                    }
+                    _optional_sensors = {
+                        "FIREPLACE": config.FIREPLACE_STATUS_ENTITY_ID,
+                        "TV": config.TV_STATUS_ENTITY_ID,
+                        "INLET_TEMP": config.INLET_TEMP_ENTITY_ID,
+                        "PV_POWER": config.PV_POWER_ENTITY_ID,
+                        "LIVING_ROOM": config.LIVING_ROOM_TEMP_ENTITY_ID,
+                    }
+                    _missing_critical = {
+                        name: eid
+                        for name, eid in _critical_sensors.items()
+                        if eid not in _known_ids
+                    }
+                    _missing_optional = {
+                        name: eid
+                        for name, eid in _optional_sensors.items()
+                        if eid not in _known_ids
+                    }
+                    if _missing_critical:
+                        logging.error(
+                            "🚨 CRITICAL sensors not found in HA! "
+                            "Learning and control will be impaired: %s",
+                            _missing_critical,
+                        )
+                    if _missing_optional:
+                        logging.warning(
+                            "⚠️ Optional sensors not found in HA — "
+                            "associated learning channels will remain "
+                            "empty: %s",
+                            _missing_optional,
+                        )
+                    if not _missing_critical and not _missing_optional:
+                        logging.info(
+                            "✅ All configured sensor entity IDs "
+                            "verified in HA."
+                        )
+                    _sensor_validation_done = True
+                except Exception as e:
+                    logging.warning(
+                        "Startup sensor validation failed: %s", e
+                    )
 
             # --- Update Sensor Buffer ---
             if all_states:
@@ -967,15 +1039,15 @@ def main():
                     # Shadow mode error tracking removed - handled by
                     # ThermalEquilibriumModel. Use the shared shadow-mode
                     # decision for comparison logging below.
-                if (
-                    effective_shadow_mode
-                    and actual_applied_temp != last_final_temp_stored
-                ):
-                    logging.debug(
-                        "Shadow mode: ML would set %.1f°C, HC set %.1f°C",
-                        last_final_temp_stored,
-                        actual_applied_temp,
-                    )
+                    if (
+                        effective_shadow_mode
+                        and actual_applied_temp != last_final_temp_stored
+                    ):
+                        logging.debug(
+                            "Shadow mode: ML would set %.1f°C, HC set %.1f°C",
+                            last_final_temp_stored,
+                            actual_applied_temp,
+                        )
                 else:
                     logging.debug(
                         "Skipping online learning: current indoor temp "
@@ -1061,40 +1133,6 @@ def main():
                     "temperature (outlet < inlet) — using cooling state %s",
                     _cooling_state.state_file,
                 )
-         
-            if is_grace_period:
-                # Skip control logic but allow state saving at the end of loop
-                logging.info("⏭️ Grace period active - Skipping control logic")
-                
-                # FIX: Do NOT overwrite last_final_temp with current actual
-                # outlet temp. This causes "state poisoning" where a low
-                # actual temp (e.g. 25C) becomes the target for the next
-                # cycle if sensors fail or another grace period occurs.
-                # Instead, preserve the previous valid target.
-                preserved_target = state.get("last_final_temp")
-                if preserved_target is None:
-                    # Fallback only if no previous state exists
-                    try:
-                        preserved_target = float(
-                            ha_client.get_state(
-                                config.ACTUAL_OUTLET_TEMP_ENTITY_ID, all_states
-                            )
-                        )
-                    except (ValueError, TypeError):
-                        preserved_target = 20.0  # Safe fallback
-
-                logging.info(
-                    "Preserving last_final_temp=%.1f°C during grace period",
-                    preserved_target
-                )
-
-                save_state(
-                    last_final_temp=preserved_target,
-                    last_is_blocking=False,  # Grace period is not blocking
-                    # Preserve end time
-                    last_blocking_end_time=state.last_blocking_end_time,
-                )
-                continue
 
             if is_blocking:
                 logging.info(
