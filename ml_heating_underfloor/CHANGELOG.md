@@ -1,5 +1,31 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.9] - 2026-04-24
+
+### Added
+- Startup sensor validation on first cycle in main loop — validates HA sensor availability before processing
+- Prediction drift detection (`_check_prediction_drift`) in model_wrapper.py — detects sustained MAE degradation over 50 cycles and boosts learning confidence (+2.0, cap 10.0) to accelerate re-adaptation
+- Dynamic confidence cap (`_max_learning_confidence`) on ThermalEquilibriumModel — allows drift-boosted confidence up to 10.0, normal cap 5.0
+- Model health computation (`_compute_model_health`) with improvement-aware downgrade logic
+- Prediction metrics persistence — `_save_to_state()` now writes `accuracy_stats` (MAE/RMSE per window) and `recent_performance` (last 10 predictions) to unified thermal state
+- `.github/copilot-instructions.md` — project-wide Copilot instructions ensuring changelog, memory-bank, and docs are updated automatically every session
+
+### Fixed
+- Indoor temperature log bug — shadow-mode comparison `else` branch was at wrong indentation, producing misleading "indoor temp unavailable" log messages
+- Bare `except Exception` blocks in ha_client.py — replaced with specific `except (requests.RequestException, KeyError, ValueError)` with warning logs
+- Dashboard health error masking — replaced bare `except Exception` in health.py with specific `except OSError` / `except (json.JSONDecodeError, OSError)` with warning logs
+- JSON string corruption in unified_thermal_state.py — `update_operational_state()` now validates `last_run_features` at write time, re-validates decoded JSON values, and logs failed `to_dict()` normalization attempts
+- Grace period duplication — removed dead second `if is_grace_period:` block in main.py (first block does `continue`, second was unreachable)
+- Drift detection metric keys — fixed `mae_recent`/`mae_all_time` to correct `metrics['1h']['mae']`/`metrics['all']['mae']` (method was non-functional, never fired)
+- Drift detection direction — reversed from reducing confidence (slowing learning) to boosting confidence by +2.0 (accelerating re-adaptation)
+- Prediction metrics persistence schema — restored established `mae_all_time` / `rmse_all_time` keys so unified state readers and HA export consume live values again
+- Learning confidence reset path — boosted confidence is now clamped back to 5.0 when drift subsides and on restart, preventing stale drift-only boosts from persisting
+- Startup sensor validation retry — transient validation failures no longer permanently disable the one-time startup check
+
+### Changed
+- Learning confidence clamp uses dynamic `_max_learning_confidence` attribute (default 5.0) instead of hardcoded 5.0, allowing drift detection to temporarily raise cap to 10.0
+- Unified state defaults now include RMSE window fields and `last_10_count` so persisted prediction metrics match the live write schema
+
 ## [0.2.8] - 2026-04-23
 
 ### Added
