@@ -403,7 +403,13 @@ class EnhancedModelWrapper:
                 pv_threshold = getattr(
                     config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000
                 )
-                pv_now = float(features.get("pv_power", 0.0))
+                # Use raw electrical output (not thermally-corrected) to
+                # decide whether there is surplus solar electricity available.
+                pv_now = float(
+                    features.get(
+                        "pv_now_electrical", features.get("pv_power", 0.0)
+                    )
+                )
                 if pv_threshold > 0 and pv_now >= pv_threshold:
                     cheap_offset = getattr(config, "PRICE_TARGET_OFFSET", 0.2)
                     # Only raise the target, never lower it via this path

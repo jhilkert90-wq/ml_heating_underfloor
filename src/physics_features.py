@@ -316,13 +316,20 @@ def build_physics_features(
             logging.debug(f"Could not fetch PV forecast: {e}")
             pv_forecasts = [0.0] * _n_fc
 
+    # Preserve raw electrical PV output before applying the thermal
+    # solar-correction factor.  This uncorrected value is used for
+    # purely-electrical decisions (PV surplus CHEAP override, trajectory
+    # scaling) where we want to know the actual panel output, not the
+    # fraction that contributes to house thermal gain.
+    pv_now_electrical = float(pv_now)
+
     def _scale_pv_value(value: object) -> float:
         try:
             return float(value) * solar_correction_factor
         except (TypeError, ValueError):
             return 0.0
 
-    # Apply global solar correction consistently to all PV inputs.
+    # Apply global solar correction consistently to all thermal PV inputs.
     pv_now *= solar_correction_factor
     pv_forecasts = [_scale_pv_value(p) for p in pv_forecasts]
     pv_history = [_scale_pv_value(p) for p in pv_history]
@@ -458,6 +465,7 @@ def build_physics_features(
         'defrosting': float(defrosting),
         # External heat sources
         'pv_now': float(pv_now),
+        'pv_now_electrical': float(pv_now_electrical),
         'solar_correction_percent': float(solar_correction_percent),
         'solar_correction_factor': float(solar_correction_factor),
         'solar_correction_enabled': float(solar_correction_enabled),
