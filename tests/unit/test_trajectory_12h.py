@@ -252,7 +252,7 @@ class TestPredictionContext12h:
 
         assert ctx["avg_outdoor"] == pytest.approx(2.0)
 
-    def test_cycle_aligned_7h_cycle(self, monkeypatch):
+    def test_cycle_aligned_90min_cycle(self, monkeypatch):
         """With TRAJECTORY_STEPS=12 and a 90-min cycle, avg_outdoor == temp_forecast_2h
         (round(1.5) = 2, so index 1 → forecast_2h)."""
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 12)

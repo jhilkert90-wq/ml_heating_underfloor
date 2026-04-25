@@ -113,8 +113,8 @@ class UnifiedPredictionContext:
                 avg_pv = pv_power * (1 - weight) + pv_forecast[0] * weight
                 avg_cloud_cover = cloud_cover_forecast[0]
             else:
-                # For cycle_hours > 1: round to nearest hour, cap at n_fc
-                hour_idx = min(int(round(cycle_hours)), n_fc) - 1
+                # For cycle_hours > 1: round to nearest hour, cap at n_fc, floor at 0
+                hour_idx = max(0, min(int(round(cycle_hours)), n_fc) - 1)
                 avg_outdoor = outdoor_forecast[hour_idx]
                 avg_pv = pv_forecast[hour_idx]
                 avg_cloud_cover = cloud_cover_forecast[hour_idx]

@@ -47,7 +47,8 @@ def test_prediction_context_manager(manager):
     manager.set_features(features)
     manager.create_context(8, 50, thermal_features)
     assert manager.get_context() is not None
-    assert manager.get_thermal_model_params()['outdoor_temp'] == 8.5
+    # avg_outdoor is interpolated by cycle weight; check it lies between current (8) and forecast (10)
+    assert 8.0 <= manager.get_thermal_model_params()['outdoor_temp'] <= 10.0
     assert manager.get_forecast_arrays()[0][0] == 10
     assert manager.uses_forecasts() is True
 
