@@ -1421,7 +1421,7 @@ def main():
                 # leave the counter at 0 so the next cycle can update freely.
                 setpoint_changed = (
                     held_temp is None
-                    or abs(final_temp - held_temp) > 0.05
+                    or abs(final_temp - held_temp) > PhysicsConstants.SETPOINT_CHANGE_THRESHOLD_C
                 )
                 new_hold_cycles = max(0, min_hold - 1) if setpoint_changed else 0
 

@@ -196,6 +196,10 @@ class PhysicsConstants:
     RETRY_DELAY_SECONDS = 300  # Wait time before retrying after error
     BLOCKING_POLL_INTERVAL_SECONDS = 60  # Poll interval for blocking events
     CYCLE_INTERVAL_MINUTES = 30  # Main control loop interval
+    # Minimum temperature change (°C) that counts as a new setpoint commit
+    # for the minimum hold counter.  Changes smaller than this are treated
+    # as optimizer noise and do not start a new hold period.
+    SETPOINT_CHANGE_THRESHOLD_C = 0.05
 
     # Learning update bounds (Phase 3.2 addition)
     MAX_HEAT_LOSS_COEFFICIENT_CHANGE = 0.005
