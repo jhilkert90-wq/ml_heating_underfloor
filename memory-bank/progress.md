@@ -2,11 +2,35 @@
 
 ## 🎯 CURRENT STATUS - April 25, 2026
 
-### ✅ **FEATURE: Extended Trajectory Horizon to 12 Hours**
+### ✅ **FEATURE: Dynamic PV Trajectory Scaling + PV Surplus CHEAP + Setpoint Hold**
 
-**System Status**: **IMPLEMENTED** — Extended the maximum `TRAJECTORY_STEPS` from 6 to 12 hours across every layer of the forecast pipeline.
+**System Status**: **IMPLEMENTED** — Three complementary solar-aware features added.
 
-**Test Suite**: **694 tests, all passing** (13 new tests added in `test_trajectory_12h.py`).
+**Test Suite**: **721 tests, all passing** (21 new in `test_pv_trajectory.py`, 6 new in `test_price_optimizer.py::TestPvSurplusCheapOverride`).
+
+**Implementation**:
+- ✅ `src/pv_trajectory.py` (new): `compute_dynamic_trajectory_steps(pv_power_w, system_kwp, now)` — linear interpolation between `PV_TRAJ_MIN_STEPS` and `PV_TRAJ_MAX_STEPS` using PV ratio × time-of-day factor
+- ✅ `src/config.py`: `PV_TRAJ_SCALING_ENABLED`, `PV_TRAJ_SYSTEM_KWP`, `PV_TRAJ_MIN_STEPS`, `PV_TRAJ_MAX_STEPS`, `PV_TRAJ_MORNING_FACTOR`, `PV_TRAJ_MIDDAY_FACTOR`, `PV_TRAJ_AFTERNOON_FACTOR`, `PV_TRAJ_NIGHT_FACTOR`; also `PV_SURPLUS_CHEAP_ENABLED`, `PV_SURPLUS_CHEAP_THRESHOLD_W`, `MIN_SETPOINT_HOLD_CYCLES`
+- ✅ `src/main.py`: per-cycle `config.TRAJECTORY_STEPS` + `config.MIN_SETPOINT_HOLD_CYCLES` override; setpoint hold countdown persisted in state
+- ✅ `src/model_wrapper.py`: PV surplus CHEAP target offset override
+- ✅ `src/state_manager.py`: `setpoint_hold_cycles_remaining` field in `SystemState`
+- ✅ `config_adapter.py`: all 10 new options mapped to env vars
+- ✅ `ml_heating_underfloor/config.yaml`: options + schema for PV Surplus, Setpoint Stability, Dynamic Trajectory Scaling sections
+- ✅ `tests/unit/test_pv_trajectory.py` (new): 21 tests
+- ✅ `tests/unit/test_price_optimizer.py`: 6 new PV surplus tests
+
+**Files Changed**:
+- `src/pv_trajectory.py` (new)
+- `src/config.py`
+- `src/main.py`
+- `src/model_wrapper.py`
+- `src/state_manager.py`
+- `config_adapter.py`
+- `ml_heating_underfloor/config.yaml`
+- `tests/unit/test_pv_trajectory.py` (new)
+- `tests/unit/test_price_optimizer.py`
+
+
 
 **Implementation**:
 - ✅ `ml_heating_underfloor/config.yaml`: widened `trajectory_steps` validation from `int(2,8)` to `int(2,12)`, updated comment

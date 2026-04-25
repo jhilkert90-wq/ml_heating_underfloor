@@ -1,6 +1,21 @@
 # Active Context - Current Work & Decision State
 
-### 🔧 **FEATURE: Extended Trajectory Horizon to 12 Hours — April 25, 2026**
+### 🔧 **FEATURE: Dynamic PV Trajectory Scaling — April 25, 2026**
+
+#### ✅ **Three solar-aware features implemented together**
+
+- **PV surplus CHEAP** (`PV_SURPLUS_CHEAP_ENABLED`): when `pv_power ≥ PV_SURPLUS_CHEAP_THRESHOLD_W`, target indoor temp is raised by `+PRICE_TARGET_OFFSET` (same as Tibber CHEAP). Implemented in `model_wrapper.calculate_optimal_outlet_temp()`. Only raises — never lowers a target already set by Tibber.
+- **Minimum setpoint hold** (`MIN_SETPOINT_HOLD_CYCLES`): once a setpoint is emitted it is held for N cycles before the optimizer may recalculate. Counter stored in `SystemState.setpoint_hold_cycles_remaining`. Default = `TRAJECTORY_STEPS`.
+- **Dynamic trajectory scaling** (`PV_TRAJ_SCALING_ENABLED`): each cycle, `config.TRAJECTORY_STEPS` and `config.MIN_SETPOINT_HOLD_CYCLES` are overridden using `compute_dynamic_trajectory_steps()`. Formula: `steps = MIN + round(pv_ratio × tod_factor × (MAX − MIN))`. Time-of-day windows: morning 06–10 (factor 0.5), midday 11–14 (1.0), afternoon 15–18 (0.75), night 19–05 (0.0 → min steps).
+
+#### Key Design Decisions
+- `config.TRAJECTORY_STEPS` is mutated per-cycle in `main.py` when scaling is enabled; all downstream code that reads `config.TRAJECTORY_STEPS` dynamically automatically picks up the new value each cycle.
+- `PV_TRAJ_SYSTEM_KWP` normalises the raw PV watts to a 0–1 ratio; users with 15 kWp set it to 15.0.
+- The night factor default is 0.0 so the system always falls back to `PV_TRAJ_MIN_STEPS` at night — responsive, not sluggish.
+- When `PV_TRAJ_SCALING_ENABLED=false` the function returns the static `config.TRAJECTORY_STEPS` unchanged, so the feature is fully opt-in.
+- **Files**: `src/pv_trajectory.py` (new), `src/config.py`, `src/main.py`, `src/model_wrapper.py`, `src/state_manager.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_pv_trajectory.py` (new), `tests/unit/test_price_optimizer.py`
+
+
 
 #### ✅ **Forecast Pipeline Extended to TRAJECTORY_STEPS Hours**
 - **What changed**: Every layer of the forecast data pipeline was hardcoded to 6 hours. `TRAJECTORY_STEPS` env var already controlled the optimization horizon (default 4), but data layers stopped at 6 slots. All hardcoded `6` / `range(1,7)` / `* 6` replaced with `config.TRAJECTORY_STEPS`.

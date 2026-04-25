@@ -15,9 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/model_wrapper.py`: forecast display dict for multi-horizon outlet-temp predictions is now built dynamically up to `TRAJECTORY_STEPS` steps; average divisor updated accordingly
 - `src/forecast_analytics.py`: fallback strategy dict in `get_forecast_fallback_strategy()` and trend computation in `calculate_thermal_forecast_impact()` respect `TRAJECTORY_STEPS`; `[3]` hard-codes replaced with `[-1]`
 - 13 new unit tests in `tests/unit/test_trajectory_12h.py` covering every pipeline layer at 12-hour horizon
+- PV surplus CHEAP override (`PV_SURPLUS_CHEAP_ENABLED`, `PV_SURPLUS_CHEAP_THRESHOLD_W`): when current PV ≥ threshold the binary-search target is raised by `+PRICE_TARGET_OFFSET`, treating solar surplus identically to a cheap Tibber period
+- Minimum setpoint hold (`MIN_SETPOINT_HOLD_CYCLES`): once a setpoint is emitted it is held for at least this many cycles before the optimizer may produce a new value; `setpoint_hold_cycles_remaining` persisted in `SystemState`
+- Dynamic trajectory scaling (`PV_TRAJ_SCALING_ENABLED`): new module `src/pv_trajectory.py` with `compute_dynamic_trajectory_steps()` — each cycle, `TRAJECTORY_STEPS` and `MIN_SETPOINT_HOLD_CYCLES` are overridden based on actual PV power relative to `PV_TRAJ_SYSTEM_KWP` and time-of-day factors (morning 0.5 / midday 1.0 / afternoon 0.75 / night 0.0); more solar → longer horizon → bolder pre-heating commitment
+- 6 new tests in `TestPvSurplusCheapOverride`, 21 new tests in `tests/unit/test_pv_trajectory.py` covering all time windows, boundary cases, 15 kWp example, and misconfiguration handling
 
 ### Changed
-- `ml_heating_underfloor/config.yaml`: `trajectory_steps` validation widened from `int(2,8)` to `int(2,12)`; inline comment updated
+- `ml_heating_underfloor/config.yaml`: `trajectory_steps` validation widened from `int(2,8)` to `int(2,12)`; inline comment updated; new option groups for PV Surplus Optimization, Setpoint Stability, and Dynamic Trajectory Scaling
 
 ## [0.2.0] - 2026-02-10
 

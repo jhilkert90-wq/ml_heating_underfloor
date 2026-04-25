@@ -259,6 +259,41 @@ PV_SURPLUS_CHEAP_THRESHOLD_W: int = int(
     os.getenv("PV_SURPLUS_CHEAP_THRESHOLD_W", "3000")
 )
 
+# --- Dynamic Trajectory Scaling ---
+# When PV_TRAJ_SCALING_ENABLED is true, TRAJECTORY_STEPS (and
+# MIN_SETPOINT_HOLD_CYCLES) are overridden each cycle based on actual PV
+# production and time of day.  The more solar energy available, the longer
+# the planning horizon: more PV → longer horizon → bolder pre-heating.
+# Set PV_TRAJ_SCALING_ENABLED=false to keep TRAJECTORY_STEPS fixed.
+PV_TRAJ_SCALING_ENABLED: bool = (
+    os.getenv("PV_TRAJ_SCALING_ENABLED", "false").lower() == "true"
+)
+# Nominal system capacity in kWp — used to normalise actual PV power.
+# Example: 15.0 for a 15 kWp installation.
+PV_TRAJ_SYSTEM_KWP: float = float(os.getenv("PV_TRAJ_SYSTEM_KWP", "10.0"))
+# Trajectory step limits (must stay within the global 2-12 range).
+PV_TRAJ_MIN_STEPS: int = int(os.getenv("PV_TRAJ_MIN_STEPS", "2"))
+PV_TRAJ_MAX_STEPS: int = int(os.getenv("PV_TRAJ_MAX_STEPS", "12"))
+# Time-of-day multipliers — applied to the PV ratio before linear
+# interpolation so that the optimizer is less aggressive early/late in the
+# day when the solar window is still opening or closing.
+#   Morning  06:00–10:59 — sun rising, moderate commitment
+#   Midday   11:00–14:59 — peak production, full horizon
+#   Afternoon 15:00–18:59 — declining, slightly shorter horizon
+#   Night    19:00–05:59 — no PV, forces minimum steps
+PV_TRAJ_MORNING_FACTOR: float = float(
+    os.getenv("PV_TRAJ_MORNING_FACTOR", "0.5")
+)
+PV_TRAJ_MIDDAY_FACTOR: float = float(
+    os.getenv("PV_TRAJ_MIDDAY_FACTOR", "1.0")
+)
+PV_TRAJ_AFTERNOON_FACTOR: float = float(
+    os.getenv("PV_TRAJ_AFTERNOON_FACTOR", "0.75")
+)
+PV_TRAJ_NIGHT_FACTOR: float = float(
+    os.getenv("PV_TRAJ_NIGHT_FACTOR", "0.0")
+)
+
 # --- Output Sensors ---
 FEATURES_ENTITY_ID: str = os.getenv(
     "FEATURES_ENTITY_ID", "sensor.ml_heating_features"

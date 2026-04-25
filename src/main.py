@@ -1265,6 +1265,29 @@ def main():
                 continue
 
             # --- Step 3: Prediction ---
+            # Dynamic trajectory scaling: adjust TRAJECTORY_STEPS per cycle
+            # based on current PV production and time of day so the planning
+            # horizon grows when solar energy is plentiful.
+            if getattr(config, "PV_TRAJ_SCALING_ENABLED", False):
+                try:
+                    from .pv_trajectory import compute_dynamic_trajectory_steps
+                    _pv_now_traj = float(
+                        features_dict.get("pv_now", 0.0)
+                        or features_dict.get("pv_power", 0.0)
+                    )
+                    _dyn_steps = compute_dynamic_trajectory_steps(
+                        _pv_now_traj,
+                        system_kwp=getattr(
+                            config, "PV_TRAJ_SYSTEM_KWP", 10.0
+                        ),
+                    )
+                    config.TRAJECTORY_STEPS = _dyn_steps
+                    config.MIN_SETPOINT_HOLD_CYCLES = _dyn_steps
+                except Exception as _exc:
+                    logging.warning(
+                        "Dynamic trajectory scaling failed: %s", _exc
+                    )
+
             # Read electricity price for price-aware optimization
             price_data = None
             if getattr(config, "ELECTRICITY_PRICE_ENABLED", False):
@@ -1361,10 +1384,14 @@ def main():
             # Prevent the setpoint from changing more often than every
             # MIN_SETPOINT_HOLD_CYCLES cycles so the trajectory optimizer's
             # plan is not undermined by per-cycle micro-adjustments.
+            # NOTE: config.MIN_SETPOINT_HOLD_CYCLES may have been updated
+            # above by dynamic trajectory scaling; min_hold is only used when
+            # starting a *new* hold (the else branch), never during an active
+            # hold countdown, so there is no mid-countdown mutation issue.
             hold_remaining = state.get("setpoint_hold_cycles_remaining", 0) or 0
-            min_hold = getattr(
+            min_hold = int(getattr(
                 config, "MIN_SETPOINT_HOLD_CYCLES", config.TRAJECTORY_STEPS
-            )
+            ))
             held_temp = state.get("last_final_temp")
             if hold_remaining > 0 and held_temp is not None:
                 logging.info(
