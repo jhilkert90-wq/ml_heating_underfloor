@@ -407,7 +407,7 @@ class EnhancedModelWrapper:
                 # decide whether there is surplus solar electricity available.
                 pv_now = float(
                     features.get(
-                        "pv_now_electrical", features.get("pv_power", 0.0)
+                        "pv_now_electrical", features.get("pv_now", 0.0)
                     )
                 )
                 if pv_threshold > 0 and pv_now >= pv_threshold:

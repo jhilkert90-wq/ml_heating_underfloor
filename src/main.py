@@ -1288,11 +1288,7 @@ def main():
                     # Use raw electrical output (not thermally-corrected) to
                     # measure actual solar availability for horizon scaling.
                     _pv_now_traj = float(
-                        features_dict.get(
-                            "pv_now_electrical",
-                            features_dict.get("pv_now", 0.0),
-                        )
-                        or 0.0
+                        features_dict.get("pv_now_electrical", 0.0)
                     )
                     _dyn_steps = compute_dynamic_trajectory_steps(
                         _pv_now_traj,
