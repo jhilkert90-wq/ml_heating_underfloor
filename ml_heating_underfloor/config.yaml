@@ -161,7 +161,7 @@ options:
   # The physics model uses learning_confidence in range (0.1..10.0]
   # System falls back to traditional heat curve when confidence drops below threshold
   confidence_threshold: 2.0
-  # Number of hours to predict in the thermal trajectory (2-8 hours)
+  # Number of hours to predict in the thermal trajectory (2-12 hours)
   trajectory_steps: 4
   # Maximum minutes to wait during grace period after blocking ends
   grace_period_max_minutes: 15
@@ -420,7 +420,7 @@ schema:
   debug: "bool"
   # Performance Tuning
   confidence_threshold: "float(0.1,10.0)"
-  trajectory_steps: "int(2,8)"
+  trajectory_steps: "int(2,12)"
   grace_period_max_minutes: "int(10,120)"
   defrost_recovery_grace_minutes: "int(15,120)"
   blocking_poll_interval_seconds: "int(30,300)"

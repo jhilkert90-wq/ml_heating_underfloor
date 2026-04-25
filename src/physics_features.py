@@ -92,7 +92,7 @@ def build_physics_features(
     - System states: dhw_heating, dhw_disinfection, dhw_boost_heater,
       defrosting
     - External sources: pv_now, fireplace_on, tv_on
-    - Forecasts: temp_forecast_1h-4h, pv_forecast_1h-4h
+    - Forecasts: temp_forecast_1h-12h, pv_forecast_1h-12h
     - NEW: Thermal momentum, extended lag, delta analysis, cyclical time
     - THERMODYNAMIC: Delta T, Thermal Power, COP
     
@@ -247,8 +247,9 @@ def build_physics_features(
         config.TV_STATUS_ENTITY_ID, all_states, is_binary=True
     ) or False
     
-    # PV Forecasts with correct 'watts' attribute parsing (support up to 6h)
-    pv_forecasts = [0.0] * 6
+    # PV Forecasts with correct 'watts' attribute parsing (support up to TRAJECTORY_STEPS hours)
+    _n_fc = config.TRAJECTORY_STEPS
+    pv_forecasts = [0.0] * _n_fc
     if config.PV_FORECAST_ENTITY_ID:
         try:
             from datetime import timezone, timedelta
@@ -273,9 +274,9 @@ def build_physics_features(
                         continue
                 if forecast_dict:
                     s = pd.Series(forecast_dict, dtype=float).sort_index()
-                    # Calculate hourly averages for next 6 hours
+                    # Calculate hourly averages for next TRAJECTORY_STEPS hours
                     hourly = []
-                    for hour in range(1, 7):
+                    for hour in range(1, _n_fc + 1):
                         hour_start = now + timedelta(hours=hour)
                         hour_end = hour_start + timedelta(hours=1)
                         hour_entries = []
@@ -293,10 +294,10 @@ def build_physics_features(
                             hourly.append(round(avg_watts, 1))
                         else:
                             hourly.append(0.0)
-                    # Pad to 6 if less
-                    while len(hourly) < 6:
+                    # Pad to _n_fc if less
+                    while len(hourly) < _n_fc:
                         hourly.append(hourly[-1] if hourly else 0.0)
-                    pv_forecasts = hourly[:6]
+                    pv_forecasts = hourly[:_n_fc]
                     logging.debug(
                         f"PV forecast parsed successfully: {pv_forecasts}W"
                     )
@@ -313,7 +314,7 @@ def build_physics_features(
                 )
         except Exception as e:
             logging.debug(f"Could not fetch PV forecast: {e}")
-            pv_forecasts = [0.0] * 6
+            pv_forecasts = [0.0] * _n_fc
 
     def _scale_pv_value(value: object) -> float:
         try:
@@ -362,7 +363,7 @@ def build_physics_features(
     thermal_power_kw = thermo_metrics["thermal_power_kw"]
     cop_realtime = thermo_metrics["cop_realtime"]
 
-    # Get calibrated temperature forecasts using delta correction (support up to 6h)
+    # Get calibrated temperature forecasts using delta correction (support up to TRAJECTORY_STEPS hours)
     try:
         # Check if delta calibration is enabled and available
         if (
@@ -377,37 +378,39 @@ def build_physics_features(
         else:
             temp_forecasts = ha_client.get_hourly_forecast()
         # Ensure we have a valid list of forecasts
-        if not isinstance(temp_forecasts, list) or len(temp_forecasts) < 6:
+        if not isinstance(temp_forecasts, list) or len(temp_forecasts) < _n_fc:
             # Fallback to default values if forecasts are invalid
-            temp_forecasts = [outdoor_temp_f] * 6
-        # Pad to 6 if less
-        while len(temp_forecasts) < 6:
+            temp_forecasts = [outdoor_temp_f] * _n_fc
+        # Pad to _n_fc if less
+        while len(temp_forecasts) < _n_fc:
             temp_forecasts.append(temp_forecasts[-1] if temp_forecasts else outdoor_temp_f)
     except Exception as e:
         logging.debug(f"Could not fetch temperature forecasts: {e}")
-        temp_forecasts = [outdoor_temp_f] * 6
+        temp_forecasts = [outdoor_temp_f] * _n_fc
     
     # Get cloud cover forecasts (only when cloud correction is enabled)
-    cloud_cover_forecasts = [0.0] * 6  # Default: clear sky (no correction)
+    cloud_cover_forecasts = [0.0] * _n_fc  # Default: clear sky (no correction)
     if getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False):
         try:
             if hasattr(ha_client, 'get_hourly_cloud_cover'):
                 cloud_cover_forecasts = ha_client.get_hourly_cloud_cover()
                 # Ensure we have a valid list
-                if not isinstance(cloud_cover_forecasts, list) or len(cloud_cover_forecasts) < 6:
-                    cloud_cover_forecasts = [0.0] * 6
-                # Pad to 6 if less
-                while len(cloud_cover_forecasts) < 6:
+                if not isinstance(cloud_cover_forecasts, list) or len(cloud_cover_forecasts) < _n_fc:
+                    cloud_cover_forecasts = [0.0] * _n_fc
+                # Pad to _n_fc if less
+                while len(cloud_cover_forecasts) < _n_fc:
                     cloud_cover_forecasts.append(cloud_cover_forecasts[-1] if cloud_cover_forecasts else 0.0)
         except Exception as e:
             logging.debug(f"Could not fetch cloud cover forecasts: {e}")
-            cloud_cover_forecasts = [0.0] * 6
+            cloud_cover_forecasts = [0.0] * _n_fc
 
         avg_cc = sum(cloud_cover_forecasts) / len(cloud_cover_forecasts)
+        _cc_labels = " ".join(
+            f"{h}h={cloud_cover_forecasts[h - 1]:.0f}%%" for h in range(1, _n_fc + 1)
+        )
         logging.debug(
-            "☁️ Cloud cover features: 1h=%.0f%% 2h=%.0f%% 3h=%.0f%% 4h=%.0f%% 5h=%.0f%% 6h=%.0f%% (avg=%.1f%%)",
-            cloud_cover_forecasts[0], cloud_cover_forecasts[1], cloud_cover_forecasts[2],
-            cloud_cover_forecasts[3], cloud_cover_forecasts[4], cloud_cover_forecasts[5],
+            "☁️ Cloud cover features: %s (avg=%.1f%%)",
+            _cc_labels,
             avg_cc,
         )
 
@@ -460,27 +463,12 @@ def build_physics_features(
         'solar_correction_enabled': float(solar_correction_enabled),
         'fireplace_on': float(fireplace_on),
         'tv_on': float(tv_on),
-        # Weather forecasts (1-6 hours)
-        'temp_forecast_1h': float(temp_forecasts[0]),
-        'temp_forecast_2h': float(temp_forecasts[1]),
-        'temp_forecast_3h': float(temp_forecasts[2]),
-        'temp_forecast_4h': float(temp_forecasts[3]),
-        'temp_forecast_5h': float(temp_forecasts[4]),
-        'temp_forecast_6h': float(temp_forecasts[5]),
-        # PV forecasts (1-6 hours)
-        'pv_forecast_1h': float(pv_forecasts[0]),
-        'pv_forecast_2h': float(pv_forecasts[1]),
-        'pv_forecast_3h': float(pv_forecasts[2]),
-        'pv_forecast_4h': float(pv_forecasts[3]),
-        'pv_forecast_5h': float(pv_forecasts[4]),
-        'pv_forecast_6h': float(pv_forecasts[5]),
-        # Cloud cover forecasts (1-6 hours, 0-100%)
-        'cloud_cover_forecast_1h': float(cloud_cover_forecasts[0]),
-        'cloud_cover_forecast_2h': float(cloud_cover_forecasts[1]),
-        'cloud_cover_forecast_3h': float(cloud_cover_forecasts[2]),
-        'cloud_cover_forecast_4h': float(cloud_cover_forecasts[3]),
-        'cloud_cover_forecast_5h': float(cloud_cover_forecasts[4]),
-        'cloud_cover_forecast_6h': float(cloud_cover_forecasts[5]),
+        # Weather forecasts (1-TRAJECTORY_STEPS hours)
+        **{f'temp_forecast_{h}h': float(temp_forecasts[h - 1]) for h in range(1, _n_fc + 1)},
+        # PV forecasts (1-TRAJECTORY_STEPS hours)
+        **{f'pv_forecast_{h}h': float(pv_forecasts[h - 1]) for h in range(1, _n_fc + 1)},
+        # Cloud cover forecasts (1-TRAJECTORY_STEPS hours, 0-100%)
+        **{f'cloud_cover_forecast_{h}h': float(cloud_cover_forecasts[h - 1]) for h in range(1, _n_fc + 1)},
         # P0 Priority: Thermal momentum analysis (3 features)
         'temp_diff_indoor_outdoor': actual_indoor_f - outdoor_temp_f,
         'indoor_temp_gradient': ((actual_indoor_f - hist_start) / time_period),
@@ -510,14 +498,14 @@ def build_physics_features(
         'cop_realtime': cop_realtime,
         # === WEEK 4 ENHANCED FORECAST FEATURES ===
         # Enhanced forecast analysis (3 new features)
-        # °C/hour trend (use up to 6h)
-        'temp_trend_forecast': ((temp_forecasts[5] - outdoor_temp_f) / 6.0),
-        # Simple heating demand (use 6h)
-        'heating_demand_forecast': max(0.0, (21.0 - temp_forecasts[5]) * 0.1),
-        # Net thermal load (use 6h)
+        # °C/hour trend (use up to TRAJECTORY_STEPS hours)
+        'temp_trend_forecast': ((temp_forecasts[_n_fc - 1] - outdoor_temp_f) / _n_fc),
+        # Simple heating demand (use TRAJECTORY_STEPS hours)
+        'heating_demand_forecast': max(0.0, (21.0 - temp_forecasts[_n_fc - 1]) * 0.1),
+        # Net thermal load (use TRAJECTORY_STEPS hours)
         'combined_forecast_thermal_load': (
-            max(0.0, (21.0 - temp_forecasts[5]) * 0.1)
-            - (pv_forecasts[5] * 0.001)
+            max(0.0, (21.0 - temp_forecasts[_n_fc - 1]) * 0.1)
+            - (pv_forecasts[_n_fc - 1] * 0.001)
         ),
         # PV power history for solar lag computation
         'pv_power_history': pv_history,

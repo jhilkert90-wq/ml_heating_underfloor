@@ -49,8 +49,10 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
     assert isinstance(features_df, pd.DataFrame)
     
-    # Verify column count
-    assert len(features_df.columns) == 58
+    # Verify column count: dynamic forecast keys scale with TRAJECTORY_STEPS (default 4).
+    # Previously 58 columns assumed 6 forecast slots; with TRAJECTORY_STEPS=4 → 52 columns.
+    expected_cols = 58 - 3 * (6 - config.TRAJECTORY_STEPS)  # 3 groups: temp, pv, cloud_cover
+    assert len(features_df.columns) == expected_cols
     
     # Verify original features
     assert features_df['indoor_temp_lag_30m'][0] == 19.6
@@ -102,29 +104,29 @@ class TestCloudCoverGate:
     def test_cloud_cover_not_fetched_when_disabled(self, mock_ha_client, mock_influx_service, monkeypatch):
         """When CLOUD_COVER_CORRECTION_ENABLED=False, get_hourly_cloud_cover must NOT be called."""
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
-        mock_ha_client.get_hourly_cloud_cover = MagicMock(return_value=[30.0] * 6)
+        mock_ha_client.get_hourly_cloud_cover = MagicMock(return_value=[30.0] * config.TRAJECTORY_STEPS)
 
         features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
         assert features_df is not None
         mock_ha_client.get_hourly_cloud_cover.assert_not_called()
 
         # Cloud cover columns should all be 0.0 (clear sky default)
-        for h in range(1, 7):
+        for h in range(1, config.TRAJECTORY_STEPS + 1):
             assert features_df[f'cloud_cover_forecast_{h}h'][0] == 0.0
 
     def test_cloud_cover_fetched_when_enabled(self, mock_ha_client, mock_influx_service, monkeypatch):
         """When CLOUD_COVER_CORRECTION_ENABLED=True, get_hourly_cloud_cover IS called."""
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
-        mock_ha_client.get_hourly_cloud_cover = MagicMock(
-            return_value=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
-        )
+        n = config.TRAJECTORY_STEPS
+        cloud_values = [float((h + 1) * 10) for h in range(n)]
+        mock_ha_client.get_hourly_cloud_cover = MagicMock(return_value=cloud_values)
 
         features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
         assert features_df is not None
         mock_ha_client.get_hourly_cloud_cover.assert_called_once()
 
         assert features_df['cloud_cover_forecast_1h'][0] == 10.0
-        assert features_df['cloud_cover_forecast_6h'][0] == 60.0
+        assert features_df[f'cloud_cover_forecast_{n}h'][0] == float(n * 10)
 
     def test_no_cloud_cover_log_when_disabled(self, mock_ha_client, mock_influx_service, monkeypatch, caplog):
         """No ☁️ cloud cover log line when feature is disabled."""

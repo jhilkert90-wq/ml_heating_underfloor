@@ -1,6 +1,35 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 24, 2026
+## 🎯 CURRENT STATUS - April 25, 2026
+
+### ✅ **FEATURE: Extended Trajectory Horizon to 12 Hours**
+
+**System Status**: **IMPLEMENTED** — Extended the maximum `TRAJECTORY_STEPS` from 6 to 12 hours across every layer of the forecast pipeline.
+
+**Test Suite**: **694 tests, all passing** (13 new tests added in `test_trajectory_12h.py`).
+
+**Implementation**:
+- ✅ `ml_heating_underfloor/config.yaml`: widened `trajectory_steps` validation from `int(2,8)` to `int(2,12)`, updated comment
+- ✅ `src/ha_client.py`: `get_hourly_forecast()`, `get_hourly_cloud_cover()`, `get_calibrated_hourly_forecast()` — all hardcoded `6` replaced with `config.TRAJECTORY_STEPS`
+- ✅ `src/physics_features.py`: PV forecast loop `range(1,7)` → `range(1, TRAJECTORY_STEPS+1)`, feature dict keys generated dynamically, summary features use `[TRAJECTORY_STEPS-1]` index and `TRAJECTORY_STEPS` divisor
+- ✅ `src/prediction_context.py`: replaced 6-branch if/elif step function with `hour_idx = min(round(cycle_hours), n_fc) - 1`; forecast extraction and fallback arrays use `config.TRAJECTORY_STEPS`
+- ✅ `src/model_wrapper.py`: forecast display dict built dynamically up to `TRAJECTORY_STEPS`; avg divisor `/ 6.0` → `/ config.TRAJECTORY_STEPS`; comment updated
+- ✅ `src/forecast_analytics.py`: fallback dict loop extended to `TRAJECTORY_STEPS`; `[3]` index replaced with `[-1]`; `config` imported
+- ✅ `tests/unit/test_trajectory_12h.py`: 13 new tests covering ha_client, physics_features, prediction_context, model_wrapper, config boundary
+- ✅ Updated existing tests (`test_ha_client.py`, `test_physics_features.py`) to reflect dynamic key counts
+
+**Files Changed**:
+- `ml_heating_underfloor/config.yaml`
+- `src/ha_client.py`
+- `src/physics_features.py`
+- `src/prediction_context.py`
+- `src/model_wrapper.py`
+- `src/forecast_analytics.py`
+- `tests/unit/test_trajectory_12h.py` (new)
+- `tests/unit/test_ha_client.py`
+- `tests/unit/test_physics_features.py`
+
+
 
 ### ✅ **HOLISTIC AUDIT: Bug Fixes, Drift Detection, Metrics Persistence, Auto-Doc**
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Extended trajectory horizon from 6 to up to 12 hours: `TRAJECTORY_STEPS` env var now accepted up to 12 (previously 8 via HA addon validation)
+- `src/ha_client.py`: `get_hourly_forecast()`, `get_hourly_cloud_cover()`, and `get_calibrated_hourly_forecast()` now fetch up to `TRAJECTORY_STEPS` hourly slots from the HA weather API instead of hard-coding 6
+- `src/physics_features.py`: `temp_forecast_{h}h`, `pv_forecast_{h}h`, and `cloud_cover_forecast_{h}h` feature keys are now generated dynamically up to `TRAJECTORY_STEPS` via a loop (previously hard-coded 1h–6h)
+- `src/prediction_context.py`: forecast and fallback arrays are now `TRAJECTORY_STEPS` elements long; the cycle-aligned slot selection uses a general formula `min(round(cycle_hours), TRAJECTORY_STEPS) - 1` replacing the previous 6-branch if/elif ladder
+- `src/model_wrapper.py`: forecast display dict for multi-horizon outlet-temp predictions is now built dynamically up to `TRAJECTORY_STEPS` steps; average divisor updated accordingly
+- `src/forecast_analytics.py`: fallback strategy dict in `get_forecast_fallback_strategy()` and trend computation in `calculate_thermal_forecast_impact()` respect `TRAJECTORY_STEPS`; `[3]` hard-codes replaced with `[-1]`
+- 13 new unit tests in `tests/unit/test_trajectory_12h.py` covering every pipeline layer at 12-hour horizon
+
+### Changed
+- `ml_heating_underfloor/config.yaml`: `trajectory_steps` validation widened from `int(2,8)` to `int(2,12)`; inline comment updated
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

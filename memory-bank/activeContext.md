@@ -1,6 +1,19 @@
 # Active Context - Current Work & Decision State
 
-### 🔧 **HOLISTIC AUDIT: Drift Detection, Metrics, Auto-Doc — April 24, 2026**
+### 🔧 **FEATURE: Extended Trajectory Horizon to 12 Hours — April 25, 2026**
+
+#### ✅ **Forecast Pipeline Extended to TRAJECTORY_STEPS Hours**
+- **What changed**: Every layer of the forecast data pipeline was hardcoded to 6 hours. `TRAJECTORY_STEPS` env var already controlled the optimization horizon (default 4), but data layers stopped at 6 slots. All hardcoded `6` / `range(1,7)` / `* 6` replaced with `config.TRAJECTORY_STEPS`.
+- **Why**: User requested 12h trajectory support. Setting `TRAJECTORY_STEPS=12` via HA addon UI (now valid range 2–12) enables a full 12-hour thermal prediction horizon.
+- **No model retraining needed**: The physics model (`thermal_equilibrium_model.py`) already uses `time_horizon_hours` from `config.TRAJECTORY_STEPS` — it's equation-based, not learned.
+- **Files**: `src/ha_client.py`, `src/physics_features.py`, `src/prediction_context.py`, `src/model_wrapper.py`, `src/forecast_analytics.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_trajectory_12h.py` (new)
+
+#### Key Design Decisions
+- `prediction_context.py` cycle-aligned step function: the old if/elif ladder (capped at 6h) replaced with `hour_idx = min(int(round(cycle_hours)), n_fc) - 1`. The existing 180-minute cap on cycle interval is preserved — this limits the max useful cycle-aligned slot to 3h, which is fine as real cycles are 10–30 minutes.
+- `forecast_analytics.py`: `calculate_thermal_forecast_impact()` now uses `[-1]` to reference the last (furthest) forecast element, making it horizon-agnostic.
+- Existing tests updated: `test_ha_client.py` mock_config gets `TRAJECTORY_STEPS=4`; `test_physics_features.py` column count and cloud cover key ranges use `config.TRAJECTORY_STEPS` dynamically.
+
+
 
 #### ✅ **Drift Detection Fixed — model_wrapper.py**
 - **Problem**: `_check_prediction_drift()` had two bugs: (1) read non-existent keys `mae_recent`/`mae_all_time` from `get_metrics()` which returns `'1h'`/`'all'` dicts — method never fired; (2) direction was backwards — reduced confidence on drift (slowing learning) instead of boosting it.

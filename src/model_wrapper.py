@@ -799,7 +799,7 @@ class EnhancedModelWrapper:
                         time_horizon_hours=optimization_horizon,
                         time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
                         pv_power=pv_input,  # Pass history for initialization
-                        pv_forecasts=pv_forecast,  # Schedule: [t=0h, t=1h, ..., t=6h]
+                        pv_forecasts=pv_forecast,  # Schedule: [t=0h, t=1h, ..., t=TRAJECTORY_STEPS h]
                         fireplace_on=fireplace_on,
                         tv_on=tv_on,
                         fireplace_power_kw=fireplace_power_kw,
@@ -1082,53 +1082,27 @@ class EnhancedModelWrapper:
                 cycle_method = "cycle(fallback)"
 
             # Extract individual forecast horizons including cycle-aligned
+            _n_fc = config.TRAJECTORY_STEPS
             forecasts = {
                 "current": {"outdoor": outdoor_temp, "pv": pv_power},
                 cycle_method: {"outdoor": cycle_outdoor, "pv": cycle_pv},
-                "1h": {
-                    "outdoor": features.get("temp_forecast_1h", outdoor_temp),
-                    "pv": features.get("pv_forecast_1h", pv_power),
-                },
-                "2h": {
-                    "outdoor": features.get("temp_forecast_2h", outdoor_temp),
-                    "pv": features.get("pv_forecast_2h", pv_power),
-                },
-                "3h": {
-                    "outdoor": features.get("temp_forecast_3h", outdoor_temp),
-                    "pv": features.get("pv_forecast_3h", pv_power),
-                },
-                "4h": {
-                    "outdoor": features.get("temp_forecast_4h", outdoor_temp),
-                    "pv": features.get("pv_forecast_4h", pv_power),
-                },
-                "5h": {
-                    "outdoor": features.get("temp_forecast_5h", outdoor_temp),
-                    "pv": features.get("pv_forecast_5h", pv_power),
-                },
-                "6h": {
-                    "outdoor": features.get("temp_forecast_6h", outdoor_temp),
-                    "pv": features.get("pv_forecast_6h", pv_power),
-                },
-                "avg": {
-                    "outdoor": (
-                        features.get("temp_forecast_1h", outdoor_temp)
-                        + features.get("temp_forecast_2h", outdoor_temp)
-                        + features.get("temp_forecast_3h", outdoor_temp)
-                        + features.get("temp_forecast_4h", outdoor_temp)
-                        + features.get("temp_forecast_5h", outdoor_temp)
-                        + features.get("temp_forecast_6h", outdoor_temp)
-                    )
-                    / 6.0,
-                    "pv": (
-                        features.get("pv_forecast_1h", pv_power)
-                        + features.get("pv_forecast_2h", pv_power)
-                        + features.get("pv_forecast_3h", pv_power)
-                        + features.get("pv_forecast_4h", pv_power)
-                        + features.get("pv_forecast_5h", pv_power)
-                        + features.get("pv_forecast_6h", pv_power)
-                    )
-                    / 6.0,
-                },
+            }
+            for _h in range(1, _n_fc + 1):
+                forecasts[f"{_h}h"] = {
+                    "outdoor": features.get(f"temp_forecast_{_h}h", outdoor_temp),
+                    "pv": features.get(f"pv_forecast_{_h}h", pv_power),
+                }
+            forecasts["avg"] = {
+                "outdoor": sum(
+                    features.get(f"temp_forecast_{_h}h", outdoor_temp)
+                    for _h in range(1, _n_fc + 1)
+                )
+                / _n_fc,
+                "pv": sum(
+                    features.get(f"pv_forecast_{_h}h", pv_power)
+                    for _h in range(1, _n_fc + 1)
+                )
+                / _n_fc,
             }
 
             # Calculate predicted outlet temperature for each horizon
