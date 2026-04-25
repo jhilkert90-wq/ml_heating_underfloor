@@ -249,6 +249,50 @@ PRICE_EXPENSIVE_OVERSHOOT: float = float(
 PRICE_CACHE_REFRESH_MINUTES: int = int(
     os.getenv("PRICE_CACHE_REFRESH_MINUTES", "60")
 )
+# PV surplus cheap override: when current PV power (W) exceeds this threshold
+# the target is shifted by +PRICE_TARGET_OFFSET (same as CHEAP price), even
+# without a Tibber price feed.  Set to -1 or 0 to disable.
+PV_SURPLUS_CHEAP_ENABLED: bool = (
+    os.getenv("PV_SURPLUS_CHEAP_ENABLED", "false").lower() == "true"
+)
+PV_SURPLUS_CHEAP_THRESHOLD_W: int = int(
+    os.getenv("PV_SURPLUS_CHEAP_THRESHOLD_W", "3000")
+)
+
+# --- Dynamic Trajectory Scaling ---
+# When PV_TRAJ_SCALING_ENABLED is true, TRAJECTORY_STEPS (and
+# MIN_SETPOINT_HOLD_CYCLES) are overridden each cycle based on actual PV
+# production and time of day.  The more solar energy available, the longer
+# the planning horizon: more PV → longer horizon → bolder pre-heating.
+# Set PV_TRAJ_SCALING_ENABLED=false to keep TRAJECTORY_STEPS fixed.
+PV_TRAJ_SCALING_ENABLED: bool = (
+    os.getenv("PV_TRAJ_SCALING_ENABLED", "false").lower() == "true"
+)
+# Nominal system capacity in kWp — used to normalise actual PV power.
+# Example: 15.0 for a 15 kWp installation.
+PV_TRAJ_SYSTEM_KWP: float = float(os.getenv("PV_TRAJ_SYSTEM_KWP", "10.0"))
+# Trajectory step limits (must stay within the global 2-12 range).
+PV_TRAJ_MIN_STEPS: int = int(os.getenv("PV_TRAJ_MIN_STEPS", "2"))
+PV_TRAJ_MAX_STEPS: int = int(os.getenv("PV_TRAJ_MAX_STEPS", "12"))
+# Time-of-day multipliers — applied to the PV ratio before linear
+# interpolation so that the optimizer is less aggressive early/late in the
+# day when the solar window is still opening or closing.
+#   Morning  06:00–10:59 — sun rising, moderate commitment
+#   Midday   11:00–14:59 — peak production, full horizon
+#   Afternoon 15:00–18:59 — declining, slightly shorter horizon
+#   Night    19:00–05:59 — no PV, forces minimum steps
+PV_TRAJ_MORNING_FACTOR: float = float(
+    os.getenv("PV_TRAJ_MORNING_FACTOR", "0.5")
+)
+PV_TRAJ_MIDDAY_FACTOR: float = float(
+    os.getenv("PV_TRAJ_MIDDAY_FACTOR", "1.0")
+)
+PV_TRAJ_AFTERNOON_FACTOR: float = float(
+    os.getenv("PV_TRAJ_AFTERNOON_FACTOR", "0.75")
+)
+PV_TRAJ_NIGHT_FACTOR: float = float(
+    os.getenv("PV_TRAJ_NIGHT_FACTOR", "0.0")
+)
 
 # --- Output Sensors ---
 FEATURES_ENTITY_ID: str = os.getenv(
@@ -277,6 +321,13 @@ TRAJECTORY_STEPS: int = int(os.getenv("TRAJECTORY_STEPS", "4"))
 CYCLE_INTERVAL_MINUTES: int = int(os.getenv("CYCLE_INTERVAL_MINUTES", "10"))
 MAX_TEMP_CHANGE_PER_CYCLE: int = int(
     os.getenv("MAX_TEMP_CHANGE_PER_CYCLE", "2")
+)
+# Minimum number of cycles a computed setpoint is held before the optimizer
+# is allowed to produce a different value.  Defaults to TRAJECTORY_STEPS so
+# the setpoint is stable for at least the full planning horizon.
+# Set to 0 to disable (recompute every cycle).
+MIN_SETPOINT_HOLD_CYCLES: int = max(
+    0, int(os.getenv("MIN_SETPOINT_HOLD_CYCLES", str(TRAJECTORY_STEPS)))
 )
 TREND_DECAY_TAU_HOURS: float = max(
     0.1, float(os.getenv("TREND_DECAY_TAU_HOURS", "1.5"))

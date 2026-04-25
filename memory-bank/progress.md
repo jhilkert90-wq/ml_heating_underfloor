@@ -1,6 +1,59 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 24, 2026
+## 🎯 CURRENT STATUS - April 25, 2026
+
+### ✅ **FEATURE: Dynamic PV Trajectory Scaling + PV Surplus CHEAP + Setpoint Hold**
+
+**System Status**: **IMPLEMENTED** — Three complementary solar-aware features added.
+
+**Test Suite**: **721 tests, all passing** (21 new in `test_pv_trajectory.py`, 6 new in `test_price_optimizer.py::TestPvSurplusCheapOverride`).
+
+**Implementation**:
+- ✅ `src/pv_trajectory.py` (new): `compute_dynamic_trajectory_steps(pv_power_w, system_kwp, now)` — linear interpolation between `PV_TRAJ_MIN_STEPS` and `PV_TRAJ_MAX_STEPS` using PV ratio × time-of-day factor
+- ✅ `src/config.py`: `PV_TRAJ_SCALING_ENABLED`, `PV_TRAJ_SYSTEM_KWP`, `PV_TRAJ_MIN_STEPS`, `PV_TRAJ_MAX_STEPS`, `PV_TRAJ_MORNING_FACTOR`, `PV_TRAJ_MIDDAY_FACTOR`, `PV_TRAJ_AFTERNOON_FACTOR`, `PV_TRAJ_NIGHT_FACTOR`; also `PV_SURPLUS_CHEAP_ENABLED`, `PV_SURPLUS_CHEAP_THRESHOLD_W`, `MIN_SETPOINT_HOLD_CYCLES`
+- ✅ `src/main.py`: per-cycle `config.TRAJECTORY_STEPS` + `config.MIN_SETPOINT_HOLD_CYCLES` override; setpoint hold countdown persisted in state
+- ✅ `src/model_wrapper.py`: PV surplus CHEAP target offset override
+- ✅ `src/state_manager.py`: `setpoint_hold_cycles_remaining` field in `SystemState`
+- ✅ `config_adapter.py`: all 10 new options mapped to env vars
+- ✅ `ml_heating_underfloor/config.yaml`: options + schema for PV Surplus, Setpoint Stability, Dynamic Trajectory Scaling sections
+- ✅ `tests/unit/test_pv_trajectory.py` (new): 21 tests
+- ✅ `tests/unit/test_price_optimizer.py`: 6 new PV surplus tests
+
+**Files Changed**:
+- `src/pv_trajectory.py` (new)
+- `src/config.py`
+- `src/main.py`
+- `src/model_wrapper.py`
+- `src/state_manager.py`
+- `config_adapter.py`
+- `ml_heating_underfloor/config.yaml`
+- `tests/unit/test_pv_trajectory.py` (new)
+- `tests/unit/test_price_optimizer.py`
+
+
+
+**Implementation**:
+- ✅ `ml_heating_underfloor/config.yaml`: widened `trajectory_steps` validation from `int(2,8)` to `int(2,12)`, updated comment
+- ✅ `src/ha_client.py`: `get_hourly_forecast()`, `get_hourly_cloud_cover()`, `get_calibrated_hourly_forecast()` — all hardcoded `6` replaced with `config.TRAJECTORY_STEPS`
+- ✅ `src/physics_features.py`: PV forecast loop `range(1,7)` → `range(1, TRAJECTORY_STEPS+1)`, feature dict keys generated dynamically, summary features use `[TRAJECTORY_STEPS-1]` index and `TRAJECTORY_STEPS` divisor
+- ✅ `src/prediction_context.py`: replaced 6-branch if/elif step function with `hour_idx = min(round(cycle_hours), n_fc) - 1`; forecast extraction and fallback arrays use `config.TRAJECTORY_STEPS`
+- ✅ `src/model_wrapper.py`: forecast display dict built dynamically up to `TRAJECTORY_STEPS`; avg divisor `/ 6.0` → `/ config.TRAJECTORY_STEPS`; comment updated
+- ✅ `src/forecast_analytics.py`: fallback dict loop extended to `TRAJECTORY_STEPS`; `[3]` index replaced with `[-1]`; `config` imported
+- ✅ `tests/unit/test_trajectory_12h.py`: 13 new tests covering ha_client, physics_features, prediction_context, model_wrapper, config boundary
+- ✅ Updated existing tests (`test_ha_client.py`, `test_physics_features.py`) to reflect dynamic key counts
+
+**Files Changed**:
+- `ml_heating_underfloor/config.yaml`
+- `src/ha_client.py`
+- `src/physics_features.py`
+- `src/prediction_context.py`
+- `src/model_wrapper.py`
+- `src/forecast_analytics.py`
+- `tests/unit/test_trajectory_12h.py` (new)
+- `tests/unit/test_ha_client.py`
+- `tests/unit/test_physics_features.py`
+
+
 
 ### ✅ **HOLISTIC AUDIT: Bug Fixes, Drift Detection, Metrics Persistence, Auto-Doc**
 

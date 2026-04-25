@@ -14,6 +14,7 @@ def mock_config():
         mock_config.TARGET_OUTLET_TEMP_ENTITY_ID = "sensor.ml_vorlauftemperatur"
         mock_config.MAE_ENTITY_ID = "sensor.ml_model_mae"
         mock_config.RMSE_ENTITY_ID = "sensor.ml_model_rmse"
+        mock_config.TRAJECTORY_STEPS = 4
         yield mock_config
 
 
@@ -70,7 +71,9 @@ def test_get_calibrated_hourly_forecast(ha_client):
         ha_client, 'get_hourly_forecast', return_value=[10, 12, 14, 11]
     ):
         calibrated = ha_client.get_calibrated_hourly_forecast(11.5)
-        assert calibrated == [11.5, 13.5, 15.5, 12.5, 12.5, 12.5]
+        # With TRAJECTORY_STEPS=4 and 4 input values, no padding is needed.
+        # Offset = 11.5 - 10 = 1.5 applied to each.
+        assert calibrated == [11.5, 13.5, 15.5, 12.5]
 
 
 @patch('src.ha_client.requests')

@@ -8,6 +8,12 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
+# Support both package-relative and direct import
+try:
+    from . import config
+except ImportError:
+    import config  # type: ignore
+
 
 def analyze_forecast_quality(weather_forecasts: List[float], pv_forecasts: List[float]) -> Dict[str, float]:
     """
@@ -102,20 +108,20 @@ def calculate_thermal_forecast_impact(
         return thermal_impact
     
     # Calculate weather cooling/warming trends
-    temp_trend_4h = temp_forecasts[3] - current_outdoor_temp  # 4-hour temperature change
-    
-    if temp_trend_4h < 0:
+    temp_trend = temp_forecasts[-1] - current_outdoor_temp  # Full-horizon temperature change
+
+    if temp_trend < 0:
         # Cooling trend - increases heating demand
-        thermal_impact['weather_cooling_trend'] = abs(temp_trend_4h) * 0.1  # Simple factor
+        thermal_impact['weather_cooling_trend'] = abs(temp_trend) * 0.1  # Simple factor
     else:
         # Warming trend - reduces heating demand
-        thermal_impact['weather_heating_trend'] = temp_trend_4h * 0.05  # Asymmetric factor
+        thermal_impact['weather_heating_trend'] = temp_trend * 0.05  # Asymmetric factor
     
     # Calculate PV solar warming building effect
-    pv_trend_4h = pv_forecasts[3] - current_pv_power
-    if pv_trend_4h > 0:
+    pv_trend = pv_forecasts[-1] - current_pv_power
+    if pv_trend > 0:
         # Increasing PV = more solar warming
-        thermal_impact['pv_warming_trend'] = pv_trend_4h * 0.0005  # W to °C factor
+        thermal_impact['pv_warming_trend'] = pv_trend * 0.0005  # W to °C factor
     
     # Net thermal trend (positive = heating needed, negative = cooling needed)
     net_thermal_trend = (
@@ -127,8 +133,8 @@ def calculate_thermal_forecast_impact(
     thermal_impact['net_thermal_trend'] = net_thermal_trend
     
     # Thermal load forecast (always positive, represents heating demand)
-    base_thermal_load = max(0.0, (21.0 - temp_forecasts[3]) * 0.1)  # Base heating demand
-    pv_offset = pv_forecasts[3] * 0.001  # PV warming offset
+    base_thermal_load = max(0.0, (21.0 - temp_forecasts[-1]) * 0.1)  # Base heating demand
+    pv_offset = pv_forecasts[-1] * 0.001  # PV warming offset
     thermal_load = max(0.0, base_thermal_load - pv_offset)
     
     thermal_impact['thermal_load_forecast'] = thermal_load
@@ -157,15 +163,10 @@ def get_forecast_fallback_strategy(
     Returns:
         Dictionary with fallback forecast values
     """
-    fallback_forecasts = {
-        'temp_forecast_1h': current_conditions.get('outdoor_temp', 10.0),
-        'temp_forecast_2h': current_conditions.get('outdoor_temp', 10.0),
-        'temp_forecast_3h': current_conditions.get('outdoor_temp', 10.0),
-        'temp_forecast_4h': current_conditions.get('outdoor_temp', 10.0),
-        'pv_forecast_1h': 0.0,
-        'pv_forecast_2h': 0.0,
-        'pv_forecast_3h': 0.0,
-        'pv_forecast_4h': 0.0,
+    n_fc = config.TRAJECTORY_STEPS
+    fallback_forecasts: Dict = {
+        **{f'temp_forecast_{i}h': current_conditions.get('outdoor_temp', 10.0) for i in range(1, n_fc + 1)},
+        **{f'pv_forecast_{i}h': 0.0 for i in range(1, n_fc + 1)},
         'fallback_reason': 'high_quality'
     }
     
@@ -177,7 +178,7 @@ def get_forecast_fallback_strategy(
         fallback_forecasts['fallback_reason'] = 'low_confidence'
         # Use conservative temperature trend (assume current temp persists)
         current_temp = current_conditions.get('outdoor_temp', 10.0)
-        for i in range(1, 5):
+        for i in range(1, n_fc + 1):
             fallback_forecasts[f'temp_forecast_{i}h'] = current_temp
         
     elif combined_availability < 0.5:
@@ -187,7 +188,7 @@ def get_forecast_fallback_strategy(
         current_hour = datetime.now().hour
         
         # Simple night cooling model
-        for i in range(1, 5):
+        for i in range(1, n_fc + 1):
             hour = (current_hour + i) % 24
             if 6 <= hour <= 18:  # Daytime
                 temp_adjustment = 0.5  # Slight warming
@@ -199,7 +200,7 @@ def get_forecast_fallback_strategy(
     current_hour = datetime.now().hour
     current_pv = current_conditions.get('pv_now', 0.0)
     
-    for i in range(1, 5):
+    for i in range(1, n_fc + 1):
         hour = (current_hour + i) % 24
         if 6 <= hour <= 18:  # Daytime
             fallback_forecasts[f'pv_forecast_{i}h'] = max(0.0, current_pv * 0.8)  # Gradual reduction

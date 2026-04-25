@@ -52,8 +52,8 @@ class UnifiedPredictionContext:
             Dict with standardized prediction context including:
             - avg_outdoor: Cycle-aligned outdoor temp (forecast if available)
             - avg_pv: Cycle-aligned PV power (forecast if available)
-            - outdoor_forecast: 4-hour outdoor temperature forecast array
-            - pv_forecast: 4-hour PV power forecast array
+            - outdoor_forecast: TRAJECTORY_STEPS-hour outdoor temperature forecast array
+            - pv_forecast: TRAJECTORY_STEPS-hour PV power forecast array
             - fireplace_on: Fireplace status
             - tv_on: TV status
             - use_forecasts: Boolean indicating if forecasts were used
@@ -78,60 +78,28 @@ class UnifiedPredictionContext:
         cloud_cover_forecast = []
 
         if features:
-            # Extract up to 6-hour forecasts
-            forecast_1h_outdoor = features.get('temp_forecast_1h', outdoor_temp)
-            forecast_2h_outdoor = features.get('temp_forecast_2h', outdoor_temp)
-            forecast_3h_outdoor = features.get('temp_forecast_3h', outdoor_temp)
-            forecast_4h_outdoor = features.get('temp_forecast_4h', outdoor_temp)
-            forecast_5h_outdoor = features.get('temp_forecast_5h', outdoor_temp)
-            forecast_6h_outdoor = features.get('temp_forecast_6h', outdoor_temp)
+            # Extract up to TRAJECTORY_STEPS-hour forecasts dynamically
+            n_fc = config.TRAJECTORY_STEPS
+            _cc_default = 0.0
 
-            forecast_1h_pv = features.get('pv_forecast_1h', pv_power)
-            forecast_2h_pv = features.get('pv_forecast_2h', pv_power)
-            forecast_3h_pv = features.get('pv_forecast_3h', pv_power)
-            forecast_4h_pv = features.get('pv_forecast_4h', pv_power)
-            forecast_5h_pv = features.get('pv_forecast_5h', pv_power)
-            forecast_6h_pv = features.get('pv_forecast_6h', pv_power)
-
+            outdoor_forecast = [
+                features.get(f'temp_forecast_{h}h', outdoor_temp)
+                for h in range(1, n_fc + 1)
+            ]
+            pv_forecast = [
+                features.get(f'pv_forecast_{h}h', pv_power)
+                for h in range(1, n_fc + 1)
+            ]
             # Extract cloud cover forecasts (0-100%)
             # Default 0% (clear sky) — when CLOUD_COVER_CORRECTION_ENABLED=false
             # physics_features.py already sends 0.0 values.
-            _cc_default = 0.0
-            forecast_1h_cloud = features.get('cloud_cover_forecast_1h', _cc_default)
-            forecast_2h_cloud = features.get('cloud_cover_forecast_2h', _cc_default)
-            forecast_3h_cloud = features.get('cloud_cover_forecast_3h', _cc_default)
-            forecast_4h_cloud = features.get('cloud_cover_forecast_4h', _cc_default)
-            forecast_5h_cloud = features.get('cloud_cover_forecast_5h', _cc_default)
-            forecast_6h_cloud = features.get('cloud_cover_forecast_6h', _cc_default)
-
-            outdoor_forecast = [
-                forecast_1h_outdoor,
-                forecast_2h_outdoor,
-                forecast_3h_outdoor,
-                forecast_4h_outdoor,
-                forecast_5h_outdoor,
-                forecast_6h_outdoor
-            ]
-
-            pv_forecast = [
-                forecast_1h_pv,
-                forecast_2h_pv,
-                forecast_3h_pv,
-                forecast_4h_pv,
-                forecast_5h_pv,
-                forecast_6h_pv
-            ]
-
             cloud_cover_forecast = [
-                forecast_1h_cloud,
-                forecast_2h_cloud,
-                forecast_3h_cloud,
-                forecast_4h_cloud,
-                forecast_5h_cloud,
-                forecast_6h_cloud
+                features.get(f'cloud_cover_forecast_{h}h', _cc_default)
+                for h in range(1, n_fc + 1)
             ]
 
-            # Calculate cycle-aligned forecast using appropriate interpolation
+            # Calculate cycle-aligned forecast: pick the slot whose hour index
+            # best matches the cycle length, capped at the last available slot.
             if cycle_hours <= 1.0:
                 # 0-60min cycles: use average over the cycle
                 # Assuming linear interpolation between current and 1h forecast
@@ -140,38 +108,16 @@ class UnifiedPredictionContext:
                 # Weight = midpoint / 1h = (cycle_hours / 2) / 1 = cycle_hours / 2
                 weight = cycle_hours / 2.0
                 avg_outdoor = (
-                    outdoor_temp * (1 - weight) + forecast_1h_outdoor * weight
+                    outdoor_temp * (1 - weight) + outdoor_forecast[0] * weight
                 )
-                avg_pv = pv_power * (1 - weight) + forecast_1h_pv * weight
-                # Use forecast_1h_cloud as the best proxy for current cloud
-                # cover (no live sensor available), consistent with outdoor/PV
-                avg_cloud_cover = (
-                    forecast_1h_cloud * (1 - weight) + forecast_1h_cloud * weight
-                )
-            elif cycle_hours <= 1.51:
-                avg_outdoor = forecast_1h_outdoor
-                avg_pv = forecast_1h_pv
-                avg_cloud_cover = forecast_1h_cloud
-            elif cycle_hours <= 2.5:
-                avg_outdoor = forecast_2h_outdoor
-                avg_pv = forecast_2h_pv
-                avg_cloud_cover = forecast_2h_cloud
-            elif cycle_hours <= 3.5:
-                avg_outdoor = forecast_3h_outdoor
-                avg_pv = forecast_3h_pv
-                avg_cloud_cover = forecast_3h_cloud
-            elif cycle_hours <= 4.5:
-                avg_outdoor = forecast_4h_outdoor
-                avg_pv = forecast_4h_pv
-                avg_cloud_cover = forecast_4h_cloud
-            elif cycle_hours <= 5.5:
-                avg_outdoor = forecast_5h_outdoor
-                avg_pv = forecast_5h_pv
-                avg_cloud_cover = forecast_5h_cloud
-            else:  # >5.5h cycles: cap at 6h forecast
-                avg_outdoor = forecast_6h_outdoor
-                avg_pv = forecast_6h_pv
-                avg_cloud_cover = forecast_6h_cloud
+                avg_pv = pv_power * (1 - weight) + pv_forecast[0] * weight
+                avg_cloud_cover = cloud_cover_forecast[0]
+            else:
+                # For cycle_hours > 1: round to nearest hour, cap at n_fc, floor at 0
+                hour_idx = max(0, min(int(round(cycle_hours)), n_fc) - 1)
+                avg_outdoor = outdoor_forecast[hour_idx]
+                avg_pv = pv_forecast[hour_idx]
+                avg_cloud_cover = cloud_cover_forecast[hour_idx]
 
             use_forecasts = True
 
@@ -184,11 +130,12 @@ class UnifiedPredictionContext:
             )
         else:
             # No forecast data available, use current values
+            n_fc = config.TRAJECTORY_STEPS
             avg_outdoor = outdoor_temp
             avg_pv = pv_power
-            outdoor_forecast = [outdoor_temp] * 6
-            pv_forecast = [pv_power] * 6
-            cloud_cover_forecast = [0.0] * 6  # Default clear sky
+            outdoor_forecast = [outdoor_temp] * n_fc
+            pv_forecast = [pv_power] * n_fc
+            cloud_cover_forecast = [0.0] * n_fc  # Default clear sky
             avg_cloud_cover = 0.0
             use_forecasts = False
             logging.debug(
