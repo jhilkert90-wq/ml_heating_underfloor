@@ -394,6 +394,31 @@ class EnhancedModelWrapper:
                             level.value, target_indoor, target_adjusted, offset,
                         )
 
+            # --- PV Surplus CHEAP Override ---
+            # When current PV production exceeds the configured threshold the
+            # target is shifted by +PRICE_TARGET_OFFSET (same as a CHEAP grid
+            # price).  This works independently of the Tibber price feed and
+            # allows surplus solar energy to be used for extra heating.
+            if getattr(config, "PV_SURPLUS_CHEAP_ENABLED", False):
+                pv_threshold = getattr(
+                    config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000
+                )
+                pv_now = float(features.get("pv_power", 0.0))
+                if pv_threshold > 0 and pv_now >= pv_threshold:
+                    cheap_offset = getattr(config, "PRICE_TARGET_OFFSET", 0.2)
+                    # Only raise the target, never lower it via this path
+                    new_adjusted = target_indoor + cheap_offset
+                    if new_adjusted > target_adjusted:
+                        target_adjusted = new_adjusted
+                        price_info["price_level"] = "cheap"
+                        price_info["price_target_offset"] = cheap_offset
+                        logging.info(
+                            "☀️ PV surplus %.0fW ≥ %.0fW: target %.1f → "
+                            "%.1f°C (CHEAP override, offset +%.1f)",
+                            pv_now, pv_threshold,
+                            target_indoor, target_adjusted, cheap_offset,
+                        )
+
             # Store current indoor for trajectory correction
             self._current_indoor = current_indoor
             # Store price thresholds for trajectory correction

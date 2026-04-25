@@ -345,6 +345,22 @@ options:
   # Cache refresh interval (minutes) for Tibber service call
   price_cache_refresh_minutes: 60
 
+  # === PV Surplus Optimization ===
+  # When enabled, the target temperature is raised by price_target_offset
+  # whenever current PV production is at or above pv_surplus_cheap_threshold_w.
+  # This uses surplus solar energy for extra heating independently of Tibber.
+  pv_surplus_cheap_enabled: false
+  # PV power threshold in Watts above which surplus heating is activated
+  # (e.g., 3000 for a ~15 kWp system at ~20 % capacity)
+  pv_surplus_cheap_threshold_w: 3000
+
+  # === Setpoint Stability ===
+  # Minimum number of cycles a computed setpoint is held before the optimizer
+  # produces a new value.  Defaults to trajectory_steps so the setpoint
+  # remains stable for the full planning horizon (e.g., 4 × 10 min = 40 min).
+  # Set to 0 to recompute every cycle.
+  min_setpoint_hold_cycles: 4
+
   # === Outlet Smoothing ===
   # EMA smoothing factor (0.0 = max smoothing, 1.0 = no smoothing)
   outlet_smoothing_alpha: 0.3
@@ -510,6 +526,11 @@ schema:
   price_target_offset: "float(0.0,1.0)"
   price_expensive_overshoot: "float(0.0,1.0)"
   price_cache_refresh_minutes: "int(15,1440)"
+  # PV Surplus Optimization
+  pv_surplus_cheap_enabled: "bool"
+  pv_surplus_cheap_threshold_w: "int(100,20000)"
+  # Setpoint Stability
+  min_setpoint_hold_cycles: "int(0,20)"
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"

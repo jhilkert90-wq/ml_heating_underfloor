@@ -249,6 +249,15 @@ PRICE_EXPENSIVE_OVERSHOOT: float = float(
 PRICE_CACHE_REFRESH_MINUTES: int = int(
     os.getenv("PRICE_CACHE_REFRESH_MINUTES", "60")
 )
+# PV surplus cheap override: when current PV power (W) exceeds this threshold
+# the target is shifted by +PRICE_TARGET_OFFSET (same as CHEAP price), even
+# without a Tibber price feed.  Set to -1 or 0 to disable.
+PV_SURPLUS_CHEAP_ENABLED: bool = (
+    os.getenv("PV_SURPLUS_CHEAP_ENABLED", "false").lower() == "true"
+)
+PV_SURPLUS_CHEAP_THRESHOLD_W: int = int(
+    os.getenv("PV_SURPLUS_CHEAP_THRESHOLD_W", "3000")
+)
 
 # --- Output Sensors ---
 FEATURES_ENTITY_ID: str = os.getenv(
@@ -277,6 +286,13 @@ TRAJECTORY_STEPS: int = int(os.getenv("TRAJECTORY_STEPS", "4"))
 CYCLE_INTERVAL_MINUTES: int = int(os.getenv("CYCLE_INTERVAL_MINUTES", "10"))
 MAX_TEMP_CHANGE_PER_CYCLE: int = int(
     os.getenv("MAX_TEMP_CHANGE_PER_CYCLE", "2")
+)
+# Minimum number of cycles a computed setpoint is held before the optimizer
+# is allowed to produce a different value.  Defaults to TRAJECTORY_STEPS so
+# the setpoint is stable for at least the full planning horizon.
+# Set to 0 to disable (recompute every cycle).
+MIN_SETPOINT_HOLD_CYCLES: int = max(
+    0, int(os.getenv("MIN_SETPOINT_HOLD_CYCLES", str(TRAJECTORY_STEPS)))
 )
 TREND_DECAY_TAU_HOURS: float = max(
     0.1, float(os.getenv("TREND_DECAY_TAU_HOURS", "1.5"))

@@ -816,3 +816,122 @@ class TestRefreshPricesIfNeeded:
         assert result is not None
         assert len(result) == 1
         assert result[0]["price"] == 0.15
+
+
+# ══════════════════════════════════════════════════════════════════
+# PV surplus CHEAP override tests
+# ══════════════════════════════════════════════════════════════════
+
+class TestPvSurplusCheapOverride:
+    """calculate_optimal_outlet_temp raises target when PV >= threshold."""
+
+    def test_pv_below_threshold_no_effect(self, clean_state):
+        """PV below threshold → target unchanged."""
+        features_df = pd.DataFrame([{
+            "indoor_temp_lag_30m": 21.0,
+            "outdoor_temp": 5.0,
+            "pv_power": 2000.0,
+        }])
+        with (
+            patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
+            patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
+            patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
+        ):
+            _, _, meta = simplified_outlet_prediction(
+                features_df, 21.0, 22.0
+            )
+        assert meta["target_temp_adjusted"] == pytest.approx(22.0)
+
+    def test_pv_at_threshold_applies_cheap_offset(self, clean_state):
+        """PV exactly at threshold → target raised by PRICE_TARGET_OFFSET."""
+        features_df = pd.DataFrame([{
+            "indoor_temp_lag_30m": 21.0,
+            "outdoor_temp": 5.0,
+            "pv_power": 3000.0,
+        }])
+        with (
+            patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
+            patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
+            patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
+        ):
+            _, _, meta = simplified_outlet_prediction(
+                features_df, 21.0, 22.0
+            )
+        assert meta["target_temp_adjusted"] == pytest.approx(22.2)
+
+    def test_pv_above_threshold_applies_cheap_offset(self, clean_state):
+        """PV above threshold → target raised."""
+        features_df = pd.DataFrame([{
+            "indoor_temp_lag_30m": 21.0,
+            "outdoor_temp": 5.0,
+            "pv_power": 10000.0,
+        }])
+        with (
+            patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
+            patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PRICE_TARGET_OFFSET", 0.5),
+            patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
+        ):
+            _, _, meta = simplified_outlet_prediction(
+                features_df, 21.0, 22.0
+            )
+        assert meta["target_temp_adjusted"] == pytest.approx(22.5)
+
+    def test_pv_surplus_disabled_no_effect(self, clean_state):
+        """PV_SURPLUS_CHEAP_ENABLED=False → no change even above threshold."""
+        features_df = pd.DataFrame([{
+            "indoor_temp_lag_30m": 21.0,
+            "outdoor_temp": 5.0,
+            "pv_power": 15000.0,
+        }])
+        with (
+            patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", False),
+            patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
+            patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
+        ):
+            _, _, meta = simplified_outlet_prediction(
+                features_df, 21.0, 22.0
+            )
+        assert meta["target_temp_adjusted"] == pytest.approx(22.0)
+
+    def test_pv_surplus_does_not_lower_cheap_tibber_target(self, clean_state):
+        """PV surplus never lowers a target already raised by Tibber CHEAP."""
+        features_df = pd.DataFrame([{
+            "indoor_temp_lag_30m": 21.0,
+            "outdoor_temp": 5.0,
+            "pv_power": 5000.0,
+            "_electricity_price": {"current_price": 0.05, "today": [0.20] * 24},
+        }])
+        with (
+            patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
+            patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
+            patch.object(config, "ELECTRICITY_PRICE_ENABLED", True),
+        ):
+            _, _, meta = simplified_outlet_prediction(
+                features_df, 21.0, 22.0
+            )
+        # Tibber sets target to 22.2; PV surplus also +0.2 but must not add
+        # on top (the "only raise" guard keeps it at 22.2).
+        assert meta["target_temp_adjusted"] == pytest.approx(22.2)
+
+    def test_price_info_level_set_to_cheap(self, clean_state):
+        """price_level in metadata is 'cheap' when PV surplus activates."""
+        features_df = pd.DataFrame([{
+            "indoor_temp_lag_30m": 21.0,
+            "outdoor_temp": 5.0,
+            "pv_power": 5000.0,
+        }])
+        with (
+            patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
+            patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
+            patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
+        ):
+            _, _, meta = simplified_outlet_prediction(
+                features_df, 21.0, 22.0
+            )
+        assert meta.get("price_level") == "cheap"

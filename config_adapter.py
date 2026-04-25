@@ -465,6 +465,15 @@ def convert_addon_to_env(config):
         'PRICE_CACHE_REFRESH_MINUTES': str(
             config.get('price_cache_refresh_minutes', 60)
         ),
+        'PV_SURPLUS_CHEAP_ENABLED': str(
+            config.get('pv_surplus_cheap_enabled', False)
+        ).lower(),
+        'PV_SURPLUS_CHEAP_THRESHOLD_W': str(
+            config.get('pv_surplus_cheap_threshold_w', 3000)
+        ),
+        'MIN_SETPOINT_HOLD_CYCLES': str(
+            config.get('min_setpoint_hold_cycles', 4)
+        ),
 
         # --- Outlet Smoothing ---
         'OUTLET_SMOOTHING_ALPHA': str(

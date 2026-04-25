@@ -1357,6 +1357,26 @@ def main():
             last_final = state.get("last_final_temp")
             final_temp = apply_ema_smoothing(final_temp, last_final)
 
+            # --- Minimum Setpoint Hold ---
+            # Prevent the setpoint from changing more often than every
+            # MIN_SETPOINT_HOLD_CYCLES cycles so the trajectory optimizer's
+            # plan is not undermined by per-cycle micro-adjustments.
+            hold_remaining = state.get("setpoint_hold_cycles_remaining", 0) or 0
+            min_hold = getattr(
+                config, "MIN_SETPOINT_HOLD_CYCLES", config.TRAJECTORY_STEPS
+            )
+            held_temp = state.get("last_final_temp")
+            if hold_remaining > 0 and held_temp is not None:
+                logging.info(
+                    "⏱️ Setpoint hold: keeping %.1f°C for %d more cycle(s) "
+                    "(computed=%.1f°C)",
+                    held_temp, hold_remaining, final_temp,
+                )
+                final_temp = held_temp
+                new_hold_cycles = hold_remaining - 1
+            else:
+                new_hold_cycles = max(0, min_hold - 1)
+
             # Final prediction is now handled by ThermalEquilibriumModel in
             # model_wrapper
             # Use confidence metadata for predicted indoor temp if available
@@ -1798,6 +1818,7 @@ def main():
                 "last_blocking_reasons": (
                     blocking_reasons if is_blocking else []
                 ),
+                "setpoint_hold_cycles_remaining": new_hold_cycles,
             }
             save_state(**state_to_save)
             # Update in-memory state so the idle poll uses fresh data

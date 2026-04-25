@@ -38,6 +38,11 @@ class SystemState:
     last_is_blocking: bool = False
     last_blocking_reasons: List[str] = field(default_factory=list)
     last_blocking_end_time: Optional[float] = None
+    # Remaining cycles for which the current setpoint must be held before the
+    # optimizer is allowed to produce a new value.  Counts down to 0 each
+    # cycle; reset to MIN_SETPOINT_HOLD_CYCLES-1 whenever a new setpoint is
+    # committed.  0 means "free to update this cycle".
+    setpoint_hold_cycles_remaining: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert state to dictionary."""
