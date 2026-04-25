@@ -406,7 +406,7 @@ def build_physics_features(
 
         avg_cc = sum(cloud_cover_forecasts) / len(cloud_cover_forecasts)
         _cc_labels = " ".join(
-            f"{h}h={cloud_cover_forecasts[h - 1]:.0f}%%" for h in range(1, _n_fc + 1)
+            f"{h}h={cloud_cover_forecasts[h - 1]:.0f}%" for h in range(1, _n_fc + 1)
         )
         logging.debug(
             "☁️ Cloud cover features: %s (avg=%.1f%%)",

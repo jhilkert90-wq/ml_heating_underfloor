@@ -1248,6 +1248,19 @@ def main():
                     )
                     prediction_indoor_temp = _extrapolated
 
+            # --- Step 3a: Ensure forecast arrays cover the maximum possible
+            # horizon before feature building so that dynamic trajectory
+            # scaling can later shrink the horizon without hitting missing-key
+            # fallbacks.  When PV_TRAJ_SCALING_ENABLED the effective
+            # TRAJECTORY_STEPS is determined *after* features are built (we
+            # need pv_now from the features dict); setting the horizon to
+            # PV_TRAJ_MAX_STEPS here guarantees all forecast keys are
+            # populated for any step count the scaling might choose.
+            if getattr(config, "PV_TRAJ_SCALING_ENABLED", False):
+                config.TRAJECTORY_STEPS = int(
+                    getattr(config, "PV_TRAJ_MAX_STEPS", 12)
+                )
+
             features, outlet_history = build_physics_features(
                 ha_client, influx_service, sensor_buffer
             )
@@ -1265,9 +1278,10 @@ def main():
                 continue
 
             # --- Step 3: Prediction ---
-            # Dynamic trajectory scaling: adjust TRAJECTORY_STEPS per cycle
-            # based on current PV production and time of day so the planning
-            # horizon grows when solar energy is plentiful.
+            # Dynamic trajectory scaling: now that pv_now is available from
+            # features, compute the effective TRAJECTORY_STEPS for this cycle.
+            # Forecasts were already fetched at PV_TRAJ_MAX_STEPS above so all
+            # horizon keys are present regardless of the value chosen here.
             if getattr(config, "PV_TRAJ_SCALING_ENABLED", False):
                 try:
                     from .pv_trajectory import compute_dynamic_trajectory_steps
@@ -1402,7 +1416,14 @@ def main():
                 final_temp = held_temp
                 new_hold_cycles = hold_remaining - 1
             else:
-                new_hold_cycles = max(0, min_hold - 1)
+                # Only start a new hold when the setpoint actually changes.
+                # If the optimizer produced the same temperature as before,
+                # leave the counter at 0 so the next cycle can update freely.
+                setpoint_changed = (
+                    held_temp is None
+                    or abs(final_temp - held_temp) > 0.05
+                )
+                new_hold_cycles = max(0, min_hold - 1) if setpoint_changed else 0
 
             # Final prediction is now handled by ThermalEquilibriumModel in
             # model_wrapper
