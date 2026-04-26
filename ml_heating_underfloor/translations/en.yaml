@@ -193,7 +193,7 @@ configuration:
     description: "Minimum learning confidence (scale 0.1–10.0) required before ML controls heating. Below this threshold the system falls back to a simple heat curve. Increase if ML takes over too early; decrease if it is stuck in fallback. Default: 2.0."
   trajectory_steps:
     name: "Trajectory Steps (planning horizon)"
-    description: "Number of 10-minute steps the thermal trajectory optimizer plans ahead. 4 steps = 40-minute horizon. More steps = more proactive pre-heating but higher compute. Range: 2–12. Default: 4."
+    description: "Number of hours the thermal trajectory optimizer plans ahead. 4 = 4-hour planning horizon. More steps = more proactive pre-heating but higher compute. Range: 2–12. Default: 4."
   grace_period_max_minutes:
     name: "Grace Period After Blocking (minutes)"
     description: "Maximum time (minutes) to wait for the outlet temperature to stabilise after a blocking event (DHW, defrost, etc.) ends before resuming ML control. Default: 15 min."
@@ -478,11 +478,11 @@ configuration:
     name: "PV System Rated Capacity (kWp) [Advanced]"
     description: "Your PV installation's rated peak capacity in kWp. Used to normalise actual PV power to a 0–1 ratio for trajectory scaling (e.g. 15.0 for a 15 kWp system). Only relevant when pv_traj_scaling_enabled is true."
   pv_traj_min_steps:
-    name: "PV Trajectory Minimum Steps [Advanced]"
-    description: "Minimum trajectory steps used at zero PV output (night or overcast). Range: 2–12. Default: 2. Must be ≤ pv_traj_max_steps."
+    name: "PV Trajectory Minimum Hours [Advanced]"
+    description: "Minimum planning horizon in hours at zero PV output (night or overcast). Range: 2–12. Default: 2. Must be ≤ pv_traj_max_steps."
   pv_traj_max_steps:
-    name: "PV Trajectory Maximum Steps [Advanced]"
-    description: "Maximum trajectory steps used at full rated PV output. Range: 2–12. Default: 12."
+    name: "PV Trajectory Maximum Hours [Advanced]"
+    description: "Maximum planning horizon in hours at full rated PV output. Range: 2–12. Default: 12."
   pv_traj_morning_factor:
     name: "PV Trajectory Morning Factor 06:00–10:59 [Advanced]"
     description: "Time-of-day multiplier applied to the PV ratio during morning ramp-up (06:00–10:59). 0.5 = moderate commitment while the sun is still rising. Default: 0.5."

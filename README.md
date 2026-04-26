@@ -313,7 +313,7 @@ These must match your Home Assistant setup before first start:
 | Parameter | Default | Description |
 |---|---|---|
 | `shadow_mode` | `true` | Start in shadow mode — ML calculates but does **not** control heating. Switch to `false` (or toggle `ml_heating_control_entity`) when you're ready to go active. |
-| `trajectory_steps` | `4` | Planning horizon (number of 10-min steps). 4 = 40 min ahead. |
+| `trajectory_steps` | `4` | Planning horizon in hours. 4 = 4 h ahead. |
 | `cycle_interval_minutes` | `10` | Minutes between each learn-and-predict cycle. |
 | `confidence_threshold` | `2.0` | Minimum confidence before ML takes control (scale 0.1–10). |
 | `training_data_source` | `auto` | `auto` tries InfluxDB then falls back to HA history API. |

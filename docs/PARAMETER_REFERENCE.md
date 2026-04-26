@@ -175,7 +175,7 @@ Required for historical calibration. Optional for ongoing operation (HA history 
 | Parameter | Env Var | Type | Default | Description |
 |---|---|---|---|---|
 | `confidence_threshold` | `CONFIDENCE_THRESHOLD` | float (0.1–10) | `2.0` | Minimum learning confidence before ML controls heating. Below this threshold the system falls back to a simple heat curve. Increase if ML takes over too early; decrease if it stays in fallback too long. |
-| `trajectory_steps` | `TRAJECTORY_STEPS` | int (2–12) | `4` | Number of 10-minute steps the thermal trajectory optimizer plans ahead. 4 steps = 40-minute horizon. More steps = more proactive pre-heating but higher compute. |
+| `trajectory_steps` | `TRAJECTORY_STEPS` | int (2–12) | `4` | Number of hours the thermal trajectory optimizer plans ahead. 4 = 4-hour planning horizon. More steps = more proactive pre-heating but higher compute. |
 | `grace_period_max_minutes` | `GRACE_PERIOD_MAX_MINUTES` | int (10–120) | `15` | Maximum time (minutes) to wait for outlet temperature to stabilise after a blocking event before resuming ML control. |
 | `defrost_recovery_grace_minutes` | `DEFROST_RECOVERY_GRACE_MINUTES` | int (15–120) | `45` | Additional grace period (minutes) after a defrost cycle. Defrost chills the slab; this window lets it fully recover before the model learns again. |
 | `blocking_poll_interval_seconds` | `BLOCKING_POLL_INTERVAL_SECONDS` | int (30–300) | `60` | How frequently (seconds) blocking sensors are checked while waiting in idle or grace periods. |
@@ -394,8 +394,8 @@ Requires the Tibber integration in Home Assistant.
 |---|---|---|---|---|
 | `pv_traj_scaling_enabled` | `PV_TRAJ_SCALING_ENABLED` | bool | `false` | 🧪 When enabled, `trajectory_steps` and the setpoint hold duration are recomputed each cycle from actual PV production and time of day. |
 | `pv_traj_system_kwp` | `PV_TRAJ_SYSTEM_KWP` | float (1–100) | `10.0` | 🧪 Your PV installation's rated peak capacity in kWp (e.g. `15.0` for 15 kWp). Used to normalise PV power to a 0–1 ratio. |
-| `pv_traj_min_steps` | `PV_TRAJ_MIN_STEPS` | int (2–12) | `2` | 🧪 Minimum trajectory steps at zero PV (night / overcast). Must be ≤ `pv_traj_max_steps`. |
-| `pv_traj_max_steps` | `PV_TRAJ_MAX_STEPS` | int (2–12) | `12` | 🧪 Maximum trajectory steps at full rated PV output. |
+| `pv_traj_min_steps` | `PV_TRAJ_MIN_STEPS` | int (2–12) | `2` | 🧪 Minimum planning horizon in hours at zero PV (night / overcast). Must be ≤ `pv_traj_max_steps`. |
+| `pv_traj_max_steps` | `PV_TRAJ_MAX_STEPS` | int (2–12) | `12` | 🧪 Maximum planning horizon in hours at full rated PV output. |
 | `pv_traj_morning_factor` | `PV_TRAJ_MORNING_FACTOR` | float (0–1) | `0.5` | 🧪 PV ratio multiplier during morning ramp-up (06:00–10:59). Moderate commitment while the sun is still rising. |
 | `pv_traj_midday_factor` | `PV_TRAJ_MIDDAY_FACTOR` | float (0–1) | `1.0` | 🧪 PV ratio multiplier during peak production (11:00–14:59). Full planning horizon allowed. |
 | `pv_traj_afternoon_factor` | `PV_TRAJ_AFTERNOON_FACTOR` | float (0–1) | `0.75` | 🧪 PV ratio multiplier during afternoon decline (15:00–18:59). Slightly shorter horizon. |
