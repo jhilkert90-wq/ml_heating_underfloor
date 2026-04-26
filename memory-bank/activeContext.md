@@ -1,6 +1,19 @@
 # Active Context - Current Work & Decision State
 
-### 🔧 **Config Synchronization + Seasonal PV KWP Scaling — April 26, 2026**
+### 🔧 **Removed deprecated ELECTRICITY_PRICE_ENTITY_ID — April 26, 2026**
+
+#### ✅ **HAClient.get_electricity_price() and ELECTRICITY_PRICE_ENTITY_ID removed**
+
+Prices are fetched exclusively via `tibber.get_prices` HA service call (`PriceOptimizer.refresh_prices_if_needed()` → `call_tibber_get_prices()`). No sensor entity is polled.
+
+- `HAClient.get_electricity_price()` removed from `src/ha_client.py` (was already marked `.. deprecated::`, never called)
+- `ELECTRICITY_PRICE_ENTITY_ID` removed from `src/config.py`, `.env`, `.env_sample`, `ml_heating_underfloor/config.yaml` (options + schema), `config_adapter.py`
+
+**Test result:** 731 tests, same 3 pre-existing failures.
+
+**Files changed:** `src/ha_client.py`, `src/config.py`, `.env`, `.env_sample`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`.
+
+
 
 #### ✅ **Config files synchronized and deprecated params removed**
 

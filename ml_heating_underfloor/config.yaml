@@ -344,9 +344,6 @@ options:
   # === Electricity Price Optimization (Tibber) ===
   # Master feature flag — when false, no price code paths execute
   electricity_price_enabled: false
-  # Tibber electricity price sensor entity ID. The sensor state holds the current
-  # price in EUR/kWh, and the 'today'/'tomorrow' attributes contain hourly arrays.
-  electricity_price_entity: "sensor.electricity_price"
   # Percentile below which prices are classified as CHEAP
   price_cheap_percentile: 33
   # Percentile above which prices are classified as EXPENSIVE
@@ -573,7 +570,6 @@ schema:
   decay_cancel_margin: "float(0.0,2.0)"
   # Electricity Price Optimization
   electricity_price_enabled: "bool"
-  electricity_price_entity: "str"
   price_cheap_percentile: "int(10,50)"
   price_expensive_percentile: "int(50,90)"
   price_target_offset: "float(0.0,1.0)"

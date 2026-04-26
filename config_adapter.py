@@ -459,9 +459,6 @@ def convert_addon_to_env(config):
         'ELECTRICITY_PRICE_ENABLED': str(
             config.get('electricity_price_enabled', False)
         ).lower(),
-        'ELECTRICITY_PRICE_ENTITY_ID': config.get(
-            'electricity_price_entity', 'sensor.electricity_price'
-        ),
         'PRICE_CHEAP_PERCENTILE': str(
             config.get('price_cheap_percentile', 33)
         ),

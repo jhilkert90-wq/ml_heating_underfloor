@@ -219,12 +219,7 @@ FIREPLACE_STATUS_ENTITY_ID: str = os.getenv(
 )
 
 # --- Electricity Price Integration ---
-# Tibber (or similar) electricity price sensor. The sensor state holds the
-# current price in EUR/kWh, and the 'today'/'tomorrow' attributes contain
-# 24-element hourly price arrays.
-ELECTRICITY_PRICE_ENTITY_ID: str = os.getenv(
-    "ELECTRICITY_PRICE_ENTITY_ID", "sensor.electricity_price_johanness_home"
-)
+# Prices are fetched via the tibber.get_prices HA service call (PriceOptimizer).
 ELECTRICITY_PRICE_ENABLED: bool = (
     os.getenv("ELECTRICITY_PRICE_ENABLED", "false").lower() == "true"
 )
