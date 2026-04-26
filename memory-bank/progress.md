@@ -2,6 +2,28 @@
 
 ## 🎯 CURRENT STATUS - April 26, 2026
 
+### ✅ **FEATURE: Parameter Documentation & HA UI Translations**
+
+**System Status**: **IMPLEMENTED** — All add-on parameters now have human-readable names and descriptions in the HA Configuration tab.
+
+**Implementation:**
+- ✅ `ml_heating_underfloor/translations/en.yaml`: Created — `configuration:` block with `name:` + `description:` for all ~120 schema keys. Advanced/internal parameters labelled `[Advanced]`.
+- ✅ `docs/PARAMETER_REFERENCE.md`: Created — Full 30-section parameter reference with defaults, ranges, env var equivalents, and guidance.
+- ✅ `README.md`: Added Configuration Reference section with must-configure table, key operational parameters, advanced callout, and link to full reference.
+- ✅ `CHANGELOG.md`: Added `### Added` entry under `[Unreleased]`.
+
+**Files Changed:**
+- `ml_heating_underfloor/translations/en.yaml` (new)
+- `docs/PARAMETER_REFERENCE.md` (new)
+- `README.md`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
+## Previous Status — April 26, 2026
+
 ### ✅ **FEATURE: Config Synchronization + Seasonal PV KWP Scaling**
 
 **System Status**: **IMPLEMENTED** — Config files synchronized and new seasonal scaling feature added.

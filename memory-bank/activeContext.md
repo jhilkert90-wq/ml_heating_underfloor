@@ -1,5 +1,19 @@
 # Active Context - Current Work & Decision State
 
+### 📝 **Parameter documentation added — April 26, 2026**
+
+#### ✅ **translations/en.yaml, docs/PARAMETER_REFERENCE.md, README.md updated**
+
+All ~120 add-on configuration parameters now have human-readable names and descriptions shown in the Home Assistant Configuration tab.
+
+- `ml_heating_underfloor/translations/en.yaml`: Created. Contains `configuration:` block with `name:` + `description:` for every key in the `schema:` section of `config.yaml`. Advanced/internal parameters are labelled `[Advanced]` in both name and description. HA loads this automatically for the add-on Configuration tab.
+- `docs/PARAMETER_REFERENCE.md`: Created. Full 30-section parameter reference doc with every parameter, its default, valid range/type, env var equivalent, and guidance on when to change it.
+- `README.md`: Added "Configuration Reference" section (must-configure table, key operational parameters table, advanced parameters callout, link to `docs/PARAMETER_REFERENCE.md`).
+
+**Files changed:** `ml_heating_underfloor/translations/en.yaml` (new), `docs/PARAMETER_REFERENCE.md` (new), `README.md`, `CHANGELOG.md`.
+
+---
+
 ### 🔧 **Removed deprecated ELECTRICITY_PRICE_ENTITY_ID — April 26, 2026**
 
 #### ✅ **HAClient.get_electricity_price() and ELECTRICITY_PRICE_ENTITY_ID removed**
