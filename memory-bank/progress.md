@@ -11,8 +11,8 @@
 **Implementation:**
 - ✅ `src/pv_trajectory.py`: added `seasonal_kwp_factor()` and helper functions `_solar_declination_deg()`, `_max_solar_elevation_deg()`; updated `compute_dynamic_trajectory_steps()` to apply seasonal factor when `PV_TRAJ_SEASONAL_SCALING_ENABLED=true`; added `from datetime import date` import
 - ✅ `src/config.py`: added `PV_TRAJ_SEASONAL_SCALING_ENABLED`, `PV_TRAJ_LATITUDE`, `PV_TRAJ_SEASONAL_MIN_FACTOR`
-- ✅ `config_adapter.py`: added mappings for `ELECTRICITY_PRICE_ENTITY_ID`, `TREND_DECAY_TAU_HOURS`, `PV_ROOM_DECAY_MULTIPLIER`, `DECAY_CANCEL_MARGIN`, `PV_TRAJ_SEASONAL_SCALING_ENABLED`, `PV_TRAJ_LATITUDE`, `PV_TRAJ_SEASONAL_MIN_FACTOR`; removed deprecated `safety_max_temp`/`safety_min_temp` dead-code validation
-- ✅ `ml_heating_underfloor/config.yaml`: added `electricity_price_entity`, `trend_decay_tau_hours`, `pv_room_decay_multiplier`, `decay_cancel_margin`, `pv_traj_seasonal_scaling_enabled`, `pv_traj_latitude`, `pv_traj_seasonal_min_factor` to both `options:` and `schema:`
+- ✅ `config_adapter.py`: added mappings for `TREND_DECAY_TAU_HOURS`, `PV_ROOM_DECAY_MULTIPLIER`, `DECAY_CANCEL_MARGIN`, `PV_TRAJ_SEASONAL_SCALING_ENABLED`, `PV_TRAJ_LATITUDE`, `PV_TRAJ_SEASONAL_MIN_FACTOR`; removed deprecated `safety_max_temp`/`safety_min_temp` dead-code validation
+- ✅ `ml_heating_underfloor/config.yaml`: added `trend_decay_tau_hours`, `pv_room_decay_multiplier`, `decay_cancel_margin`, `pv_traj_seasonal_scaling_enabled`, `pv_traj_latitude`, `pv_traj_seasonal_min_factor` to both `options:` and `schema:`
 - ✅ `.env`: completely rewritten — 16 labelled sections, no duplicates, all missing params added
 - ✅ `.env_sample`: completely rewritten — same 16 sections, placeholder values
 - ✅ `tests/unit/test_pv_trajectory.py`: 13 new tests in `TestSeasonalKwpFactor` and `TestComputeDynamicStepsWithSeasonal`

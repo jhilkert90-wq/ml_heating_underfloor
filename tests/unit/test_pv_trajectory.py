@@ -223,7 +223,7 @@ class TestComputeDynamicSteps:
 # ---------------------------------------------------------------------------
 
 from datetime import date
-from src.pv_trajectory import seasonal_kwp_factor, _max_solar_elevation_deg
+from src.pv_trajectory import seasonal_kwp_factor
 
 
 class TestSeasonalKwpFactor:

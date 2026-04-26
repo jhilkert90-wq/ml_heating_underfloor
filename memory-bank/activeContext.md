@@ -19,8 +19,8 @@ Prices are fetched exclusively via `tibber.get_prices` HA service call (`PriceOp
 
 **What changed:**
 - `.env` and `.env_sample` completely rewritten with 16 consistent sections aligned with `config.yaml` section headings. All duplicate parameter blocks in `.env` (the condensed "Advanced Features & Tuning" blob lines 144–192 that was superseded by detailed sections below) have been removed.
-- Missing params added to `.env` / `.env_sample`: `UNIFIED_STATE_FILE_COOLING`, `COOLING_CLAMP_*`, `MIN_COOLING_DELTA_K`, `COOLING_SHUTDOWN_MARGIN_K`, `OUTLET_SMOOTHING_ALPHA`, `OUTLET_SMOOTHING_BYPASS`, `MIN_SETPOINT_HOLD_CYCLES`, `DEFROST_RECOVERY_GRACE_MINUTES`, `TRAINING_DATA_SOURCE`, all `PV_TRAJ_*` params, `TREND_DECAY_TAU_HOURS`, `PV_ROOM_DECAY_MULTIPLIER`, `DECAY_CANCEL_MARGIN`, `ELECTRICITY_PRICE_ENTITY_ID`.
-- `config.yaml` extended with `electricity_price_entity`, `trend_decay_tau_hours`, `pv_room_decay_multiplier`, `decay_cancel_margin` in both `options:` and `schema:`.
+- Missing params added to `.env` / `.env_sample`: `UNIFIED_STATE_FILE_COOLING`, `COOLING_CLAMP_*`, `MIN_COOLING_DELTA_K`, `COOLING_SHUTDOWN_MARGIN_K`, `OUTLET_SMOOTHING_ALPHA`, `OUTLET_SMOOTHING_BYPASS`, `MIN_SETPOINT_HOLD_CYCLES`, `DEFROST_RECOVERY_GRACE_MINUTES`, `TRAINING_DATA_SOURCE`, all `PV_TRAJ_*` params, `TREND_DECAY_TAU_HOURS`, `PV_ROOM_DECAY_MULTIPLIER`, `DECAY_CANCEL_MARGIN`. Deprecated `ELECTRICITY_PRICE_ENTITY_ID` was removed from both files.
+- `config.yaml` extended with `trend_decay_tau_hours`, `pv_room_decay_multiplier`, `decay_cancel_margin` in both `options:` and `schema:`. Deprecated sensor-based `electricity_price_entity` was removed.
 - `config_adapter.py`: added 6 missing env var mappings; removed `safety_max_temp`/`safety_min_temp` dead-code validation (hard-coded defaults that never failed and were not exposed in config.yaml).
 
 #### ✅ **Seasonal PV KWP Scaling implemented**
@@ -28,7 +28,7 @@ Prices are fetched exclusively via `tibber.get_prices` HA service call (`PriceOp
 **Feature design:**
 - `seasonal_kwp_factor(current_date, latitude_deg, min_factor)` in `src/pv_trajectory.py` computes a scaling factor from the ratio of solar sin-elevation today vs June 21 (summer solstice reference). Pure stdlib `math` — no external library.
 - Formula: `δ(doy) = 23.45° × sin(360/365 × (doy−81))`; `elev = 90° − |lat − δ|`; `factor = sin(elev_today) / sin(elev_june21)`, clamped `[PV_TRAJ_SEASONAL_MIN_FACTOR, 1.0]`.
-- When `PV_TRAJ_SEASONAL_SCALING_ENABLED=true`, `compute_dynamic_trajectory_steps()` divides the effective peak by the seasonal factor so a clear winter day maps to `pv_ratio≈1.0` (full horizon) instead of `pv_ratio≈0.3` (short horizon).
+- When `PV_TRAJ_SEASONAL_SCALING_ENABLED=true`, `compute_dynamic_trajectory_steps()` scales the effective peak by multiplying `system_kwp` by the seasonal factor. This reduces the effective peak in winter, so a clear winter day yields a higher `pv_ratio` and can map closer to `pv_ratio≈1.0` (full horizon) instead of `pv_ratio≈0.3` (short horizon).
 - Opt-in via `PV_TRAJ_SEASONAL_SCALING_ENABLED=false` default. Three new config vars added to all four config surfaces (`.env`, `.env_sample`, `config.yaml`, `config_adapter.py`, `src/config.py`).
 
 **Test results:** 34/34 passing in `tests/unit/test_pv_trajectory.py`. 731 total, 3 pre-existing failures in `test_price_optimizer.py::TestPvSurplusCheapOverride` (unrelated).

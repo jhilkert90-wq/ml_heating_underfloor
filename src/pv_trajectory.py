@@ -37,14 +37,19 @@ The factor is computed as::
 
     δ(doy)        = 23.45° × sin(360/365 × (doy − 81))   # solar declination
     elev_max(doy) = 90° − |lat − δ(doy)|                 # noon elevation
-    factor        = sin(elev_max_today) / sin(elev_max_june21)
+    factor        = sin(elev_max_today) / sin(elev_max_peak_solstice)
 
 Clamped to ``[PV_TRAJ_SEASONAL_MIN_FACTOR, 1.0]``.
 
+The *peak solstice* reference is June 21 (DOY 172) for northern latitudes
+and December 21 (DOY 355) for southern latitudes, so the calculation is
+correct for both hemispheres.
+
 Requires only Python stdlib ``math`` — no external astronomy library needed.
 
-When the feature is disabled ``compute_dynamic_trajectory_steps`` still
-returns the current ``config.TRAJECTORY_STEPS`` value unchanged.
+When ``PV_TRAJ_SCALING_ENABLED`` is ``false``,
+``compute_dynamic_trajectory_steps`` still returns the current
+``config.TRAJECTORY_STEPS`` value unchanged.
 """
 import logging
 import math
@@ -65,8 +70,14 @@ _MIDDAY_START = 11
 _AFTERNOON_START = 15
 _NIGHT_START = 19  # 19:00 – 05:59 is night
 
-# Day-of-year for June 21 (summer solstice reference)
-_SUMMER_SOLSTICE_DOY = 172
+
+def _peak_solar_doy(latitude_deg: float) -> int:
+    """Return DOY of the solstice that maximises solar elevation for *latitude_deg*.
+
+    June 21 (DOY 172) for the northern hemisphere (lat >= 0);
+    December 21 (DOY 355) for the southern hemisphere (lat < 0).
+    """
+    return 172 if latitude_deg >= 0.0 else 355
 
 
 def _time_of_day_factor(hour: int) -> float:
@@ -108,23 +119,25 @@ def seasonal_kwp_factor(
     """Compute the seasonal scaling factor for PV peak capacity.
 
     Compares the theoretical maximum solar elevation on *current_date* with
-    the summer-solstice maximum (June 21).  The ratio of their sines gives the
-    relative clear-sky PV production capacity.
+    the peak-solstice maximum (June 21 for northern latitudes, December 21 for
+    southern latitudes).  The ratio of their sines gives the relative
+    clear-sky PV production capacity.
 
     Args:
         current_date: Date for which to compute the factor.
-        latitude_deg: Geographic latitude in decimal degrees (North positive).
+        latitude_deg: Geographic latitude in decimal degrees (North positive,
+            South negative).
         min_factor: Floor value to prevent near-zero results in deep winter.
             Clamped to [0.0, 1.0] internally.
 
     Returns:
         Float in ``[min_factor, 1.0]`` representing the seasonal scaling.
-        Returns 1.0 if the summer-solstice elevation is ≤ 0 (degenerate).
+        Returns 1.0 if the peak-solstice elevation is ≤ 0 (degenerate).
     """
     min_factor = max(0.0, min(1.0, min_factor))
     doy = current_date.timetuple().tm_yday
     elev_today = _max_solar_elevation_deg(doy, latitude_deg)
-    elev_summer = _max_solar_elevation_deg(_SUMMER_SOLSTICE_DOY, latitude_deg)
+    elev_summer = _max_solar_elevation_deg(_peak_solar_doy(latitude_deg), latitude_deg)
 
     if elev_summer <= 0.0:
         return 1.0
