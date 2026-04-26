@@ -294,6 +294,25 @@ PV_TRAJ_NIGHT_FACTOR: float = float(
     os.getenv("PV_TRAJ_NIGHT_FACTOR", "0.0")
 )
 
+# --- Seasonal KWP Scaling ---
+# When enabled, the effective PV peak is scaled by a seasonal factor derived
+# from the solar declination at the configured latitude. This normalises PV
+# production relative to the summer-solstice maximum so that a clear winter
+# day (full output for the season) correctly maps to pv_ratio=1.0.
+# Requires only stdlib math — no external astronomy library needed.
+PV_TRAJ_SEASONAL_SCALING_ENABLED: bool = (
+    os.getenv("PV_TRAJ_SEASONAL_SCALING_ENABLED", "false").lower() == "true"
+)
+# Geographic latitude of the PV installation in decimal degrees (North positive).
+# Used to compute the maximum solar elevation per day-of-year.
+# Example: 48.0 for Munich/Bavaria, 51.5 for Berlin, 47.8 for Zurich.
+PV_TRAJ_LATITUDE: float = float(os.getenv("PV_TRAJ_LATITUDE", "51.0"))
+# Floor for the seasonal factor to prevent near-zero denominators at high
+# latitudes in deep winter. The seasonal factor is clamped to [min, 1.0].
+PV_TRAJ_SEASONAL_MIN_FACTOR: float = float(
+    os.getenv("PV_TRAJ_SEASONAL_MIN_FACTOR", "0.1")
+)
+
 # --- Output Sensors ---
 FEATURES_ENTITY_ID: str = os.getenv(
     "FEATURES_ENTITY_ID", "sensor.ml_heating_features"

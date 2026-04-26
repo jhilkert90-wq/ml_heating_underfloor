@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Seasonal PV KWP Scaling**: New `seasonal_kwp_factor()` function in `src/pv_trajectory.py` scales the effective PV peak by the ratio of today's maximum solar elevation to the summer-solstice maximum. This normalises PV production so that a clear winter day (full output for the season) correctly maps to `pv_ratio=1.0`, giving the trajectory optimizer a full planning horizon even in winter.
+- New config vars `PV_TRAJ_SEASONAL_SCALING_ENABLED` (default `false`), `PV_TRAJ_LATITUDE` (default `51.0`), and `PV_TRAJ_SEASONAL_MIN_FACTOR` (default `0.1`) in `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `.env`, and `.env_sample`.
+- Missing config vars now present in all three config files: `ELECTRICITY_PRICE_ENTITY_ID`, `TREND_DECAY_TAU_HOURS`, `PV_ROOM_DECAY_MULTIPLIER`, `DECAY_CANCEL_MARGIN`, `OUTLET_SMOOTHING_ALPHA`, `OUTLET_SMOOTHING_BYPASS`, `MIN_SETPOINT_HOLD_CYCLES`, `DEFROST_RECOVERY_GRACE_MINUTES`, `TRAINING_DATA_SOURCE`, all `PV_TRAJ_*` trajectory scaling params, `UNIFIED_STATE_FILE_COOLING`.
+- 13 new unit tests in `TestSeasonalKwpFactor` and `TestComputeDynamicStepsWithSeasonal` in `tests/unit/test_pv_trajectory.py`.
+
+### Changed
+- **Config synchronization**: `.env` and `.env_sample` completely reorganised into 16 labelled sections aligned with `config.yaml` section headings. All duplicate parameter blocks removed from `.env`.
+- `ml_heating_underfloor/config.yaml`: added `electricity_price_entity`, `trend_decay_tau_hours`, `pv_room_decay_multiplier`, `decay_cancel_margin`, seasonal trajectory scaling options, and their schema entries.
+- `config_adapter.py`: added mappings for `ELECTRICITY_PRICE_ENTITY_ID`, `TREND_DECAY_TAU_HOURS`, `PV_ROOM_DECAY_MULTIPLIER`, `DECAY_CANCEL_MARGIN`, and the three seasonal scaling vars. Removed deprecated `safety_max_temp`/`safety_min_temp` validation dead code.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

@@ -238,6 +238,9 @@ def convert_addon_to_env(config):
         'BLOCKING_POLL_INTERVAL_SECONDS': str(
             config.get('blocking_poll_interval_seconds', 60)
         ),
+        'TREND_DECAY_TAU_HOURS': str(
+            config.get('trend_decay_tau_hours', 1.5)
+        ),
 
         # --- Shadow Mode ---
         'SHADOW_MODE': str(config.get('shadow_mode', False)).lower(),
@@ -445,11 +448,20 @@ def convert_addon_to_env(config):
         'ENABLE_MIXED_SOURCE_ATTRIBUTION': str(
             config.get('enable_mixed_source_attribution', False)
         ).lower(),
+        'PV_ROOM_DECAY_MULTIPLIER': str(
+            config.get('pv_room_decay_multiplier', 2.0)
+        ),
+        'DECAY_CANCEL_MARGIN': str(
+            config.get('decay_cancel_margin', 0.1)
+        ),
 
         # --- Electricity Price Optimization ---
         'ELECTRICITY_PRICE_ENABLED': str(
             config.get('electricity_price_enabled', False)
         ).lower(),
+        'ELECTRICITY_PRICE_ENTITY_ID': config.get(
+            'electricity_price_entity', 'sensor.electricity_price'
+        ),
         'PRICE_CHEAP_PERCENTILE': str(
             config.get('price_cheap_percentile', 33)
         ),
@@ -499,6 +511,15 @@ def convert_addon_to_env(config):
         ),
         'PV_TRAJ_NIGHT_FACTOR': str(
             config.get('pv_traj_night_factor', 0.0)
+        ),
+        'PV_TRAJ_SEASONAL_SCALING_ENABLED': str(
+            config.get('pv_traj_seasonal_scaling_enabled', False)
+        ).lower(),
+        'PV_TRAJ_LATITUDE': str(
+            config.get('pv_traj_latitude', 51.0)
+        ),
+        'PV_TRAJ_SEASONAL_MIN_FACTOR': str(
+            config.get('pv_traj_seasonal_min_factor', 0.1)
         ),
 
         # --- Outlet Smoothing ---
@@ -593,15 +614,6 @@ def validate_configuration(config):
             f"Learning rate {learning_rate} outside recommended range "
             "[0.001, 0.1]"
         )
-
-    max_temp = config.get('safety_max_temp', 25.0)
-    min_temp = config.get('safety_min_temp', 18.0)
-    if max_temp <= min_temp:
-        log_error(
-            f"Safety max temp ({max_temp}) must be greater than "
-            f"min temp ({min_temp})"
-        )
-        return False
 
     log_info("Configuration validation passed")
     return True

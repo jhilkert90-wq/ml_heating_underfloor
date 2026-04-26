@@ -216,3 +216,171 @@ class TestComputeDynamicSteps:
             )
         # min_steps=8, max_steps clamped to min=8 → always 8
         assert result == 8
+
+
+# ---------------------------------------------------------------------------
+# seasonal_kwp_factor
+# ---------------------------------------------------------------------------
+
+from datetime import date
+from src.pv_trajectory import seasonal_kwp_factor, _max_solar_elevation_deg
+
+
+class TestSeasonalKwpFactor:
+    """Tests for seasonal_kwp_factor() using only stdlib math."""
+
+    # Summer solstice → factor must equal 1.0 (reference point)
+    def test_summer_solstice_returns_one(self):
+        summer = date(2026, 6, 21)
+        factor = seasonal_kwp_factor(summer, latitude_deg=51.0)
+        assert factor == pytest.approx(1.0, abs=0.001)
+
+    # Winter solstice → factor clearly below 1.0 for Central Europe
+    def test_winter_solstice_below_one(self):
+        winter = date(2026, 12, 21)
+        factor = seasonal_kwp_factor(winter, latitude_deg=51.0)
+        assert factor < 1.0
+        assert factor > 0.0
+
+    # Factor always within [min_factor, 1.0]
+    def test_factor_bounded_above_by_one(self):
+        for doy_date in [date(2026, 1, 1), date(2026, 6, 21), date(2026, 12, 21)]:
+            f = seasonal_kwp_factor(doy_date, latitude_deg=48.0)
+            assert f <= 1.0 + 1e-9, f"factor={f} exceeds 1.0 for {doy_date}"
+
+    def test_factor_bounded_below_by_min_factor(self):
+        winter = date(2026, 12, 21)
+        min_f = 0.15
+        factor = seasonal_kwp_factor(winter, latitude_deg=65.0, min_factor=min_f)
+        assert factor >= min_f
+
+    def test_default_min_factor_applied(self):
+        # Default min_factor=0.1 — factor must never be below it
+        winter = date(2026, 12, 21)
+        factor = seasonal_kwp_factor(winter, latitude_deg=80.0)
+        assert factor >= 0.1
+
+    # Equinox: factor should be intermediate (roughly 0.5-0.8 for lat=51)
+    def test_equinox_intermediate_value(self):
+        equinox = date(2026, 3, 20)
+        factor = seasonal_kwp_factor(equinox, latitude_deg=51.0)
+        assert 0.3 < factor < 0.95
+
+    # Extreme latitudes don't crash and return bounded values
+    def test_equator_latitude(self):
+        summer = date(2026, 6, 21)
+        factor = seasonal_kwp_factor(summer, latitude_deg=0.0)
+        assert 0.0 <= factor <= 1.0
+
+    def test_high_latitude_no_crash(self):
+        winter = date(2026, 12, 21)
+        factor = seasonal_kwp_factor(winter, latitude_deg=70.0)
+        assert 0.0 <= factor <= 1.0
+
+    # Known numerical value for lat=48, Dec 21 (verified against formula)
+    def test_known_value_lat48_dec21(self):
+        # δ(355) ≈ -23.43°; elev_max = 90 - |48 - (-23.43)| = 90 - 71.43 = 18.57°
+        # δ(172) ≈ 23.45°;  elev_max = 90 - |48 - 23.45| = 90 - 24.55 = 65.45°
+        # factor = sin(18.57°) / sin(65.45°) ≈ 0.319 / 0.909 ≈ 0.351
+        winter = date(2026, 12, 21)
+        factor = seasonal_kwp_factor(winter, latitude_deg=48.0, min_factor=0.0)
+        assert 0.28 < factor < 0.42, f"Unexpected factor {factor}"
+
+
+# ---------------------------------------------------------------------------
+# compute_dynamic_trajectory_steps with seasonal scaling
+# ---------------------------------------------------------------------------
+
+class TestComputeDynamicStepsWithSeasonal:
+    """Integration tests for seasonal KWP scaling inside compute_dynamic_trajectory_steps."""
+
+    def _base_patches(self, extra=None):
+        """Return a list of patch contexts for the common config attributes."""
+        patches = {
+            "PV_TRAJ_SCALING_ENABLED": True,
+            "PV_TRAJ_SYSTEM_KWP": 10.0,
+            "PV_TRAJ_MIN_STEPS": 2,
+            "PV_TRAJ_MAX_STEPS": 12,
+            "PV_TRAJ_MIDDAY_FACTOR": 1.0,
+            "PV_TRAJ_MORNING_FACTOR": 0.5,
+            "PV_TRAJ_AFTERNOON_FACTOR": 0.75,
+            "PV_TRAJ_NIGHT_FACTOR": 0.0,
+            "PV_TRAJ_SEASONAL_SCALING_ENABLED": False,
+        }
+        if extra:
+            patches.update(extra)
+        return patches
+
+    def _apply(self, patches):
+        """Apply multiple attribute patches via context managers."""
+        from contextlib import ExitStack
+        stack = ExitStack()
+        for attr, val in patches.items():
+            stack.enter_context(patch.object(config, attr, val))
+        return stack
+
+    def test_seasonal_disabled_behaviour_unchanged(self):
+        """When seasonal scaling is off, result matches the non-seasonal path."""
+        # Reference: 5000W / 10kWp = 0.5 ratio, midday factor=1.0
+        # steps = 2 + round(0.5 * 1.0 * 10) = 7
+        ps = self._base_patches()
+        with self._apply(ps):
+            result = compute_dynamic_trajectory_steps(
+                5000.0, system_kwp=10.0,
+                now=datetime(2026, 12, 21, 12, 0, 0),
+            )
+        assert result == 7
+
+    def test_seasonal_enabled_summer_ratio_unchanged(self):
+        """On summer solstice, seasonal factor=1.0 → same result as without."""
+        ps = self._base_patches({
+            "PV_TRAJ_SEASONAL_SCALING_ENABLED": True,
+            "PV_TRAJ_LATITUDE": 51.0,
+            "PV_TRAJ_SEASONAL_MIN_FACTOR": 0.1,
+        })
+        # On June 21: factor ≈ 1.0 → effective_kwp ≈ 10.0 → same ratio
+        with self._apply(ps):
+            result = compute_dynamic_trajectory_steps(
+                5000.0, system_kwp=10.0,
+                now=datetime(2026, 6, 21, 12, 0, 0),
+            )
+        # ratio ≈ 0.5, steps = 2 + round(0.5 * 10) = 7
+        assert result == 7
+
+    def test_seasonal_enabled_winter_higher_ratio(self):
+        """In winter, seasonal factor < 1 → effective_kwp smaller → higher ratio → more steps."""
+        # On Dec 21 at lat=51: factor ≈ 0.28-0.35 → effective_kwp ≈ 2.8-3.5 kWp
+        # With PV=2000W and 10kWp: without seasonal ratio=0.2
+        # With seasonal (factor≈0.31): ratio = 2000 / (10*0.31*1000) ≈ 0.65
+        ps = self._base_patches({
+            "PV_TRAJ_SEASONAL_SCALING_ENABLED": True,
+            "PV_TRAJ_LATITUDE": 51.0,
+            "PV_TRAJ_SEASONAL_MIN_FACTOR": 0.1,
+        })
+        with self._apply(ps):
+            steps_winter = compute_dynamic_trajectory_steps(
+                2000.0, system_kwp=10.0,
+                now=datetime(2026, 12, 21, 12, 0, 0),
+            )
+        without = self._base_patches()
+        with self._apply(without):
+            steps_no_seasonal = compute_dynamic_trajectory_steps(
+                2000.0, system_kwp=10.0,
+                now=datetime(2026, 12, 21, 12, 0, 0),
+            )
+        assert steps_winter > steps_no_seasonal
+
+    def test_seasonal_enabled_min_factor_prevents_zero(self):
+        """Even at extremely high latitudes, min_factor prevents zero denominator."""
+        ps = self._base_patches({
+            "PV_TRAJ_SEASONAL_SCALING_ENABLED": True,
+            "PV_TRAJ_LATITUDE": 85.0,
+            "PV_TRAJ_SEASONAL_MIN_FACTOR": 0.1,
+        })
+        with self._apply(ps):
+            # Should not raise ZeroDivisionError
+            result = compute_dynamic_trajectory_steps(
+                500.0, system_kwp=10.0,
+                now=datetime(2026, 12, 21, 12, 0, 0),
+            )
+        assert 2 <= result <= 12
