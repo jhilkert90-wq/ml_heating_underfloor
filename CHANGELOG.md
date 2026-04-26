@@ -7,21 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Parameter documentation**: Added `ml_heating_underfloor/translations/en.yaml` with human-readable names and descriptions for all ~120 add-on configuration parameters, displayed in the Home Assistant Configuration tab. Added `docs/PARAMETER_REFERENCE.md` with the full parameter reference (all 30 sections, defaults, ranges, and guidance). Updated `README.md` with a new Configuration Reference section linking to the full reference.
-- **Seasonal PV KWP Scaling**: New `seasonal_kwp_factor()` function in `src/pv_trajectory.py` scales the effective PV peak by the ratio of today's maximum solar elevation to the summer-solstice maximum. This normalises PV production so that a clear winter day (full output for the season) correctly maps to `pv_ratio=1.0`, giving the trajectory optimizer a full planning horizon even in winter.
-- New config vars `PV_TRAJ_SEASONAL_SCALING_ENABLED` (default `false`), `PV_TRAJ_LATITUDE` (default `51.0`), and `PV_TRAJ_SEASONAL_MIN_FACTOR` (default `0.1`) in `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `.env`, and `.env_sample`.
-- 13 new unit tests in `TestSeasonalKwpFactor` and `TestComputeDynamicStepsWithSeasonal` in `tests/unit/test_pv_trajectory.py`.
-
-### Changed
-- **Config synchronization**: `.env` and `.env_sample` reorganised into 16 labelled sections aligned with `config.yaml` section headings. All duplicate parameter blocks removed from `.env`. Missing params added to all three config files: `TREND_DECAY_TAU_HOURS`, `PV_ROOM_DECAY_MULTIPLIER`, `DECAY_CANCEL_MARGIN`, `OUTLET_SMOOTHING_ALPHA`, `OUTLET_SMOOTHING_BYPASS`, `MIN_SETPOINT_HOLD_CYCLES`, `DEFROST_RECOVERY_GRACE_MINUTES`, `TRAINING_DATA_SOURCE`, all `PV_TRAJ_*` trajectory scaling params, `UNIFIED_STATE_FILE_COOLING`.
-- `ml_heating_underfloor/config.yaml`: added `trend_decay_tau_hours`, `pv_room_decay_multiplier`, `decay_cancel_margin`, seasonal trajectory scaling options, and their schema entries.
-- `config_adapter.py`: added mappings for `TREND_DECAY_TAU_HOURS`, `PV_ROOM_DECAY_MULTIPLIER`, `DECAY_CANCEL_MARGIN`, and the three seasonal scaling vars. Removed deprecated `safety_max_temp`/`safety_min_temp` validation dead code.
-
-### Removed
-- **`ELECTRICITY_PRICE_ENTITY_ID`** config var removed from all config surfaces (`src/config.py`, `.env`, `.env_sample`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`). Prices are fetched exclusively via the `tibber.get_prices` HA service call through `PriceOptimizer.refresh_prices_if_needed()` — a sensor entity is not needed or polled.
-- **`HAClient.get_electricity_price()`** method removed from `src/ha_client.py`. This method was already marked deprecated, was never called by any production code path, and relied on `ELECTRICITY_PRICE_ENTITY_ID`.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
