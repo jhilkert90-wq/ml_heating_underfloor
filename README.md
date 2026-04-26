@@ -282,6 +282,56 @@ sudo systemctl status ml_heating.service
 sudo journalctl -u ml_heating.service -f
 ```
 
+## Configuration Reference
+
+The add-on exposes ~120 parameters grouped into 30 logical sections. Every parameter is shown
+in the **Configuration** tab of the add-on with a human-readable name and description tooltip.
+
+> 📖 **Full reference**: [docs/PARAMETER_REFERENCE.md](docs/PARAMETER_REFERENCE.md) — every
+> parameter, its default, valid range, and when to change it.
+
+### Must-Configure Parameters
+
+These must match your Home Assistant setup before first start:
+
+| Parameter (add-on UI / `.env`) | What it is |
+|---|---|
+| `target_indoor_temp_entity` / `TARGET_INDOOR_TEMP_ENTITY_ID` | `input_number` or sensor holding your desired indoor setpoint |
+| `indoor_temp_entity` / `INDOOR_TEMP_ENTITY_ID` | Primary indoor temperature sensor |
+| `outdoor_temp_entity` / `OUTDOOR_TEMP_ENTITY_ID` | Outdoor temperature sensor (near the heat pump) |
+| `heating_control_entity` / `HEATING_STATUS_ENTITY_ID` | Climate entity used to detect heat / cool / off mode |
+| `outlet_temp_entity` / `ACTUAL_OUTLET_TEMP_ENTITY_ID` | Heat pump water outlet (supply) temperature sensor |
+| `inlet_temp_entity` / `INLET_TEMP_ENTITY_ID` | Heat pump water inlet (return) temperature sensor |
+| `flow_rate_entity` / `FLOW_RATE_ENTITY_ID` | Flow rate sensor (L/min) |
+| `target_outlet_temp_entity` / `TARGET_OUTLET_TEMP_ENTITY_ID` | Entity ML Heating **writes** its calculated setpoint to |
+| `actual_target_outlet_temp_entity` / `ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID` | Entity ML Heating reads to learn what temperature was applied. Shadow mode: your heat-curve entity. Active mode: same as the output entity. |
+| `clamp_min_abs` / `CLAMP_MIN_ABS` | Absolute minimum outlet temperature (°C). Underfloor: 18°C |
+| `clamp_max_abs` / `CLAMP_MAX_ABS` | Absolute maximum outlet temperature (°C). Underfloor: 35°C |
+
+### Key Operational Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `shadow_mode` | `true` | Start in shadow mode — ML calculates but does **not** control heating. Switch to `false` (or toggle `ml_heating_control_entity`) when you're ready to go active. |
+| `trajectory_steps` | `4` | Planning horizon (number of 10-min steps). 4 = 40 min ahead. |
+| `cycle_interval_minutes` | `10` | Minutes between each learn-and-predict cycle. |
+| `confidence_threshold` | `2.0` | Minimum confidence before ML takes control (scale 0.1–10). |
+| `training_data_source` | `auto` | `auto` tries InfluxDB then falls back to HA history API. |
+| `electricity_price_enabled` | `false` | Enable Tibber price-based target temperature shifting. |
+| `pv_surplus_cheap_enabled` | `false` | Raise setpoint when PV surplus exceeds threshold (W). |
+
+### Advanced Parameters
+
+Parameters related to thermal physics (sections 13–14), calibration (sections 20–21), and
+internal model mechanics (sections 15–24, 28–29) are marked **[Advanced]** in the add-on UI.
+Their defaults are good starting points for underfloor heating systems and will be further
+refined during calibration and online learning. Most users never need to change them manually.
+
+See [docs/PARAMETER_REFERENCE.md](docs/PARAMETER_REFERENCE.md) for the full list with
+descriptions, default values, valid ranges, and guidance on when to change each parameter.
+
+---
+
 ## How It Works
 
 ### Architecture Overview

@@ -1,0 +1,516 @@
+configuration:
+  # === Core Entity Configuration ===
+  target_indoor_temp_entity:
+    name: "Target Indoor Temperature Entity"
+    description: "The input_number or sensor entity that holds the desired indoor setpoint (e.g. input_number.soll_rt). ML Heating reads this value as its temperature target."
+  indoor_temp_entity:
+    name: "Indoor Temperature Sensor"
+    description: "Primary indoor temperature sensor the system tries to maintain at the target setpoint. Use a reliable, representative sensor (e.g. average of main living areas)."
+  outdoor_temp_entity:
+    name: "Outdoor Temperature Sensor"
+    description: "Outdoor temperature sensor. Ideally a compensated sensor located near the heat pump. Used by the thermal model as the main weather input."
+  heating_control_entity:
+    name: "Heating Control / Climate Entity"
+    description: "The climate or sensor entity for your heating system. ML Heating reads its state to detect 'heat', 'auto', or 'cool' modes. Control is skipped when the system is off."
+  outlet_temp_entity:
+    name: "Outlet Temperature Sensor"
+    description: "The heat pump's actual water outlet (supply) temperature sensor. Used to measure what temperature the HP is currently delivering."
+  inlet_temp_entity:
+    name: "Inlet Temperature Sensor"
+    description: "The heat pump's water inlet (return) temperature sensor. Together with the outlet sensor this gives the delta-T for heat transfer calculations."
+  flow_rate_entity:
+    name: "Flow Rate Sensor (L/min)"
+    description: "The heat pump's water flow rate sensor in litres per minute. Combined with the outlet/inlet delta-T to calculate actual thermal power delivered."
+  power_consumption_entity:
+    name: "Power Consumption Sensor (W)"
+    description: "The heat pump's electrical power consumption sensor in Watts. Used for efficiency monitoring and learning."
+  specific_heat_capacity:
+    name: "Specific Heat Capacity (kJ/kg·K)"
+    description: "Specific heat capacity of the heat-transfer fluid. Use 4.186 for pure water (default). Adjust slightly for glycol/water mixtures."
+  target_outlet_temp_entity:
+    name: "Target Outlet Temperature Output Entity"
+    description: "The entity ML Heating writes its calculated target outlet temperature to. In active mode this directly controls the heat pump setpoint. In shadow mode a '_shadow' suffix is appended automatically."
+  actual_target_outlet_temp_entity:
+    name: "Actual Applied Outlet Temperature Entity"
+    description: "The entity ML Heating reads to find out what outlet temperature was actually applied (for learning). Active mode: same as the output entity. Shadow mode: point to the heat curve's entity so the model learns from heat-curve decisions."
+  openweathermap_temp_entity:
+    name: "Weather Forecast Entity"
+    description: "An HA weather entity (e.g. weather.home) or temperature forecast sensor. Used for trajectory prediction so the model anticipates upcoming cold or warm periods."
+  avg_other_rooms_temp_entity:
+    name: "Average Other Rooms Temperature Sensor"
+    description: "A sensor providing the average temperature of rooms NOT affected by the fireplace. Used as the indoor reference during fireplace events to avoid incorrect learning."
+  pv_forecast_entity:
+    name: "PV Forecast Sensor"
+    description: "HA sensor that provides today's PV power forecast with 'watts' attributes in 15-minute steps (e.g. from Forecast.Solar integration). Used for solar-aware trajectory planning."
+  living_room_temp_entity:
+    name: "Living Room Temperature Sensor"
+    description: "Temperature sensor in the living room. Used exclusively for fireplace detection analysis (comparing living room vs. other rooms when fireplace is active)."
+
+  # === External Heat Sources ===
+  pv_power_entity:
+    name: "PV Power Sensor (W)"
+    description: "Sensor providing the current total PV power generation in Watts. The thermal model uses this to account for solar heat gain entering through windows and the building envelope."
+  solar_correction_entity:
+    name: "Solar Correction Input Number Entity"
+    description: "An input_number entity (0–100 %) used to dynamically adjust how much PV solar power is credited as indoor heat gain. Useful when shading reduces actual solar gain below rated output."
+  solar_correction_default_percent:
+    name: "Solar Correction Default (%)"
+    description: "Fallback solar correction percentage (0–100 %) used when the correction entity is unavailable. 100 % = full PV power credited; 50 % = half credited."
+  solar_correction_min_percent:
+    name: "Solar Correction Minimum (%)"
+    description: "Lower clamp for the solar correction input_number entity. Prevents the correction from going below this value."
+  solar_correction_max_percent:
+    name: "Solar Correction Maximum (%)"
+    description: "Upper clamp for the solar correction input_number entity. Prevents the correction from going above this value."
+  fireplace_status_entity:
+    name: "Fireplace Status Entity"
+    description: "A binary_sensor that is 'on' when the fireplace or wood stove is active. ML Heating applies an alternative indoor temperature reference and fireplace heat channel when this is active."
+  tv_status_entity:
+    name: "TV / Electronics Status Entity"
+    description: "An input_boolean or binary_sensor that is 'on' when the TV or other significant electronics are on. The model accounts for this as a small but consistent internal heat source."
+
+  # === Blocking Detection ===
+  dhw_status_entity:
+    name: "DHW Heating Status Entity"
+    description: "Binary sensor that is 'on' when Domestic Hot Water (DHW) is being heated. ML Heating pauses and waits during this period to avoid incorrect learning from the disrupted outlet temperature."
+  defrost_status_entity:
+    name: "Defrost Cycle Status Entity"
+    description: "Binary sensor that is 'on' during a heat pump defrost cycle. Control is paused and a longer recovery grace period is applied after defrost ends because the slab needs time to recover."
+  disinfection_status_entity:
+    name: "DHW Disinfection Cycle Entity"
+    description: "Binary sensor that is 'on' during a DHW tank thermal disinfection (Legionella protection) cycle. ML Heating pauses during this period."
+  dhw_boost_heater_entity:
+    name: "DHW Boost Heater Entity"
+    description: "Binary sensor that is 'on' when the DHW electric boost heater is active. ML Heating pauses to avoid disturbing the thermal model during high-demand electrical events."
+
+  # === ML Learning Parameters ===
+  history_steps:
+    name: "History Steps"
+    description: "Number of historical time slices used as features for each prediction. More steps = richer input context but more memory. Range: 3–12. Default: 6."
+  history_step_minutes:
+    name: "History Step Duration (minutes)"
+    description: "The time interval in minutes between each historical feature step. Must match your data collection granularity. Default: 10 min."
+  prediction_horizon_steps:
+    name: "Prediction Horizon Steps"
+    description: "How many 5-minute steps into the future the model predicts during calibration. Default 24 = 120 minutes ahead. Range: 12–96."
+  training_lookback_hours:
+    name: "Training Lookback (hours)"
+    description: "Number of hours of historical data used for initial calibration. 168 h = 7 days (default). More data generally improves initial calibration quality."
+  cycle_interval_minutes:
+    name: "Cycle Interval (minutes)"
+    description: "Time in minutes between each full learn-and-predict cycle. A longer interval (10–15 min) gives a clearer learning signal. Shorter = more responsive but noisier. Default: 10 min."
+  max_temp_change_per_cycle:
+    name: "Max Outlet Temp Change Per Cycle (°C)"
+    description: "Maximum change in the outlet temperature setpoint the model is allowed to make in one cycle. Prevents abrupt jumps that could stress the heat pump. Default: 2°C."
+  training_data_source:
+    name: "Training Data Source"
+    description: "Source of historical data for initial calibration. 'auto' tries InfluxDB first then falls back to HA history API. 'influx' forces InfluxDB. 'ha_history' forces HA history API."
+
+  # === Safety Configuration ===
+  clamp_min_abs:
+    name: "Minimum Outlet Temperature (°C)"
+    description: "Absolute minimum allowed outlet temperature in heating mode. For underfloor heating this is typically 18–25°C. The system will never set a lower value. Default: 18°C."
+  clamp_max_abs:
+    name: "Maximum Outlet Temperature (°C)"
+    description: "Absolute maximum allowed outlet temperature in heating mode. For underfloor heating, keep at or below 35°C to protect the floor construction. Default: 35°C."
+
+  # === Cooling Mode Configuration ===
+  cooling_clamp_min_abs:
+    name: "Cooling: Minimum Outlet Temperature (°C)"
+    description: "Absolute minimum outlet temperature in cooling mode. The heat pump shuts down when the outlet reaches this limit. Default: 18°C."
+  cooling_clamp_max_abs:
+    name: "Cooling: Maximum Outlet Temperature (°C)"
+    description: "Maximum outlet temperature in cooling mode. Typically near the return temperature; the HP needs at least min_cooling_delta_k between inlet and outlet to operate. Default: 24°C."
+  min_cooling_delta_k:
+    name: "Cooling: Minimum Inlet–Outlet Delta (K)"
+    description: "Minimum temperature difference (kelvin) between inlet and outlet required for the heat pump to operate in cooling mode. Default: 2.0 K."
+  cooling_shutdown_margin_k:
+    name: "Cooling: Shutdown Safety Margin (K)"
+    description: "Safety margin (K) above the HP cooling shutdown limit. ML targets at least this margin above cooling_clamp_min_abs to prevent short-cycling. Default: 1.0 K."
+
+  # === InfluxDB Configuration ===
+  influx_url:
+    name: "InfluxDB URL"
+    description: "Full URL of your InfluxDB instance including protocol and port (e.g. http://192.168.0.10:8086). Required for historical calibration and metrics export."
+  influx_token:
+    name: "InfluxDB API Token"
+    description: "InfluxDB API token with read access to the Home Assistant data bucket and write access to the features bucket. Leave empty if InfluxDB is not used."
+  influx_org:
+    name: "InfluxDB Organisation"
+    description: "Your InfluxDB organisation name (e.g. 'home'). Found in your InfluxDB settings."
+  influx_bucket:
+    name: "InfluxDB Bucket (HA Data)"
+    description: "The InfluxDB bucket where your Home Assistant historical sensor data is stored. Used for initial calibration."
+  influx_features_bucket:
+    name: "InfluxDB Features Bucket"
+    description: "The InfluxDB bucket ML Heating writes generated feature metrics to. Created automatically if it does not exist. A '_shadow' suffix is appended in shadow mode."
+  influx_metrics_export_interval_cycles:
+    name: "Metrics Export Interval (cycles)"
+    description: "How many learning cycles pass between each export of adaptive learning metrics to InfluxDB. Higher = less InfluxDB write load. Default: 5 cycles."
+
+  # === Model Management ===
+  auto_backup_enabled:
+    name: "Enable Automatic Model Backups"
+    description: "When enabled, the thermal state file is backed up automatically before each model update. Allows recovery from an unwanted learning regression."
+  backup_retention_days:
+    name: "Backup Retention (days)"
+    description: "Number of days to keep model backup files. Older backups are deleted automatically. Default: 30 days."
+  unified_state_file:
+    name: "Thermal State File Path (Heating)"
+    description: "Path to the unified thermal state JSON file used in heating mode. Use '/config/ml_heating/' to store in the HA config folder (accessible via File Editor add-on). Default: /config/ml_heating/unified_thermal_state.json."
+  unified_state_file_cooling:
+    name: "Thermal State File Path (Cooling)"
+    description: "Path to the thermal state JSON file used in cooling mode. Kept separate from the heating state to prevent cross-mode learning contamination. Default: /config/ml_heating/unified_thermal_state_cooling.json."
+
+  # === Dashboard Configuration ===
+  dashboard_update_interval:
+    name: "Dashboard Update Interval (seconds)"
+    description: "How often (seconds) the embedded Streamlit dashboard refreshes its data. Lower values = more responsive but higher CPU load. Default: 30 s."
+  show_advanced_metrics:
+    name: "Show Advanced Metrics on Dashboard"
+    description: "When enabled, the dashboard displays detailed performance metrics such as per-channel learning rates, thermal parameter history, and prediction accuracy breakdown."
+  dashboard_theme:
+    name: "Dashboard Theme"
+    description: "Visual theme for the Streamlit dashboard. 'auto' follows the system/browser preference; 'light' or 'dark' forces a specific theme."
+
+  # === Development Settings ===
+  enable_dev_api:
+    name: "Enable Development API"
+    description: "Enables an HTTP API endpoint for external tooling and debugging. Leave disabled in normal operation. Requires dev_api_key to be set."
+  dev_api_key:
+    name: "Development API Key"
+    description: "Authentication key for the development API. Only relevant when enable_dev_api is true. Leave empty to disable."
+  log_level:
+    name: "Log Level"
+    description: "Minimum severity level for log messages. 'DEBUG' = very verbose; 'INFO' = normal operational messages (recommended); 'WARNING' / 'ERROR' = problems only."
+  debug:
+    name: "Debug Mode"
+    description: "When enabled, logs detailed feature vectors, binary search iterations, and model decision details every cycle. Useful for diagnosing unexpected behaviour. Equivalent to setting log_level to DEBUG."
+
+  # === Performance Tuning ===
+  confidence_threshold:
+    name: "Confidence Threshold"
+    description: "Minimum learning confidence (scale 0.1–10.0) required before ML controls heating. Below this threshold the system falls back to a simple heat curve. Increase if ML takes over too early; decrease if it is stuck in fallback. Default: 2.0."
+  trajectory_steps:
+    name: "Trajectory Steps (planning horizon)"
+    description: "Number of 10-minute steps the thermal trajectory optimizer plans ahead. 4 steps = 40-minute horizon. More steps = more proactive pre-heating but higher compute. Range: 2–12. Default: 4."
+  grace_period_max_minutes:
+    name: "Grace Period After Blocking (minutes)"
+    description: "Maximum time (minutes) to wait for the outlet temperature to stabilise after a blocking event (DHW, defrost, etc.) ends before resuming ML control. Default: 15 min."
+  defrost_recovery_grace_minutes:
+    name: "Defrost Recovery Grace Period (minutes)"
+    description: "Additional grace period (minutes) applied specifically after a heat pump defrost cycle. Defrost chills the slab; this window lets it fully recover before the model learns again. Default: 45 min."
+  blocking_poll_interval_seconds:
+    name: "Blocking Poll Interval (seconds)"
+    description: "How frequently (seconds) the system checks blocking sensors (DHW, defrost, etc.) while waiting in an idle or grace period. Default: 60 s."
+  trend_decay_tau_hours:
+    name: "Indoor Trend Decay Time Constant (hours) [Advanced]"
+    description: "Exponential decay time constant (hours) for the indoor temperature momentum bias in trajectory predictions. Higher = longer trend persistence across prediction steps. Min 0.1 h. Default: 1.5 h."
+
+  # === Shadow Mode Configuration ===
+  shadow_mode:
+    name: "Shadow Mode"
+    description: "When enabled, ML Heating calculates outlet temperatures and learns but does NOT apply them to the heating system. HA outputs are isolated with a '_shadow' suffix. Ideal for safe testing before going active."
+  ml_heating_control_entity:
+    name: "ML Heating Control Entity"
+    description: "An input_boolean entity in HA. When ON: ML actively controls heating. When OFF: shadow mode (ML observes and learns only). Can be toggled from the HA UI without restarting the add-on."
+
+  # === Thermal Equilibrium Model Parameters (Advanced) ===
+  thermal_time_constant:
+    name: "Thermal Time Constant (hours) [Advanced]"
+    description: "How quickly the building responds to heating changes, in hours. Higher = slower response typical for underfloor/slab construction. Automatically calibrated — do not adjust manually. Default: ~4.4 h."
+  heat_loss_coefficient:
+    name: "Heat Loss Coefficient (1/hour) [Advanced]"
+    description: "Rate of heat loss per degree of indoor-outdoor temperature difference. Automatically calibrated from historical data. Reflects building insulation quality. Default: ~0.12."
+  outlet_effectiveness:
+    name: "Outlet Effectiveness (dimensionless) [Advanced]"
+    description: "Efficiency of heat transfer from the outlet water to the indoor air. Automatically calibrated. Values near 1.0 are typical; below 0.5 indicates poor heat distribution. Default: ~0.95."
+  outdoor_coupling:
+    name: "Outdoor Coupling Factor [Advanced]"
+    description: "How strongly outdoor temperature influences indoor temperature directly (e.g. via ventilation or window infiltration). Automatically calibrated. Range: 0.1–0.8. Default: 0.3."
+  thermal_bridge_factor:
+    name: "Thermal Bridge Factor [Advanced]"
+    description: "Correction factor for thermal bridging losses in the building envelope. Automatically calibrated. Typical range: 0.01–0.5. Default: 0.1."
+  equilibrium_ratio:
+    name: "Equilibrium Ratio (dimensionless) [Advanced]"
+    description: "Ratio parameter in the thermal equilibrium equation. Automatically calibrated from data. Default: 0.17. Do not adjust manually."
+  total_conductance:
+    name: "Total Conductance (1/hour) [Advanced]"
+    description: "Total thermal conductance of the building in 1/hour. Automatically calibrated. Reflects combined effect of walls, windows, roof, and floor. Default: 0.8."
+  slab_time_constant_hours:
+    name: "Slab Time Constant (hours) [Advanced]"
+    description: "First-order thermal time constant of the underfloor heating slab (Estrich) in hours. Models the thermal inertia between the water circuit and the room. Automatically calibrated. Typical range: 1–4 h. Default: ~3.2 h."
+  solar_lag_minutes:
+    name: "Solar Lag (minutes) [Advanced]"
+    description: "Effective delay in minutes between PV power generation and the resulting indoor temperature rise due to solar gain through windows. Automatically calibrated. Default: 45 min."
+  cloud_correction_min_factor:
+    name: "Cloud Correction Minimum Factor [Advanced]"
+    description: "Minimum attenuation factor applied to solar gain estimates on cloudy days. Prevents over-discounting. Range: 0–1. Default: 0.1."
+
+  # === External Heat Source Weights (Advanced) ===
+  pv_heat_weight:
+    name: "PV Heat Weight (°C/W) [Advanced]"
+    description: "How much each Watt of PV power raises the indoor temperature per model step in °C/W. Automatically calibrated from historical data. Very small values are normal (e.g. 0.002). Do not adjust manually."
+  fireplace_heat_weight:
+    name: "Fireplace Heat Weight (°C) [Advanced]"
+    description: "Temperature contribution of the fireplace to the indoor thermal model when active in °C. Automatically calibrated. Default: ~0.39°C."
+  tv_heat_weight:
+    name: "TV/Electronics Heat Weight (°C) [Advanced]"
+    description: "Temperature contribution of the TV/electronics when on in °C. Automatically calibrated. Typically 0.2–0.5°C. Default: 0.35°C."
+  delta_t_floor:
+    name: "Delta-T Floor (°C) [Advanced]"
+    description: "Minimum heat pump outlet–inlet temperature difference used by the HP channel when the HP is off (delta-T < 1°C). Prevents false outlet spikes in passive slab mode. Automatically calibrated. Default: ~2.3°C."
+  fp_decay_time_constant:
+    name: "Fireplace Decay Time Constant (hours) [Advanced]"
+    description: "Exponential decay time constant for the fireplace heat channel after the fireplace turns off in hours. Automatically calibrated. Default: ~3.9 h."
+  room_spread_delay_minutes:
+    name: "Fireplace Room Spread Delay (minutes) [Advanced]"
+    description: "Delay in minutes before fireplace heat is assumed to spread to the rest of the house after ignition. Automatically calibrated. Default: 18 min."
+
+  # === Adaptive Learning Parameters (Advanced) ===
+  adaptive_learning_rate:
+    name: "Adaptive Learning Rate [Advanced]"
+    description: "Base learning rate for thermal parameter adaptation. Lower = more conservative, slower adaptation. For underfloor heating a conservative rate (0.01) is recommended. Default: 0.01."
+  min_learning_rate:
+    name: "Minimum Learning Rate [Advanced]"
+    description: "Floor value for the adaptive learning rate. Prevents learning from stopping completely. Default: 0.001."
+  max_learning_rate:
+    name: "Maximum Learning Rate [Advanced]"
+    description: "Ceiling for the adaptive learning rate. Prevents over-aggressive updates during unusual conditions. Default: 0.01."
+  learning_confidence:
+    name: "Initial Learning Confidence [Advanced]"
+    description: "Starting confidence score for new or reset models on a scale of 0.1–10.0. The model builds confidence through accurate predictions. Default: 3.0."
+  recent_errors_window:
+    name: "Recent Errors Window (samples) [Advanced]"
+    description: "Number of recent prediction errors analysed when deciding whether to update model parameters. Default: 10 samples."
+  learning_dead_zone:
+    name: "Learning Dead Zone (°C) [Advanced]"
+    description: "Prediction errors smaller than this threshold are treated as zero (within sensor noise) and do not trigger parameter updates. Prevents drift from measurement noise. Default: 0.01°C."
+  pv_learning_threshold:
+    name: "PV Learning Threshold (W) [Advanced]"
+    description: "Minimum PV power in Watts before the PV heat channel activates for learning. Below this the PV contribution is considered negligible. Default: 50 W."
+
+  # === Hybrid Learning Strategy (Advanced) ===
+  hybrid_learning_enabled:
+    name: "Hybrid Learning Enabled [Advanced]"
+    description: "Enables intelligent learning-phase classification. Stable heating periods get full learning weight; transitional and chaotic periods get reduced or zero weight. Recommended to leave enabled."
+  stability_classification_enabled:
+    name: "Stability Classification Enabled [Advanced]"
+    description: "Enables automatic classification of each learning period as stable, transitional, or chaotic. Only relevant when hybrid_learning_enabled is true."
+  high_confidence_weight:
+    name: "High-Confidence Period Learning Weight [Advanced]"
+    description: "Learning weight applied during stable, high-confidence periods. 1.0 = full weight. Default: 1.0."
+  low_confidence_weight:
+    name: "Low-Confidence Period Learning Weight [Advanced]"
+    description: "Learning weight applied during controlled transitions. 0.3 = 30% of normal update rate. Default: 0.3."
+  learning_phase_skip_weight:
+    name: "Skip-Phase Learning Weight [Advanced]"
+    description: "Learning weight applied during chaotic or unreliable periods. 0.0 = skip learning entirely (recommended). Default: 0.0."
+
+  # === Prediction Metrics Tracking ===
+  prediction_metrics_enabled:
+    name: "Prediction Metrics Enabled"
+    description: "Enables comprehensive prediction accuracy tracking published to HA sensors (MAE, RMSE, accuracy). Keep enabled for performance monitoring."
+  metrics_window_1h:
+    name: "Metrics 1-Hour Window (samples) [Advanced]"
+    description: "Number of 5-minute samples in the 1-hour rolling metrics window. Default: 12 (= 60 min ÷ 5 min)."
+  metrics_window_6h:
+    name: "Metrics 6-Hour Window (samples) [Advanced]"
+    description: "Number of 5-minute samples in the 6-hour rolling metrics window. Default: 72."
+  metrics_window_24h:
+    name: "Metrics 24-Hour Window (samples) [Advanced]"
+    description: "Number of 5-minute samples in the 24-hour rolling metrics window. Default: 288."
+  prediction_accuracy_threshold:
+    name: "Prediction Accuracy Threshold (°C) [Advanced]"
+    description: "Maximum prediction error (°C) for a result to be counted as 'accurate'. Default: 0.3°C."
+  mae_entity:
+    name: "MAE Output Sensor Entity"
+    description: "Home Assistant sensor entity that ML Heating publishes the Mean Absolute Error to. Default: sensor.ml_model_mae."
+  rmse_entity:
+    name: "RMSE Output Sensor Entity"
+    description: "Home Assistant sensor entity that ML Heating publishes the Root Mean Squared Error to. Default: sensor.ml_model_rmse."
+
+  # === Trajectory Prediction ===
+  trajectory_prediction_enabled:
+    name: "Trajectory Prediction Enabled"
+    description: "Enables multi-step thermal trajectory prediction with forecast integration. Strongly recommended for underfloor heating due to its slow thermal response. Disable only for debugging."
+  weather_forecast_integration:
+    name: "Weather Forecast Integration"
+    description: "Integrates weather forecast data into trajectory predictions so the system proactively adjusts for upcoming cold or warm spells. Essential for underfloor heating. Requires openweathermap_temp_entity."
+  pv_forecast_integration:
+    name: "PV Forecast Integration"
+    description: "Integrates PV power forecast data into trajectory predictions so the system anticipates solar heat gain. Recommended for homes with PV systems. Requires pv_forecast_entity."
+  solar_correction_enabled:
+    name: "Solar Correction Enabled"
+    description: "Enables the solar correction factor to scale how much PV power is credited as indoor solar heat gain. Uses solar_correction_entity or solar_correction_default_percent."
+  cloud_cover_correction_enabled:
+    name: "Cloud Cover Correction Enabled [Advanced]"
+    description: "Enables cloud-cover attenuation of PV-based solar heat gain estimates. Discounts the PV contribution on cloudy days to prevent over-predicting solar warming. Default: false (experimental)."
+  overshoot_detection_enabled:
+    name: "Overshoot Detection Enabled"
+    description: "Enables trajectory-based overshoot gates that skip outlet temperature corrections when the indoor temperature is already moving in the right direction. Prevents overcorrection oscillation."
+
+  # === Advanced Learning Features ===
+  enable_multi_lag_learning:
+    name: "Multi-Lag Learning Enabled [Advanced]"
+    description: "Enables time-delayed learning for external heat sources (PV, fireplace, TV) to capture realistic thermal delays (e.g. PV warming peaks 60–90 min after production). Recommended to keep enabled."
+  pv_lag_steps:
+    name: "PV Lag Steps [Advanced]"
+    description: "Number of 30-minute lag steps used for PV heat learning. 4 steps = 2-hour look-back for solar gain effects. Default: 4."
+  fireplace_lag_steps:
+    name: "Fireplace Lag Steps [Advanced]"
+    description: "Number of 30-minute lag steps for fireplace heat learning. Captures the slow spread of fireplace heat through the house. Default: 4."
+  tv_lag_steps:
+    name: "TV/Electronics Lag Steps [Advanced]"
+    description: "Number of 30-minute lag steps for TV/electronics heat learning. Electronics heat up quickly so fewer steps are needed. Default: 2."
+  enable_seasonal_adaptation:
+    name: "Seasonal Adaptation Enabled [Advanced]"
+    description: "Enables automatic seasonal adjustment of thermal parameters using cosine/sine time modulation. Eliminates the need for manual recalibration between summer and winter."
+  seasonal_learning_rate:
+    name: "Seasonal Learning Rate [Advanced]"
+    description: "Learning rate for the seasonal adaptation component. Keep low (0.01) to prevent rapid seasonal drift. Default: 0.01."
+  min_seasonal_samples:
+    name: "Minimum Seasonal Samples [Advanced]"
+    description: "Minimum number of learning samples required before seasonal adaptation activates. Ensures the model has a solid baseline first. Default: 100 samples."
+  enable_summer_learning:
+    name: "Summer Learning Enabled [Advanced]"
+    description: "Enables learning from periods when the HVAC system is off (typically summer). Provides a cleaner signal for external heat source effects without heat pump interference."
+
+  # === Historical Calibration System (Advanced) ===
+  calibration_baseline_file:
+    name: "Calibration Baseline File Path [Advanced]"
+    description: "Path to the JSON file where calibrated physics baseline parameters are stored. Default: /data/calibrated_baseline.json."
+  stability_temp_change_threshold:
+    name: "Stability Temperature Change Threshold (°C) [Advanced]"
+    description: "Maximum indoor temperature change (°C) over a period for it to be considered 'stable' during calibration filtering. Default: 0.1°C."
+  min_stable_period_minutes:
+    name: "Minimum Stable Period Duration (minutes) [Advanced]"
+    description: "Minimum duration (minutes) a stable period must last to be included in calibration data. Prevents short noisy events from distorting calibration. Default: 30 min."
+  optimization_method:
+    name: "Calibration Optimisation Method [Advanced]"
+    description: "Scipy optimisation method used for physics parameter calibration. 'L-BFGS-B' handles bounded problems efficiently and is recommended. Do not change unless you have a specific reason."
+  pv_calibration_indoor_ceiling:
+    name: "PV Calibration Indoor Temperature Ceiling (°C) [Advanced]"
+    description: "Indoor temperatures at or above this value are excluded from PV calibration. When indoor temp is high, automated blinds often close and block solar gain, making PV data unreliable. Set just below your blind trigger threshold. Default: 23.0°C."
+
+  # === Delta Temperature Forecast Calibration (Advanced) ===
+  enable_delta_forecast_calibration:
+    name: "Delta Forecast Calibration Enabled [Advanced]"
+    description: "Enables local calibration of weather forecast data using measured temperature offsets. Corrects systematic biases between the weather station and your actual location."
+  delta_calibration_max_offset:
+    name: "Delta Calibration Maximum Offset (°C) [Advanced]"
+    description: "Maximum allowed temperature offset (°C) applied during delta forecast calibration. Acts as a safety cap to prevent unrealistic corrections. Default: 10.0°C."
+
+  # === Learning History Sizes (Advanced) ===
+  max_prediction_history:
+    name: "Max Prediction History Records [Advanced]"
+    description: "Maximum number of past prediction records kept in memory for accuracy analysis. Higher values improve statistical quality but use more memory. Default: 700."
+  max_parameter_history:
+    name: "Max Parameter History Records [Advanced]"
+    description: "Maximum number of parameter update records kept in memory for trend analysis and diagnostics. Default: 700."
+
+  # === Indoor Trend Protection (Advanced) ===
+  indoor_cooling_trend_threshold:
+    name: "Indoor Cooling Trend Threshold [Advanced]"
+    description: "Rate-of-change threshold (°C/step, negative) below which the indoor temperature is classified as 'cooling'. Used to dampen incorrect HLC/OE learning during setpoint reductions. Default: -0.05."
+  indoor_cooling_damping_factor:
+    name: "Indoor Cooling Damping Factor [Advanced]"
+    description: "Factor (0–1) by which learning updates are multiplied when a cooling trend is detected. 0.3 = 30% of normal learning rate. Prevents HLC/OE drift during setpoint reductions. Default: 0.3."
+  indoor_warming_trend_threshold:
+    name: "Indoor Warming Trend Threshold [Advanced]"
+    description: "Rate-of-change threshold (°C/step, positive) above which the indoor temperature is classified as 'warming'. Used to detect post-setpoint-increase events. Default: 0.10."
+  indoor_warming_damping_factor:
+    name: "Indoor Warming Damping Factor [Advanced]"
+    description: "Factor (0–1) by which learning updates are multiplied when a warming trend is detected. 0.3 = 30% of normal learning rate. Default: 0.3."
+
+  # === Heat Source Channel Architecture (Advanced) ===
+  enable_heat_source_channels:
+    name: "Heat Source Channels Enabled [Advanced]"
+    description: "Enables the decomposed heat-source learning architecture with independent channels for heat pump, solar, fireplace, and TV. Prevents cross-contamination when multiple sources are active. Strongly recommended to leave enabled."
+  enable_mixed_source_attribution:
+    name: "Mixed Source Attribution Enabled [Advanced]"
+    description: "Enables proportional attribution of heat between active sources when multiple are on simultaneously. Experimental feature. Default: false."
+  pv_room_decay_multiplier:
+    name: "PV Room Decay Multiplier [Advanced]"
+    description: "Multiplier applied to thermal_time_constant to define the PV heat decay window. After PV drops below threshold, HP learning is frozen for this factor × thermal_time_constant hours. Default: 2.0."
+  decay_cancel_margin:
+    name: "Decay Cancel Margin (°C) [Advanced]"
+    description: "Indoor temperature margin above the target at which PV/fireplace decay is cancelled early, indicating residual external heat has dissipated. Default: 0.1°C."
+
+  # === Electricity Price Optimisation (Tibber) ===
+  electricity_price_enabled:
+    name: "Electricity Price Optimisation Enabled"
+    description: "Master switch for Tibber electricity price integration. When enabled, the indoor target temperature is shifted up during cheap periods and down during expensive periods. Requires Tibber integration in Home Assistant."
+  price_cheap_percentile:
+    name: "Cheap Price Percentile"
+    description: "Prices below this percentile of today's price distribution are classified as 'cheap' and trigger a positive setpoint offset. Default: 33rd percentile (cheapest third of the day)."
+  price_expensive_percentile:
+    name: "Expensive Price Percentile"
+    description: "Prices above this percentile of today's price distribution are classified as 'expensive' and trigger a negative setpoint offset. Default: 67th percentile (most expensive third)."
+  price_target_offset:
+    name: "Price Target Offset (°C)"
+    description: "How much (°C) the indoor target temperature shifts up during cheap price periods and down during expensive periods. Default: 0.2°C."
+  price_expensive_overshoot:
+    name: "Price Expensive Overshoot Threshold (°C)"
+    description: "A tighter future overshoot threshold (°C) during expensive price periods. Reduces the outlet temperature earlier to save energy costs. Default: 0.2°C."
+  price_cache_refresh_minutes:
+    name: "Price Cache Refresh Interval (minutes)"
+    description: "How often (minutes) prices are re-fetched from the Tibber service. Also refreshes after 13:00 if tomorrow's prices are not yet available. Default: 60 min."
+
+  # === PV Surplus Optimisation ===
+  pv_surplus_cheap_enabled:
+    name: "PV Surplus Cheap Override Enabled"
+    description: "When enabled, the indoor target temperature is raised by price_target_offset whenever current PV production exceeds pv_surplus_cheap_threshold_w — independently of Tibber pricing. Uses surplus solar energy for extra pre-heating."
+  pv_surplus_cheap_threshold_w:
+    name: "PV Surplus Threshold (W)"
+    description: "PV power threshold in Watts above which surplus heating is activated. Roughly 20% of your rated capacity (e.g. 3000 W for a 15 kWp system). Default: 3000 W."
+
+  # === Setpoint Stability ===
+  min_setpoint_hold_cycles:
+    name: "Minimum Setpoint Hold Cycles"
+    description: "Minimum number of cycles a computed outlet setpoint is held before the optimiser produces a new value. Defaults to trajectory_steps, keeping the setpoint stable for the full planning horizon. Set to 0 to recompute every cycle."
+
+  # === Dynamic Trajectory Scaling (Advanced) ===
+  pv_traj_scaling_enabled:
+    name: "PV Trajectory Scaling Enabled [Advanced]"
+    description: "When enabled, the planning horizon (trajectory_steps) and setpoint hold duration are dynamically scaled each cycle based on actual PV production and time of day. More solar = longer horizon = bolder pre-heating."
+  pv_traj_system_kwp:
+    name: "PV System Rated Capacity (kWp) [Advanced]"
+    description: "Your PV installation's rated peak capacity in kWp. Used to normalise actual PV power to a 0–1 ratio for trajectory scaling (e.g. 15.0 for a 15 kWp system). Only relevant when pv_traj_scaling_enabled is true."
+  pv_traj_min_steps:
+    name: "PV Trajectory Minimum Steps [Advanced]"
+    description: "Minimum trajectory steps used at zero PV output (night or overcast). Range: 2–12. Default: 2. Must be ≤ pv_traj_max_steps."
+  pv_traj_max_steps:
+    name: "PV Trajectory Maximum Steps [Advanced]"
+    description: "Maximum trajectory steps used at full rated PV output. Range: 2–12. Default: 12."
+  pv_traj_morning_factor:
+    name: "PV Trajectory Morning Factor 06:00–10:59 [Advanced]"
+    description: "Time-of-day multiplier applied to the PV ratio during morning ramp-up (06:00–10:59). 0.5 = moderate commitment while the sun is still rising. Default: 0.5."
+  pv_traj_midday_factor:
+    name: "PV Trajectory Midday Factor 11:00–14:59 [Advanced]"
+    description: "Time-of-day multiplier during peak production hours (11:00–14:59). 1.0 = full planning horizon allowed. Default: 1.0."
+  pv_traj_afternoon_factor:
+    name: "PV Trajectory Afternoon Factor 15:00–18:59 [Advanced]"
+    description: "Time-of-day multiplier during afternoon solar decline (15:00–18:59). 0.75 = slightly shorter horizon as sun angles reduce output. Default: 0.75."
+  pv_traj_night_factor:
+    name: "PV Trajectory Night Factor 19:00–05:59 [Advanced]"
+    description: "Time-of-day multiplier at night (19:00–05:59). 0.0 = forces minimum trajectory steps since there is no PV production. Default: 0.0."
+
+  # === Seasonal KWP Scaling (Advanced) ===
+  pv_traj_seasonal_scaling_enabled:
+    name: "Seasonal PV KWP Scaling Enabled [Advanced]"
+    description: "When enabled, the effective PV peak is scaled by a seasonal factor based on your latitude. This normalises PV output relative to the summer-solstice maximum so a clear winter day maps correctly to pv_ratio=1.0. Requires pv_traj_latitude."
+  pv_traj_latitude:
+    name: "PV Installation Latitude (decimal degrees) [Advanced]"
+    description: "Geographic latitude of your PV installation in decimal degrees, North positive. Examples: 48.0 Munich, 51.5 Berlin, 47.8 Zurich. Used for seasonal KWP scaling."
+  pv_traj_seasonal_min_factor:
+    name: "Seasonal PV Minimum Factor [Advanced]"
+    description: "Floor value for the seasonal KWP scaling factor. Prevents near-zero denominators at high latitudes in deep winter. Clamped to [min_factor, 1.0]. Default: 0.1."
+
+  # === Outlet Smoothing ===
+  outlet_smoothing_alpha:
+    name: "Outlet Smoothing Alpha (EMA factor)"
+    description: "Exponential moving average smoothing factor for the outlet temperature setpoint. 0.0 = maximum smoothing (slow to respond); 1.0 = no smoothing (instant response). Default: 0.3."
+  outlet_smoothing_bypass:
+    name: "Outlet Smoothing Bypass Threshold (°C)"
+    description: "When the required setpoint change exceeds this threshold (°C), EMA smoothing is bypassed for immediate response (e.g. after defrost recovery). Default: 2.0°C."

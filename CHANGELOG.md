@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Parameter documentation**: Added `ml_heating_underfloor/translations/en.yaml` with human-readable names and descriptions for all ~120 add-on configuration parameters, displayed in the Home Assistant Configuration tab. Added `docs/PARAMETER_REFERENCE.md` with the full parameter reference (all 30 sections, defaults, ranges, and guidance). Updated `README.md` with a new Configuration Reference section linking to the full reference.
 - **Seasonal PV KWP Scaling**: New `seasonal_kwp_factor()` function in `src/pv_trajectory.py` scales the effective PV peak by the ratio of today's maximum solar elevation to the summer-solstice maximum. This normalises PV production so that a clear winter day (full output for the season) correctly maps to `pv_ratio=1.0`, giving the trajectory optimizer a full planning horizon even in winter.
 - New config vars `PV_TRAJ_SEASONAL_SCALING_ENABLED` (default `false`), `PV_TRAJ_LATITUDE` (default `51.0`), and `PV_TRAJ_SEASONAL_MIN_FACTOR` (default `0.1`) in `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `.env`, and `.env_sample`.
 - 13 new unit tests in `TestSeasonalKwpFactor` and `TestComputeDynamicStepsWithSeasonal` in `tests/unit/test_pv_trajectory.py`.
