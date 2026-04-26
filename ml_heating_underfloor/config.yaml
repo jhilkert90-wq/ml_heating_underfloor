@@ -169,6 +169,9 @@ options:
   defrost_recovery_grace_minutes: 45
   # How often (seconds) to poll blocking entities during idle period
   blocking_poll_interval_seconds: 60
+  # Exponential decay time constant for indoor temperature trend momentum bias (hours).
+  # Higher values = longer trend persistence across trajectory steps. Min 0.1h.
+  trend_decay_tau_hours: 1.5
 
   # === Shadow Mode Configuration ===
   # When enabled, ML runs as a dedicated shadow deployment without affecting
@@ -330,6 +333,13 @@ options:
   enable_heat_source_channels: true
   # Enable proportional mixed-source attribution
   enable_mixed_source_attribution: true
+  # Multiplier applied to thermal_time_constant for PV room-heat decay window.
+  # After PV drops below threshold, HP learning is frozen for
+  # thermal_time_constant × pv_room_decay_multiplier hours.
+  pv_room_decay_multiplier: 2.0
+  # Indoor temp margin above target_temp at which PV/FP decay is cancelled
+  # early — residual heat from the external source has dissipated.
+  decay_cancel_margin: 0.1
 
   # === Electricity Price Optimization (Tibber) ===
   # Master feature flag — when false, no price code paths execute
@@ -383,6 +393,19 @@ options:
   pv_traj_afternoon_factor: 0.75
   # 19:00–05:59 night: no PV, forces minimum steps
   pv_traj_night_factor: 0.0
+
+  # --- Seasonal KWP Scaling ---
+  # When enabled, the effective PV peak is scaled by a seasonal factor derived
+  # from the solar declination at your latitude. This normalises PV production
+  # relative to the summer-solstice maximum so that a clear winter day (full
+  # output for the season) correctly maps to pv_ratio=1.0.
+  pv_traj_seasonal_scaling_enabled: false
+  # Geographic latitude of your PV installation in decimal degrees (North positive).
+  # Example: 48.0 for Munich/Bavaria, 51.5 for Berlin, 47.8 for Zurich.
+  pv_traj_latitude: 51.0
+  # Floor for the seasonal factor — prevents near-zero denominator in deep winter
+  # at high latitudes. Clamped to [min, 1.0].
+  pv_traj_seasonal_min_factor: 0.1
 
   # === Outlet Smoothing ===
   # EMA smoothing factor (0.0 = max smoothing, 1.0 = no smoothing)
@@ -463,6 +486,7 @@ schema:
   grace_period_max_minutes: "int(10,120)"
   defrost_recovery_grace_minutes: "int(15,120)"
   blocking_poll_interval_seconds: "int(30,300)"
+  trend_decay_tau_hours: "float(0.1,24.0)"
   # Shadow Mode
   shadow_mode: "bool"
   ml_heating_control_entity: "str"
@@ -542,6 +566,8 @@ schema:
   # Heat Source Channel Architecture
   enable_heat_source_channels: "bool"
   enable_mixed_source_attribution: "bool"
+  pv_room_decay_multiplier: "float(0.1,10.0)"
+  decay_cancel_margin: "float(0.0,2.0)"
   # Electricity Price Optimization
   electricity_price_enabled: "bool"
   price_cheap_percentile: "int(10,50)"
@@ -563,6 +589,9 @@ schema:
   pv_traj_midday_factor: "float(0.0,1.0)"
   pv_traj_afternoon_factor: "float(0.0,1.0)"
   pv_traj_night_factor: "float(0.0,1.0)"
+  pv_traj_seasonal_scaling_enabled: "bool"
+  pv_traj_latitude: "float(-90.0,90.0)"
+  pv_traj_seasonal_min_factor: "float(0.0,1.0)"
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"
