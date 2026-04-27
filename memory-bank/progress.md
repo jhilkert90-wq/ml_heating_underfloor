@@ -2,7 +2,36 @@
 
 ## 🎯 CURRENT STATUS - April 27, 2026
 
-### ✅ **FEATURE: Online HLC Learner**
+### ✅ **FEATURE: Forecast-Driven Dynamic Trajectory**
+
+**System Status**: **IMPLEMENTED** — New forecast-driven mode for `compute_dynamic_trajectory_steps()`. Steps = consecutive PV forecast hours above `PV_TRAJ_ZERO_W`, giving a naturally shrinking horizon toward sunset. Disabled by default (`PV_TRAJ_FORECAST_MODE_ENABLED=false`).
+
+**Implementation:**
+- ✅ `src/pv_trajectory.py`: `compute_forecast_driven_trajectory_steps()`, `is_forecast_trajectory_active()` new public functions; `compute_dynamic_trajectory_steps()` updated to accept `pv_forecast` list and delegate when forecast mode enabled
+- ✅ `src/config.py`: 4 new config vars (`PV_TRAJ_FORECAST_MODE_ENABLED`, `PV_TRAJ_THRESHOLD_W`, `PV_TRAJ_ZERO_W`, `PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE`)
+- ✅ `src/main.py`: Step 3 builds `_pv_forecast_traj` list and passes to `compute_dynamic_trajectory_steps()`; post-price block suppresses `price_data` when forecast mode active
+- ✅ `config_adapter.py`: all 4 new vars mapped from `config.yaml` option names
+- ✅ `ml_heating_underfloor/config.yaml`: options + schema for all 4 new params
+- ✅ `.env_sample`: documented all 4 new params
+- ✅ `tests/unit/test_pv_trajectory.py`: 17 new tests in `TestForecastDrivenTrajectorySteps` — 100% pass (793 total, 3 pre-existing failures unrelated)
+- ✅ `CHANGELOG.md`: `### Added` entry under `[Unreleased]`
+
+**Test Suite**: **793 passing, 3 pre-existing failures** (unrelated `TestPvSurplusCheapOverride`)
+
+**Files Changed:**
+- `src/pv_trajectory.py`
+- `src/config.py`
+- `src/main.py`
+- `config_adapter.py`
+- `ml_heating_underfloor/config.yaml`
+- `.env_sample`
+- `tests/unit/test_pv_trajectory.py`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 
 **System Status**: **IMPLEMENTED** — New `HLCLearner` class estimates building Heat Loss Coefficient from live cycle data. Disabled by default.
 

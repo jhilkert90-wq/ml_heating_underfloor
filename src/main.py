@@ -1334,11 +1334,19 @@ def main():
                     _pv_now_traj = float(
                         features_dict.get("pv_now_electrical", 0.0)
                     )
+                    # Build hourly PV forecast list for forecast-driven mode.
+                    _pv_forecast_traj = [
+                        float(features_dict.get(f"pv_forecast_{h}h", 0.0))
+                        for h in range(
+                            1, int(getattr(config, "PV_TRAJ_MAX_STEPS", 12)) + 1
+                        )
+                    ]
                     _dyn_steps = compute_dynamic_trajectory_steps(
                         _pv_now_traj,
                         system_kwp=getattr(
                             config, "PV_TRAJ_SYSTEM_KWP", 10.0
                         ),
+                        pv_forecast=_pv_forecast_traj,
                     )
                     config.TRAJECTORY_STEPS = _dyn_steps
                     config.MIN_SETPOINT_HOLD_CYCLES = _dyn_steps
@@ -1358,7 +1366,42 @@ def main():
                 except Exception as exc:
                     logging.warning("Failed to read electricity price: %s", exc)
 
-            # Use the Enhanced Model Wrapper for simplified outlet
+            # In forecast-driven trajectory mode, optionally suppress the price
+            # offset so it does not interfere with the pre-heat plan.
+            if (
+                price_data is not None
+                and getattr(config, "PV_TRAJ_SCALING_ENABLED", False)
+                and getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+                and getattr(
+                    config, "PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE", True
+                )
+            ):
+                try:
+                    from .pv_trajectory import is_forecast_trajectory_active
+                    _fc_price_check = [
+                        float(features_dict.get(f"pv_forecast_{h}h", 0.0))
+                        for h in range(
+                            1,
+                            int(getattr(config, "PV_TRAJ_MAX_STEPS", 12)) + 1,
+                        )
+                    ]
+                    if is_forecast_trajectory_active(
+                        float(features_dict.get("pv_now_electrical", 0.0)),
+                        _fc_price_check,
+                    ):
+                        price_data = None
+                        logging.info(
+                            "☀️ Forecast trajectory active: "
+                            "price offset suppressed"
+                        )
+                except Exception as _exc:
+                    logging.debug(
+                        "Forecast trajectory price suppression check "
+                        "failed: %s",
+                        _exc,
+                    )
+
+
             # temperature prediction. This replaces the complex Heat Balance
             # Controller with a single prediction call.
             error_target_vs_actual = (

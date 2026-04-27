@@ -308,6 +308,25 @@ PV_TRAJ_SEASONAL_MIN_FACTOR: float = float(
     os.getenv("PV_TRAJ_SEASONAL_MIN_FACTOR", "0.1")
 )
 
+# --- Forecast-Driven Trajectory Mode ---
+# Alternative to the pv_ratio × tod_factor formula.  When enabled, trajectory
+# steps are derived from the remaining PV forecast hours (consecutive hours
+# until PV drops to PV_TRAJ_ZERO_W).  Requires PV_TRAJ_SCALING_ENABLED=true.
+PV_TRAJ_FORECAST_MODE_ENABLED: bool = (
+    os.getenv("PV_TRAJ_FORECAST_MODE_ENABLED", "false").lower() == "true"
+)
+# Minimum current PV electrical power [W] required to activate the forecast
+# trajectory.  Below this threshold the mode is inactive → PV_TRAJ_MIN_STEPS.
+PV_TRAJ_THRESHOLD_W: float = float(os.getenv("PV_TRAJ_THRESHOLD_W", "3000.0"))
+# PV power [W] at or below which a forecast slot is treated as "night" / PV≈0.
+PV_TRAJ_ZERO_W: float = float(os.getenv("PV_TRAJ_ZERO_W", "50.0"))
+# When true (default), suppress the electricity price target-temperature offset
+# while the forecast trajectory is active so it does not interfere with the
+# pre-heat plan.
+PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE: bool = (
+    os.getenv("PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE", "true").lower() == "true"
+)
+
 # --- Output Sensors ---
 FEATURES_ENTITY_ID: str = os.getenv(
     "FEATURES_ENTITY_ID", "sensor.ml_heating_features"
