@@ -503,6 +503,42 @@ PV_CALIBRATION_INDOOR_CEILING: float = float(
     os.getenv("PV_CALIBRATION_INDOOR_CEILING", "23.0")
 )
 
+# --- Online HLC Learner ---
+# Lightweight in-memory estimator for the building's Heat Loss Coefficient.
+# Accumulates validated 60-minute windows of HP-only, near-equilibrium data
+# and runs OLS regression (Q_hp = HLC × ΔT) to estimate HLC [kW/K].
+HLC_LEARNER_ENABLED: bool = (
+    os.getenv("HLC_LEARNER_ENABLED", "false").lower() in ("1", "true", "yes")
+)
+# Duration of each learning window [minutes].
+HLC_WINDOW_MINUTES: int = int(os.getenv("HLC_WINDOW_MINUTES", "60"))
+# Minimum fraction of cycles within a window that must have positive
+# thermal_power_kw for the window to be considered.
+HLC_CYCLES_PER_WINDOW_MIN_FRAC: float = float(
+    os.getenv("HLC_CYCLES_PER_WINDOW_MIN_FRAC", "0.8")
+)
+# Maximum mean PV power [W] allowed in a validation window.
+HLC_PV_MAX_W: float = float(os.getenv("HLC_PV_MAX_W", "50.0"))
+# Maximum allowed |mean_indoor − target_temp| [K] (equilibrium gate).
+HLC_MAX_INDOOR_DELTA: float = float(os.getenv("HLC_MAX_INDOOR_DELTA", "0.3"))
+# Maximum allowed |indoor_temp_delta_60m| of the last cycle [K] (stability).
+HLC_MAX_TREND: float = float(os.getenv("HLC_MAX_TREND", "0.2"))
+# Outdoor temperature range for valid calibration windows [°C].
+HLC_OUTDOOR_TEMP_MIN: float = float(os.getenv("HLC_OUTDOOR_TEMP_MIN", "-10.0"))
+HLC_OUTDOOR_TEMP_MAX: float = float(os.getenv("HLC_OUTDOOR_TEMP_MAX", "15.0"))
+# Minimum required (T_target − T_outdoor) [K] to ensure real heating demand.
+HLC_MIN_HEATING_DEMAND_K: float = float(
+    os.getenv("HLC_MIN_HEATING_DEMAND_K", "1.0")
+)
+# Minimum number of validated windows before regression is triggered.
+HLC_MIN_WINDOWS: int = int(os.getenv("HLC_MIN_WINDOWS", "3"))
+# Rolling window cap: keep at most this many validated windows.
+HLC_MAX_WINDOWS: int = int(os.getenv("HLC_MAX_WINDOWS", "48"))
+# Maximum relative change to HLC per calibration run (guards against outliers).
+HLC_MAX_UPDATE_FRACTION: float = float(
+    os.getenv("HLC_MAX_UPDATE_FRACTION", "0.3")
+)
+
 # --- Delta Temperature Forecast Calibration ---
 # Enable local calibration of weather forecasts using measured temperature
 # offset. This corrects for systematic biases between weather station and

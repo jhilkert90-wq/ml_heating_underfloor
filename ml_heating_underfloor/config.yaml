@@ -309,6 +309,21 @@ options:
   # Indoor temperature ceiling for PV calibration
   pv_calibration_indoor_ceiling: 23.0
 
+  # === Online HLC Learner ===
+  # Lightweight in-memory Heat Loss Coefficient estimator from live data
+  hlc_learner_enabled: false
+  hlc_window_minutes: 60
+  hlc_cycles_per_window_min_frac: 0.8
+  hlc_pv_max_w: 50.0
+  hlc_max_indoor_delta: 0.3
+  hlc_max_trend: 0.2
+  hlc_outdoor_temp_min: -10.0
+  hlc_outdoor_temp_max: 15.0
+  hlc_min_heating_demand_k: 1.0
+  hlc_min_windows: 3
+  hlc_max_windows: 48
+  hlc_max_update_fraction: 0.3
+
   # === Delta Temperature Forecast Calibration ===
   # Enable delta calibration using local temperature offset
   enable_delta_forecast_calibration: true
@@ -552,6 +567,19 @@ schema:
   min_stable_period_minutes: "int(15,120)"
   optimization_method: "str"
   pv_calibration_indoor_ceiling: "float(18.0,30.0)"
+  # Online HLC Learner
+  hlc_learner_enabled: "bool"
+  hlc_window_minutes: "int(15,180)"
+  hlc_cycles_per_window_min_frac: "float(0.5,1.0)"
+  hlc_pv_max_w: "float(0.0,500.0)"
+  hlc_max_indoor_delta: "float(0.1,1.0)"
+  hlc_max_trend: "float(0.05,1.0)"
+  hlc_outdoor_temp_min: "float(-20.0,10.0)"
+  hlc_outdoor_temp_max: "float(5.0,25.0)"
+  hlc_min_heating_demand_k: "float(0.5,10.0)"
+  hlc_min_windows: "int(2,20)"
+  hlc_max_windows: "int(5,200)"
+  hlc_max_update_fraction: "float(0.05,1.0)"
   # Delta Temperature Forecast Calibration
   enable_delta_forecast_calibration: "bool"
   delta_calibration_max_offset: "float(1.0,20.0)"

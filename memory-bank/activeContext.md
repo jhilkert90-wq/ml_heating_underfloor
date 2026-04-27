@@ -1,5 +1,32 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Online HLC Learner implemented — April 27, 2026**
+
+#### **`src/hlc_learner.py`, `src/config.py`, `src/main.py`, config files updated**
+
+Implemented a new `HLCLearner` class that estimates the building's Heat Loss Coefficient (HLC) from validated live-cycle data without requiring historical data sources.
+
+**Design:**
+- Accumulates 60-minute windows of live cycle data from `main.py` (pushed every control cycle)
+- Validates each window: HP-only (no fireplace, TV, PV), no blocking states, thermal equilibrium, outdoor temp in range, real heating demand
+- Forced-origin OLS regression: `HLC = Σ(Q·ΔT) / Σ(ΔT²)` over validated windows
+- Capped updates (max `HLC_MAX_UPDATE_FRACTION` relative change per calibration run)
+- Rolling window store (max `HLC_MAX_WINDOWS` = 48)
+- Opt-in: `HLC_LEARNER_ENABLED=false` by default
+
+**Key Design Decisions:**
+- `config.HLC_LEARNER_ENABLED=false` default — no behavior change until explicitly enabled
+- Module-level `from . import config` and `from .unified_thermal_state import get_thermal_state_manager` imports allow proper patching in tests
+- All 12 new config vars added to `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml` (options + schema)
+- Integration in `main.py` is fully guarded — only pushes when `_hlc_learner is not None`
+- `apply_to_thermal_state()` uses `set_calibrated_baseline()` which is already safe (resets learning deltas)
+
+**Test results:** 777 passing, 3 pre-existing failures (unrelated `TestPvSurplusCheapOverride`). 46 new tests in `tests/unit/test_hlc_learner.py`.
+
+**Files changed:** `src/hlc_learner.py` (new), `src/config.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_hlc_learner.py` (new), `CHANGELOG.md`.
+
+---
+
 ### 📝 **Parameter documentation added — April 26, 2026**
 
 #### ✅ **translations/en.yaml, docs/PARAMETER_REFERENCE.md, README.md updated**

@@ -1,6 +1,36 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 26, 2026
+## 🎯 CURRENT STATUS - April 27, 2026
+
+### ✅ **FEATURE: Online HLC Learner**
+
+**System Status**: **IMPLEMENTED** — New `HLCLearner` class estimates building Heat Loss Coefficient from live cycle data. Disabled by default.
+
+**Implementation:**
+- ✅ `src/hlc_learner.py` (new): `HLCLearner` with `push_cycle()`, `_validate_window()`, `estimate_hlc()`, `apply_to_thermal_state()`; `HLCCycle` and `HLCWindow` dataclasses
+- ✅ `src/config.py`: 12 new HLC learner config vars with env-var defaults
+- ✅ `src/main.py`: `HLCLearner()` instantiated at startup (when enabled); `push_cycle()` called after every `features_dict` is built
+- ✅ `config_adapter.py`: all 12 new vars mapped from `config.yaml` option names
+- ✅ `ml_heating_underfloor/config.yaml`: options + schema for all 12 HLC learner params
+- ✅ `tests/unit/test_hlc_learner.py` (new): 46 tests — 100% pass
+- ✅ `CHANGELOG.md`: `### Added` entry under `[Unreleased]`
+
+**Test Suite**: **777 passing, 3 pre-existing failures** (unrelated `TestPvSurplusCheapOverride`)
+
+**Files Changed:**
+- `src/hlc_learner.py` (new)
+- `src/config.py`
+- `src/main.py`
+- `config_adapter.py`
+- `ml_heating_underfloor/config.yaml`
+- `tests/unit/test_hlc_learner.py` (new)
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
+## Previous Status — April 26, 2026
 
 ### ✅ **FEATURE: Parameter Documentation & HA UI Translations**
 
