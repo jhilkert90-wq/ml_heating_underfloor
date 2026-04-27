@@ -33,7 +33,6 @@ unified thermal state as an updated calibrated baseline value.
 from __future__ import annotations
 
 import logging
-import math
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -276,10 +275,8 @@ class HLCLearner:
         if current_hlc > 0:
             relative_change = abs(hlc_estimate - current_hlc) / current_hlc
             if relative_change > config.HLC_MAX_UPDATE_FRACTION:
-                capped = current_hlc * (
-                    1.0 + math.copysign(config.HLC_MAX_UPDATE_FRACTION,
-                                        hlc_estimate - current_hlc)
-                )
+                sign = 1.0 if hlc_estimate > current_hlc else -1.0
+                capped = current_hlc * (1.0 + sign * config.HLC_MAX_UPDATE_FRACTION)
                 logger.warning(
                     "HLC estimate %.5f kW/K would change current value "
                     "%.5f kW/K by %.1f%% — capping at %.5f kW/K",

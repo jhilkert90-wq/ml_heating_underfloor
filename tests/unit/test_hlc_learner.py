@@ -427,21 +427,9 @@ class TestValidateWindow:
         assert ok is False
 
     def test_insufficient_heating_demand_rejected(self, cfg):
-        # outdoor = 20.5, target = 21.0 → ΔT = 0.5 K < min 1.0 K
-        cycles = self._build_cycle_objs(outdoor_temp=20.5, indoor_temp=21.0, target_temp=21.0)
-        ok, reason, _ = HLCLearner._validate_window(
-            cycles, datetime(2026, 1, 10, 12, 0), cfg
-        )
-        # outdoor temp >= 15 → will be caught by the range gate first
-        assert ok is False
-
-    def test_heating_demand_check_with_cold_outdoor(self, cfg):
-        # Explicitly use outdoor within range but T_target - T_outdoor = 0.5 K (< 1.0)
-        # Craft: outdoor=20 is out of range, so use outdoor=14, target=14.5 (demand=0.5)
+        # outdoor=14°C (within range), target=14.5°C → demand = 0.5 K < min 1.0 K
         cycles = self._build_cycle_objs(
-            outdoor_temp=14.0,
-            indoor_temp=14.5,
-            target_temp=14.5,
+            outdoor_temp=14.0, indoor_temp=14.5, target_temp=14.5
         )
         ok, reason, _ = HLCLearner._validate_window(
             cycles, datetime(2026, 1, 10, 12, 0), cfg
