@@ -677,7 +677,9 @@ class TestRollingWindowCap:
             mock_cfg.HLC_OUTDOOR_TEMP_MAX = 15.0
             mock_cfg.HLC_MIN_HEATING_DEMAND_K = 1.0
 
-            # Drive cap+1 complete valid 60-minute windows (13 cycles × 5 min each)
+            # Drive cap+1 complete valid 60-minute windows (13 cycles × 5 min each).
+            # Windows are spaced 65 min apart (60-min window + one 5-min cycle gap)
+            # so that each window closes cleanly before the next one starts.
             for w in range(n_windows_to_push):
                 for i in range(13):
                     ctx = _cycle(timestamp=t0 + timedelta(minutes=w * 65 + i * 5))
