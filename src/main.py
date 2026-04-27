@@ -44,6 +44,7 @@ from .heating_controller import (
 from .sensor_buffer import SensorBuffer
 from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
 from .temperature_control import apply_ema_smoothing
+from .hlc_learner import HLCLearner
 
 
 def _bool_arg(parsed_args, name: str) -> bool:
@@ -116,6 +117,9 @@ def main():
     shadow_ml_error_sum = 0.0
     shadow_hc_error_sum = 0.0
     shadow_comparison_count = 0
+
+    # --- HLC Learner Initialization ---
+    _hlc_learner = HLCLearner() if config.HLC_LEARNER_ENABLED else None
 
     influx_service = create_influx_service()
 
@@ -1276,6 +1280,46 @@ def main():
                 logging.warning("Feature building failed, skipping cycle.")
                 time.sleep(PhysicsConstants.RETRY_DELAY_SECONDS)
                 continue
+
+            # --- HLC Learner: push cycle data ---
+            if _hlc_learner is not None:
+                try:
+                    _hlc_cycle_ctx = {
+                        "timestamp": datetime.now(),
+                        "thermal_power_kw": features_dict.get("thermal_power_kw"),
+                        "indoor_temp": actual_indoor,
+                        "outdoor_temp": outdoor_temp,
+                        "target_temp": target_indoor_temp,
+                        "indoor_temp_delta_60m": features_dict.get(
+                            "indoor_temp_delta_60m", 0.0
+                        ),
+                        "pv_now_electrical": features_dict.get(
+                            "pv_now_electrical", 0.0
+                        ),
+                        "fireplace_on": float(fireplace_on) if fireplace_on else 0.0,
+                        "tv_on": features_dict.get("tv_on", 0.0),
+                        "dhw_heating": features_dict.get("dhw_heating", 0.0),
+                        "defrosting": features_dict.get("defrosting", 0.0),
+                        "dhw_boost_heater": features_dict.get(
+                            "dhw_boost_heater", 0.0
+                        ),
+                        "is_blocking": bool(is_blocking),
+                    }
+                    _hlc_result = _hlc_learner.push_cycle(_hlc_cycle_ctx)
+                    if _hlc_result.get("window_complete"):
+                        if _hlc_result.get("window_validated"):
+                            logging.info(
+                                "🔬 HLC learner: window validated "
+                                "(total: %d)",
+                                _hlc_result["validated_windows"],
+                            )
+                        else:
+                            logging.debug(
+                                "HLC learner: window rejected — %s",
+                                _hlc_result.get("reject_reason", "unknown"),
+                            )
+                except Exception as _hlc_exc:
+                    logging.debug("HLC learner push failed: %s", _hlc_exc)
 
             # --- Step 3: Prediction ---
             # Dynamic trajectory scaling: now that pv_now is available from
