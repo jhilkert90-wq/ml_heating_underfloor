@@ -33,6 +33,7 @@ unified thermal state as an updated calibrated baseline value.
 from __future__ import annotations
 
 import logging
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -128,14 +129,27 @@ class HLCLearner:
         Parameters
         ----------
         context : dict
-            Must contain at minimum the keys listed below.  Missing keys
-            default to safe sentinel values so that the window is rejected.
+            A cycle context dict.  The keys below describe which fields are
+            truly required (``None`` causes the cycle to be dropped) and which
+            are optional (they default to values that represent clean HP-only
+            conditions and therefore do **not** trigger window rejection on
+            their own).
 
         Required keys
         -------------
-        timestamp, thermal_power_kw, indoor_temp, outdoor_temp, target_temp,
-        indoor_temp_delta_60m, pv_now_electrical, fireplace_on, tv_on,
-        dhw_heating, defrosting, dhw_boost_heater, is_blocking
+        thermal_power_kw, indoor_temp, outdoor_temp, target_temp
+
+        Optional keys (default if absent)
+        ----------------------------------
+        timestamp             – datetime.now()
+        indoor_temp_delta_60m – 0.0  (no 60-min trend)
+        pv_now_electrical     – 0.0  (no PV contribution)
+        fireplace_on          – 0.0  (no fireplace)
+        tv_on                 – 0.0  (no TV)
+        dhw_heating           – 0.0  (no DHW heating)
+        defrosting            – 0.0  (no defrost)
+        dhw_boost_heater      – 0.0  (no boost heater)
+        is_blocking           – False (no blocking state)
 
         Returns
         -------
@@ -382,7 +396,7 @@ class HLCLearner:
         ]
         n_valid = len(valid_power)
         min_frac = getattr(config, "HLC_CYCLES_PER_WINDOW_MIN_FRAC", 0.8)
-        if n_valid < max(1, int(n_total * min_frac)):
+        if n_valid < max(1, math.ceil(n_total * min_frac)):
             return (
                 False,
                 f"only {n_valid}/{n_total} cycles have positive thermal_power_kw"

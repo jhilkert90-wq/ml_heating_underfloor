@@ -13,7 +13,6 @@ Covers:
 
 from __future__ import annotations
 
-import math
 from collections import deque
 from datetime import datetime, timedelta
 from typing import Dict, List
@@ -659,42 +658,35 @@ class TestApplyToThermalState:
 
 class TestRollingWindowCap:
     def test_oldest_window_evicted_when_cap_reached(self):
+        """push_cycle() must evict the oldest validated window once HLC_MAX_WINDOWS is
+        exceeded, ensuring that the in-built eviction path in push_cycle() is exercised
+        rather than just the deque data structure."""
         learner = HLCLearner()
-        # Pre-fill to cap
-        cap = 48
-        for i in range(cap):
-            learner._validated_windows.append(
-                HLCWindow(
-                    start_time=datetime(2026, 1, 1) + timedelta(hours=i),
-                    end_time=datetime(2026, 1, 1) + timedelta(hours=i + 1),
-                    mean_thermal_power_kw=1.5,
-                    mean_delta_t=16.0,
-                    n_cycles=12,
-                    outdoor_temp_mean=5.0,
-                    indoor_temp_mean=21.0,
-                )
-            )
-        oldest_start = learner._validated_windows[0].start_time
+        cap = 3
+        n_windows_to_push = cap + 1  # one extra to trigger eviction
 
-        # Simulate push_cycle completing and validating one more window
-        extra = HLCWindow(
-            start_time=datetime(2026, 2, 1),
-            end_time=datetime(2026, 2, 1, 1),
-            mean_thermal_power_kw=1.5,
-            mean_delta_t=16.0,
-            n_cycles=12,
-            outdoor_temp_mean=5.0,
-            indoor_temp_mean=21.0,
-        )
-        learner._validated_windows.append(extra)
+        t0 = datetime(2026, 1, 1, 0, 0)
         with patch("src.hlc_learner.config") as mock_cfg:
+            mock_cfg.HLC_WINDOW_MINUTES = 60
             mock_cfg.HLC_MAX_WINDOWS = cap
-        # Manually enforce the cap (as push_cycle would do)
-        while len(learner._validated_windows) > cap:
-            learner._validated_windows.popleft()
+            mock_cfg.HLC_CYCLES_PER_WINDOW_MIN_FRAC = 0.8
+            mock_cfg.HLC_PV_MAX_W = 50.0
+            mock_cfg.HLC_MAX_INDOOR_DELTA = 0.3
+            mock_cfg.HLC_MAX_TREND = 0.2
+            mock_cfg.HLC_OUTDOOR_TEMP_MIN = -10.0
+            mock_cfg.HLC_OUTDOOR_TEMP_MAX = 15.0
+            mock_cfg.HLC_MIN_HEATING_DEMAND_K = 1.0
 
-        assert len(learner._validated_windows) == cap
-        assert learner._validated_windows[0].start_time != oldest_start
+            # Drive cap+1 complete valid 60-minute windows (13 cycles × 5 min each)
+            for w in range(n_windows_to_push):
+                for i in range(13):
+                    ctx = _cycle(timestamp=t0 + timedelta(minutes=w * 65 + i * 5))
+                    learner.push_cycle(ctx)
+
+        # Cap must be respected
+        assert learner.validated_window_count == cap
+        # The first validated window (start_time == t0) must have been evicted
+        assert learner._validated_windows[0].start_time != t0
 
     def test_accessors_return_correct_counts(self):
         learner = HLCLearner()
@@ -762,13 +754,14 @@ class TestEndToEnd:
                     )
                     learner.push_cycle(ctx)
 
-        # Should have 2 validated windows
-        assert learner.validated_window_count >= 1  # at least 1
+        # Should have exactly 2 validated windows
+        assert learner.validated_window_count == 2
 
         with patch("src.hlc_learner.config") as mock_cfg2:
             mock_cfg2.HLC_MIN_WINDOWS = 1
             hlc, stats = learner.estimate_hlc()
 
         assert hlc is not None
+        assert stats["n_windows"] == 2
         # Expected HLC = 1.6 / 16 = 0.1 kW/K
         assert hlc == pytest.approx(0.1, rel=0.01)
