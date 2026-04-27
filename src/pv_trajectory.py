@@ -59,7 +59,6 @@ When ``PV_TRAJ_SCALING_ENABLED`` is ``false``,
 import logging
 import math
 from datetime import date, datetime
-from typing import List, Optional
 
 try:
     from . import config
@@ -165,7 +164,7 @@ def seasonal_kwp_factor(
 
 def is_forecast_trajectory_active(
     pv_power_w: float,
-    pv_forecast: Optional[List[float]],
+    pv_forecast: list[float] | None,
 ) -> bool:
     """Return ``True`` when the forecast-driven trajectory mode is activated.
 
@@ -203,7 +202,7 @@ def is_forecast_trajectory_active(
 
 def compute_forecast_driven_trajectory_steps(
     pv_power_w: float,
-    pv_forecast: Optional[List[float]],
+    pv_forecast: list[float] | None,
 ) -> int:
     """Compute trajectory steps using the forecast-driven algorithm.
 
@@ -284,9 +283,9 @@ def compute_forecast_driven_trajectory_steps(
 
 def compute_dynamic_trajectory_steps(
     pv_power_w: float,
-    system_kwp: Optional[float] = None,
-    now: Optional[datetime] = None,
-    pv_forecast: Optional[List[float]] = None,
+    system_kwp: float | None = None,
+    now: datetime | None = None,
+    pv_forecast: list[float] | None = None,
 ) -> int:
     """Compute the trajectory step count for the current cycle.
 

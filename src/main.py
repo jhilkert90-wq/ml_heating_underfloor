@@ -1401,7 +1401,6 @@ def main():
                         _exc,
                     )
 
-
             # temperature prediction. This replaces the complex Heat Balance
             # Controller with a single prediction call.
             error_target_vs_actual = (

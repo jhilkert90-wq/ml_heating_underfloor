@@ -431,7 +431,7 @@ class TestForecastDrivenTrajectorySteps:
             steps = compute_forecast_driven_trajectory_steps(
                 5000.0, self._FC_9_THEN_NIGHT
             )
-        # 9 consecutive entries > 50 W → clamped to max=12
+        # 9 consecutive entries > 50 W (within MAX_STEPS=12 horizon)
         assert steps == 9
 
     def test_no_activation_pv_below_threshold(self):
@@ -464,9 +464,17 @@ class TestForecastDrivenTrajectorySteps:
             steps = compute_forecast_driven_trajectory_steps(5000.0, fc)
         assert steps == 5
 
-    def test_steps_clamped_to_max(self):
-        """Remaining PV hours > MAX_STEPS → clamped to MAX_STEPS."""
-        fc = [6000.0] * 11 + [0.0]  # 11 daylight, then night; max=12
+    def test_steps_at_max_minus_one_is_not_reduced(self):
+        """When all but the last horizon slot have PV, step count = MAX_STEPS - 1 (no reduction)."""
+        # With MAX_STEPS=4: horizon=[5000, 4000, 3000, 0], consecutive=3
+        fc = [5000.0, 4000.0, 3000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        with _apply_patches(_fc_patches({"PV_TRAJ_MIN_STEPS": 2, "PV_TRAJ_MAX_STEPS": 4})):
+            steps = compute_forecast_driven_trajectory_steps(5000.0, fc)
+        assert steps == 3
+
+    def test_steps_within_bounds_at_max_horizon_minus_one(self):
+        """11 consecutive daylight hours (max=12) → 11 steps, within bounds."""
+        fc = [6000.0] * 11 + [0.0]  # 11 daylight then night; max=12
         with _apply_patches(_fc_patches()):
             steps = compute_forecast_driven_trajectory_steps(5000.0, fc)
         assert steps == 11
