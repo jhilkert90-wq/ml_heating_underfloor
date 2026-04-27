@@ -1,5 +1,19 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Translation UI descriptions added for new parameters — April 27, 2026**
+
+#### **`ml_heating_underfloor/translations/en.yaml` updated**
+
+Added `name` + `description` entries for 16 parameters that had been added to `config.yaml` in previous sessions but were missing from the Home Assistant add-on UI translation file.
+
+**12 Online HLC Learner params added** (`hlc_learner_enabled`, `hlc_window_minutes`, `hlc_cycles_per_window_min_frac`, `hlc_pv_max_w`, `hlc_max_indoor_delta`, `hlc_max_trend`, `hlc_outdoor_temp_min`, `hlc_outdoor_temp_max`, `hlc_min_heating_demand_k`, `hlc_min_windows`, `hlc_max_windows`, `hlc_max_update_fraction`) — inserted before `enable_delta_forecast_calibration`.
+
+**4 Forecast-Driven Trajectory params added** (`pv_traj_forecast_mode_enabled`, `pv_traj_threshold_w`, `pv_traj_zero_w`, `pv_traj_disable_price_in_forecast_mode`) — inserted after `pv_traj_seasonal_min_factor`, before outlet smoothing.
+
+**Files changed:** `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/activeContext.md`, `memory-bank/progress.md`.
+
+---
+
 ### ✅ **Forecast-Driven Dynamic Trajectory implemented — April 27, 2026**
 
 #### **`src/pv_trajectory.py`, `src/config.py`, `src/main.py`, config files, tests updated**

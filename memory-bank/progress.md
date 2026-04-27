@@ -2,6 +2,16 @@
 
 ## 🎯 CURRENT STATUS - April 27, 2026
 
+### ✅ **DOCS: Translation UI descriptions for new parameters**
+
+**Status**: **COMPLETED** — Added `name` + `description` entries for 16 parameters in `ml_heating_underfloor/translations/en.yaml` that were present in `config.yaml` but missing from the HA add-on UI translation file.
+
+**Files Changed:**
+- `ml_heating_underfloor/translations/en.yaml` (+16 parameter entries: 12 `hlc_*`, 4 `pv_traj_forecast*`)
+- `CHANGELOG.md`
+
+---
+
 ### ✅ **FEATURE: Forecast-Driven Dynamic Trajectory**
 
 **System Status**: **IMPLEMENTED** — New forecast-driven mode for `compute_dynamic_trajectory_steps()`. Steps = consecutive PV forecast hours above `PV_TRAJ_ZERO_W`, giving a naturally shrinking horizon toward sunset. Disabled by default (`PV_TRAJ_FORECAST_MODE_ENABLED=false`).

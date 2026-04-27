@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE` (default true): suppress electricity price target offset while forecast trajectory is active.
 - `compute_forecast_driven_trajectory_steps()` and `is_forecast_trajectory_active()` public functions in `src/pv_trajectory.py`.
 - 17 new unit tests in `TestForecastDrivenTrajectorySteps` covering all activation/deactivation paths, night mode, step clamping, and delegation from `compute_dynamic_trajectory_steps`.
+- UI descriptions (`name` + `description`) added to `translations/en.yaml` for all 16 previously undocumented parameters: 12 Online HLC Learner params (`hlc_*`) and 4 Forecast-Driven Trajectory params (`pv_traj_forecast_mode_enabled`, `pv_traj_threshold_w`, `pv_traj_zero_w`, `pv_traj_disable_price_in_forecast_mode`).
 
 ## [0.2.0] - 2026-02-10
 
