@@ -1,5 +1,12 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.12] - 2026-04-27
+
+### Added
+- **Online HLC Learner** (`src/hlc_learner.py`): new `HLCLearner` class that accumulates validated 60-minute windows of live HP-only, near-equilibrium cycle data and runs OLS regression (Q_hp = HLC × ΔT) to estimate the building's Heat Loss Coefficient in kW/K. Disabled by default (`HLC_LEARNER_ENABLED=false`). When enabled it pushes data from `main.py` every control cycle and can apply the resulting estimate to the unified thermal state baseline.
+- Twelve new config variables for the HLC learner: `HLC_LEARNER_ENABLED`, `HLC_WINDOW_MINUTES`, `HLC_CYCLES_PER_WINDOW_MIN_FRAC`, `HLC_PV_MAX_W`, `HLC_MAX_INDOOR_DELTA`, `HLC_MAX_TREND`, `HLC_OUTDOOR_TEMP_MIN`, `HLC_OUTDOOR_TEMP_MAX`, `HLC_MIN_HEATING_DEMAND_K`, `HLC_MIN_WINDOWS`, `HLC_MAX_WINDOWS`, `HLC_MAX_UPDATE_FRACTION`.
+- 46 unit tests in `tests/unit/test_hlc_learner.py` covering window validation (all rejection paths), OLS regression accuracy, cap logic, rolling-window eviction, and end-to-end push/estimate flow.
+
 ## [0.2.11] - 2026-04-26
 
 ### Added

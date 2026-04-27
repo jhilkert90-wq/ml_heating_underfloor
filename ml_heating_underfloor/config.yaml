@@ -1,5 +1,5 @@
 name: "ML Heating Underfloor"
-version: "0.2.11"
+version: "0.2.12"
 slug: "ml_heating_underfloor"
 image: "ghcr.io/jhilkert90-wq/ml_heating_underfloor-{arch}"
 description: "Physics-based machine learning heating control optimized for underfloor heating systems with slow thermal response"
