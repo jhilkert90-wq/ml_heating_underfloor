@@ -1324,8 +1324,9 @@ def main():
             # --- Step 3: Prediction ---
             # Dynamic trajectory scaling: now that pv_now is available from
             # features, compute the effective TRAJECTORY_STEPS for this cycle.
-            # Forecasts were already fetched at PV_TRAJ_MAX_STEPS above so all
-            # horizon keys are present regardless of the value chosen here.
+            # When PV_TRAJ_FORECAST_MODE_ENABLED is true, physics_features.py
+            # fetches forecasts up to PV_TRAJ_MAX_STEPS, so all horizon keys
+            # are present in features_dict regardless of TRAJECTORY_STEPS.
             _pv_forecast_traj: list[float] | None = None
             if getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False):
                 try:

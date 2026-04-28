@@ -275,6 +275,15 @@ PV_TRAJ_ZERO_W: float = float(os.getenv("PV_TRAJ_ZERO_W", "50.0"))
 PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE: bool = (
     os.getenv("PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE", "true").lower() == "true"
 )
+# When true (default), a temporary drop of pv_now below PV_TRAJ_THRESHOLD_W
+# (e.g. passing rain cloud) does not immediately collapse the trajectory to
+# PV_TRAJ_MIN_STEPS.  Instead, the forecast is consulted: if at least
+# PV_TRAJ_MIN_STEPS forecast hours remain above PV_TRAJ_THRESHOLD_W the
+# algorithm continues with normal step counting.  Set to false to require
+# current PV above the threshold at all times.
+PV_TRAJ_FORECAST_RESCUE_ENABLED: bool = (
+    os.getenv("PV_TRAJ_FORECAST_RESCUE_ENABLED", "true").lower() == "true"
+)
 
 # --- Output Sensors ---
 FEATURES_ENTITY_ID: str = os.getenv(

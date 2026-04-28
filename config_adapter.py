@@ -541,6 +541,9 @@ def convert_addon_to_env(config):
         'PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE': str(
             config.get('pv_traj_disable_price_in_forecast_mode', True)
         ).lower(),
+        'PV_TRAJ_FORECAST_RESCUE_ENABLED': str(
+            config.get('pv_traj_forecast_rescue_enabled', True)
+        ).lower(),
 
         # --- Outlet Smoothing ---
         'OUTLET_SMOOTHING_ALPHA': str(

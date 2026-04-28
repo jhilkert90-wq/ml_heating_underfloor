@@ -255,15 +255,18 @@ class HAClient:
                 f"HA state set failed for {effective_entity_id}: {exc}"
             )
 
-    def get_hourly_forecast(self) -> List[float]:
+    def get_hourly_forecast(self, n: int | None = None) -> List[float]:
         """
         Retrieves the hourly weather forecast via the Home Assistant service.
-        Supports up to TRAJECTORY_STEPS-hour forecasts and pads if needed.
+        Supports up to n-hour forecasts and pads if needed.
+        Args:
+            n: Number of forecast hours to fetch. Defaults to config.TRAJECTORY_STEPS.
         Returns:
-            A list of forecasted temperatures for the next TRAJECTORY_STEPS hours,
+            A list of forecasted temperatures for the next n hours,
             or a default list of zeros if the call fails.
         """
-        n = config.TRAJECTORY_STEPS
+        if n is None:
+            n = config.TRAJECTORY_STEPS
         svc_url = f"{self.url}/api/services/weather/get_forecasts"
         body = {"entity_id": ["weather.home"], "type": "hourly"}
 
@@ -300,15 +303,18 @@ class HAClient:
             result.append(result[-1] if result else 0.0)
         return result
 
-    def get_hourly_cloud_cover(self) -> List[float]:
+    def get_hourly_cloud_cover(self, n: int | None = None) -> List[float]:
         """
         Retrieves the hourly cloud cover forecast from weather.home.
         Reuses the same forecast API call as get_hourly_forecast().
+        Args:
+            n: Number of forecast hours to fetch. Defaults to config.TRAJECTORY_STEPS.
         Returns:
-            A list of cloud cover percentages (0-100) for the next TRAJECTORY_STEPS hours.
+            A list of cloud cover percentages (0-100) for the next n hours.
             Defaults to 50% if data is unavailable.
         """
-        n = config.TRAJECTORY_STEPS
+        if n is None:
+            n = config.TRAJECTORY_STEPS
         svc_url = f"{self.url}/api/services/weather/get_forecasts"
         body = {"entity_id": ["weather.home"], "type": "hourly"}
 
@@ -359,20 +365,23 @@ class HAClient:
     def get_calibrated_hourly_forecast(
         self, 
         current_outdoor_temp: float, 
-        enable_delta_calibration: bool = True
+        enable_delta_calibration: bool = True,
+        n: int | None = None,
     ) -> List[float]:
         """
         Retrieves weather forecasts calibrated to local measurements.
-        Supports up to TRAJECTORY_STEPS-hour forecasts and pads if needed.
+        Supports up to n-hour forecasts and pads if needed.
         Args:
             current_outdoor_temp: Actual measured outdoor temperature
             enable_delta_calibration: Whether to apply delta calibration
+            n: Number of forecast hours to fetch. Defaults to config.TRAJECTORY_STEPS.
         Returns:
-            List of calibrated temperature forecasts for next TRAJECTORY_STEPS hours
+            List of calibrated temperature forecasts for next n hours
         """
-        n = config.TRAJECTORY_STEPS
-        # Get raw absolute forecasts (up to TRAJECTORY_STEPS hours)
-        raw_forecasts = self.get_hourly_forecast()
+        if n is None:
+            n = config.TRAJECTORY_STEPS
+        # Get raw absolute forecasts (up to n hours)
+        raw_forecasts = self.get_hourly_forecast(n=n)
         # If delta calibration is disabled, return raw forecasts
         if not enable_delta_calibration:
             logging.debug("Delta calibration disabled, using raw forecasts")

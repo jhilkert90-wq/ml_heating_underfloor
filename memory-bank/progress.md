@@ -2,6 +2,27 @@
 
 ## 🎯 CURRENT STATUS - April 28, 2026
 
+### ✅ **FIX: PV trajectory forecast horizon + rain-cloud rescue**
+
+**Status**: **COMPLETED** — Two related bugs fixed:
+
+1. **Extended forecast horizon** (`physics_features.py`): when `PV_TRAJ_FORECAST_MODE_ENABLED=true`, forecasts are now fetched up to `PV_TRAJ_MAX_STEPS` hours instead of only `TRAJECTORY_STEPS`. Keys `pv_forecast_5h … pv_forecast_12h` etc. are now populated correctly. `ha_client.get_hourly_forecast()`, `get_hourly_cloud_cover()`, and `get_calibrated_hourly_forecast()` accept optional `n` parameter.
+
+2. **Forecast-rescue path** (`pv_trajectory.py`): a temporary drop of `pv_now` below `PV_TRAJ_THRESHOLD_W` (e.g. passing rain cloud) no longer immediately collapses `TRAJECTORY_STEPS` to `PV_TRAJ_MIN_STEPS`. Instead the forecast is consulted; if ≥ `PV_TRAJ_MIN_STEPS` hours exceed the threshold the mode continues normally. Controlled by `PV_TRAJ_FORECAST_RESCUE_ENABLED` (default `true`).
+
+**Files Changed:**
+- `src/ha_client.py` (optional `n` param on 3 forecast methods)
+- `src/physics_features.py` (_n_fc_full extended horizon, updated all forecast fetch/key loops)
+- `src/pv_trajectory.py` (rescue path in compute_forecast_driven_trajectory_steps and is_forecast_trajectory_active)
+- `src/config.py` (PV_TRAJ_FORECAST_RESCUE_ENABLED)
+- `src/main.py` (fixed misleading comment)
+- `config_adapter.py` (pv_traj_forecast_rescue_enabled mapping)
+- `ml_heating_underfloor/config.yaml` (option + schema entry)
+- `.env_sample` (PV_TRAJ_FORECAST_RESCUE_ENABLED)
+- `tests/unit/test_pv_trajectory.py` (8 new rescue tests, 2 updated existing tests)
+- `tests/unit/test_physics_features.py` (2 new extended horizon tests)
+- `CHANGELOG.md`
+
 ### ✅ **REFACTOR: Remove classic PV trajectory mode**
 
 **Status**: **COMPLETED** — Removed pv_ratio × time-of-day factor algorithm (morning/midday/afternoon/night factors, system KWP, seasonal KWP scaling). `PV_TRAJ_SCALING_ENABLED` deleted. `compute_dynamic_trajectory_steps()` now gates solely on `PV_TRAJ_FORECAST_MODE_ENABLED`. All config surfaces, docs, and tests updated.
