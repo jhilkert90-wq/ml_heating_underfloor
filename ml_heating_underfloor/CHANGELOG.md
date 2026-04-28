@@ -1,5 +1,13 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.15] - 2026-04-28
+
+### Added
+- `PV_TRAJ_FORECAST_RESCUE_ENABLED` config flag (default `true`): when a passing rain cloud drops `pv_now` below `PV_TRAJ_THRESHOLD_W`, the forecast-driven trajectory mode stays active if at least `PV_TRAJ_MIN_STEPS` forecast hours still exceed the threshold — preventing an abrupt collapse of the pre-heat plan.
+
+### Fixed
+- `physics_features.py` now fetches forecasts up to `PV_TRAJ_MAX_STEPS` hours (instead of only `TRAJECTORY_STEPS` hours) when `PV_TRAJ_FORECAST_MODE_ENABLED=true`. Previously `pv_forecast_5h … pv_forecast_12h` were always 0.0 W (= "night"), artificially capping the planning horizon at `TRAJECTORY_STEPS` even when the forecast showed many remaining solar hours.
+
 ## [0.2.14] - 2026-04-28
 
 ### Removed
