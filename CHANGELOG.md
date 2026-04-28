@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `compute_forecast_driven_trajectory_steps()` now adds `PV_TRAJ_MIN_STEPS` to the count of remaining solar hours before clamping (`steps = clamp(remaining_pv_hours + MIN_STEPS, MIN, MAX)`). This reserves the minimum trajectory window for the post-sunset period, giving a fuller planning horizon (e.g. 9 solar hours + 4 MIN_STEPS → 13 → clamped to MAX 12).
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

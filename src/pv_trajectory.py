@@ -35,9 +35,15 @@ Two modes are available, selected at runtime by configuration:
 
 **Forecast-driven mode** (``PV_TRAJ_FORECAST_MODE_ENABLED=true``)
     Step count equals the number of consecutive forecast hours (starting from
-    the next hour) with PV production above ``PV_TRAJ_ZERO_W``.  This maps
-    directly to "how many hours of sun remain today", giving a long planning
-    horizon in the morning and a naturally shrinking horizon toward sunset.
+    the next hour) with PV production above ``PV_TRAJ_ZERO_W`` **plus**
+    ``PV_TRAJ_MIN_STEPS`` reserved slots for the post-sunset period, clamped
+    to ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``::
+
+        steps = min(MAX_STEPS, remaining_pv_hours + MIN_STEPS)
+
+    This maps directly to "how many hours of sun remain today plus a night
+    buffer", giving a full planning horizon in the morning and a naturally
+    shrinking horizon toward sunset.
 
     Activation requires **both**:
 
@@ -210,9 +216,12 @@ def compute_forecast_driven_trajectory_steps(
 ) -> int:
     """Compute trajectory steps using the forecast-driven algorithm.
 
-    Step count = number of consecutive forecast hours (from hour 1 onward)
-    where PV > ``PV_TRAJ_ZERO_W``, clamped to
-    ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``.
+    Step count = consecutive forecast hours (from hour 1 onward) where
+    PV > ``PV_TRAJ_ZERO_W`` **plus** ``PV_TRAJ_MIN_STEPS`` reserved slots
+    for the post-sunset period, clamped to
+    ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``::
+
+        steps = clamp(remaining_pv_hours + MIN_STEPS, MIN_STEPS, MAX_STEPS)
 
     Special cases:
 
@@ -273,10 +282,10 @@ def compute_forecast_driven_trajectory_steps(
         else:
             break  # first night slot reached
 
-    steps = int(max(min_steps, min(max_steps, remaining_pv_hours)))
+    steps = int(max(min_steps, min(max_steps, remaining_pv_hours + min_steps)))
     logger.info(
-        "☀️ Forecast trajectory: PV=%.0fW, remaining_pv_hours=%d → %d steps",
-        pv_power_w, remaining_pv_hours, steps,
+        "☀️ Forecast trajectory: PV=%.0fW, remaining_pv_hours=%d + min_steps=%d → %d steps",
+        pv_power_w, remaining_pv_hours, min_steps, steps,
     )
     return steps
 

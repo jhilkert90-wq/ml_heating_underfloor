@@ -1,5 +1,18 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - April 28, 2026
+
+### ✅ **FIX: Forecast trajectory formula — add min_steps to remaining solar hours**
+
+**Status**: **COMPLETED** — `compute_forecast_driven_trajectory_steps()` updated to `steps = clamp(remaining_pv_hours + MIN_STEPS, MIN, MAX)`. Night buffer is now always included in the planning horizon. All 7 affected unit tests updated.
+
+**Files Changed:**
+- `src/pv_trajectory.py` (formula, docstrings, log message)
+- `tests/unit/test_pv_trajectory.py` (7 test assertions updated)
+- `CHANGELOG.md`
+
+---
+
 ## 🎯 CURRENT STATUS - April 27, 2026
 
 ### ✅ **DOCS: Translation UI descriptions for new parameters**

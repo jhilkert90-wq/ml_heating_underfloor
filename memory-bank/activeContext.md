@@ -1,5 +1,15 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Forecast trajectory formula updated: remaining_pv_hours + min_steps — April 28, 2026**
+
+#### **`src/pv_trajectory.py` and `tests/unit/test_pv_trajectory.py` updated**
+
+`compute_forecast_driven_trajectory_steps()` now uses `steps = clamp(remaining_pv_hours + MIN_STEPS, MIN, MAX)` instead of `clamp(remaining_pv_hours, MIN, MAX)`. The night buffer (`PV_TRAJ_MIN_STEPS`) is now always reserved on top of the remaining solar hours. All affected unit tests updated.
+
+**Files changed:** `src/pv_trajectory.py`, `tests/unit/test_pv_trajectory.py`, `CHANGELOG.md`, `memory-bank/activeContext.md`, `memory-bank/progress.md`.
+
+---
+
 ### ✅ **Translation UI descriptions added for new parameters — April 27, 2026**
 
 #### **`ml_heating_underfloor/translations/en.yaml` updated**

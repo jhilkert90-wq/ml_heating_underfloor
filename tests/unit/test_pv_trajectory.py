@@ -431,8 +431,8 @@ class TestForecastDrivenTrajectorySteps:
             steps = compute_forecast_driven_trajectory_steps(
                 5000.0, self._FC_9_THEN_NIGHT
             )
-        # 9 consecutive entries > 50 W (within MAX_STEPS=12 horizon)
-        assert steps == 9
+        # 9 consecutive entries > 50 W → 9 + MIN_STEPS(2) = 11
+        assert steps == 11
 
     def test_no_activation_pv_below_threshold(self):
         """PV below threshold → inactive, returns MIN_STEPS."""
@@ -456,35 +456,35 @@ class TestForecastDrivenTrajectorySteps:
             steps = compute_forecast_driven_trajectory_steps(40.0, fc)
         assert steps == 2
 
-    def test_step_count_equals_consecutive_pv_hours(self):
-        """Steps equal the number of consecutive forecast entries above zero_w."""
+    def test_step_count_equals_consecutive_pv_hours_plus_min_steps(self):
+        """Steps equal consecutive forecast entries above zero_w plus MIN_STEPS."""
         # 5 daylight hours, then night
         fc = [5000, 4000, 3000, 500, 100, 0, 0, 0, 0, 0, 0, 0]
         with _apply_patches(_fc_patches()):
             steps = compute_forecast_driven_trajectory_steps(5000.0, fc)
-        assert steps == 5
+        assert steps == 7  # 5 + MIN_STEPS(2) = 7
 
-    def test_steps_at_max_minus_one_is_not_reduced(self):
-        """When all but the last horizon slot have PV, step count = MAX_STEPS - 1 (no reduction)."""
+    def test_steps_clamped_to_max_when_pv_hours_plus_min_exceeds_max(self):
+        """3 daylight hours + min_steps(2) = 5 → clamped to MAX_STEPS=4."""
         # With MAX_STEPS=4: horizon=[5000, 4000, 3000, 0], consecutive=3
         fc = [5000.0, 4000.0, 3000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         with _apply_patches(_fc_patches({"PV_TRAJ_MIN_STEPS": 2, "PV_TRAJ_MAX_STEPS": 4})):
             steps = compute_forecast_driven_trajectory_steps(5000.0, fc)
-        assert steps == 3
+        assert steps == 4  # 3 + 2 = 5 → clamped to max=4
 
     def test_steps_within_bounds_at_max_horizon_minus_one(self):
-        """11 consecutive daylight hours (max=12) → 11 steps, within bounds."""
+        """11 consecutive daylight hours + MIN_STEPS(2) = 13 → clamped to MAX_STEPS=12."""
         fc = [6000.0] * 11 + [0.0]  # 11 daylight then night; max=12
         with _apply_patches(_fc_patches()):
             steps = compute_forecast_driven_trajectory_steps(5000.0, fc)
-        assert steps == 11
+        assert steps == 12  # 11 + 2 = 13 → clamped to 12
 
-    def test_steps_clamped_to_min(self):
-        """Only 1 daylight hour → clamped up to MIN_STEPS=2."""
+    def test_steps_one_daylight_hour_plus_min_steps(self):
+        """Only 1 daylight hour → 1 + MIN_STEPS(2) = 3 steps."""
         fc = [500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         with _apply_patches(_fc_patches({"PV_TRAJ_MIN_STEPS": 2})):
             steps = compute_forecast_driven_trajectory_steps(5000.0, fc)
-        assert steps == 2
+        assert steps == 3  # 1 + 2 = 3
 
     def test_boundary_first_forecast_slot_is_zero(self):
         """First forecast slot <= zero_w → remaining_pv_hours=0 → MIN_STEPS."""
@@ -510,15 +510,15 @@ class TestForecastDrivenTrajectorySteps:
         fc = [5000, 4000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # 2 daylight hours
         with _apply_patches(_fc_patches({"PV_TRAJ_MIN_STEPS": 4, "PV_TRAJ_MAX_STEPS": 8})):
             steps = compute_forecast_driven_trajectory_steps(5000.0, fc)
-        # 2 < min=4 → clamped to 4
-        assert steps == 4
+        # 2 + min=4 = 6, within [4, 8]
+        assert steps == 6
 
     def test_compute_dynamic_delegates_to_forecast_mode(self):
         """compute_dynamic_trajectory_steps delegates when forecast mode enabled."""
         fc = [5000, 4000, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # 3 remaining hours
         with _apply_patches(_fc_patches()):
             steps = compute_dynamic_trajectory_steps(5000.0, pv_forecast=fc)
-        assert steps == 3
+        assert steps == 5  # 3 + MIN_STEPS(2) = 5
 
     def test_is_forecast_trajectory_active_true(self):
         """is_forecast_trajectory_active returns True when conditions met."""
