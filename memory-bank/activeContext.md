@@ -1,6 +1,49 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Online HLC Learner implemented — April 27, 2026**
+### ✅ **Translation UI descriptions added for new parameters — April 27, 2026**
+
+#### **`ml_heating_underfloor/translations/en.yaml` updated**
+
+Added `name` + `description` entries for 16 parameters that had been added to `config.yaml` in previous sessions but were missing from the Home Assistant add-on UI translation file.
+
+**12 Online HLC Learner params added** (`hlc_learner_enabled`, `hlc_window_minutes`, `hlc_cycles_per_window_min_frac`, `hlc_pv_max_w`, `hlc_max_indoor_delta`, `hlc_max_trend`, `hlc_outdoor_temp_min`, `hlc_outdoor_temp_max`, `hlc_min_heating_demand_k`, `hlc_min_windows`, `hlc_max_windows`, `hlc_max_update_fraction`) — inserted before `enable_delta_forecast_calibration`.
+
+**4 Forecast-Driven Trajectory params added** (`pv_traj_forecast_mode_enabled`, `pv_traj_threshold_w`, `pv_traj_zero_w`, `pv_traj_disable_price_in_forecast_mode`) — inserted after `pv_traj_seasonal_min_factor`, before outlet smoothing.
+
+**Files changed:** `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/activeContext.md`, `memory-bank/progress.md`.
+
+---
+
+### ✅ **Forecast-Driven Dynamic Trajectory implemented — April 27, 2026**
+
+#### **`src/pv_trajectory.py`, `src/config.py`, `src/main.py`, config files, tests updated**
+
+Added a new `PV_TRAJ_FORECAST_MODE_ENABLED` trajectory mode that replaces the `pv_ratio × tod_factor` formula with a forecast-based step count.
+
+**Algorithm:**
+- Steps = consecutive forecast hours with PV > `PV_TRAJ_ZERO_W` (50 W default), clamped to `[MIN_STEPS, MAX_STEPS]`
+- Activation: `pv_current >= PV_TRAJ_THRESHOLD_W` AND at least one slot ≤ `PV_TRAJ_ZERO_W` within `MAX_STEPS` horizon
+- Night (pv < `PV_TRAJ_ZERO_W`): returns `MIN_STEPS` directly
+- Not activated (low PV or no sunset in horizon): returns `MIN_STEPS`
+- Optionally suppresses price offset while active (`PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE=true`)
+
+**New public API in `src/pv_trajectory.py`:**
+- `compute_forecast_driven_trajectory_steps(pv_power_w, pv_forecast)` — core algorithm
+- `is_forecast_trajectory_active(pv_power_w, pv_forecast)` — activation predicate (used for price suppression in `main.py`)
+- `compute_dynamic_trajectory_steps()` updated signature: accepts optional `pv_forecast: List[float]` and delegates to forecast mode when `PV_TRAJ_FORECAST_MODE_ENABLED=true`
+
+**Key Design Decisions:**
+- All 4 new config vars default to safe values (`PV_TRAJ_FORECAST_MODE_ENABLED=false`) — no behavior change until explicitly enabled
+- Classic `pv_ratio × tod_factor` mode is fully preserved when `PV_TRAJ_FORECAST_MODE_ENABLED=false`
+- Price suppression is a separate check in `main.py` after the price_data fetch block; guarded by 3 flags so it never fires unexpectedly
+- 17 new tests cover activation, deactivation, night mode, step clamping, None/empty forecast edge cases, and delegation
+
+**Test results:** 793 passing, 3 pre-existing failures (`TestPvSurplusCheapOverride`). 17 new tests in `TestForecastDrivenTrajectorySteps`.
+
+**Files changed:** `src/pv_trajectory.py`, `src/config.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `.env_sample`, `tests/unit/test_pv_trajectory.py`, `CHANGELOG.md`.
+
+---
+
 
 #### **`src/hlc_learner.py`, `src/config.py`, `src/main.py`, config files updated**
 

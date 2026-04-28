@@ -556,6 +556,19 @@ def convert_addon_to_env(config):
         'PV_TRAJ_SEASONAL_MIN_FACTOR': str(
             config.get('pv_traj_seasonal_min_factor', 0.1)
         ),
+        # --- Forecast-Driven Trajectory Mode ---
+        'PV_TRAJ_FORECAST_MODE_ENABLED': str(
+            config.get('pv_traj_forecast_mode_enabled', False)
+        ).lower(),
+        'PV_TRAJ_THRESHOLD_W': str(
+            config.get('pv_traj_threshold_w', 3000.0)
+        ),
+        'PV_TRAJ_ZERO_W': str(
+            config.get('pv_traj_zero_w', 50.0)
+        ),
+        'PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE': str(
+            config.get('pv_traj_disable_price_in_forecast_mode', True)
+        ).lower(),
 
         # --- Outlet Smoothing ---
         'OUTLET_SMOOTHING_ALPHA': str(

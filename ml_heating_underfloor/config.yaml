@@ -422,6 +422,20 @@ options:
   # at high latitudes. Clamped to [min, 1.0].
   pv_traj_seasonal_min_factor: 0.1
 
+  # === Forecast-Driven Trajectory Mode ===
+  # Alternative to the pv_ratio × tod_factor formula.
+  # When enabled, trajectory steps = consecutive forecast hours with PV > pv_traj_zero_w.
+  # Provides a planning horizon based on remaining forecast PV hours, generally
+  # longest earlier in the day and shrinking naturally toward sunset.
+  # Requires pv_traj_scaling_enabled: true.
+  pv_traj_forecast_mode_enabled: false
+  # Minimum current PV [W] to activate forecast mode.
+  pv_traj_threshold_w: 3000.0
+  # PV power [W] at or below which a forecast slot counts as "night" / PV≈0.
+  pv_traj_zero_w: 50.0
+  # Suppress electricity price target offset while forecast trajectory is active.
+  pv_traj_disable_price_in_forecast_mode: true
+
   # === Outlet Smoothing ===
   # EMA smoothing factor (0.0 = max smoothing, 1.0 = no smoothing)
   outlet_smoothing_alpha: 0.3
@@ -620,6 +634,11 @@ schema:
   pv_traj_seasonal_scaling_enabled: "bool"
   pv_traj_latitude: "float(-90.0,90.0)"
   pv_traj_seasonal_min_factor: "float(0.0,1.0)"
+  # Forecast-Driven Trajectory Mode
+  pv_traj_forecast_mode_enabled: "bool"
+  pv_traj_threshold_w: "float(0.0,20000.0)"
+  pv_traj_zero_w: "float(0.0,500.0)"
+  pv_traj_disable_price_in_forecast_mode: "bool"
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"

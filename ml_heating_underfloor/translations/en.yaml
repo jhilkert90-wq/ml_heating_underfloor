@@ -393,6 +393,44 @@ configuration:
     name: "PV Calibration Indoor Temperature Ceiling (°C) [Advanced]"
     description: "Indoor temperatures at or above this value are excluded from PV calibration. When indoor temp is high, automated blinds often close and block solar gain, making PV data unreliable. Set just below your blind trigger threshold. Default: 23.0°C."
 
+  # === Online HLC Learner (Advanced) ===
+  hlc_learner_enabled:
+    name: "Online HLC Learner Enabled [Advanced]"
+    description: "Enables the lightweight in-memory Heat Loss Coefficient (HLC) estimator. When active, the system continuously refines the building's thermal conductance from live heating cycles using forced-origin OLS regression. Disabled by default — enable only after sufficient training data is available."
+  hlc_window_minutes:
+    name: "HLC Learning Window Duration (minutes) [Advanced]"
+    description: "Duration in minutes of each HLC estimation window. Each window accumulates live cycle data and must meet quality checks before contributing to the HLC estimate. Default: 60 min."
+  hlc_cycles_per_window_min_frac:
+    name: "HLC Window Minimum Cycle Coverage (fraction) [Advanced]"
+    description: "Minimum fraction of the window duration that must be covered by actual cycle data for the window to be validated. 0.8 = at least 80% of the window duration must have data. Default: 0.8."
+  hlc_pv_max_w:
+    name: "HLC Max PV Power for Learning (W) [Advanced]"
+    description: "Maximum PV power (W) allowed during an HLC learning window. Windows with PV above this threshold are rejected to avoid solar heat gain distorting the HLC regression. Default: 50 W."
+  hlc_max_indoor_delta:
+    name: "HLC Max Indoor Temperature Change (°C) [Advanced]"
+    description: "Maximum allowed indoor temperature change (°C) within a learning window. Windows with large indoor temperature swings are rejected as they indicate non-steady-state conditions. Default: 0.3°C."
+  hlc_max_trend:
+    name: "HLC Max Indoor Temperature Trend (°C/step) [Advanced]"
+    description: "Maximum allowed indoor temperature trend magnitude (°C/step) during a learning window. High trends indicate recent setpoint changes that would distort the HLC estimate. Default: 0.2."
+  hlc_outdoor_temp_min:
+    name: "HLC Minimum Outdoor Temperature (°C) [Advanced]"
+    description: "Minimum outdoor temperature (°C) for a learning window to be accepted. Very cold extremes are excluded to avoid unreliable measurements. Default: -10°C."
+  hlc_outdoor_temp_max:
+    name: "HLC Maximum Outdoor Temperature (°C) [Advanced]"
+    description: "Maximum outdoor temperature (°C) for a learning window to be accepted. Warm periods with low heating demand produce noisy HLC estimates. Default: 15°C."
+  hlc_min_heating_demand_k:
+    name: "HLC Minimum Heating Demand ΔT (K) [Advanced]"
+    description: "Minimum indoor-outdoor temperature difference (Kelvin) required during a learning window. Low ΔT periods have insufficient signal-to-noise for reliable HLC estimation. Default: 1.0 K."
+  hlc_min_windows:
+    name: "HLC Minimum Validated Windows Before Update [Advanced]"
+    description: "Minimum number of validated HLC windows required before the learned HLC is applied to the thermal model. Prevents premature updates with too little data. Default: 3."
+  hlc_max_windows:
+    name: "HLC Rolling Window Store Size [Advanced]"
+    description: "Maximum number of HLC windows kept in the rolling in-memory store. Older windows are discarded as new ones arrive. Default: 48."
+  hlc_max_update_fraction:
+    name: "HLC Maximum Update Fraction [Advanced]"
+    description: "Maximum allowed relative change when applying a new HLC estimate to the thermal model. 0.3 = the new HLC can differ by at most 30% from the current value per update. Prevents runaway updates from outlier windows. Default: 0.3."
+
   # === Delta Temperature Forecast Calibration (Advanced) ===
   enable_delta_forecast_calibration:
     name: "Delta Forecast Calibration Enabled [Advanced]"
@@ -506,6 +544,20 @@ configuration:
   pv_traj_seasonal_min_factor:
     name: "Seasonal PV Minimum Factor [Advanced]"
     description: "Floor value for the seasonal KWP scaling factor. Prevents near-zero denominators at high latitudes in deep winter. Clamped to [min_factor, 1.0]. Default: 0.1."
+
+  # === Forecast-Driven Trajectory Mode (Advanced) ===
+  pv_traj_forecast_mode_enabled:
+    name: "Forecast-Driven Trajectory Mode Enabled [Advanced]"
+    description: "Replaces the pv_ratio × time-of-day-factor formula with a forecast-based step count. When enabled, trajectory steps equal the number of consecutive hourly PV forecast slots above pv_traj_zero_w — giving a horizon based on remaining productive PV hours that typically shortens as the day progresses toward sunset. Requires pv_traj_scaling_enabled: true."
+  pv_traj_threshold_w:
+    name: "Forecast Trajectory Activation Threshold (W) [Advanced]"
+    description: "Minimum current PV power (W) required to activate the forecast-driven trajectory mode. Below this value the mode is inactive and pv_traj_min_steps is used instead. Default: 3000 W."
+  pv_traj_zero_w:
+    name: "Forecast Trajectory Night Threshold (W) [Advanced]"
+    description: "PV power level (W) at or below which a forecast slot is considered 'night' or PV≈0. Used both to count remaining daylight hours and to detect night mode (current PV below this value → minimum steps immediately). Default: 50 W."
+  pv_traj_disable_price_in_forecast_mode:
+    name: "Disable Price Offset in Forecast Mode [Advanced]"
+    description: "When enabled (default), the electricity price target-temperature offset is suppressed while the forecast-driven trajectory is active. This prevents Tibber price adjustments from interfering with the solar pre-heat plan. Default: true."
 
   # === Outlet Smoothing ===
   outlet_smoothing_alpha:

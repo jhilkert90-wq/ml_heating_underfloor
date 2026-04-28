@@ -1,55 +1,60 @@
 """
 Dynamic trajectory-step scaling based on PV production and time of day.
 
-When ``PV_TRAJ_SCALING_ENABLED`` is ``true`` the system replaces the static
-``TRAJECTORY_STEPS`` value with a per-cycle estimate derived from:
+Two modes are available, selected at runtime by configuration:
 
-1. **PV ratio** — actual PV power relative to the effective system capacity.
-   Clamped 0-1.
-2. **Time-of-day factor** — four configurable windows:
+**Classic mode** (``PV_TRAJ_FORECAST_MODE_ENABLED=false``, default)
+    Step count is derived from:
 
-   ==============================  ==========================================
-   Window                          Default factor
-   ==============================  ==========================================
-   Morning   06:00–10:59           0.5  (sun still rising)
-   Midday    11:00–14:59           1.0  (peak production)
-   Afternoon 15:00–18:59           0.75 (declining)
-   Night     19:00–23:59 and       0.0  (no PV → minimum steps)
-             00:00–05:59
-   ==============================  ==========================================
+    1. **PV ratio** — actual PV power relative to the effective system capacity.
+       Clamped 0-1.
+    2. **Time-of-day factor** — four configurable windows:
 
-3. **Linear interpolation** between ``PV_TRAJ_MIN_STEPS`` and
-   ``PV_TRAJ_MAX_STEPS``::
+       ==============================  ==========================================
+       Window                          Default factor
+       ==============================  ==========================================
+       Morning   06:00–10:59           0.5  (sun still rising)
+       Midday    11:00–14:59           1.0  (peak production)
+       Afternoon 15:00–18:59           0.75 (declining)
+       Night     19:00–23:59 and       0.0  (no PV → minimum steps)
+                 00:00–05:59
+       ==============================  ==========================================
 
-       steps = MIN_STEPS + round(pv_ratio * tod_factor * (MAX_STEPS - MIN_STEPS))
+    3. **Linear interpolation** between ``PV_TRAJ_MIN_STEPS`` and
+       ``PV_TRAJ_MAX_STEPS``::
 
-The result is clamped to ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``.
+           steps = MIN_STEPS + round(pv_ratio * tod_factor * (MAX_STEPS - MIN_STEPS))
 
-**Seasonal KWP Scaling (optional)**
+    The result is clamped to ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``.
 
-When ``PV_TRAJ_SEASONAL_SCALING_ENABLED`` is ``true``, the effective PV peak
-used to compute *pv_ratio* is scaled by a seasonal factor derived from the
-solar declination at the configured latitude.  This normalises PV production
-relative to the summer-solstice maximum so that a clear winter day (full
-output for the season) correctly maps to pv_ratio=1.0.
+    **Seasonal KWP Scaling (optional)**
 
-The factor is computed as::
+    When ``PV_TRAJ_SEASONAL_SCALING_ENABLED`` is ``true``, the effective PV peak
+    used to compute *pv_ratio* is scaled by a seasonal factor derived from the
+    solar declination at the configured latitude.
 
-    δ(doy)        = 23.45° × sin(360/365 × (doy − 81))   # solar declination
-    elev_max(doy) = 90° − |lat − δ(doy)|                 # noon elevation
-    factor        = sin(elev_max_today) / sin(elev_max_peak_solstice)
+**Forecast-driven mode** (``PV_TRAJ_FORECAST_MODE_ENABLED=true``)
+    Step count equals the number of consecutive forecast hours (starting from
+    the next hour) with PV production above ``PV_TRAJ_ZERO_W``.  This maps
+    directly to "how many hours of sun remain today", giving a long planning
+    horizon in the morning and a naturally shrinking horizon toward sunset.
 
-Clamped to ``[PV_TRAJ_SEASONAL_MIN_FACTOR, 1.0]``.
+    Activation requires **both**:
 
-The *peak solstice* reference is June 21 (DOY 172) for northern latitudes
-and December 21 (DOY 355) for southern latitudes, so the calculation is
-correct for both hemispheres.
+    * ``pv_power_w >= PV_TRAJ_THRESHOLD_W``  (enough current PV)
+    * At least one entry within the first ``PV_TRAJ_MAX_STEPS`` forecast slots
+      is at or below ``PV_TRAJ_ZERO_W``  (sunset is within the planning horizon)
 
-Requires only Python stdlib ``math`` — no external astronomy library needed.
+    In night mode (``pv_power_w < PV_TRAJ_ZERO_W``) the function returns
+    ``PV_TRAJ_MIN_STEPS`` immediately.
+
+    This mode ignores ``PV_TRAJ_SYSTEM_KWP``, time-of-day factors, and seasonal
+    scaling.  The price offset can be suppressed automatically via
+    ``PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE`` (default ``true``).
 
 When ``PV_TRAJ_SCALING_ENABLED`` is ``false``,
 ``compute_dynamic_trajectory_steps`` still returns the current
-``config.TRAJECTORY_STEPS`` value unchanged.
+``config.TRAJECTORY_STEPS`` value unchanged regardless of mode.
 """
 import logging
 import math
@@ -153,19 +158,153 @@ def seasonal_kwp_factor(
     return max(min_factor, min(1.0, factor))
 
 
+# ---------------------------------------------------------------------------
+# Forecast-driven mode helpers
+# ---------------------------------------------------------------------------
+
+def is_forecast_trajectory_active(
+    pv_power_w: float,
+    pv_forecast: list[float] | None,
+) -> bool:
+    """Return ``True`` when the forecast-driven trajectory mode is activated.
+
+    Activation requires **all** of:
+
+    1. ``PV_TRAJ_FORECAST_MODE_ENABLED=true``
+    2. ``pv_power_w >= PV_TRAJ_THRESHOLD_W``  (enough current PV production)
+    3. At least one forecast slot within the first ``PV_TRAJ_MAX_STEPS`` entries
+       is at or below ``PV_TRAJ_ZERO_W``  (sunset is within the planning horizon)
+
+    Night mode (``pv_power_w < PV_TRAJ_ZERO_W``) is *not* considered activated
+    because step count is already at the minimum.
+
+    Args:
+        pv_power_w: Current PV electrical power [W].
+        pv_forecast: Hourly PV forecast [W], index 0 = next hour.  ``None``
+            or an empty list is treated as an empty horizon (→ not activated).
+
+    Returns:
+        ``True`` if forecast mode should drive the trajectory, else ``False``.
+    """
+    if not getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False):
+        return False
+
+    zero_w = float(getattr(config, "PV_TRAJ_ZERO_W", 50.0))
+    threshold_w = float(getattr(config, "PV_TRAJ_THRESHOLD_W", 3000.0))
+    max_steps = int(getattr(config, "PV_TRAJ_MAX_STEPS", 12))
+
+    # Night: current PV at or below zero threshold → not activated
+    if pv_power_w < zero_w:
+        return False
+
+    if pv_power_w < threshold_w:
+        return False
+
+    horizon = (pv_forecast or [])[:max_steps]
+    return any(v <= zero_w for v in horizon)
+
+
+def compute_forecast_driven_trajectory_steps(
+    pv_power_w: float,
+    pv_forecast: list[float] | None,
+) -> int:
+    """Compute trajectory steps using the forecast-driven algorithm.
+
+    Step count = number of consecutive forecast hours (from hour 1 onward)
+    where PV > ``PV_TRAJ_ZERO_W``, clamped to
+    ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``.
+
+    Special cases:
+
+    * ``pv_power_w < PV_TRAJ_ZERO_W`` (night) → ``PV_TRAJ_MIN_STEPS``
+    * ``pv_power_w < PV_TRAJ_THRESHOLD_W`` (insufficient PV) → ``PV_TRAJ_MIN_STEPS``
+    * No sunset found within ``PV_TRAJ_MAX_STEPS`` horizon → ``PV_TRAJ_MIN_STEPS``
+
+    Args:
+        pv_power_w: Current PV electrical power [W].
+        pv_forecast: Hourly PV forecast [W], index 0 = next hour.
+
+    Returns:
+        Integer step count in ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``.
+    """
+    min_steps = int(getattr(config, "PV_TRAJ_MIN_STEPS", 2))
+    max_steps = int(getattr(config, "PV_TRAJ_MAX_STEPS", 12))
+    if min_steps < 1:
+        min_steps = 1
+    if max_steps < min_steps:
+        max_steps = min_steps
+
+    zero_w = float(getattr(config, "PV_TRAJ_ZERO_W", 50.0))
+    threshold_w = float(getattr(config, "PV_TRAJ_THRESHOLD_W", 3000.0))
+
+    # Night: current PV at or below zero threshold
+    if pv_power_w < zero_w:
+        logger.info(
+            "☀️ Forecast trajectory: PV=%.0fW < zero_w=%.0fW → "
+            "night mode, %d steps",
+            pv_power_w, zero_w, min_steps,
+        )
+        return min_steps
+
+    # Insufficient current PV — mode not activated
+    if pv_power_w < threshold_w:
+        logger.info(
+            "☀️ Forecast trajectory: PV=%.0fW < threshold=%.0fW → "
+            "inactive, %d steps",
+            pv_power_w, threshold_w, min_steps,
+        )
+        return min_steps
+
+    # Activation check: sunset must appear within the planning horizon
+    horizon = (pv_forecast or [])[:max_steps]
+    if not any(v <= zero_w for v in horizon):
+        logger.info(
+            "☀️ Forecast trajectory: no sunset within %d-step horizon → "
+            "inactive, %d steps",
+            max_steps, min_steps,
+        )
+        return min_steps
+
+    # Count consecutive hours from the start of the forecast with PV > zero_w
+    remaining_pv_hours = 0
+    for v in horizon:
+        if v > zero_w:
+            remaining_pv_hours += 1
+        else:
+            break  # first night slot reached
+
+    steps = int(max(min_steps, min(max_steps, remaining_pv_hours)))
+    logger.info(
+        "☀️ Forecast trajectory: PV=%.0fW, remaining_pv_hours=%d → %d steps",
+        pv_power_w, remaining_pv_hours, steps,
+    )
+    return steps
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def compute_dynamic_trajectory_steps(
     pv_power_w: float,
     system_kwp: float | None = None,
     now: datetime | None = None,
+    pv_forecast: list[float] | None = None,
 ) -> int:
     """Compute the trajectory step count for the current cycle.
+
+    Delegates to :func:`compute_forecast_driven_trajectory_steps` when
+    ``PV_TRAJ_FORECAST_MODE_ENABLED`` is ``true``; otherwise uses the classic
+    ``pv_ratio × tod_factor`` interpolation.
 
     Args:
         pv_power_w: Current PV power in Watts.
         system_kwp: Nominal system capacity in kWp.  Defaults to
-            ``config.PV_TRAJ_SYSTEM_KWP``.
+            ``config.PV_TRAJ_SYSTEM_KWP``.  Unused in forecast mode.
         now: Local datetime for time-of-day factor.  Defaults to
-            ``datetime.now()``.
+            ``datetime.now()``.  Unused in forecast mode.
+        pv_forecast: Hourly PV forecast [W], index 0 = next hour.  Used only
+            in forecast mode; ignored in classic mode.
 
     Returns:
         Integer step count in ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``.
@@ -175,6 +314,11 @@ def compute_dynamic_trajectory_steps(
     if not getattr(config, "PV_TRAJ_SCALING_ENABLED", False):
         return int(getattr(config, "TRAJECTORY_STEPS", 4))
 
+    # --- Forecast-driven mode ---
+    if getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False):
+        return compute_forecast_driven_trajectory_steps(pv_power_w, pv_forecast)
+
+    # --- Classic pv_ratio × tod_factor mode ---
     if system_kwp is None:
         system_kwp = float(getattr(config, "PV_TRAJ_SYSTEM_KWP", 10.0))
     if now is None:
@@ -230,3 +374,4 @@ def compute_dynamic_trajectory_steps(
             steps,
         )
     return steps
+
