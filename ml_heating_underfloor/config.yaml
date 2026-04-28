@@ -386,49 +386,17 @@ options:
   # Set to 0 to recompute every cycle.
   min_setpoint_hold_cycles: 4
 
-  # === Dynamic Trajectory Scaling ===
+  # === Forecast-Driven Trajectory Scaling ===
   # When enabled, TRAJECTORY_STEPS and the setpoint hold duration are
-  # recomputed each cycle from actual PV production and time of day.
-  # More solar → longer planning horizon → bolder pre-heating commitment.
+  # recomputed each cycle from remaining PV forecast hours plus a night buffer.
+  # Steps = clamp(remaining_pv_hours + pv_traj_min_steps, min, max).
+  # More forecast solar hours remaining → longer planning horizon → bolder pre-heating.
   # Disable to use the static trajectory_steps value from ML Learning Parameters.
-  pv_traj_scaling_enabled: false
-  # Your PV installation's rated peak capacity in kWp.
-  # Used to normalise actual PV power (e.g., 15.0 for a 15 kWp system).
-  pv_traj_system_kwp: 10.0
-  # Minimum trajectory steps when PV is zero (night / cloudy day).
+  pv_traj_forecast_mode_enabled: false
+  # Minimum trajectory steps (reserved as night buffer and floor).
   pv_traj_min_steps: 2
   # Maximum trajectory steps at full rated PV output.
   pv_traj_max_steps: 12
-  # Time-of-day multipliers applied to the PV ratio before step interpolation.
-  # 06:00–10:59 morning: sun still rising, moderate commitment
-  pv_traj_morning_factor: 0.5
-  # 11:00–14:59 midday: peak production, full planning horizon
-  pv_traj_midday_factor: 1.0
-  # 15:00–18:59 afternoon: declining sun, slightly shorter horizon
-  pv_traj_afternoon_factor: 0.75
-  # 19:00–05:59 night: no PV, forces minimum steps
-  pv_traj_night_factor: 0.0
-
-  # --- Seasonal KWP Scaling ---
-  # When enabled, the effective PV peak is scaled by a seasonal factor derived
-  # from the solar declination at your latitude. This normalises PV production
-  # relative to the summer-solstice maximum so that a clear winter day (full
-  # output for the season) correctly maps to pv_ratio=1.0.
-  pv_traj_seasonal_scaling_enabled: false
-  # Geographic latitude of your PV installation in decimal degrees (North positive).
-  # Example: 48.0 for Munich/Bavaria, 51.5 for Berlin, 47.8 for Zurich.
-  pv_traj_latitude: 51.0
-  # Floor for the seasonal factor — prevents near-zero denominator in deep winter
-  # at high latitudes. Clamped to [min, 1.0].
-  pv_traj_seasonal_min_factor: 0.1
-
-  # === Forecast-Driven Trajectory Mode ===
-  # Alternative to the pv_ratio × tod_factor formula.
-  # When enabled, trajectory steps = consecutive forecast hours with PV > pv_traj_zero_w.
-  # Provides a planning horizon based on remaining forecast PV hours, generally
-  # longest earlier in the day and shrinking naturally toward sunset.
-  # Requires pv_traj_scaling_enabled: true.
-  pv_traj_forecast_mode_enabled: false
   # Minimum current PV [W] to activate forecast mode.
   pv_traj_threshold_w: 3000.0
   # PV power [W] at or below which a forecast slot counts as "night" / PV≈0.
@@ -622,20 +590,10 @@ schema:
   pv_surplus_cheap_threshold_w: "int(100,20000)"
   # Setpoint Stability
   min_setpoint_hold_cycles: "int(0,20)"
-  # Dynamic Trajectory Scaling
-  pv_traj_scaling_enabled: "bool"
-  pv_traj_system_kwp: "float(1.0,100.0)"
+  # Forecast-Driven Trajectory Scaling
+  pv_traj_forecast_mode_enabled: "bool"
   pv_traj_min_steps: "int(2,12)"
   pv_traj_max_steps: "int(2,12)"
-  pv_traj_morning_factor: "float(0.0,1.0)"
-  pv_traj_midday_factor: "float(0.0,1.0)"
-  pv_traj_afternoon_factor: "float(0.0,1.0)"
-  pv_traj_night_factor: "float(0.0,1.0)"
-  pv_traj_seasonal_scaling_enabled: "bool"
-  pv_traj_latitude: "float(-90.0,90.0)"
-  pv_traj_seasonal_min_factor: "float(0.0,1.0)"
-  # Forecast-Driven Trajectory Mode
-  pv_traj_forecast_mode_enabled: "bool"
   pv_traj_threshold_w: "float(0.0,20000.0)"
   pv_traj_zero_w: "float(0.0,500.0)"
   pv_traj_disable_price_in_forecast_mode: "bool"

@@ -254,64 +254,13 @@ PV_SURPLUS_CHEAP_THRESHOLD_W: int = int(
     os.getenv("PV_SURPLUS_CHEAP_THRESHOLD_W", "3000")
 )
 
-# --- Dynamic Trajectory Scaling ---
-# When PV_TRAJ_SCALING_ENABLED is true, TRAJECTORY_STEPS (and
-# MIN_SETPOINT_HOLD_CYCLES) are overridden each cycle based on actual PV
-# production and time of day.  The more solar energy available, the longer
-# the planning horizon: more PV → longer horizon → bolder pre-heating.
-# Set PV_TRAJ_SCALING_ENABLED=false to keep TRAJECTORY_STEPS fixed.
-PV_TRAJ_SCALING_ENABLED: bool = (
-    os.getenv("PV_TRAJ_SCALING_ENABLED", "false").lower() == "true"
-)
-# Nominal system capacity in kWp — used to normalise actual PV power.
-# Example: 15.0 for a 15 kWp installation.
-PV_TRAJ_SYSTEM_KWP: float = float(os.getenv("PV_TRAJ_SYSTEM_KWP", "10.0"))
-# Trajectory step limits (must stay within the global 2-12 range).
+# --- Forecast-Driven Trajectory Mode ---
+# When PV_TRAJ_FORECAST_MODE_ENABLED is true, trajectory steps are derived
+# from remaining PV forecast hours (consecutive hours until PV drops to
+# PV_TRAJ_ZERO_W) plus PV_TRAJ_MIN_STEPS reserved for the post-sunset
+# period: steps = clamp(remaining_pv_hours + MIN_STEPS, MIN, MAX).
 PV_TRAJ_MIN_STEPS: int = int(os.getenv("PV_TRAJ_MIN_STEPS", "2"))
 PV_TRAJ_MAX_STEPS: int = int(os.getenv("PV_TRAJ_MAX_STEPS", "12"))
-# Time-of-day multipliers — applied to the PV ratio before linear
-# interpolation so that the optimizer is less aggressive early/late in the
-# day when the solar window is still opening or closing.
-#   Morning  06:00–10:59 — sun rising, moderate commitment
-#   Midday   11:00–14:59 — peak production, full horizon
-#   Afternoon 15:00–18:59 — declining, slightly shorter horizon
-#   Night    19:00–05:59 — no PV, forces minimum steps
-PV_TRAJ_MORNING_FACTOR: float = float(
-    os.getenv("PV_TRAJ_MORNING_FACTOR", "0.5")
-)
-PV_TRAJ_MIDDAY_FACTOR: float = float(
-    os.getenv("PV_TRAJ_MIDDAY_FACTOR", "1.0")
-)
-PV_TRAJ_AFTERNOON_FACTOR: float = float(
-    os.getenv("PV_TRAJ_AFTERNOON_FACTOR", "0.75")
-)
-PV_TRAJ_NIGHT_FACTOR: float = float(
-    os.getenv("PV_TRAJ_NIGHT_FACTOR", "0.0")
-)
-
-# --- Seasonal KWP Scaling ---
-# When enabled, the effective PV peak is scaled by a seasonal factor derived
-# from the solar declination at the configured latitude. This normalises PV
-# production relative to the summer-solstice maximum so that a clear winter
-# day (full output for the season) correctly maps to pv_ratio=1.0.
-# Requires only stdlib math — no external astronomy library needed.
-PV_TRAJ_SEASONAL_SCALING_ENABLED: bool = (
-    os.getenv("PV_TRAJ_SEASONAL_SCALING_ENABLED", "false").lower() == "true"
-)
-# Geographic latitude of the PV installation in decimal degrees (North positive).
-# Used to compute the maximum solar elevation per day-of-year.
-# Example: 48.0 for Munich/Bavaria, 51.5 for Berlin, 47.8 for Zurich.
-PV_TRAJ_LATITUDE: float = float(os.getenv("PV_TRAJ_LATITUDE", "51.0"))
-# Floor for the seasonal factor to prevent near-zero denominators at high
-# latitudes in deep winter. The seasonal factor is clamped to [min, 1.0].
-PV_TRAJ_SEASONAL_MIN_FACTOR: float = float(
-    os.getenv("PV_TRAJ_SEASONAL_MIN_FACTOR", "0.1")
-)
-
-# --- Forecast-Driven Trajectory Mode ---
-# Alternative to the pv_ratio × tod_factor formula.  When enabled, trajectory
-# steps are derived from the remaining PV forecast hours (consecutive hours
-# until PV drops to PV_TRAJ_ZERO_W).  Requires PV_TRAJ_SCALING_ENABLED=true.
 PV_TRAJ_FORECAST_MODE_ENABLED: bool = (
     os.getenv("PV_TRAJ_FORECAST_MODE_ENABLED", "false").lower() == "true"
 )

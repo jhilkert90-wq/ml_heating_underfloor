@@ -1,6 +1,16 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Forecast trajectory formula updated: remaining_pv_hours + min_steps — April 28, 2026**
+### ✅ **Classic PV trajectory mode removed — April 28, 2026**
+
+#### **Multiple files updated**
+
+Removed the classic pv_ratio × time-of-day factor PV trajectory scaling mode entirely. The forecast-driven mode (`PV_TRAJ_FORECAST_MODE_ENABLED`) is now the sole trajectory scaling algorithm. `PV_TRAJ_SCALING_ENABLED` has been deleted — it is no longer needed. The following config parameters are also removed: `PV_TRAJ_SYSTEM_KWP`, `PV_TRAJ_MORNING_FACTOR`, `PV_TRAJ_MIDDAY_FACTOR`, `PV_TRAJ_AFTERNOON_FACTOR`, `PV_TRAJ_NIGHT_FACTOR`, `PV_TRAJ_SEASONAL_SCALING_ENABLED`, `PV_TRAJ_LATITUDE`, `PV_TRAJ_SEASONAL_MIN_FACTOR`.
+
+`compute_dynamic_trajectory_steps()` now gates on `PV_TRAJ_FORECAST_MODE_ENABLED` directly: enabled → calls `compute_forecast_driven_trajectory_steps()`; disabled → returns static `config.TRAJECTORY_STEPS`.
+
+**Files changed:** `src/pv_trajectory.py`, `src/config.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `.env`, `.env_sample`, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_pv_trajectory.py`, `CHANGELOG.md`.
+
+---
 
 #### **`src/pv_trajectory.py` and `tests/unit/test_pv_trajectory.py` updated**
 

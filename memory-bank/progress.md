@@ -2,7 +2,23 @@
 
 ## 🎯 CURRENT STATUS - April 28, 2026
 
-### ✅ **FIX: Forecast trajectory formula — add min_steps to remaining solar hours**
+### ✅ **REFACTOR: Remove classic PV trajectory mode**
+
+**Status**: **COMPLETED** — Removed pv_ratio × time-of-day factor algorithm (morning/midday/afternoon/night factors, system KWP, seasonal KWP scaling). `PV_TRAJ_SCALING_ENABLED` deleted. `compute_dynamic_trajectory_steps()` now gates solely on `PV_TRAJ_FORECAST_MODE_ENABLED`. All config surfaces, docs, and tests updated.
+
+**Files Changed:**
+- `src/pv_trajectory.py` (removed classic mode, _time_of_day_factor, seasonal_kwp_factor, updated docstring)
+- `src/config.py` (removed 9 classic-mode parameters)
+- `src/main.py` (changed PV_TRAJ_SCALING_ENABLED guards to PV_TRAJ_FORECAST_MODE_ENABLED)
+- `config_adapter.py` (removed classic-mode mappings)
+- `ml_heating_underfloor/config.yaml` (removed options and schema entries for classic mode)
+- `ml_heating_underfloor/translations/en.yaml` (removed classic-mode translations)
+- `.env`, `.env_sample` (removed classic-mode env vars)
+- `docs/PARAMETER_REFERENCE.md` (removed sections 28/29, replaced with single forecast section)
+- `tests/unit/test_pv_trajectory.py` (removed classic-mode tests, updated forecast tests)
+- `CHANGELOG.md`
+
+---
 
 **Status**: **COMPLETED** — `compute_forecast_driven_trajectory_steps()` updated to `steps = clamp(remaining_pv_hours + MIN_STEPS, MIN, MAX)`. Night buffer is now always included in the planning horizon. All 7 affected unit tests updated.
 
