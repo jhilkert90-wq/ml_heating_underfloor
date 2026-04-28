@@ -181,7 +181,7 @@ def is_forecast_trajectory_active(
     Args:
         pv_power_w: Current PV electrical power [W].
         pv_forecast: Hourly PV forecast [W], index 0 = next hour.  ``None``
-            or an empty list is treated as all-zero (→ not activated).
+            or an empty list is treated as an empty horizon (→ not activated).
 
     Returns:
         ``True`` if forecast mode should drive the trajectory, else ``False``.
@@ -192,6 +192,10 @@ def is_forecast_trajectory_active(
     zero_w = float(getattr(config, "PV_TRAJ_ZERO_W", 50.0))
     threshold_w = float(getattr(config, "PV_TRAJ_THRESHOLD_W", 3000.0))
     max_steps = int(getattr(config, "PV_TRAJ_MAX_STEPS", 12))
+
+    # Night: current PV at or below zero threshold → not activated
+    if pv_power_w < zero_w:
+        return False
 
     if pv_power_w < threshold_w:
         return False

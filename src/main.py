@@ -1326,6 +1326,7 @@ def main():
             # features, compute the effective TRAJECTORY_STEPS for this cycle.
             # Forecasts were already fetched at PV_TRAJ_MAX_STEPS above so all
             # horizon keys are present regardless of the value chosen here.
+            _pv_forecast_traj: list[float] | None = None
             if getattr(config, "PV_TRAJ_SCALING_ENABLED", False):
                 try:
                     from .pv_trajectory import compute_dynamic_trajectory_steps
@@ -1378,7 +1379,12 @@ def main():
             ):
                 try:
                     from .pv_trajectory import is_forecast_trajectory_active
-                    _fc_price_check = [
+                    # Reuse the forecast list built during trajectory scaling;
+                    # fall back to building it on demand if scaling was skipped.
+                    _fc_pv_now = float(
+                        features_dict.get("pv_now_electrical", 0.0)
+                    )
+                    _fc_forecast = _pv_forecast_traj if _pv_forecast_traj is not None else [
                         float(features_dict.get(f"pv_forecast_{h}h", 0.0))
                         for h in range(
                             1,
@@ -1386,8 +1392,8 @@ def main():
                         )
                     ]
                     if is_forecast_trajectory_active(
-                        float(features_dict.get("pv_now_electrical", 0.0)),
-                        _fc_price_check,
+                        _fc_pv_now,
+                        _fc_forecast,
                     ):
                         price_data = None
                         logging.info(

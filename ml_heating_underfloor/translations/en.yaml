@@ -548,7 +548,7 @@ configuration:
   # === Forecast-Driven Trajectory Mode (Advanced) ===
   pv_traj_forecast_mode_enabled:
     name: "Forecast-Driven Trajectory Mode Enabled [Advanced]"
-    description: "Replaces the pv_ratio × time-of-day-factor formula with a forecast-based step count. When enabled, trajectory steps equal the number of consecutive hourly PV forecast slots above pv_traj_zero_w — giving a long horizon at midday that shrinks naturally toward sunset. Requires pv_traj_scaling_enabled: true."
+    description: "Replaces the pv_ratio × time-of-day-factor formula with a forecast-based step count. When enabled, trajectory steps equal the number of consecutive hourly PV forecast slots above pv_traj_zero_w — giving a horizon based on remaining productive PV hours that typically shortens as the day progresses toward sunset. Requires pv_traj_scaling_enabled: true."
   pv_traj_threshold_w:
     name: "Forecast Trajectory Activation Threshold (W) [Advanced]"
     description: "Minimum current PV power (W) required to activate the forecast-driven trajectory mode. Below this value the mode is inactive and pv_traj_min_steps is used instead. Default: 3000 W."

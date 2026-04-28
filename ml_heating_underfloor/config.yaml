@@ -425,7 +425,8 @@ options:
   # === Forecast-Driven Trajectory Mode ===
   # Alternative to the pv_ratio × tod_factor formula.
   # When enabled, trajectory steps = consecutive forecast hours with PV > pv_traj_zero_w.
-  # Provides a long planning horizon at midday that shrinks naturally toward sunset.
+  # Provides a planning horizon based on remaining forecast PV hours, generally
+  # longest earlier in the day and shrinking naturally toward sunset.
   # Requires pv_traj_scaling_enabled: true.
   pv_traj_forecast_mode_enabled: false
   # Minimum current PV [W] to activate forecast mode.
