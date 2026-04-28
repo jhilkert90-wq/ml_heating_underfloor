@@ -75,8 +75,8 @@ class TestForecastDrivenTrajectorySteps:
         assert steps == 11
 
     def test_no_activation_pv_below_threshold(self):
-        """PV below threshold → inactive, returns MIN_STEPS."""
-        with _apply_patches(_fc_patches()):
+        """PV below threshold with rescue disabled → inactive, returns MIN_STEPS."""
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": False})):
             steps = compute_forecast_driven_trajectory_steps(
                 2999.0, self._FC_9_THEN_NIGHT
             )
@@ -168,9 +168,9 @@ class TestForecastDrivenTrajectorySteps:
         assert result is True
 
     def test_is_forecast_trajectory_active_pv_below_threshold(self):
-        """is_forecast_trajectory_active returns False when PV below threshold."""
+        """is_forecast_trajectory_active returns False when PV below threshold and rescue disabled."""
         fc = self._FC_9_THEN_NIGHT
-        with _apply_patches(_fc_patches()):
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": False})):
             result = is_forecast_trajectory_active(2000.0, fc)
         assert result is False
 
@@ -197,3 +197,73 @@ class TestForecastDrivenTrajectorySteps:
         }):
             steps = compute_dynamic_trajectory_steps(5000.0, pv_forecast=fc)
         assert steps == 4
+
+
+# ---------------------------------------------------------------------------
+# Forecast-rescue path (passing rain cloud / short-duration PV dip)
+# ---------------------------------------------------------------------------
+
+class TestForecastRescue:
+    """Tests for PV_TRAJ_FORECAST_RESCUE_ENABLED path."""
+
+    # Forecast: hours 1-2 are low (rain), hours 3-9 are above threshold, then night
+    _FC_RAIN_THEN_SUN = [800.0, 1200.0, 4000.0, 5000.0, 5500.0, 4500.0, 3500.0, 2000.0, 60.0, 0.0, 0.0, 0.0]
+
+    def test_rescue_active_pv_dip_rescued_by_forecast(self):
+        """pv_now < threshold but ≥ MIN_STEPS forecast hours above threshold → rescued."""
+        # Forecast hours above 3000W: indices 2-7 → 6 hours
+        # remaining_pv_hours: all entries > 50 W until index 9 (60>50), index 10 (0≤50) stops → 9
+        # steps = clamp(9 + MIN_STEPS(2), 2, 12) = clamp(11, 2, 12) = 11
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+            steps = compute_forecast_driven_trajectory_steps(800.0, self._FC_RAIN_THEN_SUN)
+        assert steps == 11
+
+    def test_rescue_disabled_pv_below_threshold_returns_min_steps(self):
+        """Same scenario but rescue disabled → returns MIN_STEPS."""
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": False})):
+            steps = compute_forecast_driven_trajectory_steps(800.0, self._FC_RAIN_THEN_SUN)
+        assert steps == 2  # PV_TRAJ_MIN_STEPS
+
+    def test_rescue_active_but_forecast_also_low_overcast(self):
+        """Fully overcast: pv_now < threshold, all forecast hours < threshold → min_steps."""
+        fc_overcast = [200.0] * 10 + [0.0, 0.0]  # some below zero_w so sunset check passes
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+            steps = compute_forecast_driven_trajectory_steps(200.0, fc_overcast)
+        assert steps == 2  # no rescue hours above threshold
+
+    def test_rescue_active_insufficient_rescue_hours(self):
+        """Rescue enabled but only 1 forecast hour above threshold (need min_steps=2) → min_steps."""
+        # Only 1 hour above threshold
+        fc = [200.0] * 9 + [4000.0, 0.0, 0.0]
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+            steps = compute_forecast_driven_trajectory_steps(500.0, fc)
+        assert steps == 2
+
+    def test_rescue_exactly_min_steps_forecast_hours(self):
+        """Exactly MIN_STEPS=2 forecast hours above threshold → rescued."""
+        # 2 hours above threshold (indices 3 and 4), then night; pv_now low
+        fc = [200.0, 200.0, 200.0, 4000.0, 3500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+            # pv_now=800 < 3000, but 2 ≥ min_steps → rescued
+            # remaining_pv_hours: 200>50→1, 200>50→2, 200>50→3, 4000>50→4, 3500>50→5, 0≤50→stop → 5
+            # steps = clamp(5+2, 2, 12) = 7
+            steps = compute_forecast_driven_trajectory_steps(800.0, fc)
+        assert steps == 7
+
+    def test_is_forecast_trajectory_active_rescue_pv_dip(self):
+        """is_forecast_trajectory_active returns True when PV dips but forecast rescues."""
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+            result = is_forecast_trajectory_active(800.0, self._FC_RAIN_THEN_SUN)
+        assert result is True
+
+    def test_is_forecast_trajectory_active_rescue_disabled(self):
+        """is_forecast_trajectory_active returns False when rescue disabled and PV below threshold."""
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": False})):
+            result = is_forecast_trajectory_active(800.0, self._FC_RAIN_THEN_SUN)
+        assert result is False
+
+    def test_night_not_rescued(self):
+        """pv_now < zero_w → night mode, rescue path not reached."""
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+            steps = compute_forecast_driven_trajectory_steps(10.0, self._FC_RAIN_THEN_SUN)
+        assert steps == 2  # night mode, not rescued

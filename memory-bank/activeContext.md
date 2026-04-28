@@ -1,5 +1,18 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **PV trajectory forecast horizon fix + rain-cloud rescue — April 28, 2026**
+
+#### **What changed**
+
+**Bug 1 — Truncated forecast horizon**: `physics_features.py` only fetched `TRAJECTORY_STEPS` (default 4) forecast hours. `compute_forecast_driven_trajectory_steps()` was reading `pv_forecast_5h … pv_forecast_12h` from `features_dict`, always getting 0.0 W (= "night"), so `remaining_pv_hours` was capped at 4 regardless of actual solar availability. Fix: `_n_fc_full = max(_n_fc, PV_TRAJ_MAX_STEPS)` when forecast mode is enabled, used for all three forecast fetches and feature keys. ML aggregate features (`temp_trend_forecast`, `heating_demand_forecast`, `combined_forecast_thermal_load`) still use `_n_fc` for backward compatibility.
+
+**Bug 2 — Rain deactivation cliff-drop**: when `pv_now` drops below `PV_TRAJ_THRESHOLD_W` (e.g. 1pm rain cloud), the method immediately returned `PV_TRAJ_MIN_STEPS` regardless of the forecast. Fix: `PV_TRAJ_FORECAST_RESCUE_ENABLED=true` (default) consults the forecast; if ≥ `PV_TRAJ_MIN_STEPS` forecast hours exceed the threshold the mode continues normally. Applied in both `compute_forecast_driven_trajectory_steps()` and `is_forecast_trajectory_active()`.
+
+#### **Files changed**
+`src/ha_client.py`, `src/physics_features.py`, `src/pv_trajectory.py`, `src/config.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `.env_sample`, `tests/unit/test_pv_trajectory.py`, `tests/unit/test_physics_features.py`, `CHANGELOG.md`
+
+---
+
 ### ✅ **Classic PV trajectory mode removed — April 28, 2026**
 
 #### **Multiple files updated**

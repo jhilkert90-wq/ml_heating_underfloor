@@ -403,6 +403,10 @@ options:
   pv_traj_zero_w: 50.0
   # Suppress electricity price target offset while forecast trajectory is active.
   pv_traj_disable_price_in_forecast_mode: true
+  # Keep trajectory active during brief PV drops (e.g. passing rain cloud).
+  # When true (default), a drop below pv_traj_threshold_w is tolerated if at
+  # least pv_traj_min_steps forecast hours still exceed the threshold.
+  pv_traj_forecast_rescue_enabled: true
 
   # === Outlet Smoothing ===
   # EMA smoothing factor (0.0 = max smoothing, 1.0 = no smoothing)
@@ -597,6 +601,7 @@ schema:
   pv_traj_threshold_w: "float(0.0,20000.0)"
   pv_traj_zero_w: "float(0.0,500.0)"
   pv_traj_disable_price_in_forecast_mode: "bool"
+  pv_traj_forecast_rescue_enabled: "bool"
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"

@@ -152,3 +152,82 @@ class TestCloudCoverGate:
 
         cloud_logs = [r for r in caplog.records if "☁️" in r.message]
         assert len(cloud_logs) >= 1, "Expected ☁️ log when cloud cover is enabled"
+
+
+class TestExtendedForecastHorizon:
+    """Tests for the extended forecast horizon when PV_TRAJ_FORECAST_MODE_ENABLED=True."""
+
+    def _make_ha_client(self, traj_steps: int, max_steps: int):
+        """Return a mock ha_client that returns max_steps forecasts."""
+        client = MagicMock()
+        client.get_all_states.return_value = {}
+        client.get_state.side_effect = [
+            20.0,    # Indoor
+            20.0,    # Living Room
+            5.0,     # Outdoor
+            40.0,    # Outlet
+            21.0,    # Target
+            35.0,    # Inlet
+            1000.0,  # Flow
+            1500.0,  # Power
+            True,    # DHW
+            False,   # Disinfection
+            False,   # Boost
+            True,    # Defrost
+            500.0,   # PV
+            0.0,     # Solar Correction
+            True,    # Fireplace
+            False,   # TV
+        ]
+        # Return max_steps temperature forecasts
+        client.get_calibrated_hourly_forecast.return_value = [6.0] * max_steps
+        client.get_hourly_forecast.return_value = [6.0] * max_steps
+        return client
+
+    def test_extended_pv_forecast_keys_present_when_forecast_mode_enabled(
+        self, mock_influx_service, monkeypatch
+    ):
+        """When PV_TRAJ_FORECAST_MODE_ENABLED=True, features_dict must contain
+        pv_forecast_1h … pv_forecast_{PV_TRAJ_MAX_STEPS}h even if TRAJECTORY_STEPS < MAX_STEPS."""
+        traj_steps = 4
+        max_steps = 12
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", True)
+        monkeypatch.setattr(config, "PV_TRAJ_MAX_STEPS", max_steps)
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", traj_steps)
+        monkeypatch.setattr(config, "PV_FORECAST_ENTITY_ID", "")  # skip watts parsing
+
+        ha_client = self._make_ha_client(traj_steps, max_steps)
+        features_df, _ = build_physics_features(ha_client, mock_influx_service)
+
+        assert features_df is not None
+        # All 12 pv forecast keys must be present (thermally-corrected)
+        for h in range(1, max_steps + 1):
+            key = f"pv_forecast_{h}h"
+            assert key in features_df.columns, f"Missing key: {key}"
+        # All 12 electrical pv forecast keys must be present (raw, for trajectory algorithm)
+        for h in range(1, max_steps + 1):
+            key = f"pv_forecast_electrical_{h}h"
+            assert key in features_df.columns, f"Missing key: {key}"
+        # All 12 temp forecast keys must be present
+        for h in range(1, max_steps + 1):
+            key = f"temp_forecast_{h}h"
+            assert key in features_df.columns, f"Missing key: {key}"
+
+    def test_no_extra_keys_when_forecast_mode_disabled(
+        self, mock_ha_client, mock_influx_service, monkeypatch
+    ):
+        """When PV_TRAJ_FORECAST_MODE_ENABLED=False, only TRAJECTORY_STEPS keys present."""
+        traj_steps = 4
+        max_steps = 12
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+        monkeypatch.setattr(config, "PV_TRAJ_MAX_STEPS", max_steps)
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", traj_steps)
+
+        features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
+        assert features_df is not None
+
+        # Keys beyond traj_steps should NOT be present
+        assert f"pv_forecast_{traj_steps}h" in features_df.columns
+        assert f"pv_forecast_{traj_steps + 1}h" not in features_df.columns
+        # Electrical forecast keys should NOT be present when forecast mode is disabled
+        assert "pv_forecast_electrical_1h" not in features_df.columns
