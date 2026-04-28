@@ -88,16 +88,16 @@ def is_forecast_trajectory_active(
     if pv_power_w < zero_w:
         return False
 
+    horizon = (pv_forecast or [])[:max_steps]
+
     if pv_power_w < threshold_w:
         # Optionally rescue via forecast: if at least min_steps forecast hours
         # exceed the threshold the mode remains active (passing rain cloud).
         if not getattr(config, "PV_TRAJ_FORECAST_RESCUE_ENABLED", True):
             return False
-        horizon = (pv_forecast or [])[:max_steps]
         if sum(1 for v in horizon if v > threshold_w) < min_steps:
             return False
 
-    horizon = (pv_forecast or [])[:max_steps]
     return any(v <= zero_w for v in horizon)
 
 

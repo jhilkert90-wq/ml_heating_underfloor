@@ -212,12 +212,11 @@ class TestForecastRescue:
     def test_rescue_active_pv_dip_rescued_by_forecast(self):
         """pv_now < threshold but ≥ MIN_STEPS forecast hours above threshold → rescued."""
         # Forecast hours above 3000W: indices 2-7 → 6 hours
-        # remaining_pv_hours counts from start until first ≤ zero_w:
-        # 800 > 50 → count 1, 1200 > 50 → count 2, 4000 > 50 → 3 ... 2000 > 50 → 8, 60 > 50 → 9, 0 ≤ 50 → stop
-        # remaining_pv_hours = 9, steps = clamp(9 + 2, 2, 12) = 11
+        # remaining_pv_hours: all entries > 50 W until index 9 (60>50), index 10 (0≤50) stops → 9
+        # steps = clamp(9 + MIN_STEPS(2), 2, 12) = clamp(11, 2, 12) = 11
         with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
             steps = compute_forecast_driven_trajectory_steps(800.0, self._FC_RAIN_THEN_SUN)
-        assert steps == 11  # 9 + MIN_STEPS(2) = 11
+        assert steps == 11
 
     def test_rescue_disabled_pv_below_threshold_returns_min_steps(self):
         """Same scenario but rescue disabled → returns MIN_STEPS."""
