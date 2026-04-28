@@ -91,10 +91,10 @@ def compute_forecast_driven_trajectory_steps(
 ) -> int:
     """Compute trajectory steps using the forecast-driven algorithm.
 
-    Step count = consecutive forecast hours (from hour 1 onward) where
-    PV > ``PV_TRAJ_ZERO_W`` **plus** ``PV_TRAJ_MIN_STEPS`` reserved slots
-    for the post-sunset period, clamped to
-    ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``::
+    Step count = consecutive forecast hours starting at the first forecast
+    slot (index 0 / next hour) where PV > ``PV_TRAJ_ZERO_W`` **plus**
+    ``PV_TRAJ_MIN_STEPS`` reserved slots for the post-sunset period,
+    clamped to ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``::
 
         steps = clamp(remaining_pv_hours + MIN_STEPS, MIN_STEPS, MAX_STEPS)
 
