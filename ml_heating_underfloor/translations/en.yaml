@@ -508,47 +508,16 @@ configuration:
     name: "Minimum Setpoint Hold Cycles"
     description: "Minimum number of cycles a computed outlet setpoint is held before the optimiser produces a new value. Defaults to trajectory_steps, keeping the setpoint stable for the full planning horizon. Set to 0 to recompute every cycle."
 
-  # === Dynamic Trajectory Scaling (Advanced) ===
-  pv_traj_scaling_enabled:
-    name: "PV Trajectory Scaling Enabled [Advanced]"
-    description: "When enabled, the planning horizon (trajectory_steps) and setpoint hold duration are dynamically scaled each cycle based on actual PV production and time of day. More solar = longer horizon = bolder pre-heating."
-  pv_traj_system_kwp:
-    name: "PV System Rated Capacity (kWp) [Advanced]"
-    description: "Your PV installation's rated peak capacity in kWp. Used to normalise actual PV power to a 0–1 ratio for trajectory scaling (e.g. 15.0 for a 15 kWp system). Only relevant when pv_traj_scaling_enabled is true."
+  # === Forecast-Driven Trajectory Scaling (Advanced) ===
+  pv_traj_forecast_mode_enabled:
+    name: "Forecast-Driven Trajectory Scaling Enabled [Advanced]"
+    description: "When enabled, the planning horizon (trajectory_steps) and setpoint hold duration are recomputed each cycle from remaining PV forecast hours plus a reserved night buffer. Steps = clamp(remaining_pv_hours + pv_traj_min_steps, min, max). More forecast solar hours remaining = longer horizon = bolder pre-heating."
   pv_traj_min_steps:
     name: "PV Trajectory Minimum Hours [Advanced]"
-    description: "Minimum planning horizon in hours at zero PV output (night or overcast). Range: 2–12. Default: 2. Must be ≤ pv_traj_max_steps."
+    description: "Minimum planning horizon in hours (night buffer and lower clamp). Range: 2–12. Default: 2. Must be ≤ pv_traj_max_steps."
   pv_traj_max_steps:
     name: "PV Trajectory Maximum Hours [Advanced]"
-    description: "Maximum planning horizon in hours at full rated PV output. Range: 2–12. Default: 12."
-  pv_traj_morning_factor:
-    name: "PV Trajectory Morning Factor 06:00–10:59 [Advanced]"
-    description: "Time-of-day multiplier applied to the PV ratio during morning ramp-up (06:00–10:59). 0.5 = moderate commitment while the sun is still rising. Default: 0.5."
-  pv_traj_midday_factor:
-    name: "PV Trajectory Midday Factor 11:00–14:59 [Advanced]"
-    description: "Time-of-day multiplier during peak production hours (11:00–14:59). 1.0 = full planning horizon allowed. Default: 1.0."
-  pv_traj_afternoon_factor:
-    name: "PV Trajectory Afternoon Factor 15:00–18:59 [Advanced]"
-    description: "Time-of-day multiplier during afternoon solar decline (15:00–18:59). 0.75 = slightly shorter horizon as sun angles reduce output. Default: 0.75."
-  pv_traj_night_factor:
-    name: "PV Trajectory Night Factor 19:00–05:59 [Advanced]"
-    description: "Time-of-day multiplier at night (19:00–05:59). 0.0 = forces minimum trajectory steps since there is no PV production. Default: 0.0."
-
-  # === Seasonal KWP Scaling (Advanced) ===
-  pv_traj_seasonal_scaling_enabled:
-    name: "Seasonal PV KWP Scaling Enabled [Advanced]"
-    description: "When enabled, the effective PV peak is scaled by a seasonal factor based on your latitude. This normalises PV output relative to the summer-solstice maximum so a clear winter day maps correctly to pv_ratio=1.0. Requires pv_traj_latitude."
-  pv_traj_latitude:
-    name: "PV Installation Latitude (decimal degrees) [Advanced]"
-    description: "Geographic latitude of your PV installation in decimal degrees, North positive. Examples: 48.0 Munich, 51.5 Berlin, 47.8 Zurich. Used for seasonal KWP scaling."
-  pv_traj_seasonal_min_factor:
-    name: "Seasonal PV Minimum Factor [Advanced]"
-    description: "Floor value for the seasonal KWP scaling factor. Prevents near-zero denominators at high latitudes in deep winter. Clamped to [min_factor, 1.0]. Default: 0.1."
-
-  # === Forecast-Driven Trajectory Mode (Advanced) ===
-  pv_traj_forecast_mode_enabled:
-    name: "Forecast-Driven Trajectory Mode Enabled [Advanced]"
-    description: "Replaces the pv_ratio × time-of-day-factor formula with a forecast-based step count. When enabled, trajectory steps equal the number of consecutive hourly PV forecast slots above pv_traj_zero_w — giving a horizon based on remaining productive PV hours that typically shortens as the day progresses toward sunset. Requires pv_traj_scaling_enabled: true."
+    description: "Maximum planning horizon in hours. Range: 2–12. Default: 12."
   pv_traj_threshold_w:
     name: "Forecast Trajectory Activation Threshold (W) [Advanced]"
     description: "Minimum current PV power (W) required to activate the forecast-driven trajectory mode. Below this value the mode is inactive and pv_traj_min_steps is used instead. Default: 3000 W."

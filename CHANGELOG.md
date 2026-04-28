@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- Classic PV trajectory scaling mode (pv_ratio × time-of-day factor formula) including morning/midday/afternoon/night factors, system KWP normalisation, and seasonal KWP scaling. The forecast-driven mode is now the only available trajectory scaling algorithm.
+- `PV_TRAJ_SCALING_ENABLED` config flag — no longer required. Forecast-driven trajectory is enabled directly via `PV_TRAJ_FORECAST_MODE_ENABLED`.
+- Config parameters: `PV_TRAJ_SYSTEM_KWP`, `PV_TRAJ_MORNING_FACTOR`, `PV_TRAJ_MIDDAY_FACTOR`, `PV_TRAJ_AFTERNOON_FACTOR`, `PV_TRAJ_NIGHT_FACTOR`, `PV_TRAJ_SEASONAL_SCALING_ENABLED`, `PV_TRAJ_LATITUDE`, `PV_TRAJ_SEASONAL_MIN_FACTOR`.
+
+### Changed
+- `compute_forecast_driven_trajectory_steps()` now adds `PV_TRAJ_MIN_STEPS` to the count of remaining solar hours before clamping (`steps = clamp(remaining_pv_hours + MIN_STEPS, MIN, MAX)`). This reserves the minimum trajectory window for the post-sunset period, giving a fuller planning horizon (e.g. 9 solar hours + 4 MIN_STEPS → 13 → clamped to MAX 12).
+- `compute_dynamic_trajectory_steps()` now gates on `PV_TRAJ_FORECAST_MODE_ENABLED` directly (was previously gated by `PV_TRAJ_SCALING_ENABLED` with an inner check for `PV_TRAJ_FORECAST_MODE_ENABLED`). When disabled it returns the static `TRAJECTORY_STEPS` value unchanged.
+- Documentation (PARAMETER_REFERENCE.md, config.yaml help texts, .env_sample, translations/en.yaml) updated to reflect removal of classic mode parameters.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

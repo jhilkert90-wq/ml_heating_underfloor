@@ -522,41 +522,13 @@ def convert_addon_to_env(config):
             config.get('min_setpoint_hold_cycles', 4)
         ),
 
-        # --- Dynamic Trajectory Scaling ---
-        'PV_TRAJ_SCALING_ENABLED': str(
-            config.get('pv_traj_scaling_enabled', False)
-        ).lower(),
-        'PV_TRAJ_SYSTEM_KWP': str(
-            config.get('pv_traj_system_kwp', 10.0)
-        ),
+        # --- Forecast-Driven Trajectory Mode ---
         'PV_TRAJ_MIN_STEPS': str(
             config.get('pv_traj_min_steps', 2)
         ),
         'PV_TRAJ_MAX_STEPS': str(
             config.get('pv_traj_max_steps', 12)
         ),
-        'PV_TRAJ_MORNING_FACTOR': str(
-            config.get('pv_traj_morning_factor', 0.5)
-        ),
-        'PV_TRAJ_MIDDAY_FACTOR': str(
-            config.get('pv_traj_midday_factor', 1.0)
-        ),
-        'PV_TRAJ_AFTERNOON_FACTOR': str(
-            config.get('pv_traj_afternoon_factor', 0.75)
-        ),
-        'PV_TRAJ_NIGHT_FACTOR': str(
-            config.get('pv_traj_night_factor', 0.0)
-        ),
-        'PV_TRAJ_SEASONAL_SCALING_ENABLED': str(
-            config.get('pv_traj_seasonal_scaling_enabled', False)
-        ).lower(),
-        'PV_TRAJ_LATITUDE': str(
-            config.get('pv_traj_latitude', 51.0)
-        ),
-        'PV_TRAJ_SEASONAL_MIN_FACTOR': str(
-            config.get('pv_traj_seasonal_min_factor', 0.1)
-        ),
-        # --- Forecast-Driven Trajectory Mode ---
         'PV_TRAJ_FORECAST_MODE_ENABLED': str(
             config.get('pv_traj_forecast_mode_enabled', False)
         ).lower(),

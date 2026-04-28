@@ -1,5 +1,25 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Classic PV trajectory mode removed — April 28, 2026**
+
+#### **Multiple files updated**
+
+Removed the classic pv_ratio × time-of-day factor PV trajectory scaling mode entirely. The forecast-driven mode (`PV_TRAJ_FORECAST_MODE_ENABLED`) is now the sole trajectory scaling algorithm. `PV_TRAJ_SCALING_ENABLED` has been deleted — it is no longer needed. The following config parameters are also removed: `PV_TRAJ_SYSTEM_KWP`, `PV_TRAJ_MORNING_FACTOR`, `PV_TRAJ_MIDDAY_FACTOR`, `PV_TRAJ_AFTERNOON_FACTOR`, `PV_TRAJ_NIGHT_FACTOR`, `PV_TRAJ_SEASONAL_SCALING_ENABLED`, `PV_TRAJ_LATITUDE`, `PV_TRAJ_SEASONAL_MIN_FACTOR`.
+
+`compute_dynamic_trajectory_steps()` now gates on `PV_TRAJ_FORECAST_MODE_ENABLED` directly: enabled → calls `compute_forecast_driven_trajectory_steps()`; disabled → returns static `config.TRAJECTORY_STEPS`.
+
+**Files changed:** `src/pv_trajectory.py`, `src/config.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `.env`, `.env_sample`, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_pv_trajectory.py`, `CHANGELOG.md`.
+
+---
+
+#### **`src/pv_trajectory.py` and `tests/unit/test_pv_trajectory.py` updated**
+
+`compute_forecast_driven_trajectory_steps()` now uses `steps = clamp(remaining_pv_hours + MIN_STEPS, MIN, MAX)` instead of `clamp(remaining_pv_hours, MIN, MAX)`. The night buffer (`PV_TRAJ_MIN_STEPS`) is now always reserved on top of the remaining solar hours. All affected unit tests updated.
+
+**Files changed:** `src/pv_trajectory.py`, `tests/unit/test_pv_trajectory.py`, `CHANGELOG.md`, `memory-bank/activeContext.md`, `memory-bank/progress.md`.
+
+---
+
 ### ✅ **Translation UI descriptions added for new parameters — April 27, 2026**
 
 #### **`ml_heating_underfloor/translations/en.yaml` updated**
@@ -107,21 +127,15 @@ Prices are fetched exclusively via `tibber.get_prices` HA service call (`PriceOp
 - `config.yaml` extended with `trend_decay_tau_hours`, `pv_room_decay_multiplier`, `decay_cancel_margin` in both `options:` and `schema:`. Deprecated sensor-based `electricity_price_entity` was removed.
 - `config_adapter.py`: added 6 missing env var mappings; removed `safety_max_temp`/`safety_min_temp` dead-code validation (hard-coded defaults that never failed and were not exposed in config.yaml).
 
-#### ✅ **Seasonal PV KWP Scaling implemented**
+#### ✅ **Seasonal PV KWP Scaling implemented** *(historical — removed 2026-04-28)*
 
-**Feature design:**
-- `seasonal_kwp_factor(current_date, latitude_deg, min_factor)` in `src/pv_trajectory.py` computes a scaling factor from the ratio of solar sin-elevation today vs June 21 (summer solstice reference). Pure stdlib `math` — no external library.
-- Formula: `δ(doy) = 23.45° × sin(360/365 × (doy−81))`; `elev = 90° − |lat − δ|`; `factor = sin(elev_today) / sin(elev_june21)`, clamped `[PV_TRAJ_SEASONAL_MIN_FACTOR, 1.0]`.
-- When `PV_TRAJ_SEASONAL_SCALING_ENABLED=true`, `compute_dynamic_trajectory_steps()` scales the effective peak by multiplying `system_kwp` by the seasonal factor. This reduces the effective peak in winter, so a clear winter day yields a higher `pv_ratio` and can map closer to `pv_ratio≈1.0` (full horizon) instead of `pv_ratio≈0.3` (short horizon).
-- Opt-in via `PV_TRAJ_SEASONAL_SCALING_ENABLED=false` default. Three new config vars added to all four config surfaces (`.env`, `.env_sample`, `config.yaml`, `config_adapter.py`, `src/config.py`).
-
-**Test results:** 34/34 passing in `tests/unit/test_pv_trajectory.py`. 731 total, 3 pre-existing failures in `test_price_optimizer.py::TestPvSurplusCheapOverride` (unrelated).
-
-**Files changed:** `src/pv_trajectory.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `.env`, `.env_sample`, `tests/unit/test_pv_trajectory.py`.
+> **Note:** This feature (`seasonal_kwp_factor()`, `PV_TRAJ_SEASONAL_SCALING_ENABLED`, `PV_TRAJ_LATITUDE`, `PV_TRAJ_SEASONAL_MIN_FACTOR`) has been removed along with the classic pv_ratio × time-of-day trajectory mode.
 
 
 
-#### ✅ **Three solar-aware features implemented together**
+### ✅ **Three solar-aware features implemented together** *(historical — classic mode removed 2026-04-28)*
+
+> **Note:** The "Dynamic trajectory scaling" bullet below describes the old pv_ratio × time-of-day-factor algorithm that has since been removed. Only the forecast-driven mode (`PV_TRAJ_FORECAST_MODE_ENABLED`) remains.
 
 - **PV surplus CHEAP** (`PV_SURPLUS_CHEAP_ENABLED`): when `pv_power ≥ PV_SURPLUS_CHEAP_THRESHOLD_W`, target indoor temp is raised by `+PRICE_TARGET_OFFSET` (same as Tibber CHEAP). Implemented in `model_wrapper.calculate_optimal_outlet_temp()`. Only raises — never lowers a target already set by Tibber.
 - **Minimum setpoint hold** (`MIN_SETPOINT_HOLD_CYCLES`): once a setpoint is emitted it is held for N cycles before the optimizer may recalculate. Counter stored in `SystemState.setpoint_hold_cycles_remaining`. Default = `TRAJECTORY_STEPS`.

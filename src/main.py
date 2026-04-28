@@ -1327,7 +1327,7 @@ def main():
             # Forecasts were already fetched at PV_TRAJ_MAX_STEPS above so all
             # horizon keys are present regardless of the value chosen here.
             _pv_forecast_traj: list[float] | None = None
-            if getattr(config, "PV_TRAJ_SCALING_ENABLED", False):
+            if getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False):
                 try:
                     from .pv_trajectory import compute_dynamic_trajectory_steps
                     # Use raw electrical output (not thermally-corrected) to
@@ -1344,9 +1344,6 @@ def main():
                     ]
                     _dyn_steps = compute_dynamic_trajectory_steps(
                         _pv_now_traj,
-                        system_kwp=getattr(
-                            config, "PV_TRAJ_SYSTEM_KWP", 10.0
-                        ),
                         pv_forecast=_pv_forecast_traj,
                     )
                     config.TRAJECTORY_STEPS = _dyn_steps
@@ -1371,7 +1368,6 @@ def main():
             # offset so it does not interfere with the pre-heat plan.
             if (
                 price_data is not None
-                and getattr(config, "PV_TRAJ_SCALING_ENABLED", False)
                 and getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
                 and getattr(
                     config, "PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE", True

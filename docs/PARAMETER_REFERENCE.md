@@ -386,36 +386,27 @@ Requires the Tibber integration in Home Assistant.
 
 ---
 
-## 28. Dynamic Trajectory Scaling
+## 28. Forecast-Driven Trajectory Scaling
 
-> 🧪 Scales the planning horizon dynamically based on current PV production and time of day. Disabled by default.
+> 🧪 Scales the planning horizon based on remaining PV forecast hours. Disabled by default.
 
-| Parameter | Env Var | Type | Default | Description |
-|---|---|---|---|---|
-| `pv_traj_scaling_enabled` | `PV_TRAJ_SCALING_ENABLED` | bool | `false` | 🧪 When enabled, `trajectory_steps` and the setpoint hold duration are recomputed each cycle from actual PV production and time of day. |
-| `pv_traj_system_kwp` | `PV_TRAJ_SYSTEM_KWP` | float (1–100) | `10.0` | 🧪 Your PV installation's rated peak capacity in kWp (e.g. `15.0` for 15 kWp). Used to normalise PV power to a 0–1 ratio. |
-| `pv_traj_min_steps` | `PV_TRAJ_MIN_STEPS` | int (2–12) | `2` | 🧪 Minimum planning horizon in hours at zero PV (night / overcast). Must be ≤ `pv_traj_max_steps`. |
-| `pv_traj_max_steps` | `PV_TRAJ_MAX_STEPS` | int (2–12) | `12` | 🧪 Maximum planning horizon in hours at full rated PV output. |
-| `pv_traj_morning_factor` | `PV_TRAJ_MORNING_FACTOR` | float (0–1) | `0.5` | 🧪 PV ratio multiplier during morning ramp-up (06:00–10:59). Moderate commitment while the sun is still rising. |
-| `pv_traj_midday_factor` | `PV_TRAJ_MIDDAY_FACTOR` | float (0–1) | `1.0` | 🧪 PV ratio multiplier during peak production (11:00–14:59). Full planning horizon allowed. |
-| `pv_traj_afternoon_factor` | `PV_TRAJ_AFTERNOON_FACTOR` | float (0–1) | `0.75` | 🧪 PV ratio multiplier during afternoon decline (15:00–18:59). Slightly shorter horizon. |
-| `pv_traj_night_factor` | `PV_TRAJ_NIGHT_FACTOR` | float (0–1) | `0.0` | 🧪 PV ratio multiplier at night (19:00–05:59). Forces minimum trajectory steps. |
+When enabled, `trajectory_steps` and the setpoint hold duration are recomputed each cycle using:
+`steps = clamp(remaining_pv_hours + PV_TRAJ_MIN_STEPS, MIN, MAX)`
 
----
-
-## 29. Seasonal KWP Scaling
-
-> 🧪 Normalises PV production relative to the summer-solstice maximum so a clear winter day correctly maps to `pv_ratio=1.0`.
+This gives a long horizon in the morning (many forecast hours above `pv_traj_zero_w`) that naturally shrinks toward sunset, with `pv_traj_min_steps` always reserved as a post-sunset night buffer.
 
 | Parameter | Env Var | Type | Default | Description |
 |---|---|---|---|---|
-| `pv_traj_seasonal_scaling_enabled` | `PV_TRAJ_SEASONAL_SCALING_ENABLED` | bool | `false` | 🧪 When enabled, the effective PV peak is scaled by a seasonal factor derived from solar declination at your latitude. |
-| `pv_traj_latitude` | `PV_TRAJ_LATITUDE` | float (-90–90) | `51.0` | 🧪 Geographic latitude of your PV installation in decimal degrees, North positive. Examples: 48.0 Munich, 51.5 Berlin, 47.8 Zurich, 52.4 Amsterdam. |
-| `pv_traj_seasonal_min_factor` | `PV_TRAJ_SEASONAL_MIN_FACTOR` | float (0–1) | `0.1` | 🧪 Floor value for the seasonal scaling factor. Prevents near-zero denominators at high latitudes in deep winter. |
+| `pv_traj_forecast_mode_enabled` | `PV_TRAJ_FORECAST_MODE_ENABLED` | bool | `false` | 🧪 When enabled, `trajectory_steps` and setpoint hold duration are recomputed each cycle from remaining PV forecast hours plus a night buffer. |
+| `pv_traj_min_steps` | `PV_TRAJ_MIN_STEPS` | int (2–12) | `2` | 🧪 Minimum planning horizon in hours (night buffer and lower clamp). Must be ≤ `pv_traj_max_steps`. |
+| `pv_traj_max_steps` | `PV_TRAJ_MAX_STEPS` | int (2–12) | `12` | 🧪 Maximum planning horizon in hours. |
+| `pv_traj_threshold_w` | `PV_TRAJ_THRESHOLD_W` | float (0–20000) | `3000.0` | 🧪 Minimum current PV power (W) required to activate forecast mode. Below this `pv_traj_min_steps` is used. |
+| `pv_traj_zero_w` | `PV_TRAJ_ZERO_W` | float (0–500) | `50.0` | 🧪 PV power level (W) at or below which a forecast slot is treated as night/PV≈0. Also triggers immediate night mode when current PV is at or below this value. |
+| `pv_traj_disable_price_in_forecast_mode` | `PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE` | bool | `true` | 🧪 When true, suppresses the electricity price target-temperature offset while forecast trajectory is active, preventing Tibber adjustments from interfering with the pre-heat plan. |
 
 ---
 
-## 30. Outlet Smoothing
+## 29. Outlet Smoothing
 
 | Parameter | Env Var | Type | Default | Description |
 |---|---|---|---|---|
