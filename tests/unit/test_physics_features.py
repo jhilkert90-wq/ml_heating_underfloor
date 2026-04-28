@@ -200,9 +200,13 @@ class TestExtendedForecastHorizon:
         features_df, _ = build_physics_features(ha_client, mock_influx_service)
 
         assert features_df is not None
-        # All 12 pv forecast keys must be present
+        # All 12 pv forecast keys must be present (thermally-corrected)
         for h in range(1, max_steps + 1):
             key = f"pv_forecast_{h}h"
+            assert key in features_df.columns, f"Missing key: {key}"
+        # All 12 electrical pv forecast keys must be present (raw, for trajectory algorithm)
+        for h in range(1, max_steps + 1):
+            key = f"pv_forecast_electrical_{h}h"
             assert key in features_df.columns, f"Missing key: {key}"
         # All 12 temp forecast keys must be present
         for h in range(1, max_steps + 1):
@@ -225,3 +229,5 @@ class TestExtendedForecastHorizon:
         # Keys beyond traj_steps should NOT be present
         assert f"pv_forecast_{traj_steps}h" in features_df.columns
         assert f"pv_forecast_{traj_steps + 1}h" not in features_df.columns
+        # Electrical forecast keys should NOT be present when forecast mode is disabled
+        assert "pv_forecast_electrical_1h" not in features_df.columns

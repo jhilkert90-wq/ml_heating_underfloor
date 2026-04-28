@@ -1337,8 +1337,13 @@ def main():
                         features_dict.get("pv_now_electrical", 0.0)
                     )
                     # Build hourly PV forecast list for forecast-driven mode.
+                    # Use electrical (uncorrected) forecast keys to match the
+                    # scale of pv_now_electrical and PV_TRAJ_THRESHOLD_W.
                     _pv_forecast_traj = [
-                        float(features_dict.get(f"pv_forecast_{h}h", 0.0))
+                        float(features_dict.get(
+                            f"pv_forecast_electrical_{h}h",
+                            features_dict.get(f"pv_forecast_{h}h", 0.0),
+                        ))
                         for h in range(
                             1, int(getattr(config, "PV_TRAJ_MAX_STEPS", 12)) + 1
                         )
@@ -1382,7 +1387,10 @@ def main():
                         features_dict.get("pv_now_electrical", 0.0)
                     )
                     _fc_forecast = _pv_forecast_traj if _pv_forecast_traj is not None else [
-                        float(features_dict.get(f"pv_forecast_{h}h", 0.0))
+                        float(features_dict.get(
+                            f"pv_forecast_electrical_{h}h",
+                            features_dict.get(f"pv_forecast_{h}h", 0.0),
+                        ))
                         for h in range(
                             1,
                             int(getattr(config, "PV_TRAJ_MAX_STEPS", 12)) + 1,

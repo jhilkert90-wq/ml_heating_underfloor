@@ -247,7 +247,8 @@ def build_physics_features(
         config.TV_STATUS_ENTITY_ID, all_states, is_binary=True
     ) or False
     
-    # PV Forecasts with correct 'watts' attribute parsing (support up to TRAJECTORY_STEPS hours)
+    # PV Forecasts with correct 'watts' attribute parsing (support up to _n_fc_full hours:
+    # TRAJECTORY_STEPS when forecast mode is off, max(TRAJECTORY_STEPS, PV_TRAJ_MAX_STEPS) when on)
     _n_fc = config.TRAJECTORY_STEPS
     # When forecast-driven trajectory mode is active, fetch a wider horizon so
     # compute_forecast_driven_trajectory_steps() can see beyond TRAJECTORY_STEPS.
@@ -329,6 +330,11 @@ def build_physics_features(
     # scaling) where we want to know the actual panel output, not the
     # fraction that contributes to house thermal gain.
     pv_now_electrical = float(pv_now)
+    # Preserve raw electrical PV forecasts before applying the thermal
+    # correction factor.  compute_forecast_driven_trajectory_steps() compares
+    # against PV_TRAJ_THRESHOLD_W which is defined in electrical watts, so it
+    # must receive uncorrected values (matching pv_now_electrical).
+    pv_forecasts_electrical = list(pv_forecasts)
 
     def _scale_pv_value(value: object) -> float:
         try:
@@ -483,6 +489,14 @@ def build_physics_features(
         **{f'temp_forecast_{h}h': float(temp_forecasts[h - 1]) for h in range(1, _n_fc_full + 1)},
         # PV forecasts (1-_n_fc_full hours; includes extended horizon when forecast mode is active)
         **{f'pv_forecast_{h}h': float(pv_forecasts[h - 1]) for h in range(1, _n_fc_full + 1)},
+        # Raw electrical PV forecasts for trajectory algorithm — only written when
+        # PV_TRAJ_FORECAST_MODE_ENABLED is true.  These match the scale of
+        # pv_now_electrical and PV_TRAJ_THRESHOLD_W (compare against raw watts).
+        **(
+            {f'pv_forecast_electrical_{h}h': float(pv_forecasts_electrical[h - 1]) for h in range(1, _n_fc_full + 1)}
+            if getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+            else {}
+        ),
         # Cloud cover forecasts (1-_n_fc_full hours, 0-100%)
         **{f'cloud_cover_forecast_{h}h': float(cloud_cover_forecasts[h - 1]) for h in range(1, _n_fc_full + 1)},
         # P0 Priority: Thermal momentum analysis (3 features)
