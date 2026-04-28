@@ -1,5 +1,16 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.13] - 2026-04-28
+
+### Added
+- **Forecast-Driven Dynamic Trajectory Mode**: New `PV_TRAJ_FORECAST_MODE_ENABLED` option that replaces the `pv_ratio × tod_factor` formula with a forecast-driven algorithm. When enabled, trajectory steps equal the number of consecutive forecast hours with PV above `PV_TRAJ_ZERO_W` (50 W default), giving a long planning horizon in the morning that shrinks naturally toward sunset without any time-of-day factor or kWp normalisation. Requires `PV_TRAJ_SCALING_ENABLED=true`.
+- `PV_TRAJ_THRESHOLD_W` (default 3000 W): minimum current PV to activate forecast mode.
+- `PV_TRAJ_ZERO_W` (default 50 W): PV threshold below which a forecast slot counts as night.
+- `PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE` (default true): suppress electricity price target offset while forecast trajectory is active.
+- `compute_forecast_driven_trajectory_steps()` and `is_forecast_trajectory_active()` public functions in `src/pv_trajectory.py`.
+- 17 new unit tests in `TestForecastDrivenTrajectorySteps` covering all activation/deactivation paths, night mode, step clamping, and delegation from `compute_dynamic_trajectory_steps`.
+- UI descriptions (`name` + `description`) added to `translations/en.yaml` for all 16 previously undocumented parameters: 12 Online HLC Learner params (`hlc_*`) and 4 Forecast-Driven Trajectory params (`pv_traj_forecast_mode_enabled`, `pv_traj_threshold_w`, `pv_traj_zero_w`, `pv_traj_disable_price_in_forecast_mode`).
+
 ## [0.2.12] - 2026-04-27
 
 ### Added
