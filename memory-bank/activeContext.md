@@ -1,5 +1,26 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Test coverage analysis and improvements — April 29, 2026**
+
+#### **What changed**
+
+Added 161 new unit tests in 5 new test files, targeting the modules with the lowest coverage:
+
+- **`test_thermal_constants.py`** — `PhysicsConstants`, `ThermalUnits.get_unit/get_range/validate_parameter/validate_parameters/format_parameter`, `ThermalParameterValidator.validate_heat_balance_parameters/validate_temperature_inputs/get_validation_report`, and convenience functions `validate_thermal_parameters`/`format_thermal_state`.
+- **`test_prediction_metrics_extended.py`** — `save_state`/`load_state` file I/O, `get_summary`, `get_simplified_accuracy_breakdown`, `get_good_control_percentage`, `_get_predictions_in_24h_window`, `get_24h_accuracy_breakdown`, `get_24h_good_control_percentage`, and state-manager integration path.
+- **`test_ha_history_service_extended.py`** — `_build_entity_map` (including optional `LIVING_ROOM_TEMP_ENTITY_ID`), `_ha_history_to_dataframe` edge cases (duplicate timestamps, missing timestamps, `last_updated` fallback, invalid timestamp strings, entity-map fallback), `compute_cloud_proxy` edge cases.
+- **`test_adaptive_fireplace_learning_extended.py`** — File-load with valid JSON, legacy field migration, corrupt JSON handling, `_save_state` error handling, `get_enhanced_fireplace_features`, `get_learning_summary`, `integrate_adaptive_fireplace_with_multi_source_physics`.
+- **`test_multi_heat_source_physics_extended.py`** — `_encode_heat_source`, `enhance_physics_features_with_heat_sources` (all required output keys, PV/fireplace/TV flags, optional key robustness).
+
+#### **Why**
+
+Coverage baseline was 74% overall. The five targeted modules were all below 75%. Adding focused tests for uncovered branches and methods brings the most critical physics and ML infrastructure to a safer baseline without touching source code.
+
+#### **Files changed**
+`tests/unit/test_thermal_constants.py` (new), `tests/unit/test_prediction_metrics_extended.py` (new), `tests/unit/test_ha_history_service_extended.py` (new), `tests/unit/test_adaptive_fireplace_learning_extended.py` (new), `tests/unit/test_multi_heat_source_physics_extended.py` (new), `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **pv_scalar rolling-window + CHEAP ramp + overshoot dampening — April 29, 2026**
 
 #### **What changed**
