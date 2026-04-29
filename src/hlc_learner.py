@@ -598,9 +598,7 @@ class HLCSessionLearner:
                 data = json.load(fh)
             records_raw = data.get("day_records", [])
             records = [DayRecord(**r) for r in records_raw]
-            self._day_records = deque(
-                records, maxlen=None
-            )
+            self._day_records = deque(records)
             # Trim to current cap
             while len(self._day_records) > config.HLC_SESSION_MAX_DAYS:
                 self._day_records.popleft()

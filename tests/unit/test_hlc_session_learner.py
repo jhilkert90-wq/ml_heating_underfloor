@@ -64,23 +64,11 @@ def _cycle_ctx(
 
 def _push_n_valid_cycles(learner: HLCSessionLearner, n: int = 10) -> None:
     """Push N valid HP cycles (positive power) into the learner without triggering rollover."""
-    for _ in range(n):
-        learner._day_cycles.append(
-            learner._day_cycles[-1]
-            if learner._day_cycles
-            else _build_cycle_obj()
-        )
-    # Clear and re-populate cleanly
     learner._day_cycles.clear()
     for _ in range(n):
         from src.hlc_learner import HLCLearner
         c = HLCLearner._build_cycle(_cycle_ctx())
         learner._day_cycles.append(c)
-
-
-def _build_cycle_obj():
-    from src.hlc_learner import HLCLearner
-    return HLCLearner._build_cycle(_cycle_ctx())
 
 
 # ---------------------------------------------------------------------------
