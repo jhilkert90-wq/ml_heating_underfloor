@@ -410,20 +410,43 @@ class EnhancedModelWrapper:
                         "pv_now_electrical", features.get("pv_now", 0.0)
                     )
                 )
-                if pv_threshold > 0 and pv_now >= pv_threshold:
+                if pv_threshold > 0 and pv_now > 0:
                     cheap_offset = getattr(config, "PRICE_TARGET_OFFSET", 0.2)
-                    # Only raise the target, never lower it via this path
-                    new_adjusted = target_indoor + cheap_offset
-                    if new_adjusted > target_adjusted:
-                        target_adjusted = new_adjusted
-                        price_info["price_level"] = "cheap"
-                        price_info["price_target_offset"] = cheap_offset
-                        logging.info(
-                            "☀️ PV surplus %.0fW ≥ %.0fW: target %.1f → "
-                            "%.1f°C (CHEAP override, offset +%.1f)",
-                            pv_now, pv_threshold,
-                            target_indoor, target_adjusted, cheap_offset,
+                    # Soft-ramp blend zone below the threshold to avoid an
+                    # abrupt step change in target temperature.
+                    ramp_w = float(getattr(
+                        config, "PV_SURPLUS_CHEAP_RAMP_W", pv_threshold
+                    ))
+                    # Clamp to [1, threshold] so ramp_floor is always >= 0.
+                    # Without the upper clamp a misconfigured ramp_w > threshold
+                    # would make ramp_floor negative, producing a positive offset
+                    # even at near-zero PV output.
+                    ramp_w = max(1.0, min(ramp_w, float(pv_threshold)))
+                    ramp_floor = pv_threshold - ramp_w
+                    if pv_now >= pv_threshold:
+                        partial_offset = cheap_offset
+                    elif pv_now > ramp_floor:
+                        partial_offset = (
+                            cheap_offset
+                            * (pv_now - ramp_floor)
+                            / ramp_w
                         )
+                    else:
+                        partial_offset = 0.0
+                    if partial_offset > 0.0:
+                        # Only raise the target, never lower it via this path
+                        new_adjusted = target_indoor + partial_offset
+                        if new_adjusted > target_adjusted:
+                            target_adjusted = new_adjusted
+                            price_info["price_level"] = "cheap"
+                            price_info["price_target_offset"] = partial_offset
+                            logging.info(
+                                "☀️ PV surplus %.0fW (threshold %.0fW): "
+                                "target %.1f → %.1f°C "
+                                "(CHEAP ramp offset +%.2f)",
+                                pv_now, pv_threshold,
+                                target_indoor, target_adjusted, partial_offset,
+                            )
 
             # Store current indoor for trajectory correction
             self._current_indoor = current_indoor
@@ -495,19 +518,37 @@ class EnhancedModelWrapper:
 
         # Multi-heat source features
         # Use scalar for pv_power (for prediction_context_manager math)
-        # Pass history separately for 45-min rolling average lag calculation
+        # Pass history separately for lag calculation in the thermal model.
         pv_history = features.get("pv_power_history")
         pv_now = features.get("pv_now", 0.0)
-        
-        # Calculate scalar using the same lag window the thermal model uses.
-        # Averaging the full 3h history would include old PV values from
-        # earlier in the day even when PV has been 0 for the last hour+.
-        if pv_history and len(pv_history) > 0:
-            lag_steps = max(1, round(config.SOLAR_LAG_MINUTES / config.HISTORY_STEP_MINUTES))
-            lag_window = pv_history[-lag_steps:]
-            pv_scalar = sum(lag_window) / len(lag_window)
+
+        # Compute pv_scalar from the rolling-window average (solar_lag_minutes
+        # history window) so the binary search sees a smoothed solar-gain value
+        # during normal daylight operation.
+        #
+        # End-of-sun override: when the next-hour forecast is at or below the
+        # PV zero threshold, no more solar gain is coming.  We reset the
+        # rolling window (clear pv_power_history) and snap pv_scalar to the
+        # current thermally-corrected pv_now so the binary search plans without
+        # a stale high average from mid-day.
+        if pv_history:
+            pv_scalar = float(np.mean(pv_history))
         else:
             pv_scalar = pv_now
+
+        pv_forecast_1h = float(features.get(
+            "pv_forecast_electrical_1h",
+            features.get("pv_forecast_1h", pv_now),
+        ))
+        pv_zero_w = float(getattr(config, "PV_TRAJ_ZERO_W", 50.0))
+        if pv_forecast_1h <= pv_zero_w:
+            pv_scalar = pv_now
+            pv_history = None  # reset rolling window
+            logging.debug(
+                "PV scalar: no forecast sun (1h=%.0fW ≤ %.0fW), "
+                "snapping to pv_now=%.0fW (rolling window reset)",
+                pv_forecast_1h, pv_zero_w, pv_now,
+            )
 
         # Apply cloud discount to PV scalar before it enters the binary
         # search.  Without this, a raw sensor spike (e.g. 4 kW during a
@@ -1750,7 +1791,7 @@ class EnhancedModelWrapper:
             else:
                 # When overshooting, scale dampening by slab time constant.
                 # Slower slabs need gentler pull-back.
-                overshoot_dampening = 0.4 / max(slab_tau, 1.0)
+                overshoot_dampening = 1.0 / max(slab_tau, 1.0)
                 correction = (
                     temp_error
                     * physics_scale

@@ -1,6 +1,25 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 28, 2026
+## 🎯 CURRENT STATUS - April 29, 2026
+
+### ✅ **FIX: pv_scalar rolling-window + end-of-sun override, PV surplus CHEAP soft-ramp, overshoot dampening 1.0**
+
+**Status**: **COMPLETED**
+
+Three independent binary-search accuracy improvements in `src/model_wrapper.py`:
+
+1. **pv_scalar rolling-window + end-of-sun override**: reverted the stateful EMA back to `mean(pv_power_history)`. End-of-sun override snaps to `pv_now` and clears history when 1h forecast ≤ `PV_TRAJ_ZERO_W`. Removed `self._pv_scalar_ema` attribute and `PV_SCALAR_EMA_ALPHA` config.
+2. **PV surplus CHEAP soft-ramp**: replaced binary on/off at `PV_SURPLUS_CHEAP_THRESHOLD_W` with linear ramp over `PV_SURPLUS_CHEAP_RAMP_W` band. New config var `PV_SURPLUS_CHEAP_RAMP_W` defaults to threshold value.
+3. **Overshoot dampening 0.4 → 1.0**: `overshoot_dampening = 1.0 / max(slab_tau, 1.0)` — 2.5× stronger pull-back when overshoot is detected.
+
+**Files Changed:**
+- `src/model_wrapper.py` (all three items)
+- `src/config.py` (remove PV_SCALAR_EMA_ALPHA, add PV_SURPLUS_CHEAP_RAMP_W)
+- `tests/unit/test_model_wrapper.py` (12 new tests, updated pv_scalar class)
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
+---
 
 ### ✅ **FIX: PV trajectory forecast horizon + rain-cloud rescue**
 

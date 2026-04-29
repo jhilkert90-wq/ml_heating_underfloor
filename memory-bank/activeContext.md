@@ -1,6 +1,24 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **PV trajectory forecast horizon fix + rain-cloud rescue — April 28, 2026**
+### ✅ **pv_scalar rolling-window + CHEAP ramp + overshoot dampening — April 29, 2026**
+
+#### **What changed**
+
+Three changes in `src/model_wrapper.py`:
+
+1. **`_extract_thermal_features()`**: Reverted EMA to rolling-window `mean(pv_power_history)`. Added end-of-sun override: when `pv_forecast_electrical_1h` (fallback `pv_forecast_1h`) ≤ `PV_TRAJ_ZERO_W`, history is cleared to `None` and `pv_scalar` snaps to `pv_now`. No `self._pv_scalar_ema` attribute; `PV_SCALAR_EMA_ALPHA` removed from config.
+2. **PV surplus CHEAP block**: Linear ramp over `PV_SURPLUS_CHEAP_RAMP_W` band below `PV_SURPLUS_CHEAP_THRESHOLD_W`. New config var defaults to threshold (ramp starts at 0 W). `new_adjusted > target_adjusted` guard preserved.
+3. **Overshoot dampening**: Numerator changed `0.4 → 1.0`; `overshoot_dampening = 1.0 / max(slab_tau, 1.0)`.
+
+#### **Why**
+- Rolling window is stateless and avoids the EMA smoothing lag when sun is fading.
+- Binary step at the PV surplus threshold causes a sudden 0.5°C target jump; soft-ramp eliminates that discontinuity.
+- 0.4 dampening was too weak; 1.0 gives decisive pull-back while the slab_tau divisor still protects slow slabs.
+
+#### **Files changed**
+`src/model_wrapper.py`, `src/config.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 #### **What changed**
 

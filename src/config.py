@@ -253,6 +253,12 @@ PV_SURPLUS_CHEAP_ENABLED: bool = (
 PV_SURPLUS_CHEAP_THRESHOLD_W: int = int(
     os.getenv("PV_SURPLUS_CHEAP_THRESHOLD_W", "3000")
 )
+# Blend zone width (W) below PV_SURPLUS_CHEAP_THRESHOLD_W for soft-ramp.
+# In the range [threshold - ramp_w, threshold] the CHEAP offset scales
+# linearly from 0 to full.  Defaults to threshold (i.e. ramp starts at 0 W).
+PV_SURPLUS_CHEAP_RAMP_W: float = float(
+    os.getenv("PV_SURPLUS_CHEAP_RAMP_W", str(PV_SURPLUS_CHEAP_THRESHOLD_W))
+)
 
 # --- Forecast-Driven Trajectory Mode ---
 # When PV_TRAJ_FORECAST_MODE_ENABLED is true, trajectory steps are derived

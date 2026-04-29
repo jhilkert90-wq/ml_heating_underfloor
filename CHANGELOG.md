@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`pv_scalar` calculation in binary search** (`src/model_wrapper.py`): reverted the stateful EMA back to the rolling-window average (`mean(pv_power_history)`). End-of-sun override: when `pv_forecast_electrical_1h` (fallback `pv_forecast_1h`) ≤ `PV_TRAJ_ZERO_W`, the rolling window is cleared and `pv_scalar` snaps to `pv_now` so the binary search plans without stale high averages. No new stateful attribute; `PV_SCALAR_EMA_ALPHA` removed.
+- **PV surplus CHEAP offset** (`src/model_wrapper.py`): replaced binary on/off at `PV_SURPLUS_CHEAP_THRESHOLD_W` with a linear soft-ramp over a configurable `PV_SURPLUS_CHEAP_RAMP_W` band below the threshold. In the ramp zone `[threshold - ramp_w, threshold]` the offset scales from 0 to `PRICE_TARGET_OFFSET`; below the ramp floor offset is 0; at or above threshold full offset applies. The `new_adjusted > target_adjusted` guard is preserved.
+- **Overshoot dampening numerator** (`src/model_wrapper.py`): increased from `0.4` to `1.0` in `overshoot_dampening = 1.0 / max(slab_tau, 1.0)`. Pull-back correction is 2.5× stronger when overshoot is detected. The `/ slab_tau` denominator still protects slow slabs from oscillation.
+
+### Added
+- `PV_SURPLUS_CHEAP_RAMP_W` config variable (default equals `PV_SURPLUS_CHEAP_THRESHOLD_W`, in `src/config.py`) — controls the blend-zone width for the soft-ramp CHEAP offset.
+
+### Removed
+- `PV_SCALAR_EMA_ALPHA` config variable (`src/config.py`) — EMA replaced by rolling-window average.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

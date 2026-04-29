@@ -476,9 +476,9 @@ class TestEnhancedModelWrapper:
 # ---------------------------------------------------------------------------
 
 class TestPvScalarCloudDiscount:
-    """_extract_thermal_features should apply cloud discount to pv_scalar
-    so that the binary search sees a realistic PV contribution, not a raw
-    sensor spike during a brief sun break."""
+    """_extract_thermal_features should derive pv_scalar from the rolling
+    pv_power_history window (solar lag) and apply cloud discount so that the
+    binary search sees a realistic PV contribution, not a raw sensor spike."""
 
     @pytest.fixture
     def wrapper(self):
@@ -491,21 +491,20 @@ class TestPvScalarCloudDiscount:
 
     def test_cloud_discount_reduces_pv_scalar(self, wrapper, monkeypatch):
         """With 60% cloud cover, pv_scalar should be substantially less
-        than the raw 45-min average."""
+        than pv_now. Rolling-window average path is exercised."""
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
         monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
                             raising=False)
-        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
-        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
         features = {
             "pv_power_history": [4000] * 18,  # 3h of 4kW
             "pv_now": 4000,
+            "pv_forecast_1h": 3000.0,  # sun still forecast → rolling-window path
             "cloud_cover_1h": 60.0,
             "avg_cloud_cover": 60.0,
         }
         result = wrapper._extract_thermal_features(features)
-        # Without cloud discount: pv_scalar = 4000
-        # With 60% cloud: factor ~0.4, so scalar ~1600
+        # Rolling avg = 4000. Cloud factor ~0.4 → ~1600.
         assert result["pv_power"] < 4000 * 0.8, (
             f"Expected cloud-discounted PV, got {result['pv_power']}"
         )
@@ -516,15 +515,16 @@ class TestPvScalarCloudDiscount:
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
         monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
                             raising=False)
-        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
-        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
         features = {
             "pv_power_history": [3000] * 18,
             "pv_now": 3000,
+            "pv_forecast_1h": 2500.0,
             "cloud_cover_1h": 0.0,
             "avg_cloud_cover": 0.0,
         }
         result = wrapper._extract_thermal_features(features)
+        # Rolling avg = 3000. Cloud factor = 1.0 → pv_power = 3000.
         assert result["pv_power"] == pytest.approx(3000.0, rel=0.01), (
             f"Clear sky should not discount PV, got {result['pv_power']}"
         )
@@ -532,15 +532,16 @@ class TestPvScalarCloudDiscount:
     def test_cloud_discount_disabled(self, wrapper, monkeypatch):
         """When CLOUD_COVER_CORRECTION_ENABLED=False, pv_scalar should be raw."""
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
-        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
-        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
         features = {
             "pv_power_history": [4000] * 18,
             "pv_now": 4000,
+            "pv_forecast_1h": 3500.0,
             "cloud_cover_1h": 80.0,
             "avg_cloud_cover": 80.0,
         }
         result = wrapper._extract_thermal_features(features)
+        # Rolling avg = 4000. No cloud discount applied → 4000.
         assert result["pv_power"] == pytest.approx(4000.0, rel=0.01), (
             f"Cloud discount disabled, pv should be raw, got {result['pv_power']}"
         )
@@ -550,11 +551,11 @@ class TestPvScalarCloudDiscount:
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
         monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
                             raising=False)
-        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
-        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
         features = {
             "pv_power_history": [2000] * 18,
             "pv_now": 2000,
+            "pv_forecast_1h": 1800.0,
             "cloud_cover_1h": 0.0,      # Clear 1h forecast
             "avg_cloud_cover": 90.0,    # Heavy avg
         }
@@ -562,6 +563,72 @@ class TestPvScalarCloudDiscount:
         # Should use cloud_cover_1h=0 → factor=1.0 → pv=2000
         assert result["pv_power"] == pytest.approx(2000.0, rel=0.01), (
             f"Should use 1h forecast (clear), got {result['pv_power']}"
+        )
+
+    def test_pv_scalar_uses_rolling_window_average(self, wrapper, monkeypatch):
+        """pv_scalar should be the mean of pv_power_history, not pv_now."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        # History is 2000W but current reading is 4000W
+        features = {
+            "pv_power_history": [2000] * 12,
+            "pv_now": 4000,
+            "pv_forecast_1h": 3000.0,  # sun still forecast → use rolling window
+        }
+        result = wrapper._extract_thermal_features(features)
+        # pv_scalar should be the average of history (2000), not pv_now (4000)
+        assert result["pv_power"] == pytest.approx(2000.0, rel=0.01), (
+            f"Expected rolling-window avg 2000, got {result['pv_power']}"
+        )
+
+    def test_pv_scalar_no_history_falls_back_to_pv_now(self, wrapper, monkeypatch):
+        """With no pv_power_history, pv_scalar should fall back to pv_now."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        features = {
+            "pv_now": 3500,
+            "pv_forecast_1h": 3000.0,
+        }
+        result = wrapper._extract_thermal_features(features)
+        assert result["pv_power"] == pytest.approx(3500.0, rel=0.01), (
+            f"No history: should use pv_now=3500, got {result['pv_power']}"
+        )
+
+    def test_pv_scalar_no_forecast_snaps_to_pv_now(self, wrapper, monkeypatch):
+        """When 1h forecast ≤ PV_TRAJ_ZERO_W, pv_scalar must equal pv_now
+        regardless of the rolling-window history, and history must be cleared."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        features = {
+            "pv_power_history": [3000] * 18,  # stale high history
+            "pv_now": 200,
+            "pv_forecast_1h": 30.0,  # ≤ PV_TRAJ_ZERO_W → end-of-sun override
+        }
+        result = wrapper._extract_thermal_features(features)
+        assert result["pv_power"] == pytest.approx(200.0, rel=0.01), (
+            f"End-of-sun override: expected pv_now=200, got {result['pv_power']}"
+        )
+        # Rolling window passed into thermal_features must be cleared (None)
+        assert result["pv_power_history"] is None, (
+            "pv_power_history must be reset to None on end-of-sun override"
+        )
+
+    def test_pv_scalar_electrical_forecast_key_takes_precedence(
+        self, wrapper, monkeypatch
+    ):
+        """pv_forecast_electrical_1h should be used for override check when
+        present (matches raw-watts scale of pv_now_electrical)."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        features = {
+            "pv_power_history": [5000] * 18,   # stale high history
+            "pv_now": 100,
+            "pv_forecast_1h": 500.0,            # Would keep rolling window
+            "pv_forecast_electrical_1h": 20.0,  # Overrides → end-of-sun
+        }
+        result = wrapper._extract_thermal_features(features)
+        assert result["pv_power"] == pytest.approx(100.0, rel=0.01), (
+            f"Electrical forecast key should trigger override, got {result['pv_power']}"
         )
 
 
@@ -824,4 +891,193 @@ class TestPredictionDriftDetection:
         assert wrapper.thermal_model.learning_confidence == 5.0
         wrapper.state_manager.update_learning_state.assert_called_once_with(
             learning_confidence=5.0
+        )
+
+
+# ---------------------------------------------------------------------------
+# PV surplus CHEAP soft ramp (Item 2)
+# ---------------------------------------------------------------------------
+
+class TestPvSurplusCheapRamp:
+    """PV surplus CHEAP offset ramps linearly in the blend zone.
+
+    Tests call calculate_optimal_outlet_temp() so any regression in the
+    production ramp path causes a test failure — unlike a helper that
+    re-implements the same arithmetic.
+    """
+
+    @pytest.fixture
+    def wrapper(self, clean_state):
+        return get_enhanced_model_wrapper()
+
+    def _features(self, pv_now_elec, target=20.0, indoor=20.0):
+        return {
+            "indoor_temp_lag_30m": indoor,
+            "target_temp": target,
+            "outdoor_temp": 10.0,
+            "pv_now_electrical": float(pv_now_elec),
+            "pv_now": 0.0,
+            "pv_power_history": [0.0] * 5,
+            # Keep above PV_TRAJ_ZERO_W to avoid end-of-sun snap
+            "pv_forecast_1h": 2000.0,
+        }
+
+    def _call(self, wrapper, monkeypatch, pv_now_elec,
+              threshold=1000, ramp_w=1000, cheap_offset=0.5, target=20.0):
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", True,
+                            raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", False,
+                            raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", threshold,
+                            raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_RAMP_W", float(ramp_w),
+                            raising=False)
+        monkeypatch.setattr(config, "PRICE_TARGET_OFFSET", cheap_offset,
+                            raising=False)
+        _, meta = wrapper.calculate_optimal_outlet_temp(
+            self._features(pv_now_elec, target=target)
+        )
+        return meta
+
+    def test_full_offset_at_threshold(self, wrapper, monkeypatch):
+        """At threshold, full cheap_offset is applied."""
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=1000,
+                          threshold=1000, cheap_offset=0.5)
+        assert meta.get("price_level") == "cheap"
+        assert meta.get("price_target_offset") == pytest.approx(0.5, abs=0.001)
+        assert meta.get("target_temp_adjusted") == pytest.approx(20.5, abs=0.001)
+
+    def test_full_offset_well_above_threshold(self, wrapper, monkeypatch):
+        """Well above threshold, full cheap_offset still applied."""
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=3000,
+                          threshold=1000, cheap_offset=0.5)
+        assert meta.get("price_level") == "cheap"
+        assert meta.get("price_target_offset") == pytest.approx(0.5, abs=0.001)
+
+    def test_partial_offset_midpoint(self, wrapper, monkeypatch):
+        """At the midpoint of the ramp zone, offset ≈ 50% of max."""
+        # threshold=1000, ramp_w=1000 → floor=0; midpoint pv_now=500
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=500,
+                          threshold=1000, ramp_w=1000, cheap_offset=0.4)
+        assert meta.get("price_level") == "cheap"
+        assert meta.get("price_target_offset") == pytest.approx(0.2, abs=0.005)
+        assert meta.get("target_temp_adjusted") == pytest.approx(20.2, abs=0.005)
+
+    def test_partial_offset_three_quarters(self, wrapper, monkeypatch):
+        """At 75% of ramp zone, offset ≈ 75% of max."""
+        # pv_now=750 → partial = 0.4 * 750/1000 = 0.3
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=750,
+                          threshold=1000, ramp_w=1000, cheap_offset=0.4)
+        assert meta.get("price_level") == "cheap"
+        assert meta.get("price_target_offset") == pytest.approx(0.3, abs=0.005)
+
+    def test_zero_offset_below_ramp_floor(self, wrapper, monkeypatch):
+        """Below the ramp floor (narrow ramp_w), offset is 0."""
+        # threshold=1000, ramp_w=200 → floor=800; pv_now=700 < floor → 0
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=700,
+                          threshold=1000, ramp_w=200, cheap_offset=0.5)
+        assert meta.get("price_target_offset", 0.0) == pytest.approx(0.0,
+                                                                      abs=0.001)
+        assert meta.get("target_temp_adjusted") == pytest.approx(20.0, abs=0.001)
+
+    def test_ramp_w_larger_than_threshold_clamped(self, wrapper, monkeypatch):
+        """ramp_w > threshold is clamped to threshold so floor stays at 0."""
+        # ramp_w=2000 > threshold=1000 → clamped to 1000 → floor=0
+        # pv_now=100: partial = 1.0 * (100 - 0) / 1000 = 0.1
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=100,
+                          threshold=1000, ramp_w=2000, cheap_offset=1.0)
+        assert meta.get("price_target_offset") == pytest.approx(0.1, abs=0.005)
+
+    def test_disabled_no_offset(self, wrapper, monkeypatch):
+        """When PV_SURPLUS_CHEAP_ENABLED=False, no offset is applied."""
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False,
+                            raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", False,
+                            raising=False)
+        _, meta = wrapper.calculate_optimal_outlet_temp(
+            self._features(pv_now_elec=5000)
+        )
+        assert meta.get("price_target_offset", 0.0) == pytest.approx(0.0,
+                                                                      abs=0.001)
+        assert meta.get("target_temp_adjusted") == pytest.approx(20.0, abs=0.001)
+
+
+# ---------------------------------------------------------------------------
+# Overshoot dampening constant (Item 3)
+# ---------------------------------------------------------------------------
+
+class TestOvershootDampening:
+    """The overshoot branch of _calculate_physics_based_correction uses
+    1.0 / max(slab_tau, 1.0) — 2.5× stronger than the old 0.4 constant.
+
+    Tests call the real correction path with controlled thermal-model state so
+    a regression back to 0.4 would break them.
+    """
+
+    # Known thermal-model values for deterministic calculation:
+    #   slab_tau      = 2.0
+    #   physics_scale = min((1/0.5)*1.1, 2.5) = 2.2
+    #   trajectory    = [22.3, 22.4, 22.5, 22.6], reaches_target_at=None
+    #     → max_predicted = 22.6, temp_error = 22.0-22.6 = -0.6
+    #     → time_pressure = 1.0 (reaches_target_at is None)
+    #     → urgency_multiplier = 1.0 + 2.0*1.0² = 3.0
+    #   new overshoot_dampening = 1.0/2.0 = 0.5
+    #   new correction = -0.6 * 2.2 * 3.0 * 0.5 = -1.98
+    #   old correction = -0.6 * 2.2 * 3.0 * 0.2 = -0.792  (0.4/2.0=0.2)
+    _OUTLET_TEMP = 30.0
+    _TARGET = 22.0
+    _EXPECTED_CORRECTION_NEW = -0.6 * 2.2 * 3.0 * 0.5   # -1.98
+    _EXPECTED_CORRECTION_OLD = -0.6 * 2.2 * 3.0 * 0.2   # -0.792
+
+    @pytest.fixture
+    def wrapper(self, clean_state):
+        w = get_enhanced_model_wrapper()
+        w.thermal_model.slab_time_constant_hours = 2.0
+        w.thermal_model.outlet_effectiveness = 0.5
+        w._current_indoor = 22.5          # current > target → overshoot scenario
+        w._current_features = {"indoor_temp_delta_60m": 0.1}
+        return w
+
+    def _make_trajectory(self, temps, reaches_target_at=None):
+        return {
+            "trajectory": temps,
+            "times": [i * 0.25 for i in range(1, len(temps) + 1)],
+            "reaches_target_at": reaches_target_at,
+        }
+
+    def test_overshoot_correction_applied(self, wrapper, monkeypatch):
+        """Overshoot path pulls outlet down (result < outlet_temp)."""
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        result = wrapper._calculate_physics_based_correction(
+            outlet_temp=self._OUTLET_TEMP,
+            trajectory=self._make_trajectory([22.3, 22.4, 22.5, 22.6]),
+            target_indoor=self._TARGET,
+            cycle_hours=0.25,
+        )
+        assert result < self._OUTLET_TEMP, (
+            "Overshoot correction must lower the outlet setpoint"
+        )
+
+    def test_correction_magnitude_matches_1_0_dampening(
+        self, wrapper, monkeypatch
+    ):
+        """Correction matches 1.0/slab_tau dampening, not the old 0.4/slab_tau."""
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        result = wrapper._calculate_physics_based_correction(
+            outlet_temp=self._OUTLET_TEMP,
+            trajectory=self._make_trajectory([22.3, 22.4, 22.5, 22.6]),
+            target_indoor=self._TARGET,
+            cycle_hours=0.25,
+        )
+        expected_new = self._OUTLET_TEMP + self._EXPECTED_CORRECTION_NEW
+        expected_old = self._OUTLET_TEMP + self._EXPECTED_CORRECTION_OLD
+        # Result should be close to the 1.0-dampening expectation
+        assert result == pytest.approx(expected_new, abs=0.05), (
+            f"Expected correction consistent with 1.0/slab_tau "
+            f"(outlet≈{expected_new:.2f}°C), got {result:.2f}°C"
+        )
+        # And clearly different from the old 0.4-dampening expectation
+        assert abs(result - expected_old) > 0.5, (
+            f"Result {result:.2f}°C is too close to old 0.4-dampening "
+            f"value {expected_old:.2f}°C — constant may not have changed"
         )
