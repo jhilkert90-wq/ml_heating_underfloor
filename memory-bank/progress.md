@@ -1,5 +1,21 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - April 29, 2026 (review follow-up)
+
+### ✅ **TEST: review follow-up for coverage PR comments**
+
+**Status**: **COMPLETED**
+
+Applied the requested PR review follow-up by correcting the PV surplus test class docstring, making the validator warning assertion explicitly capture `WARNING` logs, and disambiguating the progress timeline so consecutive entries no longer share the same top-level heading text.
+
+**Files Changed:**
+- `tests/unit/test_price_optimizer.py`
+- `tests/unit/test_thermal_state_validator.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
+---
+
 ## 🎯 CURRENT STATUS - April 29, 2026
 
 ### ✅ **TEST: forecast analytics + thermal state validation coverage expansion**
@@ -21,8 +37,6 @@ Coverage analysis highlighted remaining branch gaps in `src/forecast_analytics.p
 
 
 ---
-
-## 🎯 CURRENT STATUS - April 29, 2026
 
 ### ✅ **TEST: Comprehensive test coverage analysis and improvements**
 

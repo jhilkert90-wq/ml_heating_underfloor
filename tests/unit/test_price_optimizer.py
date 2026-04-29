@@ -823,7 +823,7 @@ class TestRefreshPricesIfNeeded:
 # ══════════════════════════════════════════════════════════════════
 
 class TestPvSurplusCheapOverride:
-    """calculate_optimal_outlet_temp raises target when PV >= threshold."""
+    """calculate_optimal_outlet_temp applies the PV surplus soft-ramp offset."""
 
     def test_pv_below_ramp_floor_no_effect(self, clean_state):
         """PV below the configured ramp floor leaves the target unchanged."""

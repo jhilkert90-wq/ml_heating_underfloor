@@ -163,7 +163,10 @@ def test_validate_thermal_state_data_import_error_fallback(
     monkeypatch.setattr(builtins, "__import__", fake_import)
     valid_thermal_state_data["baseline_parameters"]["thermal_time_constant"] = 200.0
 
-    assert ThermalStateValidator.validate_thermal_state_data(valid_thermal_state_data)
+    with caplog.at_level("WARNING"):
+        assert ThermalStateValidator.validate_thermal_state_data(
+            valid_thermal_state_data
+        )
     assert "out of range" in caplog.text
 
 

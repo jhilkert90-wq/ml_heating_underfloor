@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Review follow-up for coverage PR comments — April 29, 2026**
+
+#### **What changed**
+
+- Updated the `TestPvSurplusCheapOverride` class docstring in `tests/unit/test_price_optimizer.py` so it matches the current soft-ramp PV surplus behavior instead of the old binary-threshold description.
+- Wrapped the import-fallback validator assertion in `tests/unit/test_thermal_state_validator.py` with `caplog.at_level("WARNING")` so the warning assertion is robust even if another test changes logger configuration.
+- Adjusted `memory-bank/progress.md` so the two April 29 entries are uniquely identifiable and no longer appear as duplicate top-level timeline headings.
+
+#### **Why**
+
+These were the remaining actionable review comments on the coverage PR. They do not change runtime behavior, but they make the tests more accurate and less brittle, and they keep the project progress log easier to scan.
+
+#### **Files changed**
+`tests/unit/test_price_optimizer.py`, `tests/unit/test_thermal_state_validator.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **Coverage expansion for forecast analytics and thermal state validation — April 29, 2026**
 
 #### **What changed**
