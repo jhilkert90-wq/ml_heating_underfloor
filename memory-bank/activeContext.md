@@ -1,6 +1,26 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Review follow-up for coverage PR comments — April 29, 2026**
+### ✅ **Day-Level HLC Session Learner — April 29, 2026**
+
+#### **What changed**
+
+- Added `DayRecord` dataclass to `src/hlc_learner.py` with fields: `date`, `mean_thermal_power_kw`, `mean_delta_t`, `n_cycles`, `outdoor_temp_mean`, `indoor_temp_mean`, `avg_power_w` (mean thermal power × 1000 in Watts).
+- Added `HLCSessionLearner` class to `src/hlc_learner.py`: accumulates `HLCCycle`s per calendar day, validates each completed day using the same quality gates as `HLCLearner`, and persists `DayRecord`s atomically to a rolling JSON file. Days where the HP did not run (no positive `thermal_power_kw`) are silently discarded with `day_closed=False`.
+- `HLC_SESSION_FILE` defaults to the same directory as `UNIFIED_STATE_FILE` (`/opt/ml_heating/hlc_sessions.json`); an empty string from config also resolves to this default.
+- Added 6 new config vars (`HLC_SESSION_ENABLED`, `HLC_SESSION_FILE`, `HLC_SESSION_MIN_CYCLES`, `HLC_SESSION_MAX_DAYS`, `HLC_SESSION_MIN_DAYS`, `HLC_SESSION_MAX_UPDATE_FRACTION`) to `src/config.py`, `config.yaml`, `.env_sample`, and `config_adapter.py`.
+- Added tooltip entries for all 6 new params in `translations/en.yaml`.
+- Wired `HLCSessionLearner` into `src/main.py`: initialized at startup (loads persisted records), push_cycle called each control cycle, `apply_to_thermal_state()` called when a day is validated and record count ≥ `HLC_SESSION_MIN_DAYS`.
+- Refactored `_hlc_cycle_ctx` construction to occur once when either learner is active.
+- Added 18 unit tests in `tests/unit/test_hlc_session_learner.py`.
+
+#### **Why**
+
+The existing 60-minute in-memory HLC learner resets on every process restart, losing all accumulated calibration data. The day-level session learner persists validated daily summaries so the OLS estimate improves over time even across restarts. Days without HP activity are excluded to prevent noise from corrupting the regression.
+
+#### **Files changed**
+`src/config.py`, `src/hlc_learner.py`, `src/main.py`, `ml_heating_underfloor/config.yaml`, `.env_sample`, `ml_heating_underfloor/translations/en.yaml`, `config_adapter.py`, `tests/unit/test_hlc_session_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 #### **What changed**
 

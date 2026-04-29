@@ -522,6 +522,42 @@ HLC_MAX_UPDATE_FRACTION: float = float(
     os.getenv("HLC_MAX_UPDATE_FRACTION", "0.3")
 )
 
+# --- Day-Level HLC Session Learner ---
+# Persists one HLC data record per calendar day.  At midnight (or the next
+# startup after midnight) the accumulated cycles for the previous day are
+# validated against the same quality gates as the 60-min HLCLearner and, when
+# passing, appended to a rolling JSON store.  OLS regression over stored
+# DayRecords produces a multi-day HLC estimate.
+# Enable the day-level session learner (disabled by default).
+HLC_SESSION_ENABLED: bool = (
+    os.getenv("HLC_SESSION_ENABLED", "false").lower() in ("1", "true", "yes")
+)
+# Path to the JSON file where day records are persisted.  Defaults to the same
+# directory as UNIFIED_STATE_FILE so all runtime state lives in one place.
+HLC_SESSION_FILE: str = (
+    os.getenv("HLC_SESSION_FILE")
+    or os.path.join(
+        os.path.dirname(
+            os.getenv("UNIFIED_STATE_FILE", "/opt/ml_heating/unified_thermal_state.json")
+        ),
+        "hlc_sessions.json",
+    )
+)
+# Minimum number of active HP cycles in a day for the day record to be kept.
+# Days where the heat pump ran for fewer cycles than this are silently discarded.
+HLC_SESSION_MIN_CYCLES: int = int(os.getenv("HLC_SESSION_MIN_CYCLES", "6"))
+# Rolling cap: keep at most this many validated day records.  Oldest records
+# are discarded when the store exceeds this limit.
+HLC_SESSION_MAX_DAYS: int = int(os.getenv("HLC_SESSION_MAX_DAYS", "60"))
+# Minimum number of validated day records required before the OLS estimate is
+# applied to the thermal model.  Prevents premature updates from sparse data.
+HLC_SESSION_MIN_DAYS: int = int(os.getenv("HLC_SESSION_MIN_DAYS", "5"))
+# Maximum relative change allowed when applying a day-level HLC estimate.
+# 0.3 = at most 30 % change from the current value per update.
+HLC_SESSION_MAX_UPDATE_FRACTION: float = float(
+    os.getenv("HLC_SESSION_MAX_UPDATE_FRACTION", "0.3")
+)
+
 # --- Delta Temperature Forecast Calibration ---
 # Enable local calibration of weather forecasts using measured temperature
 # offset. This corrects for systematic biases between weather station and

@@ -1,6 +1,25 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 29, 2026 (review follow-up)
+## 🎯 CURRENT STATUS - April 29, 2026 (day-level HLC session learner)
+
+### ✅ **FEAT: Day-Level Session-Based HLC Learning**
+
+**Status**: **COMPLETED**
+
+Implemented `HLCSessionLearner` — a persistent, day-granularity complement to the existing 60-minute in-memory `HLCLearner`. Each calendar day on which the heat pump ran is validated and stored as a `DayRecord` in a rolling JSON file. OLS regression over stored day records produces a multi-day HLC estimate that survives process restarts.
+
+**Files Changed:**
+- `src/config.py` — 6 new `HLC_SESSION_*` config vars
+- `src/hlc_learner.py` — `DayRecord` dataclass + `HLCSessionLearner` class
+- `src/main.py` — instantiation, load, push_cycle wiring
+- `ml_heating_underfloor/config.yaml` — values + schema sections
+- `.env_sample` — new vars with comments
+- `ml_heating_underfloor/translations/en.yaml` — 6 tooltip entries
+- `config_adapter.py` — 6 mapping entries
+- `tests/unit/test_hlc_session_learner.py` — 18 unit tests (all pass)
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 ### ✅ **TEST: review follow-up for coverage PR comments**
 

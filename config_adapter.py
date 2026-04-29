@@ -449,6 +449,26 @@ def convert_addon_to_env(config):
             config.get('hlc_max_update_fraction', 0.3)
         ),
 
+        # --- Day-Level HLC Session Learner ---
+        'HLC_SESSION_ENABLED': str(
+            config.get('hlc_session_enabled', False)
+        ).lower(),
+        'HLC_SESSION_FILE': str(
+            config.get('hlc_session_file', '')
+        ),
+        'HLC_SESSION_MIN_CYCLES': str(
+            config.get('hlc_session_min_cycles', 6)
+        ),
+        'HLC_SESSION_MAX_DAYS': str(
+            config.get('hlc_session_max_days', 60)
+        ),
+        'HLC_SESSION_MIN_DAYS': str(
+            config.get('hlc_session_min_days', 5)
+        ),
+        'HLC_SESSION_MAX_UPDATE_FRACTION': str(
+            config.get('hlc_session_max_update_fraction', 0.3)
+        ),
+
         # --- Delta Forecast Calibration ---
         'ENABLE_DELTA_FORECAST_CALIBRATION': str(
             config.get('enable_delta_forecast_calibration', True)
