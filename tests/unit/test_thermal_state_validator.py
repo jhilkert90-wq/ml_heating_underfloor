@@ -151,10 +151,14 @@ def test_validate_thermal_state_data_import_error_fallback(
     """Import failures should fall back to built-in parameter ranges."""
     original_import = builtins.__import__
 
-    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+    def fake_import(
+        name, globals_dict=None, locals_dict=None, fromlist=(), level=0
+    ):
         if name == "thermal_config" and level == 1:
             raise ImportError("missing thermal_config")
-        return original_import(name, globals, locals, fromlist, level)
+        return original_import(
+            name, globals_dict, locals_dict, fromlist, level
+        )
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     valid_thermal_state_data["baseline_parameters"]["thermal_time_constant"] = 200.0
