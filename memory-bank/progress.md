@@ -1,6 +1,25 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 28, 2026
+## 🎯 CURRENT STATUS - April 29, 2026
+
+### ✅ **FIX: pv_scalar EMA — replace lag-window with stateful EMA + end-of-sun bypass**
+
+**Status**: **COMPLETED**
+
+Replaced the 45-min rolling-window average for `pv_scalar` in `_extract_thermal_features()` with a stateful EMA on `pv_now`, mirroring the outlet EMA pattern. Added an end-of-sun bypass: when `pv_forecast_electrical_1h` (or `pv_forecast_1h`) is at or below `PV_TRAJ_ZERO_W`, the EMA is skipped and `pv_scalar` snaps to `pv_now` directly (resetting the EMA state). This prevents the binary search from planning with stale high PV readings when no more solar gain is forecast.
+
+New config var: `PV_SCALAR_EMA_ALPHA` (default 0.35).
+
+**Files Changed:**
+- `src/model_wrapper.py` (`__init__` + `_extract_thermal_features`)
+- `src/config.py` (PV_SCALAR_EMA_ALPHA)
+- `.env_sample` (PV_SCALAR_EMA_ALPHA)
+- `ml_heating_underfloor/config.yaml` (option + schema entry)
+- `config_adapter.py` (pv_scalar_ema_alpha mapping)
+- `tests/unit/test_model_wrapper.py` (fixture + 3 new tests)
+- `CHANGELOG.md`
+
+---
 
 ### ✅ **FIX: PV trajectory forecast horizon + rain-cloud rescue**
 

@@ -487,25 +487,26 @@ class TestPvScalarCloudDiscount:
         )
         w._avg_cloud_cover = 50.0
         w._cloud_cover_forecast = [50.0] * 6
+        w._pv_scalar_ema = None
         return w
 
     def test_cloud_discount_reduces_pv_scalar(self, wrapper, monkeypatch):
         """With 60% cloud cover, pv_scalar should be substantially less
-        than the raw 45-min average."""
+        than pv_now."""
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
         monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
                             raising=False)
-        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
-        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        monkeypatch.setattr(config, "PV_SCALAR_EMA_ALPHA", 0.35, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
         features = {
             "pv_power_history": [4000] * 18,  # 3h of 4kW
             "pv_now": 4000,
+            "pv_forecast_1h": 3000.0,  # sun still forecast → use EMA path
             "cloud_cover_1h": 60.0,
             "avg_cloud_cover": 60.0,
         }
         result = wrapper._extract_thermal_features(features)
-        # Without cloud discount: pv_scalar = 4000
-        # With 60% cloud: factor ~0.4, so scalar ~1600
+        # EMA warm-up: pv_scalar = pv_now = 4000. Cloud factor ~0.4 → ~1600.
         assert result["pv_power"] < 4000 * 0.8, (
             f"Expected cloud-discounted PV, got {result['pv_power']}"
         )
@@ -516,15 +517,17 @@ class TestPvScalarCloudDiscount:
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
         monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
                             raising=False)
-        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
-        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        monkeypatch.setattr(config, "PV_SCALAR_EMA_ALPHA", 0.35, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
         features = {
             "pv_power_history": [3000] * 18,
             "pv_now": 3000,
+            "pv_forecast_1h": 2500.0,
             "cloud_cover_1h": 0.0,
             "avg_cloud_cover": 0.0,
         }
         result = wrapper._extract_thermal_features(features)
+        # EMA warm-up: pv_scalar = 3000. Cloud factor = 1.0 → pv_power = 3000.
         assert result["pv_power"] == pytest.approx(3000.0, rel=0.01), (
             f"Clear sky should not discount PV, got {result['pv_power']}"
         )
@@ -532,15 +535,17 @@ class TestPvScalarCloudDiscount:
     def test_cloud_discount_disabled(self, wrapper, monkeypatch):
         """When CLOUD_COVER_CORRECTION_ENABLED=False, pv_scalar should be raw."""
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
-        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
-        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        monkeypatch.setattr(config, "PV_SCALAR_EMA_ALPHA", 0.35, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
         features = {
             "pv_power_history": [4000] * 18,
             "pv_now": 4000,
+            "pv_forecast_1h": 3500.0,
             "cloud_cover_1h": 80.0,
             "avg_cloud_cover": 80.0,
         }
         result = wrapper._extract_thermal_features(features)
+        # EMA warm-up: pv_scalar = 4000. No cloud discount applied → 4000.
         assert result["pv_power"] == pytest.approx(4000.0, rel=0.01), (
             f"Cloud discount disabled, pv should be raw, got {result['pv_power']}"
         )
@@ -550,11 +555,12 @@ class TestPvScalarCloudDiscount:
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
         monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
                             raising=False)
-        monkeypatch.setattr(config, "SOLAR_LAG_MINUTES", 45)
-        monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 10)
+        monkeypatch.setattr(config, "PV_SCALAR_EMA_ALPHA", 0.35, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
         features = {
             "pv_power_history": [2000] * 18,
             "pv_now": 2000,
+            "pv_forecast_1h": 1800.0,
             "cloud_cover_1h": 0.0,      # Clear 1h forecast
             "avg_cloud_cover": 90.0,    # Heavy avg
         }
@@ -562,6 +568,64 @@ class TestPvScalarCloudDiscount:
         # Should use cloud_cover_1h=0 → factor=1.0 → pv=2000
         assert result["pv_power"] == pytest.approx(2000.0, rel=0.01), (
             f"Should use 1h forecast (clear), got {result['pv_power']}"
+        )
+
+    def test_pv_scalar_ema_smoothing(self, wrapper, monkeypatch):
+        """EMA should blend pv_now with the previous state each cycle."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        monkeypatch.setattr(config, "PV_SCALAR_EMA_ALPHA", 0.5, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        features = {
+            "pv_now": 4000,
+            "pv_forecast_1h": 3000.0,
+        }
+        # Warm-up: _pv_scalar_ema = None → result = pv_now = 4000
+        result1 = wrapper._extract_thermal_features(features)
+        assert result1["pv_power"] == pytest.approx(4000.0, rel=0.01)
+
+        # Second cycle: pv_now drops to 2000; alpha=0.5 → EMA = 0.5*2000 + 0.5*4000 = 3000
+        features["pv_now"] = 2000
+        result2 = wrapper._extract_thermal_features(features)
+        assert result2["pv_power"] == pytest.approx(3000.0, rel=0.01), (
+            f"Expected EMA blend 3000, got {result2['pv_power']}"
+        )
+
+    def test_pv_scalar_no_forecast_snaps_to_pv_now(self, wrapper, monkeypatch):
+        """When 1h forecast ≤ PV_TRAJ_ZERO_W, pv_scalar must equal pv_now
+        regardless of the EMA state, and EMA state must be reset."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        monkeypatch.setattr(config, "PV_SCALAR_EMA_ALPHA", 0.35, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        # Seed a high EMA state to simulate mid-day lag
+        wrapper._pv_scalar_ema = 3000.0
+        features = {
+            "pv_now": 200,
+            "pv_forecast_1h": 30.0,  # ≤ PV_TRAJ_ZERO_W → bypass
+        }
+        result = wrapper._extract_thermal_features(features)
+        assert result["pv_power"] == pytest.approx(200.0, rel=0.01), (
+            f"End-of-sun bypass: expected pv_now=200, got {result['pv_power']}"
+        )
+        # EMA state must also be reset to pv_now
+        assert wrapper._pv_scalar_ema == pytest.approx(200.0, rel=0.01)
+
+    def test_pv_scalar_electrical_forecast_key_takes_precedence(
+        self, wrapper, monkeypatch
+    ):
+        """pv_forecast_electrical_1h should be used for bypass check when
+        present (matches raw-watts scale of pv_now_electrical)."""
+        monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)
+        monkeypatch.setattr(config, "PV_SCALAR_EMA_ALPHA", 0.35, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        wrapper._pv_scalar_ema = 5000.0
+        features = {
+            "pv_now": 100,
+            "pv_forecast_1h": 500.0,          # Would keep EMA active
+            "pv_forecast_electrical_1h": 20.0,  # Overrides → bypass
+        }
+        result = wrapper._extract_thermal_features(features)
+        assert result["pv_power"] == pytest.approx(100.0, rel=0.01), (
+            f"Electrical forecast key should trigger bypass, got {result['pv_power']}"
         )
 
 

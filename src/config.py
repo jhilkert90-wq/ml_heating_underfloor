@@ -329,6 +329,11 @@ OUTLET_SMOOTHING_ALPHA: float = float(
 OUTLET_SMOOTHING_BYPASS: float = float(
     os.getenv("OUTLET_SMOOTHING_BYPASS", "2.0")
 )
+# EMA smoothing factor for pv_scalar fed to the binary search (0.0=max
+# smoothing, 1.0=no smoothing).  Applied to pv_now each cycle; bypassed when
+# the 1h PV forecast drops to zero so the binary search snaps to the current
+# instantaneous reading instead of carrying stale high values.
+PV_SCALAR_EMA_ALPHA: float = float(os.getenv("PV_SCALAR_EMA_ALPHA", "0.35"))
 # Maximum minutes to wait during the grace period after blocking ends.
 GRACE_PERIOD_MAX_MINUTES: int = int(
     os.getenv("GRACE_PERIOD_MAX_MINUTES", "15")

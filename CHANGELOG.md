@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`pv_scalar` calculation in binary search** (`src/model_wrapper.py`): replaced the 45-min rolling-window average with a stateful EMA on `pv_now` (mirrors the outlet EMA pattern). A bypass is applied when the 1h PV forecast is at or below `PV_TRAJ_ZERO_W` — the EMA is skipped and `pv_scalar` snaps to the instantaneous `pv_now`, resetting the EMA state. This prevents the binary search from carrying stale high PV readings into the end-of-day period when no more solar gain is forecast.
+
+### Added
+- `PV_SCALAR_EMA_ALPHA` config variable (default `0.35`, in `src/config.py`, `.env_sample`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`) — controls the EMA blend factor for `pv_scalar`.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

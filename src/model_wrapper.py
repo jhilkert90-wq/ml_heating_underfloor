@@ -83,6 +83,10 @@ class EnhancedModelWrapper:
         self._fireplace_last_on_time: Optional[datetime] = None
         self._fireplace_on_since: Optional[datetime] = None
 
+        # Stateful EMA for pv_scalar used in the binary search.
+        # Smooths cycle-to-cycle PV noise the same way the outlet EMA does.
+        self._pv_scalar_ema: Optional[float] = None
+
         logging.info(
             "🎯 Model Wrapper initialized with ThermalEquilibriumModel"
         )
@@ -495,19 +499,48 @@ class EnhancedModelWrapper:
 
         # Multi-heat source features
         # Use scalar for pv_power (for prediction_context_manager math)
-        # Pass history separately for 45-min rolling average lag calculation
+        # Pass history separately for lag calculation in the thermal model.
         pv_history = features.get("pv_power_history")
         pv_now = features.get("pv_now", 0.0)
-        
-        # Calculate scalar using the same lag window the thermal model uses.
-        # Averaging the full 3h history would include old PV values from
-        # earlier in the day even when PV has been 0 for the last hour+.
-        if pv_history and len(pv_history) > 0:
-            lag_steps = max(1, round(config.SOLAR_LAG_MINUTES / config.HISTORY_STEP_MINUTES))
-            lag_window = pv_history[-lag_steps:]
-            pv_scalar = sum(lag_window) / len(lag_window)
-        else:
+
+        # Compute pv_scalar via a stateful EMA on pv_now (mirrors the outlet
+        # EMA pattern).  This damps cycle-to-cycle sensor noise without the
+        # 45-min lag-window's problem of carrying stale high readings into the
+        # end-of-day binary search.
+        #
+        # End-of-sun bypass: when the next-hour forecast is at or below the
+        # PV zero threshold, no more solar gain is coming.  We snap pv_scalar
+        # to the current instantaneous reading and reset the EMA state so the
+        # binary search plans with today's remaining sun rather than yesterday's
+        # average.
+        pv_forecast_1h = float(features.get(
+            "pv_forecast_electrical_1h",
+            features.get("pv_forecast_1h", pv_now),
+        ))
+        pv_zero_w = float(getattr(config, "PV_TRAJ_ZERO_W", 50.0))
+        if pv_forecast_1h <= pv_zero_w:
             pv_scalar = pv_now
+            self._pv_scalar_ema = pv_now
+            logging.debug(
+                "PV scalar: no forecast sun (1h=%.0fW ≤ %.0fW), "
+                "snapping to pv_now=%.0fW",
+                pv_forecast_1h, pv_zero_w, pv_now,
+            )
+        else:
+            alpha = float(getattr(config, "PV_SCALAR_EMA_ALPHA", 0.35))
+            prev = getattr(self, "_pv_scalar_ema", None)
+            if prev is None:
+                self._pv_scalar_ema = pv_now
+            else:
+                self._pv_scalar_ema = alpha * pv_now + (1.0 - alpha) * prev
+            pv_scalar = self._pv_scalar_ema
+            logging.debug(
+                "PV scalar EMA: %.0fW → %.0fW (prev=%.0fW, α=%.2f)",
+                pv_now,
+                pv_scalar,
+                prev if prev is not None else pv_now,
+                alpha,
+            )
 
         # Apply cloud discount to PV scalar before it enters the binary
         # search.  Without this, a raw sensor spike (e.g. 4 kW during a
