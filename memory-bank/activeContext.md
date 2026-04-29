@@ -1,20 +1,22 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **pv_scalar EMA refactor — April 29, 2026**
+### ✅ **pv_scalar rolling-window + CHEAP ramp + overshoot dampening — April 29, 2026**
 
 #### **What changed**
 
-**`_extract_thermal_features()` in `src/model_wrapper.py`**: The 45-min rolling-window average (`pv_history[-lag_steps:]`) used to compute `pv_scalar` was replaced with a stateful EMA on `pv_now`.
+Three changes in `src/model_wrapper.py`:
 
-- Normal path: `self._pv_scalar_ema = alpha * pv_now + (1-alpha) * self._pv_scalar_ema`. Warm-up on first cycle (sets EMA = `pv_now`).
-- End-of-sun bypass: when `pv_forecast_electrical_1h` (falling back to `pv_forecast_1h`) ≤ `PV_TRAJ_ZERO_W`, `pv_scalar = pv_now` and `self._pv_scalar_ema` is reset to `pv_now`. Prevents carrying stale high values when no more solar gain is forecast — the original bug the lag-window fix was trying to solve, and which a pure EMA would have re-introduced.
-- New config var: `PV_SCALAR_EMA_ALPHA` (default 0.35, ~3 cycles to clear a cloud spike).
+1. **`_extract_thermal_features()`**: Reverted EMA to rolling-window `mean(pv_power_history)`. Added end-of-sun override: when `pv_forecast_electrical_1h` (fallback `pv_forecast_1h`) ≤ `PV_TRAJ_ZERO_W`, history is cleared to `None` and `pv_scalar` snaps to `pv_now`. No `self._pv_scalar_ema` attribute; `PV_SCALAR_EMA_ALPHA` removed from config.
+2. **PV surplus CHEAP block**: Linear ramp over `PV_SURPLUS_CHEAP_RAMP_W` band below `PV_SURPLUS_CHEAP_THRESHOLD_W`. New config var defaults to threshold (ramp starts at 0 W). `new_adjusted > target_adjusted` guard preserved.
+3. **Overshoot dampening**: Numerator changed `0.4 → 1.0`; `overshoot_dampening = 1.0 / max(slab_tau, 1.0)`.
 
 #### **Why**
-The 45-min window spans up to 60 min at `HISTORY_STEP_MINUTES=10` (5–6 samples), which is wider than `SOLAR_LAG_MINUTES=45`. More importantly, the window average still carries old high readings at end-of-day when no more sun is forecast, causing the binary search to underestimate the house's future cooling rate. The EMA-on-`pv_now` with end-of-sun bypass addresses both issues cleanly.
+- Rolling window is stateless and avoids the EMA smoothing lag when sun is fading.
+- Binary step at the PV surplus threshold causes a sudden 0.5°C target jump; soft-ramp eliminates that discontinuity.
+- 0.4 dampening was too weak; 1.0 gives decisive pull-back while the slab_tau divisor still protects slow slabs.
 
 #### **Files changed**
-`src/model_wrapper.py`, `src/config.py`, `.env_sample`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`
+`src/model_wrapper.py`, `src/config.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
 ---
 

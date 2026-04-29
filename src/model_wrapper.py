@@ -83,10 +83,6 @@ class EnhancedModelWrapper:
         self._fireplace_last_on_time: Optional[datetime] = None
         self._fireplace_on_since: Optional[datetime] = None
 
-        # Stateful EMA for pv_scalar used in the binary search.
-        # Smooths cycle-to-cycle PV noise the same way the outlet EMA does.
-        self._pv_scalar_ema: Optional[float] = None
-
         logging.info(
             "🎯 Model Wrapper initialized with ThermalEquilibriumModel"
         )
@@ -414,20 +410,39 @@ class EnhancedModelWrapper:
                         "pv_now_electrical", features.get("pv_now", 0.0)
                     )
                 )
-                if pv_threshold > 0 and pv_now >= pv_threshold:
+                if pv_threshold > 0 and pv_now > 0:
                     cheap_offset = getattr(config, "PRICE_TARGET_OFFSET", 0.2)
-                    # Only raise the target, never lower it via this path
-                    new_adjusted = target_indoor + cheap_offset
-                    if new_adjusted > target_adjusted:
-                        target_adjusted = new_adjusted
-                        price_info["price_level"] = "cheap"
-                        price_info["price_target_offset"] = cheap_offset
-                        logging.info(
-                            "☀️ PV surplus %.0fW ≥ %.0fW: target %.1f → "
-                            "%.1f°C (CHEAP override, offset +%.1f)",
-                            pv_now, pv_threshold,
-                            target_indoor, target_adjusted, cheap_offset,
+                    # Soft-ramp blend zone below the threshold to avoid an
+                    # abrupt step change in target temperature.
+                    ramp_w = float(getattr(
+                        config, "PV_SURPLUS_CHEAP_RAMP_W", pv_threshold
+                    ))
+                    ramp_w = max(ramp_w, 1.0)  # guard against zero/negative
+                    ramp_floor = pv_threshold - ramp_w
+                    if pv_now >= pv_threshold:
+                        partial_offset = cheap_offset
+                    elif pv_now > ramp_floor:
+                        partial_offset = (
+                            cheap_offset
+                            * (pv_now - ramp_floor)
+                            / ramp_w
                         )
+                    else:
+                        partial_offset = 0.0
+                    if partial_offset > 0.0:
+                        # Only raise the target, never lower it via this path
+                        new_adjusted = target_indoor + partial_offset
+                        if new_adjusted > target_adjusted:
+                            target_adjusted = new_adjusted
+                            price_info["price_level"] = "cheap"
+                            price_info["price_target_offset"] = partial_offset
+                            logging.info(
+                                "☀️ PV surplus %.0fW (threshold %.0fW): "
+                                "target %.1f → %.1f°C "
+                                "(CHEAP ramp offset +%.2f)",
+                                pv_now, pv_threshold,
+                                target_indoor, target_adjusted, partial_offset,
+                            )
 
             # Store current indoor for trajectory correction
             self._current_indoor = current_indoor
@@ -503,16 +518,20 @@ class EnhancedModelWrapper:
         pv_history = features.get("pv_power_history")
         pv_now = features.get("pv_now", 0.0)
 
-        # Compute pv_scalar via a stateful EMA on pv_now (mirrors the outlet
-        # EMA pattern).  This damps cycle-to-cycle sensor noise without the
-        # 45-min lag-window's problem of carrying stale high readings into the
-        # end-of-day binary search.
+        # Compute pv_scalar from the rolling-window average (solar_lag_minutes
+        # history window) so the binary search sees a smoothed solar-gain value
+        # during normal daylight operation.
         #
-        # End-of-sun bypass: when the next-hour forecast is at or below the
-        # PV zero threshold, no more solar gain is coming.  We snap pv_scalar
-        # to the current instantaneous reading and reset the EMA state so the
-        # binary search plans with today's remaining sun rather than yesterday's
-        # average.
+        # End-of-sun override: when the next-hour forecast is at or below the
+        # PV zero threshold, no more solar gain is coming.  We reset the
+        # rolling window (clear pv_power_history) and snap pv_scalar to the
+        # current thermally-corrected pv_now so the binary search plans without
+        # a stale high average from mid-day.
+        if pv_history:
+            pv_scalar = float(np.mean(pv_history))
+        else:
+            pv_scalar = pv_now
+
         pv_forecast_1h = float(features.get(
             "pv_forecast_electrical_1h",
             features.get("pv_forecast_1h", pv_now),
@@ -520,26 +539,11 @@ class EnhancedModelWrapper:
         pv_zero_w = float(getattr(config, "PV_TRAJ_ZERO_W", 50.0))
         if pv_forecast_1h <= pv_zero_w:
             pv_scalar = pv_now
-            self._pv_scalar_ema = pv_now
+            pv_history = None  # reset rolling window
             logging.debug(
                 "PV scalar: no forecast sun (1h=%.0fW ≤ %.0fW), "
-                "snapping to pv_now=%.0fW",
+                "snapping to pv_now=%.0fW (rolling window reset)",
                 pv_forecast_1h, pv_zero_w, pv_now,
-            )
-        else:
-            alpha = float(getattr(config, "PV_SCALAR_EMA_ALPHA", 0.35))
-            prev = getattr(self, "_pv_scalar_ema", None)
-            if prev is None:
-                self._pv_scalar_ema = pv_now
-            else:
-                self._pv_scalar_ema = alpha * pv_now + (1.0 - alpha) * prev
-            pv_scalar = self._pv_scalar_ema
-            logging.debug(
-                "PV scalar EMA: %.0fW → %.0fW (prev=%.0fW, α=%.2f)",
-                pv_now,
-                pv_scalar,
-                prev if prev is not None else pv_now,
-                alpha,
             )
 
         # Apply cloud discount to PV scalar before it enters the binary
@@ -1783,7 +1787,7 @@ class EnhancedModelWrapper:
             else:
                 # When overshooting, scale dampening by slab time constant.
                 # Slower slabs need gentler pull-back.
-                overshoot_dampening = 0.4 / max(slab_tau, 1.0)
+                overshoot_dampening = 1.0 / max(slab_tau, 1.0)
                 correction = (
                     temp_error
                     * physics_scale
