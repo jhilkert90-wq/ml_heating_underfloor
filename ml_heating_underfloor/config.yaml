@@ -413,9 +413,6 @@ options:
   outlet_smoothing_alpha: 0.3
   # Skip smoothing when change exceeds this threshold (°C) for fast recovery
   outlet_smoothing_bypass: 2.0
-  # EMA smoothing factor for pv_scalar in the binary search (0.0=max smoothing, 1.0=none)
-  # Bypassed when next-hour PV forecast is at/below the zero threshold (snaps to pv_now)
-  pv_scalar_ema_alpha: 0.35
 
 schema:
   # Core Entity Configuration
@@ -608,4 +605,3 @@ schema:
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"
-  pv_scalar_ema_alpha: "float(0.0,1.0)"

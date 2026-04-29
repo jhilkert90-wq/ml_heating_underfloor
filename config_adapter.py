@@ -552,9 +552,6 @@ def convert_addon_to_env(config):
         'OUTLET_SMOOTHING_BYPASS': str(
             config.get('outlet_smoothing_bypass', 2.0)
         ),
-        'PV_SCALAR_EMA_ALPHA': str(
-            config.get('pv_scalar_ema_alpha', 0.35)
-        ),
     }
 
     # Set environment variables for the ML system

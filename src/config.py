@@ -257,7 +257,7 @@ PV_SURPLUS_CHEAP_THRESHOLD_W: int = int(
 # In the range [threshold - ramp_w, threshold] the CHEAP offset scales
 # linearly from 0 to full.  Defaults to threshold (i.e. ramp starts at 0 W).
 PV_SURPLUS_CHEAP_RAMP_W: float = float(
-    os.getenv("PV_SURPLUS_CHEAP_RAMP_W", str(int(os.getenv("PV_SURPLUS_CHEAP_THRESHOLD_W", "3000"))))
+    os.getenv("PV_SURPLUS_CHEAP_RAMP_W", str(PV_SURPLUS_CHEAP_THRESHOLD_W))
 )
 
 # --- Forecast-Driven Trajectory Mode ---
