@@ -95,8 +95,10 @@ class TestLoadStateFromFile:
         }
         state_file.write_text(json.dumps(data))
         instance = AdaptiveFireplaceLearning(state_file=str(state_file))
-        # Observation should load successfully (migration handled)
-        assert len(instance.learning_state.observations) >= 0  # no crash
+        # Migration must produce exactly one loaded observation with the correct value
+        observations = instance.learning_state.observations
+        assert len(observations) == 1
+        assert observations[0].fireplace_active is True
 
     def test_corrupt_json_creates_new_state(self, tmp_path):
         state_file = tmp_path / "state.json"

@@ -55,9 +55,22 @@ class TestBuildEntityMap:
 
     def test_optional_living_room_absent_when_none(self):
         from src import config
+        original_living_room = getattr(config, "LIVING_ROOM_TEMP_ENTITY_ID", None)
+        baseline_entity_map = _build_entity_map()
+
         with patch.object(config, "LIVING_ROOM_TEMP_ENTITY_ID", None):
             entity_map = _build_entity_map()
-            assert None not in entity_map
+
+        if original_living_room:
+            expected_entity_map = {
+                eid: short_name
+                for eid, short_name in baseline_entity_map.items()
+                if eid != original_living_room
+            }
+            assert entity_map == expected_entity_map
+            assert original_living_room not in entity_map
+        else:
+            assert entity_map == baseline_entity_map
 
 
 # ---------------------------------------------------------------------------

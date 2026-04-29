@@ -504,8 +504,9 @@ class TestStateManagerIntegration:
         mgr.save_state.assert_called()
 
     def test_state_manager_load_exception_falls_back_to_empty(self):
+        from unittest.mock import PropertyMock
         mgr = MagicMock()
-        mgr.state = MagicMock(side_effect=Exception("broken"))
+        type(mgr).state = PropertyMock(side_effect=Exception("broken"))
         pm = PredictionMetrics(state_manager=mgr)
         assert isinstance(pm.predictions, deque)
         assert len(pm.predictions) == 0
