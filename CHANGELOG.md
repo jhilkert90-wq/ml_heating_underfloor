@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Expanded test coverage for forecast analytics and thermal state validation, and refreshed PV surplus pricing tests to match the current soft-ramp electrical-PV behavior
+
+### Fixed
+- Clarified PV surplus soft-ramp test wording, hardened validator warning capture, and disambiguated the progress log entry headings for the coverage follow-up
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
