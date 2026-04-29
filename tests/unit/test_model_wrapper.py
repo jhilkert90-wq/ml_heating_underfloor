@@ -492,7 +492,7 @@ class TestPvScalarCloudDiscount:
 
     def test_cloud_discount_reduces_pv_scalar(self, wrapper, monkeypatch):
         """With 60% cloud cover, pv_scalar should be substantially less
-        than pv_now."""
+        than pv_now. EMA warm-up path is exercised (pv_scalar_ema starts None)."""
         monkeypatch.setattr(config, "CLOUD_COVER_CORRECTION_ENABLED", True)
         monkeypatch.setattr(config, "CLOUD_CORRECTION_MIN_FACTOR", 0.1,
                             raising=False)
@@ -511,6 +511,8 @@ class TestPvScalarCloudDiscount:
             f"Expected cloud-discounted PV, got {result['pv_power']}"
         )
         assert result["pv_power"] > 0, "PV should not be zero"
+        # EMA state should be set to pv_now (warm-up cycle)
+        assert wrapper._pv_scalar_ema == pytest.approx(4000.0, rel=0.01)
 
     def test_cloud_discount_clear_sky(self, wrapper, monkeypatch):
         """With 0% cloud cover, pv_scalar should be unchanged (factor=1.0)."""
@@ -608,6 +610,17 @@ class TestPvScalarCloudDiscount:
         )
         # EMA state must also be reset to pv_now
         assert wrapper._pv_scalar_ema == pytest.approx(200.0, rel=0.01)
+
+        # After bypass, EMA must resume normal smoothing on the next cycle
+        features_resume = {
+            "pv_now": 400,
+            "pv_forecast_1h": 300.0,  # > PV_TRAJ_ZERO_W → EMA path
+        }
+        result_resume = wrapper._extract_thermal_features(features_resume)
+        # EMA: alpha=0.35 * 400 + 0.65 * 200 = 140 + 130 = 270
+        assert result_resume["pv_power"] == pytest.approx(270.0, abs=1.0), (
+            f"EMA should resume after bypass; expected ~270, got {result_resume['pv_power']}"
+        )
 
     def test_pv_scalar_electrical_forecast_key_takes_precedence(
         self, wrapper, monkeypatch
