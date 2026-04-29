@@ -1,10 +1,14 @@
 
 import pytest
 import json
+import builtins
+import runpy
+import warnings
 from unittest.mock import patch, mock_open, MagicMock
 from src.thermal_state_validator import (
     ThermalStateValidator,
     ThermalStateValidationError,
+    ValidationError,
     validate_thermal_state_safely,
 )
 
@@ -117,6 +121,61 @@ def test_strict_validation_passing(mock_validate, valid_thermal_state_data):
         )
 
 
+@patch("src.thermal_state_validator.SCHEMA_VALIDATION_AVAILABLE", True)
+@patch("src.thermal_state_validator.validate")
+def test_strict_validation_schema_failure(mock_validate, valid_thermal_state_data):
+    """Strict schema failures should be wrapped in ThermalStateValidationError."""
+    mock_schema_class = MagicMock()
+    mock_schema_class.get_unified_thermal_state_schema.return_value = {
+        "type": "object"
+    }
+    mock_schema_module = MagicMock()
+    mock_schema_module.ThermalStateSchema = mock_schema_class
+    mock_validate.side_effect = ValidationError("boom")
+
+    with patch.dict(
+        "sys.modules",
+        {"tests.test_thermal_state_schema_validation": mock_schema_module},
+    ):
+        with pytest.raises(
+            ThermalStateValidationError, match="Schema validation failed"
+        ):
+            ThermalStateValidator.validate_thermal_state_data(
+                valid_thermal_state_data, strict=True
+            )
+
+
+def test_validate_thermal_state_data_importerror_uses_fallback_ranges(
+    valid_thermal_state_data, monkeypatch, caplog
+):
+    """Import failures should fall back to built-in parameter ranges."""
+    original_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "thermal_config" and level == 1:
+            raise ImportError("missing thermal_config")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    valid_thermal_state_data["baseline_parameters"]["thermal_time_constant"] = 200.0
+
+    assert ThermalStateValidator.validate_thermal_state_data(valid_thermal_state_data)
+    assert "out of range" in caplog.text
+
+
+def test_validate_thermal_state_data_skips_missing_config_bounds(
+    valid_thermal_state_data,
+):
+    """Missing config bounds should be ignored instead of failing validation."""
+    with patch(
+        "src.thermal_config.ThermalParameterConfig.get_bounds",
+        side_effect=KeyError("missing bounds"),
+    ):
+        assert ThermalStateValidator.validate_thermal_state_data(
+            valid_thermal_state_data
+        )
+
+
 def test_validate_file_valid(valid_thermal_state_data):
     """Test validation of a valid file."""
     read_data = json.dumps(valid_thermal_state_data)
@@ -155,3 +214,38 @@ def test_validate_thermal_state_safely_invalid(
     assert validate_thermal_state_safely(valid_thermal_state_data) is False
     assert "Thermal state validation failed" in caplog.text
 
+
+def test_validate_thermal_state_safely_unexpected_error(
+    valid_thermal_state_data, caplog
+):
+    """Unexpected validator errors should be logged and converted to False."""
+    with patch.object(
+        ThermalStateValidator,
+        "validate_thermal_state_data",
+        side_effect=RuntimeError("boom"),
+    ):
+        assert validate_thermal_state_safely(valid_thermal_state_data) is False
+
+    assert "Unexpected validation error" in caplog.text
+
+
+def test_module_main_reports_missing_file(capsys):
+    """Module CLI should report when the default thermal state file is missing."""
+    with patch("os.path.exists", return_value=False):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            runpy.run_module("src.thermal_state_validator", run_name="__main__")
+
+    assert "thermal_state.json not found" in capsys.readouterr().out
+
+
+def test_module_main_validates_existing_file(valid_thermal_state_data, capsys):
+    """Module CLI should validate and report success for a valid JSON file."""
+    with patch("os.path.exists", return_value=True), patch(
+        "builtins.open", mock_open(read_data=json.dumps(valid_thermal_state_data))
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            runpy.run_module("src.thermal_state_validator", run_name="__main__")
+
+    assert "validation passed" in capsys.readouterr().out

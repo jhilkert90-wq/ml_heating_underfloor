@@ -2,6 +2,28 @@
 
 ## 🎯 CURRENT STATUS - April 29, 2026
 
+### ✅ **TEST: forecast analytics + thermal state validation coverage expansion**
+
+**Status**: **COMPLETED**
+
+Coverage analysis highlighted remaining branch gaps in `src/forecast_analytics.py` and `src/thermal_state_validator.py`, plus stale PV surplus assertions in the price optimizer tests. Added focused test cases for fallback strategies, invalid accuracy inputs, schema failures, fallback parameter-range validation, safe-wrapper error handling, CLI entry paths, and ramp-based PV surplus metadata.
+
+| Module | Before | After |
+|--------|--------|-------|
+| `src/forecast_analytics.py` | 82% | 98% |
+| `src/thermal_state_validator.py` | 74% | 91% |
+
+**Files Changed:**
+- `tests/unit/test_forecast_analytics.py`
+- `tests/unit/test_thermal_state_validator.py`
+- `tests/unit/test_price_optimizer.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
+---
+
+## 🎯 CURRENT STATUS - April 29, 2026
+
 ### ✅ **TEST: Comprehensive test coverage analysis and improvements**
 
 **Status**: **COMPLETED**

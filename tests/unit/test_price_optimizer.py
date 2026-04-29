@@ -825,16 +825,17 @@ class TestRefreshPricesIfNeeded:
 class TestPvSurplusCheapOverride:
     """calculate_optimal_outlet_temp raises target when PV >= threshold."""
 
-    def test_pv_below_threshold_no_effect(self, clean_state):
-        """PV below threshold → target unchanged."""
+    def test_pv_below_ramp_floor_no_effect(self, clean_state):
+        """PV below the configured ramp floor leaves the target unchanged."""
         features_df = pd.DataFrame([{
             "indoor_temp_lag_30m": 21.0,
             "outdoor_temp": 5.0,
-            "pv_power": 2000.0,
+            "pv_now_electrical": 1500.0,
         }])
         with (
             patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
             patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PV_SURPLUS_CHEAP_RAMP_W", 1000),
             patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
             patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
         ):
@@ -843,16 +844,39 @@ class TestPvSurplusCheapOverride:
             )
         assert meta["target_temp_adjusted"] == pytest.approx(22.0)
 
+    def test_pv_in_blend_zone_applies_partial_offset(self, clean_state):
+        """PV inside the ramp blend zone applies a proportional cheap offset."""
+        features_df = pd.DataFrame([{
+            "indoor_temp_lag_30m": 21.0,
+            "outdoor_temp": 5.0,
+            "pv_now_electrical": 2500.0,
+        }])
+        with (
+            patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
+            patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PV_SURPLUS_CHEAP_RAMP_W", 1000),
+            patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
+            patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
+        ):
+            _, _, meta = simplified_outlet_prediction(
+                features_df, 21.0, 22.0
+            )
+
+        assert meta["target_temp_adjusted"] == pytest.approx(22.1)
+        assert meta["price_level"] == "cheap"
+        assert meta["price_target_offset"] == pytest.approx(0.1)
+
     def test_pv_at_threshold_applies_cheap_offset(self, clean_state):
         """PV exactly at threshold → target raised by PRICE_TARGET_OFFSET."""
         features_df = pd.DataFrame([{
             "indoor_temp_lag_30m": 21.0,
             "outdoor_temp": 5.0,
-            "pv_power": 3000.0,
+            "pv_now_electrical": 3000.0,
         }])
         with (
             patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
             patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PV_SURPLUS_CHEAP_RAMP_W", 1000),
             patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
             patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
         ):
@@ -866,11 +890,12 @@ class TestPvSurplusCheapOverride:
         features_df = pd.DataFrame([{
             "indoor_temp_lag_30m": 21.0,
             "outdoor_temp": 5.0,
-            "pv_power": 10000.0,
+            "pv_now_electrical": 10000.0,
         }])
         with (
             patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
             patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PV_SURPLUS_CHEAP_RAMP_W", 1000),
             patch.object(config, "PRICE_TARGET_OFFSET", 0.5),
             patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
         ):
@@ -884,11 +909,12 @@ class TestPvSurplusCheapOverride:
         features_df = pd.DataFrame([{
             "indoor_temp_lag_30m": 21.0,
             "outdoor_temp": 5.0,
-            "pv_power": 15000.0,
+            "pv_now_electrical": 15000.0,
         }])
         with (
             patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", False),
             patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PV_SURPLUS_CHEAP_RAMP_W", 1000),
             patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
             patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
         ):
@@ -902,12 +928,13 @@ class TestPvSurplusCheapOverride:
         features_df = pd.DataFrame([{
             "indoor_temp_lag_30m": 21.0,
             "outdoor_temp": 5.0,
-            "pv_power": 5000.0,
+            "pv_now_electrical": 5000.0,
             "_electricity_price": {"current_price": 0.05, "today": [0.20] * 24},
         }])
         with (
             patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
             patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PV_SURPLUS_CHEAP_RAMP_W", 1000),
             patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
             patch.object(config, "ELECTRICITY_PRICE_ENABLED", True),
         ):
@@ -923,11 +950,12 @@ class TestPvSurplusCheapOverride:
         features_df = pd.DataFrame([{
             "indoor_temp_lag_30m": 21.0,
             "outdoor_temp": 5.0,
-            "pv_power": 5000.0,
+            "pv_now_electrical": 5000.0,
         }])
         with (
             patch.object(config, "PV_SURPLUS_CHEAP_ENABLED", True),
             patch.object(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000),
+            patch.object(config, "PV_SURPLUS_CHEAP_RAMP_W", 1000),
             patch.object(config, "PRICE_TARGET_OFFSET", 0.2),
             patch.object(config, "ELECTRICITY_PRICE_ENABLED", False),
         ):
