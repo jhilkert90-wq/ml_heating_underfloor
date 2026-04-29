@@ -46,7 +46,7 @@ def test_get_forecast_fallback_strategy():
     assert result["fallback_reason"] == "low_confidence"
 
 
-def test_get_forecast_fallback_strategy_low_availability_uses_day_night_rules():
+def test_get_forecast_fallback_strategy_low_availability():
     """Low availability falls back to seasonal temp shifts and day/night PV."""
     quality_metrics = {"overall_confidence": 0.8, "combined_availability": 0.4}
     current_conditions = {"outdoor_temp": 10.0, "pv_now": 50.0}

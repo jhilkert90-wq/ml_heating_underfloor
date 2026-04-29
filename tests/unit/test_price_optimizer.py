@@ -843,6 +843,8 @@ class TestPvSurplusCheapOverride:
                 features_df, 21.0, 22.0
             )
         assert meta["target_temp_adjusted"] == pytest.approx(22.0)
+        assert meta.get("price_level") is None
+        assert meta.get("price_target_offset") is None
 
     def test_pv_in_blend_zone_applies_partial_offset(self, clean_state):
         """PV inside the ramp blend zone applies a proportional cheap offset."""

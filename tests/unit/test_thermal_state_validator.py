@@ -145,7 +145,7 @@ def test_strict_validation_schema_failure(mock_validate, valid_thermal_state_dat
             )
 
 
-def test_validate_thermal_state_data_importerror_uses_fallback_ranges(
+def test_validate_thermal_state_data_import_error_fallback(
     valid_thermal_state_data, monkeypatch, caplog
 ):
     """Import failures should fall back to built-in parameter ranges."""
