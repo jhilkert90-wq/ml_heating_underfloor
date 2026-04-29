@@ -4,3 +4,7 @@ __pycache__/
 *.egg-info/
 .hypothesis/
 .env
+.coverage
+coverage.json
+coverage.xml
+htmlcov/

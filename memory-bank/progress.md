@@ -2,6 +2,31 @@
 
 ## 🎯 CURRENT STATUS - April 29, 2026
 
+### ✅ **TEST: Comprehensive test coverage analysis and improvements**
+
+**Status**: **COMPLETED**
+
+Analysed overall test coverage (74% baseline) and added 161 new unit tests targeting the 5 modules with the worst coverage.  Overall source coverage improved from 74% → 77%; total passing tests grew from 785 → 945.
+
+| Module | Before | After |
+|--------|--------|-------|
+| `src/thermal_constants.py` | 55% | 98% |
+| `src/prediction_metrics.py` | 63% | 84% |
+| `src/ha_history_service.py` | 75% | 90% |
+| `src/adaptive_fireplace_learning.py` | 73% | 89% |
+| `src/multi_heat_source_physics.py` | 72% | 81% |
+
+**Files Changed:**
+- `tests/unit/test_thermal_constants.py` (new — 65 tests)
+- `tests/unit/test_prediction_metrics_extended.py` (new — 58 tests)
+- `tests/unit/test_ha_history_service_extended.py` (new — 23 tests)
+- `tests/unit/test_adaptive_fireplace_learning_extended.py` (new — 28 tests)
+- `tests/unit/test_multi_heat_source_physics_extended.py` (new — 22 tests)
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
+---
+
 ### ✅ **FIX: pv_scalar rolling-window + end-of-sun override, PV surplus CHEAP soft-ramp, overshoot dampening 1.0**
 
 **Status**: **COMPLETED**
