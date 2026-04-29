@@ -899,110 +899,107 @@ class TestPredictionDriftDetection:
 # ---------------------------------------------------------------------------
 
 class TestPvSurplusCheapRamp:
-    """predict_outlet_temp should apply a linear ramp to the CHEAP offset in
-    the blend zone [threshold - ramp_w, threshold] rather than a binary step."""
+    """PV surplus CHEAP offset ramps linearly in the blend zone.
+
+    Tests call calculate_optimal_outlet_temp() so any regression in the
+    production ramp path causes a test failure — unlike a helper that
+    re-implements the same arithmetic.
+    """
 
     @pytest.fixture
-    def wrapper(self):
-        w = model_wrapper.EnhancedModelWrapper.__new__(
-            model_wrapper.EnhancedModelWrapper
-        )
-        w._avg_cloud_cover = 50.0
-        w._cloud_cover_forecast = [50.0] * 6
-        return w
+    def wrapper(self, clean_state):
+        return get_enhanced_model_wrapper()
 
-    def _call_pv_surplus_block(self, wrapper, monkeypatch, pv_now_elec,
-                                threshold=3000, ramp_w=None,
-                                cheap_offset=0.5, target=22.0):
-        """Helper: invoke only the PV surplus CHEAP block by patching config."""
-        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", True)
+    def _features(self, pv_now_elec, target=20.0, indoor=20.0):
+        return {
+            "indoor_temp_lag_30m": indoor,
+            "target_temp": target,
+            "outdoor_temp": 10.0,
+            "pv_now_electrical": float(pv_now_elec),
+            "pv_now": 0.0,
+            "pv_power_history": [0.0] * 5,
+            # Keep above PV_TRAJ_ZERO_W to avoid end-of-sun snap
+            "pv_forecast_1h": 2000.0,
+        }
+
+    def _call(self, wrapper, monkeypatch, pv_now_elec,
+              threshold=1000, ramp_w=1000, cheap_offset=0.5, target=20.0):
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", True,
+                            raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", False,
+                            raising=False)
         monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", threshold,
                             raising=False)
-        if ramp_w is not None:
-            monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_RAMP_W", ramp_w,
-                                raising=False)
-        else:
-            # Default: ramp_w == threshold
-            monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_RAMP_W", threshold,
-                                raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_RAMP_W", float(ramp_w),
+                            raising=False)
         monkeypatch.setattr(config, "PRICE_TARGET_OFFSET", cheap_offset,
                             raising=False)
-        features = {"pv_now_electrical": pv_now_elec}
-        # Simulate just the CHEAP block logic
-        pv_threshold = threshold
-        ramp_width = ramp_w if ramp_w is not None else threshold
-        ramp_width = max(ramp_width, 1.0)
-        ramp_floor = pv_threshold - ramp_width
-        pv = float(pv_now_elec)
-        if pv >= pv_threshold:
-            partial = cheap_offset
-        elif pv > ramp_floor:
-            partial = cheap_offset * (pv - ramp_floor) / ramp_width
-        else:
-            partial = 0.0
-        return partial
+        _, meta = wrapper.calculate_optimal_outlet_temp(
+            self._features(pv_now_elec, target=target)
+        )
+        return meta
 
-    def test_full_offset_above_threshold(self, wrapper, monkeypatch):
-        """At or above threshold, full cheap_offset is applied."""
-        partial = self._call_pv_surplus_block(wrapper, monkeypatch,
-                                               pv_now_elec=3000,
-                                               threshold=3000,
-                                               cheap_offset=0.5)
-        assert partial == pytest.approx(0.5, abs=0.001)
+    def test_full_offset_at_threshold(self, wrapper, monkeypatch):
+        """At threshold, full cheap_offset is applied."""
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=1000,
+                          threshold=1000, cheap_offset=0.5)
+        assert meta.get("price_level") == "cheap"
+        assert meta.get("price_target_offset") == pytest.approx(0.5, abs=0.001)
+        assert meta.get("target_temp_adjusted") == pytest.approx(20.5, abs=0.001)
 
     def test_full_offset_well_above_threshold(self, wrapper, monkeypatch):
-        """Well above threshold, full cheap_offset is still applied."""
-        partial = self._call_pv_surplus_block(wrapper, monkeypatch,
-                                               pv_now_elec=5000,
-                                               threshold=3000,
-                                               cheap_offset=0.5)
-        assert partial == pytest.approx(0.5, abs=0.001)
-
-    def test_zero_offset_below_ramp_floor(self, wrapper, monkeypatch):
-        """Below the ramp floor, offset must be 0."""
-        # threshold=3000, ramp_w=3000 → floor=0 → pv=0 → partial=0
-        partial = self._call_pv_surplus_block(wrapper, monkeypatch,
-                                               pv_now_elec=0,
-                                               threshold=3000,
-                                               ramp_w=3000,
-                                               cheap_offset=0.5)
-        assert partial == pytest.approx(0.0, abs=0.001)
+        """Well above threshold, full cheap_offset still applied."""
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=3000,
+                          threshold=1000, cheap_offset=0.5)
+        assert meta.get("price_level") == "cheap"
+        assert meta.get("price_target_offset") == pytest.approx(0.5, abs=0.001)
 
     def test_partial_offset_midpoint(self, wrapper, monkeypatch):
-        """At the midpoint of the ramp zone, offset should be 50% of max."""
-        # threshold=3000, ramp_w=3000 → floor=0, midpoint=1500
-        partial = self._call_pv_surplus_block(wrapper, monkeypatch,
-                                               pv_now_elec=1500,
-                                               threshold=3000,
-                                               ramp_w=3000,
-                                               cheap_offset=0.4)
-        assert partial == pytest.approx(0.2, abs=0.005)
+        """At the midpoint of the ramp zone, offset ≈ 50% of max."""
+        # threshold=1000, ramp_w=1000 → floor=0; midpoint pv_now=500
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=500,
+                          threshold=1000, ramp_w=1000, cheap_offset=0.4)
+        assert meta.get("price_level") == "cheap"
+        assert meta.get("price_target_offset") == pytest.approx(0.2, abs=0.005)
+        assert meta.get("target_temp_adjusted") == pytest.approx(20.2, abs=0.005)
 
     def test_partial_offset_three_quarters(self, wrapper, monkeypatch):
-        """At 75% of ramp zone, offset should be 75% of max."""
-        # threshold=3000, ramp_w=3000 → floor=0, 75%=2250
-        partial = self._call_pv_surplus_block(wrapper, monkeypatch,
-                                               pv_now_elec=2250,
-                                               threshold=3000,
-                                               ramp_w=3000,
-                                               cheap_offset=0.4)
-        assert partial == pytest.approx(0.3, abs=0.005)
+        """At 75% of ramp zone, offset ≈ 75% of max."""
+        # pv_now=750 → partial = 0.4 * 750/1000 = 0.3
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=750,
+                          threshold=1000, ramp_w=1000, cheap_offset=0.4)
+        assert meta.get("price_level") == "cheap"
+        assert meta.get("price_target_offset") == pytest.approx(0.3, abs=0.005)
 
-    def test_narrow_ramp_w_still_continuous(self, wrapper, monkeypatch):
-        """A narrow ramp_w=500 should scale linearly within [2500, 3000]."""
-        # threshold=3000, ramp_w=500 → floor=2500
-        partial_mid = self._call_pv_surplus_block(wrapper, monkeypatch,
-                                                   pv_now_elec=2750,
-                                                   threshold=3000,
-                                                   ramp_w=500,
-                                                   cheap_offset=1.0)
-        assert partial_mid == pytest.approx(0.5, abs=0.005)
+    def test_zero_offset_below_ramp_floor(self, wrapper, monkeypatch):
+        """Below the ramp floor (narrow ramp_w), offset is 0."""
+        # threshold=1000, ramp_w=200 → floor=800; pv_now=700 < floor → 0
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=700,
+                          threshold=1000, ramp_w=200, cheap_offset=0.5)
+        assert meta.get("price_target_offset", 0.0) == pytest.approx(0.0,
+                                                                      abs=0.001)
+        assert meta.get("target_temp_adjusted") == pytest.approx(20.0, abs=0.001)
 
-    def test_offset_never_applied_when_disabled(self, wrapper, monkeypatch):
-        """When PV_SURPLUS_CHEAP_ENABLED=False, no override should occur."""
-        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False)
-        # We verify that the block is gated by checking the config flag
-        assert not getattr(config, "PV_SURPLUS_CHEAP_ENABLED", False)
+    def test_ramp_w_larger_than_threshold_clamped(self, wrapper, monkeypatch):
+        """ramp_w > threshold is clamped to threshold so floor stays at 0."""
+        # ramp_w=2000 > threshold=1000 → clamped to 1000 → floor=0
+        # pv_now=100: partial = 1.0 * (100 - 0) / 1000 = 0.1
+        meta = self._call(wrapper, monkeypatch, pv_now_elec=100,
+                          threshold=1000, ramp_w=2000, cheap_offset=1.0)
+        assert meta.get("price_target_offset") == pytest.approx(0.1, abs=0.005)
+
+    def test_disabled_no_offset(self, wrapper, monkeypatch):
+        """When PV_SURPLUS_CHEAP_ENABLED=False, no offset is applied."""
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False,
+                            raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", False,
+                            raising=False)
+        _, meta = wrapper.calculate_optimal_outlet_temp(
+            self._features(pv_now_elec=5000)
+        )
+        assert meta.get("price_target_offset", 0.0) == pytest.approx(0.0,
+                                                                      abs=0.001)
+        assert meta.get("target_temp_adjusted") == pytest.approx(20.0, abs=0.001)
 
 
 # ---------------------------------------------------------------------------
@@ -1010,30 +1007,77 @@ class TestPvSurplusCheapRamp:
 # ---------------------------------------------------------------------------
 
 class TestOvershootDampening:
-    """When the binary search detects an overshoot, the dampening numerator
-    is 1.0, not 0.4 — giving 2.5x stronger pull-back."""
+    """The overshoot branch of _calculate_physics_based_correction uses
+    1.0 / max(slab_tau, 1.0) — 2.5× stronger than the old 0.4 constant.
 
-    def test_dampening_numerator_is_one(self):
-        """overshoot_dampening = 1.0 / max(slab_tau, 1.0) for slab_tau=1."""
-        slab_tau = 1.0
-        overshoot_dampening = 1.0 / max(slab_tau, 1.0)
-        assert overshoot_dampening == pytest.approx(1.0, abs=0.001)
+    Tests call the real correction path with controlled thermal-model state so
+    a regression back to 0.4 would break them.
+    """
 
-    def test_dampening_scales_with_slab_tau(self):
-        """For large slab_tau, dampening is inversely scaled."""
-        slab_tau = 5.0
-        overshoot_dampening = 1.0 / max(slab_tau, 1.0)
-        assert overshoot_dampening == pytest.approx(0.2, abs=0.001)
+    # Known thermal-model values for deterministic calculation:
+    #   slab_tau      = 2.0
+    #   physics_scale = min((1/0.5)*1.1, 2.5) = 2.2
+    #   trajectory    = [22.3, 22.4, 22.5, 22.6], reaches_target_at=None
+    #     → max_predicted = 22.6, temp_error = 22.0-22.6 = -0.6
+    #     → time_pressure = 1.0 (reaches_target_at is None)
+    #     → urgency_multiplier = 1.0 + 2.0*1.0² = 3.0
+    #   new overshoot_dampening = 1.0/2.0 = 0.5
+    #   new correction = -0.6 * 2.2 * 3.0 * 0.5 = -1.98
+    #   old correction = -0.6 * 2.2 * 3.0 * 0.2 = -0.792  (0.4/2.0=0.2)
+    _OUTLET_TEMP = 30.0
+    _TARGET = 22.0
+    _EXPECTED_CORRECTION_NEW = -0.6 * 2.2 * 3.0 * 0.5   # -1.98
+    _EXPECTED_CORRECTION_OLD = -0.6 * 2.2 * 3.0 * 0.2   # -0.792
 
-    def test_dampening_clamped_at_one_for_fast_slab(self):
-        """For slab_tau < 1, max() ensures dampening is at most 1.0."""
-        slab_tau = 0.5
-        overshoot_dampening = 1.0 / max(slab_tau, 1.0)
-        assert overshoot_dampening == pytest.approx(1.0, abs=0.001)
+    @pytest.fixture
+    def wrapper(self, clean_state):
+        w = get_enhanced_model_wrapper()
+        w.thermal_model.slab_time_constant_hours = 2.0
+        w.thermal_model.outlet_effectiveness = 0.5
+        w._current_indoor = 22.5          # current > target → overshoot scenario
+        w._current_features = {"indoor_temp_delta_60m": 0.1}
+        return w
 
-    def test_dampening_stronger_than_old_value(self):
-        """New dampening (1.0/tau) must be 2.5x stronger than old (0.4/tau)."""
-        slab_tau = 2.0
-        old_dampening = 0.4 / max(slab_tau, 1.0)
-        new_dampening = 1.0 / max(slab_tau, 1.0)
-        assert new_dampening == pytest.approx(old_dampening * 2.5, rel=0.01)
+    def _make_trajectory(self, temps, reaches_target_at=None):
+        return {
+            "trajectory": temps,
+            "times": [i * 0.25 for i in range(1, len(temps) + 1)],
+            "reaches_target_at": reaches_target_at,
+        }
+
+    def test_overshoot_correction_applied(self, wrapper, monkeypatch):
+        """Overshoot path pulls outlet down (result < outlet_temp)."""
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        result = wrapper._calculate_physics_based_correction(
+            outlet_temp=self._OUTLET_TEMP,
+            trajectory=self._make_trajectory([22.3, 22.4, 22.5, 22.6]),
+            target_indoor=self._TARGET,
+            cycle_hours=0.25,
+        )
+        assert result < self._OUTLET_TEMP, (
+            "Overshoot correction must lower the outlet setpoint"
+        )
+
+    def test_correction_magnitude_matches_1_0_dampening(
+        self, wrapper, monkeypatch
+    ):
+        """Correction matches 1.0/slab_tau dampening, not the old 0.4/slab_tau."""
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        result = wrapper._calculate_physics_based_correction(
+            outlet_temp=self._OUTLET_TEMP,
+            trajectory=self._make_trajectory([22.3, 22.4, 22.5, 22.6]),
+            target_indoor=self._TARGET,
+            cycle_hours=0.25,
+        )
+        expected_new = self._OUTLET_TEMP + self._EXPECTED_CORRECTION_NEW
+        expected_old = self._OUTLET_TEMP + self._EXPECTED_CORRECTION_OLD
+        # Result should be close to the 1.0-dampening expectation
+        assert result == pytest.approx(expected_new, abs=0.05), (
+            f"Expected correction consistent with 1.0/slab_tau "
+            f"(outlet≈{expected_new:.2f}°C), got {result:.2f}°C"
+        )
+        # And clearly different from the old 0.4-dampening expectation
+        assert abs(result - expected_old) > 0.5, (
+            f"Result {result:.2f}°C is too close to old 0.4-dampening "
+            f"value {expected_old:.2f}°C — constant may not have changed"
+        )

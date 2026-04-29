@@ -417,7 +417,11 @@ class EnhancedModelWrapper:
                     ramp_w = float(getattr(
                         config, "PV_SURPLUS_CHEAP_RAMP_W", pv_threshold
                     ))
-                    ramp_w = max(ramp_w, 1.0)  # guard against zero/negative
+                    # Clamp to [1, threshold] so ramp_floor is always >= 0.
+                    # Without the upper clamp a misconfigured ramp_w > threshold
+                    # would make ramp_floor negative, producing a positive offset
+                    # even at near-zero PV output.
+                    ramp_w = max(1.0, min(ramp_w, float(pv_threshold)))
                     ramp_floor = pv_threshold - ramp_w
                     if pv_now >= pv_threshold:
                         partial_offset = cheap_offset
