@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Day-Level HLC Session Learner** (`HLCSessionLearner` class in `src/hlc_learner.py`): accumulates HP cycles per calendar day, validates each day against the same quality gates as the existing 60-min HLC learner, and persists validated `DayRecord`s to a rolling JSON file. OLS regression over stored day records produces a multi-day HLC estimate that survives process restarts.
-- `DayRecord` dataclass with fields: `date`, `mean_thermal_power_kw`, `mean_delta_t`, `n_cycles`, `outdoor_temp_mean`, `indoor_temp_mean`, `avg_power_w` (mean thermal power in Watts = mean_thermal_power_kw × 1000).
-- 6 new configuration variables: `HLC_SESSION_ENABLED`, `HLC_SESSION_FILE`, `HLC_SESSION_MIN_CYCLES`, `HLC_SESSION_MAX_DAYS`, `HLC_SESSION_MIN_DAYS`, `HLC_SESSION_MAX_UPDATE_FRACTION`. `HLC_SESSION_FILE` defaults to the same directory as `UNIFIED_STATE_FILE`.
-- Tooltip descriptions for all 6 new config parameters in `ml_heating_underfloor/translations/en.yaml`.
-- 18 unit tests in `tests/unit/test_hlc_session_learner.py` covering `DayRecord`, no-HP-activity guard, minimum-cycle rejection, day rollover, load/save round-trip, OLS correctness, and apply-to-thermal-state capping.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
