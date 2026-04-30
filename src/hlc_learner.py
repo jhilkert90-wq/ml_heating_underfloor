@@ -885,17 +885,24 @@ class HLCSessionLearner:
             payload = {
                 "day_records": [asdict(r) for r in self._day_records],
             }
+            tmp_path = None
             with tempfile.NamedTemporaryFile(
-                "w", dir=dir_path, delete=False, suffix=".tmp"
+                "w", dir=dir_path, delete=False, suffix=".tmp", encoding="utf-8"
             ) as tmp_f:
-                json.dump(payload, tmp_f, indent=2)
                 tmp_path = tmp_f.name
+                json.dump(payload, tmp_f, indent=2)
             os.replace(tmp_path, session_file)
+            tmp_path = None  # successfully renamed; nothing to clean up
             logger.debug(
                 "💾 HLC session: saved %d day records to %s",
                 len(self._day_records),
                 session_file,
             )
         except Exception as exc:
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
             logger.error("❌ HLC session: failed to save %s — %s", session_file, exc)
 

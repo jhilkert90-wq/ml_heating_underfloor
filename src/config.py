@@ -523,10 +523,10 @@ HLC_MAX_UPDATE_FRACTION: float = float(
 )
 
 # --- Day-Level HLC Session Learner ---
-# Persists one HLC data record per calendar day.  At midnight (or the next
-# startup after midnight) the accumulated cycles for the previous day are
-# validated against the same quality gates as the 60-min HLCLearner and, when
-# passing, appended to a rolling JSON store.  OLS regression over stored
+# Persists one HLC data record per calendar day.  On the first push after
+# midnight, the accumulated cycles for the previous day are validated against
+# the same quality gates as the 60-min HLCLearner and, when passing,
+# appended to a rolling JSON store.  OLS regression over stored
 # DayRecords produces a multi-day HLC estimate.
 # Enable the day-level session learner (disabled by default).
 HLC_SESSION_ENABLED: bool = (
@@ -544,7 +544,8 @@ HLC_SESSION_FILE: str = (
     )
 )
 # Minimum number of active HP cycles in a day for the day record to be kept.
-# Days where the heat pump ran for fewer cycles than this are silently discarded.
+# Days where the heat pump ran for fewer cycles than this are rejected and
+# reported with a reject_reason string rather than being silently discarded.
 HLC_SESSION_MIN_CYCLES: int = int(os.getenv("HLC_SESSION_MIN_CYCLES", "6"))
 # Rolling cap: keep at most this many validated day records.  Oldest records
 # are discarded when the store exceeds this limit.
