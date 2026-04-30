@@ -431,6 +431,26 @@ configuration:
     name: "HLC Maximum Update Fraction [Advanced]"
     description: "Maximum allowed relative change when applying a new HLC estimate to the thermal model. 0.3 = the new HLC can differ by at most 30% from the current value per update. Prevents runaway updates from outlier windows. Default: 0.3."
 
+  # === Day-Level HLC Session Learner (Advanced) ===
+  hlc_session_enabled:
+    name: "Day-Level HLC Session Learner Enabled [Advanced]"
+    description: "Enables the day-level Heat Loss Coefficient session learner. Each calendar day on which the heat pump ran is validated and stored as a DayRecord in a persistent JSON file. OLS regression over these day records produces a multi-day HLC estimate that survives process restarts. Disabled by default — enable only after the system has been running for several days."
+  hlc_session_file:
+    name: "HLC Session File Path [Advanced]"
+    description: "Path to the JSON file where daily HLC session records are persisted across restarts. Leave empty to use the same directory as the unified thermal state file. Default: same directory as UNIFIED_STATE_FILE (e.g. /opt/ml_heating/hlc_sessions.json)."
+  hlc_session_min_cycles:
+    name: "HLC Session Minimum HP Cycles Per Day [Advanced]"
+    description: "Minimum number of active heat pump cycles in a day for that day's record to be stored. Days where the HP ran for fewer cycles are silently discarded because they carry too little data for a reliable HLC estimate. Default: 6."
+  hlc_session_max_days:
+    name: "HLC Session Rolling Day Store Size [Advanced]"
+    description: "Maximum number of validated day records kept in the rolling store. Oldest records are dropped as new ones arrive. A larger store improves regression stability at the cost of slower adaptation to building changes. Default: 60."
+  hlc_session_min_days:
+    name: "HLC Session Minimum Days Before Update [Advanced]"
+    description: "Minimum number of validated day records required before the learned HLC is applied to the thermal model. Prevents premature updates when only sparse data is available. Default: 5."
+  hlc_session_max_update_fraction:
+    name: "HLC Session Maximum Update Fraction [Advanced]"
+    description: "Maximum allowed relative change when applying a day-level HLC estimate to the thermal model. 0.3 = the new HLC can differ by at most 30% from the current value per update. Guards against outlier days producing runaway updates. Default: 0.3."
+
   # === Delta Temperature Forecast Calibration (Advanced) ===
   enable_delta_forecast_calibration:
     name: "Delta Forecast Calibration Enabled [Advanced]"

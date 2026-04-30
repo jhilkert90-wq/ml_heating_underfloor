@@ -32,11 +32,14 @@ unified thermal state as an updated calibrated baseline value.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
+import os
+import tempfile
 from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import asdict, dataclass, field
+from datetime import date, datetime
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -89,6 +92,18 @@ class HLCWindow:
     n_cycles: int
     outdoor_temp_mean: float
     indoor_temp_mean: float
+
+
+@dataclass
+class DayRecord:
+    """A validated day-level record used in the day-session OLS regression."""
+    date: str                    # ISO date string "YYYY-MM-DD"
+    mean_thermal_power_kw: float # Mean HP thermal power for active cycles [kW]
+    mean_delta_t: float          # Mean (T_indoor − T_outdoor) [K]
+    n_cycles: int                # Number of active HP cycles that day
+    outdoor_temp_mean: float     # Mean outdoor temperature [°C]
+    indoor_temp_mean: float      # Mean indoor temperature [°C]
+    avg_power_w: float           # mean_thermal_power_kw × 1000 [W] (energy/time)
 
 
 # ---------------------------------------------------------------------------
@@ -494,3 +509,400 @@ class HLCLearner:
             indoor_temp_mean=round(mean_indoor, 2),
         )
         return True, None, window
+
+
+# ---------------------------------------------------------------------------
+# HLCSessionLearner
+# ---------------------------------------------------------------------------
+
+class HLCSessionLearner:
+    """
+    Day-level persistent HLC session learner.
+
+    Accumulates per-cycle data for the current calendar day.  At midnight
+    (or on the first push after midnight) the previous day is "closed",
+    validated against the same quality gates used by :class:`HLCLearner`, and
+    — when passing — stored as a :class:`DayRecord` in a rolling JSON file.
+
+    Forced-through-origin OLS regression over the stored :class:`DayRecord`\\ s
+    yields a multi-day HLC estimate that survives process restarts.
+
+    Days on which the heat pump did not run (no positive thermal_power_kw
+    cycle) are silently discarded and produce no :class:`DayRecord`.
+
+    Parameters are read from :mod:`src.config` at call time.
+    """
+
+    def __init__(self) -> None:
+        self._today: str = date.today().isoformat()
+        self._day_cycles: List[HLCCycle] = []
+        self._day_records: deque[DayRecord] = deque()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def push_cycle(self, context: Dict) -> Dict:
+        """Ingest one control-cycle snapshot.
+
+        Reuses :meth:`HLCLearner._build_cycle` to parse the context dict.
+        Detects day rollover and closes the previous day automatically.
+
+        Returns
+        -------
+        dict with keys:
+          - ``"day_closed"`` (bool)
+          - ``"day_validated"`` (bool)
+          - ``"reject_reason"`` (str | None)
+          - ``"day_records"`` (int): total stored day records
+        """
+        cycle = HLCLearner._build_cycle(context)
+        if cycle is None:
+            return {
+                "day_closed": False,
+                "day_validated": False,
+                "reject_reason": "missing required cycle data",
+                "day_records": len(self._day_records),
+            }
+
+        today_str = date.today().isoformat()
+        close_result: Dict = {
+            "day_closed": False,
+            "day_validated": False,
+            "reject_reason": None,
+            "day_records": len(self._day_records),
+        }
+
+        if today_str != self._today:
+            # Day rolled over — close the previous day
+            close_result = self._close_day()
+            self._today = today_str
+
+        self._day_cycles.append(cycle)
+        close_result["day_records"] = len(self._day_records)
+        return close_result
+
+    def load_day_records(self) -> int:
+        """Load persisted day records from :attr:`config.HLC_SESSION_FILE`.
+
+        Returns
+        -------
+        int
+            Number of records loaded.
+        """
+        session_file = config.HLC_SESSION_FILE
+        if not os.path.isfile(session_file):
+            return 0
+        try:
+            with open(session_file, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            records_raw = data.get("day_records", [])
+            records = [DayRecord(**r) for r in records_raw]
+            self._day_records = deque(records)
+            # Trim to current cap
+            while len(self._day_records) > config.HLC_SESSION_MAX_DAYS:
+                self._day_records.popleft()
+            logger.debug(
+                "HLC session learner: loaded %d day records from %s",
+                len(self._day_records),
+                session_file,
+            )
+            return len(self._day_records)
+        except Exception as exc:
+            logger.warning(
+                "HLC session learner: failed to load %s — %s", session_file, exc
+            )
+            return 0
+
+    def estimate_hlc(self) -> Tuple[Optional[float], Dict]:
+        """Run forced-through-origin OLS over stored day records.
+
+        Returns
+        -------
+        (hlc_estimate, stats_dict)
+            ``hlc_estimate`` is ``None`` when fewer day records exist than
+            ``config.HLC_SESSION_MIN_DAYS``.
+
+        ``stats_dict`` keys: n_days, sum_qdt, sum_dt2, r2, mean_residual
+        """
+        records = list(self._day_records)
+        n = len(records)
+        stats: Dict = {"n_days": n}
+
+        if n < config.HLC_SESSION_MIN_DAYS:
+            stats["reject_reason"] = (
+                f"only {n} day records, need {config.HLC_SESSION_MIN_DAYS}"
+            )
+            return None, stats
+
+        qs = [r.mean_thermal_power_kw for r in records]
+        dts = [r.mean_delta_t for r in records]
+
+        sum_qdt = sum(q * dt for q, dt in zip(qs, dts))
+        sum_dt2 = sum(dt * dt for dt in dts)
+
+        if sum_dt2 < 1e-6:
+            stats["reject_reason"] = "degenerate: ΔT variance too small"
+            return None, stats
+
+        hlc = sum_qdt / sum_dt2
+
+        ss_res = sum((q - hlc * dt) ** 2 for q, dt in zip(qs, dts))
+        ss_tot = sum((q - (sum(qs) / n)) ** 2 for q in qs)
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-9 else 0.0
+
+        mean_residual = sum(q - hlc * dt for q, dt in zip(qs, dts)) / n
+
+        stats.update(
+            {
+                "sum_qdt": round(sum_qdt, 6),
+                "sum_dt2": round(sum_dt2, 6),
+                "r2": round(r2, 4),
+                "mean_residual": round(mean_residual, 4),
+                "hlc_kw_per_k": round(hlc, 5),
+            }
+        )
+        return hlc, stats
+
+    def apply_to_thermal_state(
+        self, thermal_state_manager=None
+    ) -> Tuple[bool, str]:
+        """Estimate HLC from day records and apply it to the thermal state.
+
+        Parameters
+        ----------
+        thermal_state_manager : ThermalStateManager, optional
+            If omitted the singleton from :func:`get_thermal_state_manager`
+            is used.
+
+        Returns
+        -------
+        (success, message)
+        """
+        hlc_estimate, stats = self.estimate_hlc()
+        if hlc_estimate is None:
+            reason = stats.get("reject_reason", "unknown")
+            return False, f"HLC session estimation rejected: {reason}"
+
+        if thermal_state_manager is None:
+            thermal_state_manager = get_thermal_state_manager()
+
+        current_params = thermal_state_manager.get_computed_parameters()
+        current_hlc = current_params.get("heat_loss_coefficient", hlc_estimate)
+
+        if current_hlc > 0:
+            relative_change = abs(hlc_estimate - current_hlc) / current_hlc
+            if relative_change > config.HLC_SESSION_MAX_UPDATE_FRACTION:
+                sign = 1.0 if hlc_estimate > current_hlc else -1.0
+                capped = current_hlc * (
+                    1.0 + sign * config.HLC_SESSION_MAX_UPDATE_FRACTION
+                )
+                logger.warning(
+                    "HLC session estimate %.5f kW/K would change current value "
+                    "%.5f kW/K by %.1f%% — capping at %.5f kW/K",
+                    hlc_estimate,
+                    current_hlc,
+                    relative_change * 100,
+                    capped,
+                )
+                hlc_estimate = capped
+
+        n_days = stats["n_days"]
+        thermal_state_manager.set_calibrated_baseline(
+            {"heat_loss_coefficient": hlc_estimate},
+            calibration_cycles=n_days,
+        )
+        msg = (
+            f"HLC updated to {hlc_estimate:.5f} kW/K "
+            f"(R²={stats.get('r2', 0):.3f}, n_days={n_days})"
+        )
+        logger.info("✅ HLC session: %s", msg)
+        return True, msg
+
+    # ------------------------------------------------------------------
+    # Read-only accessors
+    # ------------------------------------------------------------------
+
+    @property
+    def day_record_count(self) -> int:
+        """Number of validated day records currently stored."""
+        return len(self._day_records)
+
+    def get_day_records(self) -> List[DayRecord]:
+        """Return a copy of the stored day records."""
+        return list(self._day_records)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _close_day(self) -> Dict:
+        """Validate and store a :class:`DayRecord` for the current day.
+
+        Called automatically on day rollover or can be called directly at
+        end-of-day.  Clears ``_day_cycles`` after processing.
+
+        Returns
+        -------
+        dict with ``"day_closed"``, ``"day_validated"``, ``"reject_reason"``
+        keys.
+        """
+        cycles = list(self._day_cycles)
+        self._day_cycles.clear()
+
+        base = {
+            "day_closed": True,
+            "day_validated": False,
+            "reject_reason": None,
+            "day_records": len(self._day_records),
+        }
+
+        if not cycles:
+            # No cycles accumulated — day without HP activity; no record.
+            base["day_closed"] = False
+            return base
+
+        # Only cycles with positive thermal power count as active HP operation.
+        active = [c for c in cycles if c.thermal_power_kw > 0]
+
+        if len(active) == 0:
+            # HP did not run at all today — no DayRecord produced.
+            base["day_closed"] = False
+            return base
+
+        if len(active) < config.HLC_SESSION_MIN_CYCLES:
+            base["reject_reason"] = (
+                f"HP ran for only {len(active)} active cycles — "
+                f"below minimum {config.HLC_SESSION_MIN_CYCLES}"
+            )
+            return base
+
+        # Quality gates — reuse the same thresholds as HLCLearner._validate_window
+        if any(c.fireplace_on > 0.5 for c in active):
+            base["reject_reason"] = "fireplace active during day"
+            return base
+        if any(c.tv_on > 0.5 for c in active):
+            base["reject_reason"] = "TV active during day"
+            return base
+        if any(c.dhw_heating > 0.5 for c in active):
+            base["reject_reason"] = "DHW heating active during day"
+            return base
+        if any(c.defrosting > 0.5 for c in active):
+            base["reject_reason"] = "defrost active during day"
+            return base
+        if any(c.dhw_boost_heater > 0.5 for c in active):
+            base["reject_reason"] = "DHW boost heater active during day"
+            return base
+        if any(c.is_blocking for c in active):
+            base["reject_reason"] = "blocking state active during day"
+            return base
+
+        pv_max = getattr(config, "HLC_PV_MAX_W", 50.0)
+        mean_pv = sum(c.pv_now_electrical for c in active) / len(active)
+        if mean_pv > pv_max:
+            base["reject_reason"] = (
+                f"mean PV {mean_pv:.0f} W exceeds threshold {pv_max:.0f} W"
+            )
+            return base
+
+        mean_indoor = sum(c.indoor_temp for c in active) / len(active)
+        mean_target = sum(c.target_temp for c in active) / len(active)
+        max_delta = getattr(config, "HLC_MAX_INDOOR_DELTA", 0.3)
+        if abs(mean_indoor - mean_target) > max_delta:
+            base["reject_reason"] = (
+                f"|indoor {mean_indoor:.2f} − target {mean_target:.2f}| "
+                f"= {abs(mean_indoor - mean_target):.3f} K > {max_delta} K"
+            )
+            return base
+
+        max_trend = getattr(config, "HLC_MAX_TREND", 0.2)
+        last_delta = abs(active[-1].indoor_temp_delta_60m)
+        if last_delta > max_trend:
+            base["reject_reason"] = (
+                f"indoor_temp_delta_60m {last_delta:.3f} K > {max_trend} K"
+            )
+            return base
+
+        mean_outdoor = sum(c.outdoor_temp for c in active) / len(active)
+        t_min = getattr(config, "HLC_OUTDOOR_TEMP_MIN", -10.0)
+        t_max = getattr(config, "HLC_OUTDOOR_TEMP_MAX", 15.0)
+        if not (t_min <= mean_outdoor <= t_max):
+            base["reject_reason"] = (
+                f"mean outdoor temp {mean_outdoor:.1f} °C outside range "
+                f"[{t_min}, {t_max}] °C"
+            )
+            return base
+
+        min_demand = getattr(config, "HLC_MIN_HEATING_DEMAND_K", 1.0)
+        if mean_target - mean_outdoor < min_demand:
+            base["reject_reason"] = (
+                f"T_target−T_outdoor = {mean_target - mean_outdoor:.2f} K "
+                f"< {min_demand} K — not enough heating demand"
+            )
+            return base
+
+        mean_q = sum(c.thermal_power_kw for c in active) / len(active)
+        mean_dt = sum(c.delta_t for c in active) / len(active)
+
+        if mean_dt <= 0:
+            base["reject_reason"] = f"mean ΔT {mean_dt:.2f} K is not positive"
+            return base
+
+        record = DayRecord(
+            date=self._today,
+            mean_thermal_power_kw=round(mean_q, 4),
+            mean_delta_t=round(mean_dt, 4),
+            n_cycles=len(active),
+            outdoor_temp_mean=round(mean_outdoor, 2),
+            indoor_temp_mean=round(mean_indoor, 2),
+            avg_power_w=round(mean_q * 1000.0, 2),
+        )
+        self._day_records.append(record)
+        while len(self._day_records) > config.HLC_SESSION_MAX_DAYS:
+            self._day_records.popleft()
+
+        self._save_day_records()
+
+        base["day_validated"] = True
+        base["day_records"] = len(self._day_records)
+        logger.info(
+            "📅 HLC session: day %s validated and stored (n_cycles=%d, "
+            "mean_q=%.3f kW, mean_dt=%.2f K, avg_power=%.1f W)",
+            record.date,
+            record.n_cycles,
+            record.mean_thermal_power_kw,
+            record.mean_delta_t,
+            record.avg_power_w,
+        )
+        return base
+
+    def _save_day_records(self) -> None:
+        """Atomically persist day records to :attr:`config.HLC_SESSION_FILE`."""
+        session_file = config.HLC_SESSION_FILE
+        try:
+            dir_path = os.path.dirname(session_file) or "."
+            os.makedirs(dir_path, exist_ok=True)
+            payload = {
+                "day_records": [asdict(r) for r in self._day_records],
+            }
+            tmp_path = None
+            with tempfile.NamedTemporaryFile(
+                "w", dir=dir_path, delete=False, suffix=".tmp", encoding="utf-8"
+            ) as tmp_f:
+                tmp_path = tmp_f.name
+                json.dump(payload, tmp_f, indent=2)
+            os.replace(tmp_path, session_file)
+            tmp_path = None  # successfully renamed; nothing to clean up
+            logger.debug(
+                "💾 HLC session: saved %d day records to %s",
+                len(self._day_records),
+                session_file,
+            )
+        except Exception as exc:
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+            logger.error("❌ HLC session: failed to save %s — %s", session_file, exc)
+

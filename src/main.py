@@ -44,7 +44,7 @@ from .heating_controller import (
 from .sensor_buffer import SensorBuffer
 from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
 from .temperature_control import apply_ema_smoothing
-from .hlc_learner import HLCLearner
+from .hlc_learner import HLCLearner, HLCSessionLearner
 
 
 def _bool_arg(parsed_args, name: str) -> bool:
@@ -120,6 +120,16 @@ def main():
 
     # --- HLC Learner Initialization ---
     _hlc_learner = HLCLearner() if config.HLC_LEARNER_ENABLED else None
+
+    # --- Day-Level HLC Session Learner Initialization ---
+    _hlc_session_learner: HLCSessionLearner | None = None
+    if getattr(config, "HLC_SESSION_ENABLED", False):
+        _hlc_session_learner = HLCSessionLearner()
+        _restored = _hlc_session_learner.load_day_records()
+        if _restored:
+            logging.info(
+                "📅 HLC session learner: loaded %d day records", _restored
+            )
 
     influx_service = create_influx_service()
 
@@ -1282,29 +1292,31 @@ def main():
                 continue
 
             # --- HLC Learner: push cycle data ---
-            if _hlc_learner is not None:
+            _hlc_cycle_ctx = None
+            if _hlc_learner is not None or _hlc_session_learner is not None:
+                _hlc_cycle_ctx = {
+                    "timestamp": datetime.now(),
+                    "thermal_power_kw": features_dict.get("thermal_power_kw"),
+                    "indoor_temp": actual_indoor,
+                    "outdoor_temp": outdoor_temp,
+                    "target_temp": target_indoor_temp,
+                    "indoor_temp_delta_60m": features_dict.get(
+                        "indoor_temp_delta_60m", 0.0
+                    ),
+                    "pv_now_electrical": features_dict.get(
+                        "pv_now_electrical", 0.0
+                    ),
+                    "fireplace_on": float(fireplace_on) if fireplace_on else 0.0,
+                    "tv_on": features_dict.get("tv_on", 0.0),
+                    "dhw_heating": features_dict.get("dhw_heating", 0.0),
+                    "defrosting": features_dict.get("defrosting", 0.0),
+                    "dhw_boost_heater": features_dict.get(
+                        "dhw_boost_heater", 0.0
+                    ),
+                    "is_blocking": bool(is_blocking),
+                }
+            if _hlc_learner is not None and _hlc_cycle_ctx is not None:
                 try:
-                    _hlc_cycle_ctx = {
-                        "timestamp": datetime.now(),
-                        "thermal_power_kw": features_dict.get("thermal_power_kw"),
-                        "indoor_temp": actual_indoor,
-                        "outdoor_temp": outdoor_temp,
-                        "target_temp": target_indoor_temp,
-                        "indoor_temp_delta_60m": features_dict.get(
-                            "indoor_temp_delta_60m", 0.0
-                        ),
-                        "pv_now_electrical": features_dict.get(
-                            "pv_now_electrical", 0.0
-                        ),
-                        "fireplace_on": float(fireplace_on) if fireplace_on else 0.0,
-                        "tv_on": features_dict.get("tv_on", 0.0),
-                        "dhw_heating": features_dict.get("dhw_heating", 0.0),
-                        "defrosting": features_dict.get("defrosting", 0.0),
-                        "dhw_boost_heater": features_dict.get(
-                            "dhw_boost_heater", 0.0
-                        ),
-                        "is_blocking": bool(is_blocking),
-                    }
                     _hlc_result = _hlc_learner.push_cycle(_hlc_cycle_ctx)
                     if _hlc_result.get("window_complete"):
                         if _hlc_result.get("window_validated"):
@@ -1320,6 +1332,42 @@ def main():
                             )
                 except Exception as _hlc_exc:
                     logging.debug("HLC learner push failed: %s", _hlc_exc)
+
+            # --- HLC Session Learner: push cycle data ---
+            if _hlc_session_learner is not None:
+                try:
+                    _session_result = _hlc_session_learner.push_cycle(
+                        _hlc_cycle_ctx
+                    )
+                    if _session_result.get("day_closed"):
+                        if _session_result.get("day_validated"):
+                            _n_days = _session_result["day_records"]
+                            logging.info(
+                                "📅 HLC session: day record added (total: %d)",
+                                _n_days,
+                            )
+                            if _n_days >= config.HLC_SESSION_MIN_DAYS:
+                                _sess_ok, _sess_msg = (
+                                    _hlc_session_learner.apply_to_thermal_state()
+                                )
+                                if _sess_ok:
+                                    logging.info(
+                                        "📅 HLC session: %s", _sess_msg
+                                    )
+                                else:
+                                    logging.debug(
+                                        "📅 HLC session apply skipped: %s",
+                                        _sess_msg,
+                                    )
+                        else:
+                            logging.debug(
+                                "📅 HLC session: day rejected — %s",
+                                _session_result.get("reject_reason", "unknown"),
+                            )
+                except Exception as _hlc_sess_exc:
+                    logging.debug(
+                        "HLC session push failed: %s", _hlc_sess_exc
+                    )
 
             # --- Step 3: Prediction ---
             # Dynamic trajectory scaling: now that pv_now is available from

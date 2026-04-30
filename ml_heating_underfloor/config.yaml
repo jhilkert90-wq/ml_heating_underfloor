@@ -324,6 +324,20 @@ options:
   hlc_max_windows: 48
   hlc_max_update_fraction: 0.3
 
+  # === Day-Level HLC Session Learner ===
+  # Accumulates per-cycle data per calendar day; stores a DayRecord when valid
+  hlc_session_enabled: false
+  # Path to the JSON file for day records (empty = same dir as unified state)
+  hlc_session_file: ""
+  # Minimum active HP cycles per day for a DayRecord to be kept
+  hlc_session_min_cycles: 6
+  # Maximum number of DayRecords kept in the rolling store
+  hlc_session_max_days: 60
+  # Minimum DayRecords required before applying OLS estimate to thermal model
+  hlc_session_min_days: 5
+  # Maximum relative change allowed when applying a day-level HLC estimate
+  hlc_session_max_update_fraction: 0.3
+
   # === Delta Temperature Forecast Calibration ===
   # Enable delta calibration using local temperature offset
   enable_delta_forecast_calibration: true
@@ -566,6 +580,13 @@ schema:
   hlc_min_windows: "int(2,20)"
   hlc_max_windows: "int(5,200)"
   hlc_max_update_fraction: "float(0.05,1.0)"
+  # Day-Level HLC Session Learner
+  hlc_session_enabled: "bool"
+  hlc_session_file: "str"
+  hlc_session_min_cycles: "int(1,50)"
+  hlc_session_max_days: "int(5,365)"
+  hlc_session_min_days: "int(2,30)"
+  hlc_session_max_update_fraction: "float(0.05,1.0)"
   # Delta Temperature Forecast Calibration
   enable_delta_forecast_calibration: "bool"
   delta_calibration_max_offset: "float(1.0,20.0)"
