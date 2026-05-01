@@ -1,5 +1,48 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **HLC Calibration Bugfixes — May 1, 2026**
+
+#### **What changed**
+
+- Restored 6 shared HLC validation params (`HLC_PV_MAX_W`, `HLC_MAX_INDOOR_DELTA`, `HLC_MAX_TREND`, `HLC_OUTDOOR_TEMP_MIN`, `HLC_OUTDOOR_TEMP_MAX`, `HLC_MIN_HEATING_DEMAND_K`) to config.py, config.yaml, config_adapter.py, translations — under new "HLC Validation Gates" section
+- Fixed greedy column matching in `calibrate_hlc()`: now uses `setdefault()` and skips derived columns (delta, lag, diff, trend, gradient, forecast)
+- Added HLC plausibility bounds [0.01, 2.0] kW/K before saving to thermal state
+- Fixed flag removal race: if `/data/config/hlc_calibrate_flag` can't be removed, calibration is skipped to prevent infinite restart loop
+- Added indoor trend quality gate to `calibrate_hlc()` matching session learner's `_close_day()` gates
+
+#### **Why**
+
+Code review found 5 bugs: silently dropped user config, wrong column mapping, uncapped regression output, infinite calibration loop risk, and missing quality gate.
+
+#### **Files modified**
+
+`src/hlc_learner.py`, `src/main.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`
+
+### ✅ **HLC Learner Consolidation + Historical Calibration — May 1, 2026**
+
+#### **What changed**
+
+- Removed `HLCLearner` class and `HLCWindow` dataclass from `src/hlc_learner.py` — only day-level session learner remains
+- Extracted `_build_cycle()` as module-level function (was `HLCLearner._build_cycle` static method)
+- Added `calibrate_hlc()` function (~200 lines) for one-shot HLC calibration from InfluxDB historical data
+- Added `--calibrate-hlc` CLI argument to main.py
+- Added HLC calibration flag detection (`/data/config/hlc_calibrate_flag`) at startup in main.py
+- Added "📊 Calibrate HLC" button to dashboard control panel
+- Added cold start file creation in `load_day_records()`
+- Removed 6 online-learner-only config params, kept 6 shared validation params (used by session learner's `_close_day()` via `getattr`)
+- Added 2 new calibration config params: `HLC_CALIBRATION_LOOKBACK_HOURS`, `HLC_CALIBRATION_MIN_PERIODS`
+- Rewrote `test_hlc_learner.py` to test `_build_cycle()`, `calibrate_hlc()`, and `HLCCycle`
+- Fixed `test_hlc_session_learner.py` to use module-level `_build_cycle()` instead of removed `HLCLearner._build_cycle()`
+- Added `import os` to top of main.py, removed local `import os` that caused `UnboundLocalError`
+
+#### **Why**
+
+User only wanted the day-level learner. Online HLC learner was redundant and caused confusion with duplicate config sections.
+
+#### **Files modified**
+
+`src/hlc_learner.py`, `src/main.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `ml_heating_underfloor/translations/en.yaml`, `dashboard/components/control.py`, `tests/unit/test_hlc_learner.py`, `tests/unit/test_hlc_session_learner.py`
+
 ### ✅ **Day-Level HLC Session Learner — April 29, 2026**
 
 #### **What changed**

@@ -64,8 +64,8 @@ def _push_n_valid_cycles(learner: HLCSessionLearner, n: int = 10) -> None:
     """Push N valid HP cycles (positive power) into the learner without triggering rollover."""
     learner._day_cycles.clear()
     for _ in range(n):
-        from src.hlc_learner import HLCLearner
-        c = HLCLearner._build_cycle(_cycle_ctx())
+        from src.hlc_learner import _build_cycle
+        c = _build_cycle(_cycle_ctx())
         learner._day_cycles.append(c)
 
 
@@ -136,8 +136,8 @@ class TestNoHPActivity:
             learner = HLCSessionLearner()
             # Simulate a full day of zero-power cycles
             for _ in range(10):
-                from src.hlc_learner import HLCLearner
-                c = HLCLearner._build_cycle(_cycle_ctx(thermal_power_kw=0.0))
+                from src.hlc_learner import _build_cycle
+                c = _build_cycle(_cycle_ctx(thermal_power_kw=0.0))
                 learner._day_cycles.append(c)
 
             result = learner._close_day()
@@ -149,8 +149,8 @@ class TestNoHPActivity:
         with _patch_config({"HLC_SESSION_FILE": str(tmp_path / "sessions.json")}):
             learner = HLCSessionLearner()
             for _ in range(20):
-                from src.hlc_learner import HLCLearner
-                c = HLCLearner._build_cycle(_cycle_ctx(thermal_power_kw=0.0))
+                from src.hlc_learner import _build_cycle
+                c = _build_cycle(_cycle_ctx(thermal_power_kw=0.0))
                 learner._day_cycles.append(c)
             result = learner._close_day()
             # 20 cycles but none with power > 0 → treated as no HP activity
@@ -166,8 +166,8 @@ class TestBelowMinCycles:
         }):
             learner = HLCSessionLearner()
             for _ in range(2):
-                from src.hlc_learner import HLCLearner
-                c = HLCLearner._build_cycle(_cycle_ctx(thermal_power_kw=1.5))
+                from src.hlc_learner import _build_cycle
+                c = _build_cycle(_cycle_ctx(thermal_power_kw=1.5))
                 learner._day_cycles.append(c)
 
             result = learner._close_day()
@@ -184,8 +184,8 @@ class TestBelowMinCycles:
         }):
             learner = HLCSessionLearner()
             for _ in range(min_cycles):
-                from src.hlc_learner import HLCLearner
-                c = HLCLearner._build_cycle(_cycle_ctx(
+                from src.hlc_learner import _build_cycle
+                c = _build_cycle(_cycle_ctx(
                     thermal_power_kw=1.5,
                     indoor_temp=20.5,
                     outdoor_temp=5.0,
@@ -213,8 +213,8 @@ class TestDayRollover:
 
             # Add valid cycles for "yesterday"
             for _ in range(10):
-                from src.hlc_learner import HLCLearner
-                c = HLCLearner._build_cycle(_cycle_ctx(
+                from src.hlc_learner import _build_cycle
+                c = _build_cycle(_cycle_ctx(
                     thermal_power_kw=1.5,
                     indoor_temp=20.5,
                     outdoor_temp=5.0,
@@ -466,3 +466,4 @@ class TestApplyToThermalState:
             ok, msg = learner.apply_to_thermal_state(MagicMock())
         assert ok is False
         assert "rejected" in msg.lower()
+

@@ -17,6 +17,7 @@ continuous loop, performing the following key steps in each iteration:
 """
 import argparse
 import logging
+import os
 import time
 from datetime import datetime, timezone
 
@@ -44,7 +45,7 @@ from .heating_controller import (
 from .sensor_buffer import SensorBuffer
 from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
 from .temperature_control import apply_ema_smoothing
-from .hlc_learner import HLCLearner, HLCSessionLearner
+from .hlc_learner import HLCSessionLearner, calibrate_hlc
 
 
 def _bool_arg(parsed_args, name: str) -> bool:
@@ -90,6 +91,11 @@ def main():
     parser.add_argument(
         "--restore-backup", type=str, help="Restore from a backup file."
     )
+    parser.add_argument(
+        "--calibrate-hlc",
+        action="store_true",
+        help="Run one-shot HLC calibration from historical data and exit.",
+    )
     args = parser.parse_args()
     # Load environment variables and configure logging.
     load_dotenv()
@@ -119,9 +125,6 @@ def main():
     shadow_comparison_count = 0
 
     # --- HLC Learner Initialization ---
-    _hlc_learner = HLCLearner() if config.HLC_LEARNER_ENABLED else None
-
-    # --- Day-Level HLC Session Learner Initialization ---
     _hlc_session_learner: HLCSessionLearner | None = None
     if getattr(config, "HLC_SESSION_ENABLED", False):
         _hlc_session_learner = HLCSessionLearner()
@@ -130,8 +133,29 @@ def main():
             logging.info(
                 "📅 HLC session learner: loaded %d day records", _restored
             )
+        else:
+            logging.info("📅 HLC session learner: started fresh (no prior records)")
 
     influx_service = create_influx_service()
+
+    # --- HLC Calibration Flag Detection ---
+    _hlc_flag = "/data/config/hlc_calibrate_flag"
+    if os.path.exists(_hlc_flag):
+        logging.info("🔬 HLC calibrate flag detected — running one-shot calibration")
+        try:
+            os.remove(_hlc_flag)
+        except OSError as _flag_err:
+            logging.error(
+                "❌ Could not remove HLC flag %s — skipping calibration "
+                "to avoid infinite loop: %s", _hlc_flag, _flag_err
+            )
+            _hlc_flag = None  # signal: skip calibration
+        if _hlc_flag is not None:
+            result = calibrate_hlc(influx_service=influx_service)
+            if result.get("success"):
+                logging.info("✅ %s", result["message"])
+            else:
+                logging.warning("⚠️ HLC calibration failed: %s", result.get("message"))
 
     # --- InfluxDB Write Permission Check ---
     # Verify early that the token can write to the features bucket
@@ -201,7 +225,6 @@ def main():
             logging.info("Step 0: Creating backup before calibration...")
             backup_path = backup_existing_calibration()
             if backup_path:
-                import os
 
                 logging.info(
                     "✅ Previous thermal state backed up: %s",
@@ -231,10 +254,9 @@ def main():
                 fetch_historical_data_for_calibration,
             )
             import json as _json
-            import os as _os
 
-            export_dir = _os.path.dirname(config.UNIFIED_STATE_FILE)
-            _os.makedirs(export_dir, exist_ok=True)
+            export_dir = os.path.dirname(config.UNIFIED_STATE_FILE)
+            os.makedirs(export_dir, exist_ok=True)
 
             logging.info("=== EXPORTING CALIBRATION DATA ===")
             logging.info("Export directory: %s", export_dir)
@@ -247,7 +269,7 @@ def main():
                 logging.error("❌ No calibration data available")
                 return
 
-            csv_path = _os.path.join(export_dir, "calibration_data.csv")
+            csv_path = os.path.join(export_dir, "calibration_data.csv")
             df.to_csv(csv_path, index=False)
             logging.info(
                 "✅ Exported %d rows × %d cols to %s",
@@ -281,14 +303,14 @@ def main():
                 ),
                 "TRAINING_LOOKBACK_HOURS": int(config.TRAINING_LOOKBACK_HOURS),
             }
-            cfg_path = _os.path.join(export_dir, "calibration_config.json")
+            cfg_path = os.path.join(export_dir, "calibration_config.json")
             with open(cfg_path, "w") as f:
                 _json.dump(config_export, f, indent=2)
             logging.info("✅ Exported config to %s", cfg_path)
 
             # 3. Copy unified thermal state if it exists
             state_src = config.UNIFIED_STATE_FILE
-            if _os.path.exists(state_src):
+            if os.path.exists(state_src):
                 logging.info(
                     "✅ Unified thermal state already at %s", state_src,
                 )
@@ -308,6 +330,16 @@ def main():
             logging.error(
                 "Calibration export error: %s", e, exc_info=True,
             )
+        return
+
+    # --- One-shot HLC Calibration ---
+    if _bool_arg(args, "calibrate_hlc"):
+        logging.info("=== ONE-SHOT HLC CALIBRATION ===")
+        result = calibrate_hlc()
+        if result.get("success"):
+            logging.info("✅ %s", result["message"])
+        else:
+            logging.error("❌ HLC calibration failed: %s", result.get("message"))
         return
 
     # --- Thermal Model Validation ---
@@ -1293,7 +1325,7 @@ def main():
 
             # --- HLC Learner: push cycle data ---
             _hlc_cycle_ctx = None
-            if _hlc_learner is not None or _hlc_session_learner is not None:
+            if _hlc_session_learner is not None:
                 _hlc_cycle_ctx = {
                     "timestamp": datetime.now(),
                     "thermal_power_kw": features_dict.get("thermal_power_kw"),
@@ -1315,26 +1347,6 @@ def main():
                     ),
                     "is_blocking": bool(is_blocking),
                 }
-            if _hlc_learner is not None and _hlc_cycle_ctx is not None:
-                try:
-                    _hlc_result = _hlc_learner.push_cycle(_hlc_cycle_ctx)
-                    if _hlc_result.get("window_complete"):
-                        if _hlc_result.get("window_validated"):
-                            logging.info(
-                                "🔬 HLC learner: window validated "
-                                "(total: %d)",
-                                _hlc_result["validated_windows"],
-                            )
-                        else:
-                            logging.debug(
-                                "HLC learner: window rejected — %s",
-                                _hlc_result.get("reject_reason", "unknown"),
-                            )
-                except Exception as _hlc_exc:
-                    logging.debug("HLC learner push failed: %s", _hlc_exc)
-
-            # --- HLC Session Learner: push cycle data ---
-            if _hlc_session_learner is not None:
                 try:
                     _session_result = _hlc_session_learner.push_cycle(
                         _hlc_cycle_ctx
@@ -2110,3 +2122,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

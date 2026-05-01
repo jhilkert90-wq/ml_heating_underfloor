@@ -411,16 +411,7 @@ def convert_addon_to_env(config):
             config.get('pv_calibration_indoor_ceiling', 23.0)
         ),
 
-        # --- Online HLC Learner ---
-        'HLC_LEARNER_ENABLED': str(
-            config.get('hlc_learner_enabled', False)
-        ).lower(),
-        'HLC_WINDOW_MINUTES': str(
-            config.get('hlc_window_minutes', 60)
-        ),
-        'HLC_CYCLES_PER_WINDOW_MIN_FRAC': str(
-            config.get('hlc_cycles_per_window_min_frac', 0.8)
-        ),
+        # --- HLC Validation Gates ---
         'HLC_PV_MAX_W': str(
             config.get('hlc_pv_max_w', 50.0)
         ),
@@ -438,15 +429,6 @@ def convert_addon_to_env(config):
         ),
         'HLC_MIN_HEATING_DEMAND_K': str(
             config.get('hlc_min_heating_demand_k', 1.0)
-        ),
-        'HLC_MIN_WINDOWS': str(
-            config.get('hlc_min_windows', 3)
-        ),
-        'HLC_MAX_WINDOWS': str(
-            config.get('hlc_max_windows', 48)
-        ),
-        'HLC_MAX_UPDATE_FRACTION': str(
-            config.get('hlc_max_update_fraction', 0.3)
         ),
 
         # --- Day-Level HLC Session Learner ---
@@ -467,6 +449,14 @@ def convert_addon_to_env(config):
         ),
         'HLC_SESSION_MAX_UPDATE_FRACTION': str(
             config.get('hlc_session_max_update_fraction', 0.3)
+        ),
+
+        # --- Historical HLC Calibration ---
+        'HLC_CALIBRATION_LOOKBACK_HOURS': str(
+            config.get('hlc_calibration_lookback_hours', 720)
+        ),
+        'HLC_CALIBRATION_MIN_PERIODS': str(
+            config.get('hlc_calibration_min_periods', 20)
         ),
 
         # --- Delta Forecast Calibration ---

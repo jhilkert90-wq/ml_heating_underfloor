@@ -1,6 +1,26 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - April 29, 2026 (day-level HLC session learner)
+## 🎯 CURRENT STATUS - May 1, 2026 (HLC Bugfix Review)
+
+### ✅ **FIX: 5 bugs in HLC calibration code**
+
+**Status**: **COMPLETED**
+
+Code review found and fixed 5 bugs: (1) 6 shared validation params accidentally deleted from config.py/config.yaml/config_adapter/translations — restored as "HLC Validation Gates" section, (2) greedy column matching in `calibrate_hlc()` could overwrite base temp mappings with derived columns — now uses `setdefault()` and skips derived keywords, (3) uncapped HLC written to thermal state — added [0.01, 2.0] kW/K plausibility bounds, (4) flag file not removed on error → infinite calibration loop — now skips calibration if removal fails, (5) missing indoor trend quality gate in `calibrate_hlc()` — added first-to-last indoor temp change check.
+
+**Files changed**: `src/hlc_learner.py`, `src/main.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`
+
+## 🎯 May 1, 2026 (HLC Learner Consolidation + Historical Calibration)
+
+### ✅ **REFACTOR: Remove Online HLC Learner + Add Historical Calibration**
+
+**Status**: **COMPLETED**
+
+Removed the online `HLCLearner` class entirely (user only wanted day-level learner). Added `calibrate_hlc()` for one-shot historical HLC calibration from InfluxDB data. Added `--calibrate-hlc` CLI, flag detection, dashboard button, cold start file creation, and new config params.
+
+**Files changed**: `src/hlc_learner.py`, `src/main.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `ml_heating_underfloor/translations/en.yaml`, `dashboard/components/control.py`, `tests/unit/test_hlc_learner.py`, `tests/unit/test_hlc_session_learner.py`, `CHANGELOG.md`
+
+## 🎯 PREVIOUS - April 29, 2026 (day-level HLC session learner)
 
 ### ✅ **FEAT: Day-Level Session-Based HLC Learning**
 

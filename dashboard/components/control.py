@@ -134,6 +134,21 @@ def render_system_controls():
                     st.info("This will reset learning progress and retrain from historical data.")
                 else:
                     st.error(f"Recalibration failed: {output}")
+
+        if st.button("📊 Calibrate HLC"):
+            with st.spinner("Writing HLC calibration flag..."):
+                try:
+                    import os
+                    os.makedirs('/data/config', exist_ok=True)
+                    with open('/data/config/hlc_calibrate_flag', 'w') as f:
+                        f.write(datetime.now().isoformat())
+                    success, output = restart_ml_system()
+                    if success:
+                        st.success("HLC calibration triggered! The system will calibrate from historical data on next startup.")
+                    else:
+                        st.warning(f"Flag written but restart failed: {output}")
+                except Exception as e:
+                    st.error(f"HLC calibration trigger failed: {e}")
     
     with col4:
         if st.button("📋 View Logs"):
