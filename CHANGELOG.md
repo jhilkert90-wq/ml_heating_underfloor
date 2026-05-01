@@ -12,19 +12,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--calibrate-hlc` CLI argument**: One-shot HLC calibration from historical data and exit
 - **HLC calibration flag detection**: Main loop detects `/data/config/hlc_calibrate_flag` at startup and runs calibration automatically
 - **Dashboard "Calibrate HLC" button**: Writes flag file and restarts the ML system to trigger HLC calibration
-- **Cold start file creation**: `HLCSessionLearner.load_day_records()` now creates an empty stub file when no session file exists
+- **Cold start file creation**: `HLCSessionLearner.load_session_records()` now creates an empty stub file when no session file exists
 - **HLC calibration config params**: `HLC_CALIBRATION_LOOKBACK_HOURS` (default 720) and `HLC_CALIBRATION_MIN_PERIODS` (default 20)
+
+### Changed
+- **PV-triggered HLC sessions**: HLC session learner now opens a session when `pv_now_electrical < HLC_PV_MAX_W` (50 W) and closes it when `pv_now_electrical >= HLC_PV_MAX_W`. Replaces the old calendar-day-based session model.
+- **Per-cycle filtering**: TV, DHW, defrost, DHW-boost, and blocking cycles are now filtered individually — the session stays alive. Previously these caused whole-session rejection.
+- **Fireplace remains whole-session reject**: Fireplace active in any cycle still rejects the entire session, as it distorts the room heat balance throughout the session.
+- **`DayRecord` → `SessionRecord`**: The `DayRecord` dataclass has been replaced by `SessionRecord` with `session_start`, `session_end`, and `duration_minutes` fields.
+- **`HLC_SESSION_MIN_DAYS` → `HLC_SESSION_MIN_SESSIONS`**: Renamed config key; default changed from 5 → 10.
+- **`HLC_SESSION_MAX_DAYS` → `HLC_SESSION_MAX_SESSIONS`**: Renamed config key; default changed from 60 → 120.
+- **API renames**: `load_day_records()` → `load_session_records()`, `get_day_records()` → `get_session_records()`, `day_record_count` → `session_record_count`.
+- **`_build_cycle()` extracted as module-level function**: Previously `HLCLearner._build_cycle()` static method, now shared by `HLCSessionLearner`
+- **`main.py` HLC push_cycle simplified**: Single session learner block instead of dual online + session blocks
+- **Tests rewritten**: `test_hlc_learner.py` now tests `_build_cycle()`, `calibrate_hlc()`, and `HLCCycle` instead of removed classes
 
 ### Removed
 - **Online HLC Learner**: Removed `HLCLearner` class and `HLCWindow` dataclass — replaced by day-level session learner and historical calibration
 - **Online HLC config params**: Removed `HLC_LEARNER_ENABLED`, `HLC_WINDOW_MINUTES`, `HLC_CYCLES_PER_WINDOW_MIN_FRAC`, `HLC_MIN_WINDOWS`, `HLC_MAX_WINDOWS`, `HLC_MAX_UPDATE_FRACTION` from config, config.yaml, config_adapter, and translations
 
-### Changed
-- **`_build_cycle()` extracted as module-level function**: Previously `HLCLearner._build_cycle()` static method, now shared by `HLCSessionLearner`
-- **main.py HLC push_cycle simplified**: Single session learner block instead of dual online + session blocks
-- **Tests rewritten**: `test_hlc_learner.py` now tests `_build_cycle()`, `calibrate_hlc()`, and `HLCCycle` instead of removed classes
-
 ### Fixed
+- **Active PV-night sessions persist full in-progress state**: `session_cycles` are now written on every append so restarts resume the real session instead of losing already collected cycles
+- **Closed sessions no longer persist as active**: The close path now saves the inactive post-close state after validation, preventing phantom sessions after restart
+- **Session timing now uses the close trigger cycle**: Stored `session_end` and `duration_minutes` are based on the actual threshold-crossing cycle timestamp instead of wall-clock save time
+- **Legacy `day_records` payloads are migrated automatically**: Existing JSON stores are upgraded to `session_records` on load so historical HLC data survives the redesign
+- **PV-triggered naming is consistent across config surfaces**: `.env_sample`, startup logging, translation text, and adapter comments now use the new session terminology
 - **Shared HLC validation params restored**: 6 validation gate params (`HLC_PV_MAX_W`, `HLC_MAX_INDOOR_DELTA`, `HLC_MAX_TREND`, `HLC_OUTDOOR_TEMP_MIN`, `HLC_OUTDOOR_TEMP_MAX`, `HLC_MIN_HEATING_DEMAND_K`) were accidentally removed with the online learner but are used by `_close_day()` and `calibrate_hlc()` via `getattr()` — now restored under "HLC Validation Gates" section
 - **Greedy column name matching in `calibrate_hlc()`**: Derived columns (e.g. `indoor_temp_delta_60m`) could overwrite base temperature mappings; now uses `setdefault()` and skips columns containing delta/lag/diff/trend/gradient/forecast
 - **Uncapped HLC written to thermal state**: `calibrate_hlc()` now rejects estimates outside [0.01, 2.0] kW/K to prevent physically implausible values from corrupting the model

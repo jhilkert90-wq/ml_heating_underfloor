@@ -1,7 +1,7 @@
 """
-HLC Learner — Day-Level Heat Loss Coefficient Estimation
+HLC Learner — PV-Triggered Heat Loss Coefficient Estimation
 
-This module provides a persistent, day-level estimator for the building's
+This module provides a persistent, PV-triggered estimator for the building's
 Heat Loss Coefficient (HLC) from validated live-cycle data, plus a
 historical calibration function that bootstraps HLC from InfluxDB / HA
 history.
@@ -16,10 +16,11 @@ energy balance simplifies to:
 where Q_hp is the heat pump thermal power [kW] and HLC is the building heat
 loss coefficient [kW/K].
 
-The :class:`HLCSessionLearner` accumulates per-cycle data for each calendar
-day.  At midnight the previous day is validated and — when passing — stored
-as a :class:`DayRecord` in a rolling JSON file.  Forced-through-origin OLS
-regression over the stored day records yields a multi-day HLC estimate that
+The :class:`HLCSessionLearner` accumulates per-cycle data for each PV-night
+session. A session opens when PV power drops below the configured threshold
+and closes when PV rises back to or above it. Validated sessions are stored
+as :class:`SessionRecord` entries in a rolling JSON file. Forced-through-origin
+OLS regression over the stored session records yields an HLC estimate that
 survives process restarts.
 
 The :func:`calibrate_hlc` function fetches historical sensor data from
@@ -36,8 +37,8 @@ import math
 import os
 import tempfile
 from collections import deque
-from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -81,12 +82,14 @@ class HLCCycle:
 
 
 @dataclass
-class DayRecord:
-    """A validated day-level record used in the day-session OLS regression."""
-    date: str                    # ISO date string "YYYY-MM-DD"
-    mean_thermal_power_kw: float # Mean HP thermal power for active cycles [kW]
+class SessionRecord:
+    """A validated PV-night session record used in the session OLS regression."""
+    session_start: str           # ISO datetime "YYYY-MM-DDTHH:MM:SS"
+    session_end: str             # ISO datetime "YYYY-MM-DDTHH:MM:SS"
+    duration_minutes: float      # Session duration [min]
+    mean_thermal_power_kw: float # Mean HP thermal power for active (filtered) cycles [kW]
     mean_delta_t: float          # Mean (T_indoor − T_outdoor) [K]
-    n_cycles: int                # Number of active HP cycles that day
+    n_cycles: int                # Number of active filtered HP cycles in session
     outdoor_temp_mean: float     # Mean outdoor temperature [°C]
     indoor_temp_mean: float      # Mean indoor temperature [°C]
     avg_power_w: float           # mean_thermal_power_kw × 1000 [W] (energy/time)
@@ -134,32 +137,92 @@ def _build_cycle(context: Dict) -> Optional[HLCCycle]:
         return None
 
 
+def _serialize_cycle(cycle: HLCCycle) -> Dict:
+    """Convert a cycle to a JSON-serializable dict."""
+    return {
+        "timestamp": cycle.timestamp.isoformat(),
+        "thermal_power_kw": cycle.thermal_power_kw,
+        "indoor_temp": cycle.indoor_temp,
+        "outdoor_temp": cycle.outdoor_temp,
+        "target_temp": cycle.target_temp,
+        "indoor_temp_delta_60m": cycle.indoor_temp_delta_60m,
+        "pv_now_electrical": cycle.pv_now_electrical,
+        "fireplace_on": cycle.fireplace_on,
+        "tv_on": cycle.tv_on,
+        "dhw_heating": cycle.dhw_heating,
+        "defrosting": cycle.defrosting,
+        "dhw_boost_heater": cycle.dhw_boost_heater,
+        "is_blocking": cycle.is_blocking,
+    }
+
+
+def _deserialize_cycle(payload: Dict) -> Optional[HLCCycle]:
+    """Restore a cycle from persisted JSON payload."""
+    raw = dict(payload)
+    timestamp = raw.get("timestamp")
+    if isinstance(timestamp, str):
+        try:
+            raw["timestamp"] = datetime.fromisoformat(timestamp)
+        except ValueError:
+            return None
+    return _build_cycle(raw)
+
+
+def _migrate_day_record(payload: Dict) -> Optional[SessionRecord]:
+    """Convert a legacy DayRecord-shaped payload into a SessionRecord."""
+    date_raw = payload.get("date")
+    if not date_raw:
+        return None
+
+    try:
+        session_start = datetime.fromisoformat(f"{date_raw}T00:00:00")
+        mean_q = float(payload["mean_thermal_power_kw"])
+        mean_dt = float(payload["mean_delta_t"])
+        n_cycles = int(float(payload["n_cycles"]))
+        outdoor_mean = float(payload["outdoor_temp_mean"])
+        indoor_mean = float(payload["indoor_temp_mean"])
+        avg_power_w = float(payload.get("avg_power_w", mean_q * 1000.0))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    session_end = session_start + timedelta(hours=23, minutes=59, seconds=59)
+    return SessionRecord(
+        session_start=session_start.isoformat(),
+        session_end=session_end.isoformat(),
+        duration_minutes=1440.0,
+        mean_thermal_power_kw=mean_q,
+        mean_delta_t=mean_dt,
+        n_cycles=n_cycles,
+        outdoor_temp_mean=outdoor_mean,
+        indoor_temp_mean=indoor_mean,
+        avg_power_w=avg_power_w,
+    )
+
+
 # ---------------------------------------------------------------------------
 # HLCSessionLearner
 # ---------------------------------------------------------------------------
 
 class HLCSessionLearner:
     """
-    Day-level persistent HLC session learner.
+    PV-triggered persistent HLC session learner.
 
-    Accumulates per-cycle data for the current calendar day.  At midnight
-    (or on the first push after midnight) the previous day is "closed",
-    validated against quality gates, and — when passing — stored as a
-    :class:`DayRecord` in a rolling JSON file.
-
-    Forced-through-origin OLS regression over the stored :class:`DayRecord`\\ s
-    yields a multi-day HLC estimate that survives process restarts.
-
-    Days on which the heat pump did not run (no positive thermal_power_kw
-    cycle) are silently discarded and produce no :class:`DayRecord`.
+    A session opens when ``pv_now_electrical < config.HLC_PV_MAX_W`` (50 W)
+    and closes when ``pv_now_electrical >= config.HLC_PV_MAX_W``.  Cycles
+    collected during the session are filtered individually: cycles where DHW,
+    defrost, DHW-boost, blocking, or TV are active are discarded; only
+    fireplace triggers a whole-session reject.  OLS regression over the
+    stored :class:`SessionRecord` s yields a rolling HLC estimate that
+    survives process restarts.
 
     Parameters are read from :mod:`src.config` at call time.
     """
 
     def __init__(self) -> None:
-        self._today: str = date.today().isoformat()
-        self._day_cycles: List[HLCCycle] = []
-        self._day_records: deque[DayRecord] = deque()
+        self._session_active: bool = False
+        self._session_start: Optional[datetime] = None
+        self._session_cycles: List[HLCCycle] = []
+        self._session_records: deque[SessionRecord] = deque()
 
     # ------------------------------------------------------------------
     # Public API
@@ -168,48 +231,72 @@ class HLCSessionLearner:
     def push_cycle(self, context: Dict) -> Dict:
         """Ingest one control-cycle snapshot.
 
-        Reuses :func:`_build_cycle` to parse the context dict.
-        Detects day rollover and closes the previous day automatically.
+        Implements a single-threshold PV FSM:
+        - Opens a session when ``pv_now < HLC_PV_MAX_W`` and no session is active.
+        - Closes and evaluates the session when ``pv_now >= HLC_PV_MAX_W`` and a
+          session is active.  The trigger cycle (first daytime cycle) is not
+          collected.
+        - Collects cycles into the active session.
 
         Returns
         -------
         dict with keys:
-          - ``"day_closed"`` (bool)
-          - ``"day_validated"`` (bool)
+          - ``"session_closed"`` (bool)
+          - ``"session_validated"`` (bool)
           - ``"reject_reason"`` (str | None)
-          - ``"day_records"`` (int): total stored day records
+          - ``"session_records"`` (int): total stored session records
         """
         cycle = _build_cycle(context)
-        if cycle is None:
-            return {
-                "day_closed": False,
-                "day_validated": False,
-                "reject_reason": "missing required cycle data",
-                "day_records": len(self._day_records),
-            }
 
-        today_str = date.today().isoformat()
-        close_result: Dict = {
-            "day_closed": False,
-            "day_validated": False,
+        base: Dict = {
+            "session_closed": False,
+            "session_validated": False,
             "reject_reason": None,
-            "day_records": len(self._day_records),
+            "session_records": len(self._session_records),
         }
 
-        if today_str != self._today:
-            # Day rolled over — close the previous day
-            close_result = self._close_day()
-            self._today = today_str
+        if cycle is None:
+            base["reject_reason"] = "missing required cycle data"
+            return base
 
-        self._day_cycles.append(cycle)
-        close_result["day_records"] = len(self._day_records)
-        return close_result
+        pv_now = cycle.pv_now_electrical
+        pv_max = config.HLC_PV_MAX_W
 
-    def load_day_records(self) -> int:
-        """Load persisted day records from :attr:`config.HLC_SESSION_FILE`.
+        if not self._session_active and pv_now < pv_max:
+            # Open a new session — this cycle is the first one collected
+            self._session_active = True
+            self._session_start = cycle.timestamp
+            self._session_cycles = []
+            logger.debug(
+                "📡 HLC session: opened (PV=%.0f W < %.0f W threshold)",
+                pv_now,
+                pv_max,
+            )
 
-        On cold start (file does not exist), an empty stub file is created
-        so the user has immediate confirmation that the learner is active.
+        elif self._session_active and pv_now >= pv_max:
+            # Close and evaluate — trigger cycle belongs to daytime, not collected
+            close_result = self._close_session(session_end=cycle.timestamp)
+            self._session_active = False
+            self._session_start = None
+            self._session_cycles = []
+            self._save_session_records()
+            close_result["session_records"] = len(self._session_records)
+            return close_result
+
+        if self._session_active:
+            self._session_cycles.append(cycle)
+            self._save_session_records()
+
+        base["session_records"] = len(self._session_records)
+        return base
+
+    def load_session_records(self) -> int:
+        """Load persisted session records from :attr:`config.HLC_SESSION_FILE`.
+
+        Restores ``_session_active`` and ``_session_start`` so an in-progress
+        session survives a container restart.  On cold start (file does not
+        exist), an empty stub file is created so the user has immediate
+        confirmation that the learner is active.
 
         Returns
         -------
@@ -219,26 +306,92 @@ class HLCSessionLearner:
         session_file = config.HLC_SESSION_FILE
         if not os.path.isfile(session_file):
             logger.info(
-                "📅 HLC session: cold start — creating empty session file %s",
+                "📡 HLC session: cold start — creating empty session file %s",
                 session_file,
             )
-            self._save_day_records()
+            self._save_session_records()
             return 0
         try:
             with open(session_file, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-            records_raw = data.get("day_records", [])
-            records = [DayRecord(**r) for r in records_raw]
-            self._day_records = deque(records)
+
+            normalized = False
+            records_raw = data.get("session_records")
+            if records_raw is None and "day_records" in data:
+                migrated_records = []
+                for legacy_payload in data.get("day_records", []):
+                    migrated = _migrate_day_record(legacy_payload)
+                    if migrated is not None:
+                        migrated_records.append(migrated)
+                records = migrated_records
+                normalized = True
+                logger.info(
+                    "📡 HLC session: migrated %d legacy day records from %s",
+                    len(records),
+                    session_file,
+                )
+            else:
+                records = [SessionRecord(**r) for r in (records_raw or [])]
+
+            self._session_records = deque(records)
             # Trim to current cap
-            while len(self._day_records) > config.HLC_SESSION_MAX_DAYS:
-                self._day_records.popleft()
+            while len(self._session_records) > config.HLC_SESSION_MAX_SESSIONS:
+                self._session_records.popleft()
+                normalized = True
+
+            restored_cycles = []
+            for payload in data.get("session_cycles", []):
+                cycle = _deserialize_cycle(payload)
+                if cycle is not None:
+                    restored_cycles.append(cycle)
+                else:
+                    normalized = True
+
+            # Restore in-progress session state (survives container restart)
+            self._session_active = bool(data.get("session_active", False))
+            session_start_raw = data.get("session_start")
+            self._session_start = None
+
+            if self._session_active and session_start_raw:
+                try:
+                    self._session_start = datetime.fromisoformat(session_start_raw)
+                except (ValueError, TypeError):
+                    normalized = True
+                    self._session_start = None
+
+            if self._session_active and self._session_start is None and restored_cycles:
+                self._session_start = restored_cycles[0].timestamp
+                normalized = True
+
+            if self._session_active and not restored_cycles:
+                logger.warning(
+                    "HLC session learner: ignoring persisted active flag without cycles in %s",
+                    session_file,
+                )
+                self._session_active = False
+                self._session_start = None
+                normalized = True
+
+            if self._session_active:
+                self._session_cycles = restored_cycles
+            else:
+                if restored_cycles or session_start_raw:
+                    normalized = True
+                self._session_cycles = []
+                self._session_start = None
+
+            if normalized:
+                self._save_session_records()
+
             logger.debug(
-                "HLC session learner: loaded %d day records from %s",
-                len(self._day_records),
+                "HLC session learner: loaded %d session records from %s "
+                "(session_active=%s, session_cycles=%d)",
+                len(self._session_records),
                 session_file,
+                self._session_active,
+                len(self._session_cycles),
             )
-            return len(self._day_records)
+            return len(self._session_records)
         except Exception as exc:
             logger.warning(
                 "HLC session learner: failed to load %s — %s", session_file, exc
@@ -246,23 +399,23 @@ class HLCSessionLearner:
             return 0
 
     def estimate_hlc(self) -> Tuple[Optional[float], Dict]:
-        """Run forced-through-origin OLS over stored day records.
+        """Run forced-through-origin OLS over stored session records.
 
         Returns
         -------
         (hlc_estimate, stats_dict)
-            ``hlc_estimate`` is ``None`` when fewer day records exist than
-            ``config.HLC_SESSION_MIN_DAYS``.
+            ``hlc_estimate`` is ``None`` when fewer session records exist than
+            ``config.HLC_SESSION_MIN_SESSIONS``.
 
-        ``stats_dict`` keys: n_days, sum_qdt, sum_dt2, r2, mean_residual
+        ``stats_dict`` keys: n_sessions, sum_qdt, sum_dt2, r2, mean_residual
         """
-        records = list(self._day_records)
+        records = list(self._session_records)
         n = len(records)
-        stats: Dict = {"n_days": n}
+        stats: Dict = {"n_sessions": n}
 
-        if n < config.HLC_SESSION_MIN_DAYS:
+        if n < config.HLC_SESSION_MIN_SESSIONS:
             stats["reject_reason"] = (
-                f"only {n} day records, need {config.HLC_SESSION_MIN_DAYS}"
+                f"only {n} session records, need {config.HLC_SESSION_MIN_SESSIONS}"
             )
             return None, stats
 
@@ -298,7 +451,7 @@ class HLCSessionLearner:
     def apply_to_thermal_state(
         self, thermal_state_manager=None
     ) -> Tuple[bool, str]:
-        """Estimate HLC from day records and apply it to the thermal state.
+        """Estimate HLC from session records and apply it to the thermal state.
 
         Parameters
         ----------
@@ -338,14 +491,14 @@ class HLCSessionLearner:
                 )
                 hlc_estimate = capped
 
-        n_days = stats["n_days"]
+        n_sessions = stats["n_sessions"]
         thermal_state_manager.set_calibrated_baseline(
             {"heat_loss_coefficient": hlc_estimate},
-            calibration_cycles=n_days,
+            calibration_cycles=n_sessions,
         )
         msg = (
             f"HLC updated to {hlc_estimate:.5f} kW/K "
-            f"(R²={stats.get('r2', 0):.3f}, n_days={n_days})"
+            f"(R²={stats.get('r2', 0):.3f}, n_sessions={n_sessions})"
         )
         logger.info("✅ HLC session: %s", msg)
         return True, msg
@@ -355,84 +508,78 @@ class HLCSessionLearner:
     # ------------------------------------------------------------------
 
     @property
-    def day_record_count(self) -> int:
-        """Number of validated day records currently stored."""
-        return len(self._day_records)
+    def session_record_count(self) -> int:
+        """Number of validated session records currently stored."""
+        return len(self._session_records)
 
-    def get_day_records(self) -> List[DayRecord]:
-        """Return a copy of the stored day records."""
-        return list(self._day_records)
+    def get_session_records(self) -> List[SessionRecord]:
+        """Return a copy of the stored session records."""
+        return list(self._session_records)
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _close_day(self) -> Dict:
-        """Validate and store a :class:`DayRecord` for the current day.
+    def _close_session(self, session_end: Optional[datetime] = None) -> Dict:
+        """Validate and store a :class:`SessionRecord` for the completed PV-night session.
 
-        Called automatically on day rollover or can be called directly at
-        end-of-day.  Clears ``_day_cycles`` after processing.
+        Called automatically when PV rises above threshold.
 
         Returns
         -------
-        dict with ``"day_closed"``, ``"day_validated"``, ``"reject_reason"``
+        dict with ``"session_closed"``, ``"session_validated"``, ``"reject_reason"``
         keys.
         """
-        cycles = list(self._day_cycles)
-        self._day_cycles.clear()
+        all_cycles = list(self._session_cycles)
 
         base = {
-            "day_closed": True,
-            "day_validated": False,
+            "session_closed": True,
+            "session_validated": False,
             "reject_reason": None,
-            "day_records": len(self._day_records),
+            "session_records": len(self._session_records),
         }
 
-        if not cycles:
-            # No cycles accumulated — day without HP activity; no record.
-            base["day_closed"] = False
+        if not all_cycles:
+            base["session_closed"] = False
             return base
 
-        # Only cycles with positive thermal power count as active HP operation.
-        active = [c for c in cycles if c.thermal_power_kw > 0]
+        if session_end is None:
+            session_end = all_cycles[-1].timestamp
+
+        session_start_dt = self._session_start or all_cycles[0].timestamp
+        duration_minutes = max(
+            0.0,
+            (session_end - session_start_dt).total_seconds() / 60.0,
+        )
+
+        # --- Tier 1: Whole-session reject ---
+        # Fireplace distorts the room heat balance for the entire session.
+        if any(c.fireplace_on > 0.5 for c in all_cycles):
+            base["reject_reason"] = "fireplace active during session"
+            return base
+
+        # --- Tier 2: Per-cycle filter ---
+        # DHW, defrost, DHW-boost, blocking, and TV are removed individually;
+        # the session itself is NOT rejected.
+        active = [
+            c for c in all_cycles
+            if c.thermal_power_kw > 0
+            and c.tv_on <= 0.5
+            and c.dhw_heating <= 0.5
+            and c.defrosting <= 0.5
+            and c.dhw_boost_heater <= 0.5
+            and not c.is_blocking
+        ]
 
         if len(active) == 0:
-            # HP did not run at all today — no DayRecord produced.
-            base["day_closed"] = False
+            base["session_closed"] = False
             return base
 
+        # --- Session-level gates on filtered cycles ---
         if len(active) < config.HLC_SESSION_MIN_CYCLES:
             base["reject_reason"] = (
-                f"HP ran for only {len(active)} active cycles — "
-                f"below minimum {config.HLC_SESSION_MIN_CYCLES}"
-            )
-            return base
-
-        # Quality gates
-        if any(c.fireplace_on > 0.5 for c in active):
-            base["reject_reason"] = "fireplace active during day"
-            return base
-        if any(c.tv_on > 0.5 for c in active):
-            base["reject_reason"] = "TV active during day"
-            return base
-        if any(c.dhw_heating > 0.5 for c in active):
-            base["reject_reason"] = "DHW heating active during day"
-            return base
-        if any(c.defrosting > 0.5 for c in active):
-            base["reject_reason"] = "defrost active during day"
-            return base
-        if any(c.dhw_boost_heater > 0.5 for c in active):
-            base["reject_reason"] = "DHW boost heater active during day"
-            return base
-        if any(c.is_blocking for c in active):
-            base["reject_reason"] = "blocking state active during day"
-            return base
-
-        pv_max = getattr(config, "HLC_PV_MAX_W", 50.0)
-        mean_pv = sum(c.pv_now_electrical for c in active) / len(active)
-        if mean_pv > pv_max:
-            base["reject_reason"] = (
-                f"mean PV {mean_pv:.0f} W exceeds threshold {pv_max:.0f} W"
+                f"only {len(active)} clean cycles after filtering "
+                f"(need {config.HLC_SESSION_MIN_CYCLES})"
             )
             return base
 
@@ -479,8 +626,12 @@ class HLCSessionLearner:
             base["reject_reason"] = f"mean ΔT {mean_dt:.2f} K is not positive"
             return base
 
-        record = DayRecord(
-            date=self._today,
+        session_start_str = session_start_dt.isoformat()
+
+        record = SessionRecord(
+            session_start=session_start_str,
+            session_end=session_end.isoformat(),
+            duration_minutes=round(duration_minutes, 1),
             mean_thermal_power_kw=round(mean_q, 4),
             mean_delta_t=round(mean_dt, 4),
             n_cycles=len(active),
@@ -488,33 +639,40 @@ class HLCSessionLearner:
             indoor_temp_mean=round(mean_indoor, 2),
             avg_power_w=round(mean_q * 1000.0, 2),
         )
-        self._day_records.append(record)
-        while len(self._day_records) > config.HLC_SESSION_MAX_DAYS:
-            self._day_records.popleft()
+        self._session_records.append(record)
+        while len(self._session_records) > config.HLC_SESSION_MAX_SESSIONS:
+            self._session_records.popleft()
 
-        self._save_day_records()
-
-        base["day_validated"] = True
-        base["day_records"] = len(self._day_records)
+        base["session_validated"] = True
+        base["session_records"] = len(self._session_records)
         logger.info(
-            "📅 HLC session: day %s validated and stored (n_cycles=%d, "
-            "mean_q=%.3f kW, mean_dt=%.2f K, avg_power=%.1f W)",
-            record.date,
+            "📡 HLC session: validated and stored "
+            "(n_active=%d, n_total=%d, duration=%.0f min, "
+            "mean_q=%.3f kW, mean_dt=%.2f K)",
             record.n_cycles,
+            len(all_cycles),
+            record.duration_minutes,
             record.mean_thermal_power_kw,
             record.mean_delta_t,
-            record.avg_power_w,
         )
         return base
 
-    def _save_day_records(self) -> None:
-        """Atomically persist day records to :attr:`config.HLC_SESSION_FILE`."""
+    def _save_session_records(self) -> None:
+        """Atomically persist session records and state to :attr:`config.HLC_SESSION_FILE`."""
         session_file = config.HLC_SESSION_FILE
         try:
             dir_path = os.path.dirname(session_file) or "."
             os.makedirs(dir_path, exist_ok=True)
             payload = {
-                "day_records": [asdict(r) for r in self._day_records],
+                "session_records": [asdict(r) for r in self._session_records],
+                "session_active": self._session_active,
+                "session_start": (
+                    self._session_start.isoformat()
+                    if self._session_start else None
+                ),
+                "session_cycles": [
+                    _serialize_cycle(cycle) for cycle in self._session_cycles
+                ],
             }
             tmp_path = None
             with tempfile.NamedTemporaryFile(
@@ -525,8 +683,8 @@ class HLCSessionLearner:
             os.replace(tmp_path, session_file)
             tmp_path = None  # successfully renamed; nothing to clean up
             logger.debug(
-                "💾 HLC session: saved %d day records to %s",
-                len(self._day_records),
+                "💾 HLC session: saved %d session records to %s",
+                len(self._session_records),
                 session_file,
             )
         except Exception as exc:

@@ -431,7 +431,7 @@ def convert_addon_to_env(config):
             config.get('hlc_min_heating_demand_k', 1.0)
         ),
 
-        # --- Day-Level HLC Session Learner ---
+        # --- PV-Triggered HLC Session Learner ---
         'HLC_SESSION_ENABLED': str(
             config.get('hlc_session_enabled', False)
         ).lower(),
@@ -441,11 +441,11 @@ def convert_addon_to_env(config):
         'HLC_SESSION_MIN_CYCLES': str(
             config.get('hlc_session_min_cycles', 6)
         ),
-        'HLC_SESSION_MAX_DAYS': str(
-            config.get('hlc_session_max_days', 60)
+        'HLC_SESSION_MAX_SESSIONS': str(
+            config.get('hlc_session_max_sessions', 120)
         ),
-        'HLC_SESSION_MIN_DAYS': str(
-            config.get('hlc_session_min_days', 5)
+        'HLC_SESSION_MIN_SESSIONS': str(
+            config.get('hlc_session_min_sessions', 10)
         ),
         'HLC_SESSION_MAX_UPDATE_FRACTION': str(
             config.get('hlc_session_max_update_fraction', 0.3)

@@ -1,5 +1,45 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **HLC Session Persistence + Migration Fixes — May 1, 2026**
+
+#### **What changed**
+
+- **`src/hlc_learner.py`**: Persisted `session_cycles` for active sessions, normalized inconsistent persisted active state, used the close-trigger cycle timestamp for `session_end` and `duration_minutes`, and added automatic migration from legacy `day_records` payloads to `session_records`.
+- **`tests/unit/test_hlc_session_learner.py`**: Added 4 regression tests covering closed-session state persistence, active-session restart survival, close timestamp correctness, and legacy file migration. Focused HLC suite now passes with 41 tests.
+- **Config surface text**: Updated `.env_sample`, `src/main.py`, `src/config.py`, `config_adapter.py`, and `ml_heating_underfloor/translations/en.yaml` so the runtime and user-facing configuration consistently describe the PV-triggered session model.
+
+#### **Why**
+
+Code review found concrete state-management defects in the first PV-session implementation: a closed session could be persisted as still active, a restart during an active session lost the collected cycles, session timing was based on wall clock instead of the real closing cycle, and old `day_records` stores would silently drop historical HLC data after upgrade.
+
+#### **Files modified**
+
+`src/hlc_learner.py`, `tests/unit/test_hlc_session_learner.py`, `src/main.py`, `src/config.py`, `config_adapter.py`, `.env_sample`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### ✅ **PV-Triggered HLC Session Redesign — May 2026**
+
+#### **What changed**
+
+- **`src/hlc_learner.py`**: Rewrote `HLCSessionLearner` with PV-triggered FSM. `DayRecord` removed; `SessionRecord` added with `session_start`, `session_end`, `duration_minutes`. `_close_day()` / `load_day_records()` / `_save_day_records()` / `get_day_records()` replaced by `_close_session()` / `load_session_records()` / `_save_session_records()` / `get_session_records()`. Session state (`session_active`, `session_start`) persists to JSON.
+- **`src/config.py`**: `HLC_SESSION_MAX_DAYS` (60) → `HLC_SESSION_MAX_SESSIONS` (120); `HLC_SESSION_MIN_DAYS` (5) → `HLC_SESSION_MIN_SESSIONS` (10).
+- **`src/main.py`**: Updated result key references (`session_closed`, `session_validated`, `session_records`, `HLC_SESSION_MIN_SESSIONS`, `load_session_records`).
+- **`config_adapter.py`**: Updated env-var mappings to new key names.
+- **`ml_heating_underfloor/config.yaml`**: Updated option names and schema constraints.
+- **`ml_heating_underfloor/translations/en.yaml`**: Updated labels and descriptions.
+- **`tests/unit/test_hlc_session_learner.py`**: Fully rewritten — 37 new tests; all pass.
+
+#### **Why**
+
+Calendar-day sessions relied on midnight rollover which conflated daytime PV generation with nighttime HP-only heat loss measurement. PV-triggered sessions capture true nighttime HP-only baseline: session opens when PV drops below 50 W (grid-only mode), closes when PV returns. Per-cycle filtering for DHW/defrost/TV/blocking avoids excessive session rejection while fireplace remains a whole-session reject.
+
+#### **Files modified**
+
+`src/hlc_learner.py`, `src/config.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_hlc_session_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **HLC Calibration Bugfixes — May 1, 2026**
 
 #### **What changed**

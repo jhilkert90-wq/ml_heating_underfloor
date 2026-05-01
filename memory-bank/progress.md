@@ -1,6 +1,30 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 1, 2026 (HLC Bugfix Review)
+## 🎯 CURRENT STATUS - May 1, 2026 (HLC Session Persistence + Migration Fixes)
+
+### ✅ **FIX: Session restart survival, close-state persistence, and legacy migration**
+
+**Status**: **COMPLETED**
+
+Fixed four concrete issues in the new PV-triggered HLC learner: (1) active sessions now persist their collected `session_cycles` on every append so restarts resume the real in-progress session, (2) closing a session now saves the inactive post-close state instead of persisting a phantom active session, (3) `session_end` and `duration_minutes` now use the actual closing trigger cycle timestamp, and (4) legacy `day_records` payloads are migrated automatically into `session_records` so historical HLC data is preserved across the redesign. Also aligned `.env_sample`, startup logs, translation text, and adapter comments with the new PV-triggered terminology. Added 4 regression tests; the focused HLC learner suite now passes with 41 tests.
+
+**Files changed**: `src/hlc_learner.py`, `tests/unit/test_hlc_session_learner.py`, `src/main.py`, `src/config.py`, `config_adapter.py`, `.env_sample`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 CURRENT STATUS - May 2026 (PV-Triggered HLC Session Redesign)
+
+### ✅ **REDESIGN: PV-triggered HLC session learner**
+
+**Status**: **COMPLETED**
+
+Replaced the calendar-day-based HLC session model with a PV-triggered session model. Sessions open when `pv_now_electrical < HLC_PV_MAX_W` (50 W) and close when `pv_now_electrical >= HLC_PV_MAX_W`. TV/DHW/defrost/DHW-boost/blocking now do per-cycle filtering (session stays alive), while fireplace remains a whole-session reject. `DayRecord` removed, replaced by `SessionRecord` with `session_start`, `session_end`, `duration_minutes`. Session state persists to JSON for container restart survival. Config keys renamed: `HLC_SESSION_MIN_DAYS` → `HLC_SESSION_MIN_SESSIONS` (default 5→10), `HLC_SESSION_MAX_DAYS` → `HLC_SESSION_MAX_SESSIONS` (default 60→120). All 37 new tests pass.
+
+**Files changed**: `src/hlc_learner.py`, `src/config.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_hlc_session_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 May 1, 2026 (HLC Bugfix Review)
 
 ### ✅ **FIX: 5 bugs in HLC calibration code**
 

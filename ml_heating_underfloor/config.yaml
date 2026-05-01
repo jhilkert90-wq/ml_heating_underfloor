@@ -318,18 +318,19 @@ options:
   hlc_outdoor_temp_max: 15.0
   hlc_min_heating_demand_k: 1.0
 
-  # === Day-Level HLC Session Learner ===
-  # Accumulates per-cycle data per calendar day; stores a DayRecord when valid
+  # === PV-Triggered HLC Session Learner ===
+  # Opens a session when pv_now < HLC_PV_MAX_W (50 W); closes when >= threshold.
+  # DHW/defrost/DHW-boost/blocking/TV are filtered per-cycle; fireplace rejects whole session.
   hlc_session_enabled: false
-  # Path to the JSON file for day records (empty = same dir as unified state)
+  # Path to the JSON file for session records (empty = same dir as unified state)
   hlc_session_file: ""
-  # Minimum active HP cycles per day for a DayRecord to be kept
+  # Minimum clean (filtered) HP cycles per session for a SessionRecord to be kept
   hlc_session_min_cycles: 6
-  # Maximum number of DayRecords kept in the rolling store
-  hlc_session_max_days: 60
-  # Minimum DayRecords required before applying OLS estimate to thermal model
-  hlc_session_min_days: 5
-  # Maximum relative change allowed when applying a day-level HLC estimate
+  # Maximum number of SessionRecords kept in the rolling store
+  hlc_session_max_sessions: 120
+  # Minimum SessionRecords required before applying OLS estimate to thermal model
+  hlc_session_min_sessions: 10
+  # Maximum relative change allowed when applying a session-level HLC estimate
   hlc_session_max_update_fraction: 0.3
 
   # === Historical HLC Calibration ===
@@ -574,12 +575,12 @@ schema:
   hlc_outdoor_temp_min: "float(-20.0,10.0)"
   hlc_outdoor_temp_max: "float(5.0,25.0)"
   hlc_min_heating_demand_k: "float(0.5,10.0)"
-  # Day-Level HLC Session Learner
+  # PV-Triggered HLC Session Learner
   hlc_session_enabled: "bool"
   hlc_session_file: "str"
   hlc_session_min_cycles: "int(1,50)"
-  hlc_session_max_days: "int(5,365)"
-  hlc_session_min_days: "int(2,30)"
+  hlc_session_max_sessions: "int(10,500)"
+  hlc_session_min_sessions: "int(2,100)"
   hlc_session_max_update_fraction: "float(0.05,1.0)"
   # Historical HLC Calibration
   hlc_calibration_lookback_hours: "int(24,2000)"

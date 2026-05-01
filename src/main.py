@@ -128,13 +128,13 @@ def main():
     _hlc_session_learner: HLCSessionLearner | None = None
     if getattr(config, "HLC_SESSION_ENABLED", False):
         _hlc_session_learner = HLCSessionLearner()
-        _restored = _hlc_session_learner.load_day_records()
+        _restored = _hlc_session_learner.load_session_records()
         if _restored:
             logging.info(
-                "📅 HLC session learner: loaded %d day records", _restored
+                "📡 HLC session learner: loaded %d session records", _restored
             )
         else:
-            logging.info("📅 HLC session learner: started fresh (no prior records)")
+            logging.info("📡 HLC session learner: started fresh (no prior records)")
 
     influx_service = create_influx_service()
 
@@ -1351,29 +1351,29 @@ def main():
                     _session_result = _hlc_session_learner.push_cycle(
                         _hlc_cycle_ctx
                     )
-                    if _session_result.get("day_closed"):
-                        if _session_result.get("day_validated"):
-                            _n_days = _session_result["day_records"]
+                    if _session_result.get("session_closed"):
+                        if _session_result.get("session_validated"):
+                            _n_sessions = _session_result["session_records"]
                             logging.info(
-                                "📅 HLC session: day record added (total: %d)",
-                                _n_days,
+                                "📡 HLC session: session record added (total: %d)",
+                                _n_sessions,
                             )
-                            if _n_days >= config.HLC_SESSION_MIN_DAYS:
+                            if _n_sessions >= config.HLC_SESSION_MIN_SESSIONS:
                                 _sess_ok, _sess_msg = (
                                     _hlc_session_learner.apply_to_thermal_state()
                                 )
                                 if _sess_ok:
                                     logging.info(
-                                        "📅 HLC session: %s", _sess_msg
+                                        "📡 HLC session: %s", _sess_msg
                                     )
                                 else:
                                     logging.debug(
-                                        "📅 HLC session apply skipped: %s",
+                                        "📡 HLC session apply skipped: %s",
                                         _sess_msg,
                                     )
                         else:
                             logging.debug(
-                                "📅 HLC session: day rejected — %s",
+                                "📡 HLC session: session rejected — %s",
                                 _session_result.get("reject_reason", "unknown"),
                             )
                 except Exception as _hlc_sess_exc:
