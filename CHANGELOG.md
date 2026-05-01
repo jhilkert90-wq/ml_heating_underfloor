@@ -7,30 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Historical HLC Calibration**: New `calibrate_hlc()` function fetches historical data from InfluxDB, filters stable HP-only periods, and runs OLS regression to estimate building heat loss coefficient
-- **`--calibrate-hlc` CLI argument**: One-shot HLC calibration from historical data and exit
-- **HLC calibration flag detection**: Main loop detects `/data/config/hlc_calibrate_flag` at startup and runs calibration automatically
-- **Dashboard "Calibrate HLC" button**: Writes flag file and restarts the ML system to trigger HLC calibration
-- **Cold start file creation**: `HLCSessionLearner.load_day_records()` now creates an empty stub file when no session file exists
-- **HLC calibration config params**: `HLC_CALIBRATION_LOOKBACK_HOURS` (default 720) and `HLC_CALIBRATION_MIN_PERIODS` (default 20)
-
-### Removed
-- **Online HLC Learner**: Removed `HLCLearner` class and `HLCWindow` dataclass — replaced by day-level session learner and historical calibration
-- **Online HLC config params**: Removed `HLC_LEARNER_ENABLED`, `HLC_WINDOW_MINUTES`, `HLC_CYCLES_PER_WINDOW_MIN_FRAC`, `HLC_MIN_WINDOWS`, `HLC_MAX_WINDOWS`, `HLC_MAX_UPDATE_FRACTION` from config, config.yaml, config_adapter, and translations
-
-### Changed
-- **`_build_cycle()` extracted as module-level function**: Previously `HLCLearner._build_cycle()` static method, now shared by `HLCSessionLearner`
-- **main.py HLC push_cycle simplified**: Single session learner block instead of dual online + session blocks
-- **Tests rewritten**: `test_hlc_learner.py` now tests `_build_cycle()`, `calibrate_hlc()`, and `HLCCycle` instead of removed classes
-
-### Fixed
-- **Shared HLC validation params restored**: 6 validation gate params (`HLC_PV_MAX_W`, `HLC_MAX_INDOOR_DELTA`, `HLC_MAX_TREND`, `HLC_OUTDOOR_TEMP_MIN`, `HLC_OUTDOOR_TEMP_MAX`, `HLC_MIN_HEATING_DEMAND_K`) were accidentally removed with the online learner but are used by `_close_day()` and `calibrate_hlc()` via `getattr()` — now restored under "HLC Validation Gates" section
-- **Greedy column name matching in `calibrate_hlc()`**: Derived columns (e.g. `indoor_temp_delta_60m`) could overwrite base temperature mappings; now uses `setdefault()` and skips columns containing delta/lag/diff/trend/gradient/forecast
-- **Uncapped HLC written to thermal state**: `calibrate_hlc()` now rejects estimates outside [0.01, 2.0] kW/K to prevent physically implausible values from corrupting the model
-- **Flag file removal race**: If `/data/config/hlc_calibrate_flag` cannot be removed, calibration is skipped with an error log instead of running on every restart
-- **Missing indoor trend gate in `calibrate_hlc()`**: Added first-to-last indoor temperature change check (max_trend) to match the session learner's quality gates
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
