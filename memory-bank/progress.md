@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - May 2026 (Dashboard Comprehensive Bug Fix Round 2)
+
+### ✅ **FIX: 7 dashboard bugs — crashes, logic errors, and non-functional buttons**
+
+**Status**: **COMPLETED**
+
+Full audit of the `dashboard/` folder found and fixed 7 distinct bugs: (1) `app.py`: `st.set_page_config()` was called after a potential `st.write()` in `setup_ingress_config()`, crashing the dashboard under HA ingress; (2) `health.py`: `timedelta.seconds` gave false "active" status for log files older than 24 h — fixed to `total_seconds()`; (3) `control.py`: `trigger_model_recalibration()` and `save_config_changes()` opened files under `/data/config/` without creating the directory first; (4) `data_service.py`: timezone-aware datetime comparison raised `TypeError` when `last_run_time` contained TZ offset; (5–6) `backup.py`: "View Details" and "Delete" buttons set session state keys that no handler ever read — added `render_view_details_interface()` and `render_delete_interface()`; (7) `backup.py`: all download paths showed placeholder captions — replaced with `st.download_button` calls.
+
+**Files changed**: `dashboard/app.py`, `dashboard/health.py`, `dashboard/components/control.py`, `dashboard/data_service.py`, `dashboard/components/backup.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ## 🎯 CURRENT STATUS - May 2026 (Dashboard HLC Calibrate Bug Fixes)
 
 ### ✅ **FIX: HLC Calibrate button errors — supervisorctl not found & use_container_width deprecation**

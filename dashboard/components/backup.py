@@ -511,14 +511,19 @@ def render_current_model_download():
         )
         
         if download_type == "Unified State File":
-            if st.button("📥 Download State File", type="primary"):
-                state_path = Path('/data/models/unified_thermal_state.json')
-                if state_path.exists():
-                    st.success("✅ State file ready for download!")
-                    st.info("📁 File: unified_thermal_state.json")
-                    st.caption("Download link would be provided here")
-                else:
-                    st.error("❌ State file not found")
+            state_path = Path('/data/models/unified_thermal_state.json')
+            if state_path.exists():
+                with open(state_path, 'rb') as f:
+                    content = f.read()
+                st.download_button(
+                    label="📥 Download State File",
+                    data=content,
+                    file_name="unified_thermal_state.json",
+                    mime="application/json",
+                    type="primary",
+                )
+            else:
+                st.error("❌ State file not found")
         
         elif download_type == "Complete Backup":
             if st.button("📥 Create & Download Backup", type="primary"):
@@ -529,11 +534,21 @@ def render_current_model_download():
                     success, backup_path, manifest = create_backup(backup_name, include_logs=True, include_analytics=True)
                     
                     if success:
-                        st.success("✅ Complete backup ready!")
-                        st.info(f"📁 File: {backup_path.name}")
-                        st.caption("Download link would be provided here")
+                        st.session_state['_dl_backup_path'] = str(backup_path)
                     else:
                         st.error(f"❌ Backup creation failed: {manifest}")
+            
+            if '_dl_backup_path' in st.session_state:
+                bp = Path(st.session_state['_dl_backup_path'])
+                if bp.exists():
+                    with open(bp, 'rb') as f:
+                        content = f.read()
+                    st.download_button(
+                        label=f"⬇️ Save {bp.name}",
+                        data=content,
+                        file_name=bp.name,
+                        mime="application/zip",
+                    )
     
     with col2:
         st.info("**Current Model Status:**")
@@ -764,8 +779,19 @@ def render_backup_list():
                 st.session_state['view_backup'] = backup_info
         
         with col3:
-            if st.button("📤 Download"):
-                st.info("Download functionality would be implemented here")
+            backup_path_obj = Path(backup_info['path'])
+            if backup_path_obj.exists():
+                with open(backup_path_obj, 'rb') as f:
+                    content = f.read()
+                st.download_button(
+                    "📤 Download",
+                    data=content,
+                    file_name=backup_info['name'],
+                    mime="application/zip",
+                    key=f"dl_{backup_info['name']}",
+                )
+            else:
+                st.button("📤 Download", disabled=True)
         
         with col4:
             if st.button("🗑️ Delete", type="secondary"):
@@ -824,6 +850,76 @@ def render_restore_interface():
             st.rerun()
 
 
+def render_view_details_interface():
+    """Render backup details panel (triggered by 'View Details' button)."""
+    if 'view_backup' not in st.session_state:
+        return
+
+    backup_info = st.session_state['view_backup']
+
+    st.subheader(f"📋 Details: {backup_info['name']}")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write(f"**Name:** {backup_info['name']}")
+        st.write(f"**Type:** {'System Backup' if backup_info['type'] == 'system' else 'Uploaded Model'}")
+        st.write(f"**Created:** {backup_info['created'].strftime('%Y-%m-%d %H:%M:%S')}")
+        st.write(f"**Size:** {backup_info['size'] / 1024 / 1024:.2f} MB")
+        st.write(f"**MD5:** {backup_info['md5']}")
+        st.write(f"**Path:** {backup_info['path']}")
+
+    with col2:
+        try:
+            with zipfile.ZipFile(backup_info['path'], 'r') as zf:
+                if 'backup_manifest.json' in zf.namelist():
+                    manifest = json.loads(zf.read('backup_manifest.json'))
+                    st.write("**Manifest:**")
+                    st.json({
+                        'created': manifest.get('created'),
+                        'backup_name': manifest.get('backup_name'),
+                        'backup_type': manifest.get('backup_type', 'system'),
+                        'files_count': len(manifest.get('files_backed_up', [])),
+                        'include_logs': manifest.get('include_logs'),
+                    })
+                else:
+                    st.write(f"**Files in archive:** {len(zf.namelist())}")
+        except Exception as e:
+            st.error(f"Could not read backup details: {e}")
+
+    if st.button("✖️ Close Details"):
+        del st.session_state['view_backup']
+        st.rerun()
+
+
+def render_delete_interface():
+    """Render backup deletion confirmation panel (triggered by 'Delete' button)."""
+    if 'delete_backup' not in st.session_state:
+        return
+
+    backup_info = st.session_state['delete_backup']
+
+    st.subheader(f"🗑️ Delete: {backup_info['name']}")
+    st.error("⚠️ This will permanently delete the backup file. This cannot be undone.")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🗑️ Confirm Delete", type="primary"):
+            try:
+                Path(backup_info['path']).unlink()
+                st.success(f"✅ Backup '{backup_info['name']}' deleted.")
+            except Exception as e:
+                st.error(f"❌ Delete failed: {e}")
+            del st.session_state['delete_backup']
+            st.rerun()
+
+    with col2:
+        if st.button("❌ Cancel Delete"):
+            del st.session_state['delete_backup']
+            st.rerun()
+
+
 def render_import_export():
     """Render import/export interface"""
     st.subheader("📦 Import / Export")
@@ -839,11 +935,21 @@ def render_import_export():
                 success, export_path = export_model_data()
                 
                 if success:
-                    st.success(f"✅ Export successful!")
-                    st.info(f"📁 File: {export_path.name}")
-                    st.caption(f"Location: {export_path}")
+                    st.session_state['_export_path'] = str(export_path)
                 else:
                     st.error(f"❌ Export failed: {export_path}")
+        
+        if '_export_path' in st.session_state:
+            ep = Path(st.session_state['_export_path'])
+            if ep.exists():
+                with open(ep, 'rb') as f:
+                    content = f.read()
+                st.download_button(
+                    label=f"📥 Download {ep.name}",
+                    data=content,
+                    file_name=ep.name,
+                    mime="application/json",
+                )
     
     with col2:
         st.write("**📥 Import Model Data**")
@@ -976,8 +1082,10 @@ def render_backup():
     # Backup List with Actions
     render_backup_list()
     
-    # Handle restore interface
+    # Handle restore / view / delete interfaces (triggered by list action buttons)
     render_restore_interface()
+    render_view_details_interface()
+    render_delete_interface()
     
     st.divider()
     

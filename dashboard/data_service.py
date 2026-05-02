@@ -117,6 +117,9 @@ def get_system_metrics() -> Dict[str, Any]:
     if last_run:
         try:
             run_dt = datetime.fromisoformat(str(last_run))
+            # Strip timezone info if present to allow naive arithmetic
+            if run_dt.tzinfo is not None:
+                run_dt = run_dt.replace(tzinfo=None)
             age_seconds = (datetime.now() - run_dt).total_seconds()
             if age_seconds < 600:
                 status = "active"

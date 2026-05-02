@@ -74,6 +74,7 @@ def trigger_model_recalibration():
     try:
         # This would send a signal to the ML system to recalibrate
         # For now, we'll restart with a flag file
+        os.makedirs('/data/config', exist_ok=True)
         with open('/data/config/recalibrate_flag', 'w') as f:
             f.write(datetime.now().isoformat())
         
@@ -95,6 +96,7 @@ def save_config_changes(config):
     """Save configuration changes (Note: requires add-on restart)"""
     try:
         # Save to a temp file for manual application
+        os.makedirs('/data/config', exist_ok=True)
         with open('/data/config/pending_config.json', 'w') as f:
             json.dump(config, f, indent=2)
         return True, "Configuration saved. Restart add-on to apply changes."

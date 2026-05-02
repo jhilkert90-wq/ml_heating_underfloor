@@ -1,5 +1,25 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Dashboard Comprehensive Bug Fix Round 2 — May 2026**
+
+#### **What changed**
+
+- **`dashboard/app.py`**: Removed `st.write()` from `setup_ingress_config()` (violates first-command rule); moved `st.set_page_config()` to be the first Streamlit call in `main()`.
+- **`dashboard/health.py`**: `time_diff.seconds` → `time_diff.total_seconds()` in `check_ml_system()`; `timedelta.seconds` only returns the sub-day seconds component so logs from >24 h ago falsely appeared active.
+- **`dashboard/components/control.py`**: Added `os.makedirs('/data/config', exist_ok=True)` in `trigger_model_recalibration()` and `save_config_changes()` to prevent `FileNotFoundError` on first run.
+- **`dashboard/data_service.py`**: Strip `tzinfo` from `last_run_time` datetime before computing age, preventing `TypeError` when HA writes ISO timestamps with a UTC offset.
+- **`dashboard/components/backup.py`**: Added `render_view_details_interface()` (shows manifest, file count, MD5) and `render_delete_interface()` (confirmation + `Path.unlink()`) and wired both into `render_backup()`; replaced all three download stubs with real `st.download_button` calls (state file, backup ZIP, export JSON).
+
+#### **Why**
+
+Thorough audit of all 8 dashboard files surfaced crashes, incorrect boolean logic, missing directory creation, and buttons that silently did nothing.
+
+#### **Files modified**
+
+`dashboard/app.py`, `dashboard/health.py`, `dashboard/components/control.py`, `dashboard/data_service.py`, `dashboard/components/backup.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **Dashboard HLC Calibrate Bug Fixes — May 2026**
 
 #### **What changed**

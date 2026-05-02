@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard: replaced deprecated `use_container_width` parameter with `width='stretch'` in all `st.plotly_chart()` and `st.dataframe()` calls (`performance.py`, `backup.py`, `overview.py`)
 - Dashboard: replaced non-existent `supervisorctl` subprocess calls in `control.py` with signal-based process management (`os.kill(pid, SIGTERM)`) so the HLC Calibrate, Restart, and Stop buttons work correctly in the containerised environment; `start_ml_system()` now returns an informative message instead of raising a `FileNotFoundError`
+- `app.py`: moved `st.set_page_config()` to be the first Streamlit command in `main()`; removed a `st.write()` call from `setup_ingress_config()` that violated this requirement and caused a crash when running under HA ingress
+- `health.py`: replaced `timedelta.seconds` with `timedelta.total_seconds()` in `check_ml_system()` so log files older than 24 h no longer falsely appear as "active"
+- `control.py`: added `os.makedirs('/data/config', exist_ok=True)` in `trigger_model_recalibration()` and `save_config_changes()` to prevent `FileNotFoundError` when the config directory does not yet exist
+- `data_service.py`: stripped timezone info from `last_run_time` before comparing with `datetime.now()` to prevent `TypeError: can't compare offset-naive and offset-aware datetimes`
+- `backup.py`: replaced all placeholder download stubs with real `st.download_button` calls for state file, backup ZIP, and export JSON downloads
+- `backup.py`: added `render_view_details_interface()` function and wired it into `render_backup()` so the "View Details" button actually renders backup metadata
+- `backup.py`: added `render_delete_interface()` function and wired it into `render_backup()` so the "Delete" button presents a confirmation dialog and physically removes the backup file
 
 ## [0.2.0] - 2026-02-10
 
