@@ -31,7 +31,12 @@ class ThermalEquilibriumModel:
     and adapts its parameters based on real-world feedback.
     """
 
-    def __init__(self):
+    def __init__(self, state_manager=None):
+        # Optional injected state manager.  When provided (e.g. by the cooling
+        # wrapper) this instance reads from / writes to the supplied manager
+        # instead of the global heating singleton.
+        self._state_manager = state_manager
+
         # Initialize default attributes to ensure existence
         self.solar_lag_minutes = config.SOLAR_LAG_MINUTES
         self.slab_time_constant_hours = config.SLAB_TIME_CONSTANT_HOURS
@@ -60,6 +65,22 @@ class ThermalEquilibriumModel:
         # thermal_bridge_factor removed in Phase 2: was not used in
         # calculations
 
+    def _get_state_manager(self):
+        """Return the active thermal state manager.
+
+        If a manager was injected at construction time (e.g. the cooling
+        manager) that instance is returned.  Otherwise the global heating
+        singleton is used so that existing call-sites that do not inject
+        anything continue to work without changes.
+        """
+        if self._state_manager is not None:
+            return self._state_manager
+        try:
+            from .unified_thermal_state import get_thermal_state_manager
+        except ImportError:
+            from unified_thermal_state import get_thermal_state_manager
+        return get_thermal_state_manager()
+
     def _load_thermal_parameters(self):
         """
         Load thermal parameters with proper baseline + adjustments.
@@ -67,12 +88,7 @@ class ThermalEquilibriumModel:
         """
         try:
             # Try to load calibrated parameters from unified thermal state
-            try:
-                from .unified_thermal_state import get_thermal_state_manager
-            except ImportError:
-                from unified_thermal_state import get_thermal_state_manager
-
-            state_manager = get_thermal_state_manager()
+            state_manager = self._get_state_manager()
             thermal_state = state_manager.get_current_parameters()
 
             # Check for calibrated parameters in baseline_parameters section
@@ -389,12 +405,7 @@ class ThermalEquilibriumModel:
         self._seed_orchestrator_from_model_state()
 
         try:
-            try:
-                from .unified_thermal_state import get_thermal_state_manager
-            except ImportError:
-                from unified_thermal_state import get_thermal_state_manager
-
-            state_manager = get_thermal_state_manager()
+            state_manager = self._get_state_manager()
             persisted_state = state_manager.get_heat_source_channel_state()
             if persisted_state:
                 # Pass calibration date so load_channel_state can decide
@@ -482,12 +493,7 @@ class ThermalEquilibriumModel:
             return
 
         try:
-            try:
-                from .unified_thermal_state import get_thermal_state_manager
-            except ImportError:
-                from unified_thermal_state import get_thermal_state_manager
-
-            state_manager = get_thermal_state_manager()
+            state_manager = self._get_state_manager()
             if parameter_history_records:
                 for parameter_record in parameter_history_records:
                     state_manager.add_parameter_history_record(
@@ -2655,12 +2661,7 @@ class ThermalEquilibriumModel:
         Save learned parameter adjustments to unified thermal state.
         """
         try:
-            try:
-                from .unified_thermal_state import get_thermal_state_manager
-            except ImportError:
-                from unified_thermal_state import get_thermal_state_manager
-
-            state_manager = get_thermal_state_manager()
+            state_manager = self._get_state_manager()
             learning_state = state_manager.state.get("learning_state", {})
 
             current_deltas = learning_state.get("parameter_adjustments", {})

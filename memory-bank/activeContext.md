@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Cooling-Mode State Isolation Fix — May 2026**
+
+#### **What changed**
+
+- **`src/thermal_equilibrium_model.py`**: `__init__` now accepts `state_manager=None` and stores it as `self._state_manager`. New `_get_state_manager()` helper returns the injected manager if set, otherwise falls back to the global heating singleton via `get_thermal_state_manager()`. Replaced all four inline `get_thermal_state_manager()` call-sites inside `_load_thermal_parameters()`, `_initialize_heat_source_channels()`, `_persist_heat_source_channel_state()`, and `_save_learning_to_thermal_state()` with `self._get_state_manager()`.
+- **`src/model_wrapper.py`**: Added `get_cooling_state_manager` import. `__init__` now creates two full trios: `(_heating_state_manager, _heating_thermal_model, _heating_prediction_metrics)` and `(_cooling_state_manager, _cooling_thermal_model, _cooling_prediction_metrics)`. Each `ThermalEquilibriumModel` is constructed with its manager injected. `set_climate_mode()` now swaps all three active references (`self.thermal_model`, `self.state_manager`, `self.prediction_metrics`) and reloads `self.cycle_count` from the newly active manager; it is a no-op when the mode has not changed.
+- **`tests/unit/test_cooling_mode.py`**: Added `TestCoolingStateIsolation` class with 11 tests verifying that: state manager instances differ; thermal model instances differ; each mode points to the correct trio; switching back restores the heating pair; state files differ and the cooling one contains "cooling"; injected managers match the models; `update_learning_state` and `add_prediction_record` calls on `wrapper.state_manager` reach the cooling manager and not the heating one; `cycle_count` is reloaded correctly on mode switch.
+
+#### **Why**
+
+Cooling-cycle learning (parameter adjustments, prediction records) was being written into `unified_thermal_state.json` (heating file) because `state_manager` and `thermal_model` were never swapped when `set_climate_mode("cooling")` was called. This caused the two modes to contaminate each other's learned parameters and prediction history.
+
+#### **Files modified**
+
+`src/thermal_equilibrium_model.py`, `src/model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **HLC Calibration Column Detection Fix — May 2026**
 
 #### **What changed**
