@@ -326,9 +326,14 @@ class TestCoolingStateIsolation:
         heating_file = str(tmp_path / "heating_state.json")
         cooling_file = str(tmp_path / "cooling_state.json")
 
-        # Reset singletons and inject temp-file managers so no real paths
-        # are touched during the test.
+        # Reset the wrapper singleton first so any lingering instance from a
+        # previous test (which may hold stale manager references) is discarded
+        # before we inject the new temp-file managers.
         mw._enhanced_model_wrapper_instance = None
+        uts._thermal_state_manager = None
+        utsc._cooling_state_manager = None
+
+        # Inject fresh temp-file managers so no real paths are touched.
         uts._thermal_state_manager = ThermalStateManager(state_file=heating_file)
         utsc._cooling_state_manager = CoolingThermalStateManager(
             state_file=cooling_file
