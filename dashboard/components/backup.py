@@ -884,7 +884,7 @@ def render_view_details_interface():
                     })
                 else:
                     st.write(f"**Files in archive:** {len(zf.namelist())}")
-        except Exception as e:
+        except (zipfile.BadZipFile, json.JSONDecodeError, KeyError, OSError) as e:
             st.error(f"Could not read backup details: {e}")
 
     if st.button("✖️ Close Details"):
