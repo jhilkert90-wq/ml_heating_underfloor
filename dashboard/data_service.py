@@ -10,7 +10,7 @@ from the ML system's persisted state.
 import json
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -117,10 +117,14 @@ def get_system_metrics() -> Dict[str, Any]:
     if last_run:
         try:
             run_dt = datetime.fromisoformat(str(last_run))
-            # Strip timezone info if present to allow naive arithmetic
+            # Use a timezone-aware "now" when the stored timestamp carries TZ
+            # info, to avoid a TypeError from mixing aware and naive datetimes.
+            # Both are then expressed in UTC so the age calculation is correct.
             if run_dt.tzinfo is not None:
-                run_dt = run_dt.replace(tzinfo=None)
-            age_seconds = (datetime.now() - run_dt).total_seconds()
+                now = datetime.now(timezone.utc)
+            else:
+                now = datetime.now()
+            age_seconds = (now - run_dt).total_seconds()
             if age_seconds < 600:
                 status = "active"
             elif age_seconds < 3600:

@@ -19,6 +19,13 @@ from pathlib import Path
 # Add app directory to Python path
 sys.path.append('/app')
 
+# Import data_service helper so we always locate the canonical state file
+# (honours UNIFIED_STATE_FILE env-var and *_shadow variants).
+try:
+    from data_service import _find_state_file as _ds_find_state_file
+except ImportError:
+    _ds_find_state_file = None
+
 def get_model_files():
     """Get list of all ML model and data files"""
     model_files = {
@@ -511,8 +518,12 @@ def render_current_model_download():
         )
         
         if download_type == "Unified State File":
-            state_path = Path('/data/models/unified_thermal_state.json')
-            if state_path.exists():
+            # Resolve the actual state file through the same logic that the
+            # data_service uses (honours UNIFIED_STATE_FILE env-var and shadow
+            # variants) rather than assuming a hardcoded /data/models path.
+            state_path_str = _ds_find_state_file() if _ds_find_state_file else None
+            state_path = Path(state_path_str) if state_path_str else None
+            if state_path and state_path.exists():
                 with open(state_path, 'rb') as f:
                     content = f.read()
                 st.download_button(

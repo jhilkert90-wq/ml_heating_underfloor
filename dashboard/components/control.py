@@ -16,16 +16,28 @@ import sys
 sys.path.append('/app')
 
 def _get_ml_pid():
-    """Return the PID of the running ML backend process, or None."""
+    """Return the PID of the running ML backend process, or None.
+
+    Uses the ``/proc`` filesystem directly so that the ``procps`` package
+    (which provides ``pgrep``) does not need to be installed in the Alpine
+    container.
+    """
     try:
-        result = subprocess.run(
-            ['pgrep', '-f', 'src.main'],
-            capture_output=True, text=True
-        )
-        pids = [int(p) for p in result.stdout.strip().split('\n') if p]
-        return pids[0] if pids else None
-    except Exception:
-        return None
+        for entry in os.listdir('/proc'):
+            if not entry.isdigit():
+                continue
+            try:
+                cmdline_path = f'/proc/{entry}/cmdline'
+                with open(cmdline_path, 'r') as fh:
+                    # Arguments are NUL-separated in /proc/PID/cmdline
+                    cmdline = fh.read().replace('\x00', ' ')
+                if 'src.main' in cmdline:
+                    return int(entry)
+            except (OSError, ValueError):
+                continue
+    except OSError:
+        pass
+    return None
 
 def get_ml_system_status():
     """Get current ML system status"""
@@ -48,13 +60,26 @@ def restart_ml_system():
         return False, str(e)
 
 def stop_ml_system():
-    """Stop the ML system by sending SIGTERM to the backend process."""
+    """Signal the ML backend to stop.
+
+    Because ``run.sh`` uses ``wait -n`` across the health server, dashboard,
+    and ML backend, sending SIGTERM to the ML process causes the shell script
+    to exit and the Home Assistant supervisor to restart the *entire* add-on
+    (health server and dashboard included).  There is no way to keep the
+    dashboard running while stopping only the ML backend.
+
+    Callers should inform the user that the whole add-on will restart.
+    """
     pid = _get_ml_pid()
     if pid is None:
         return False, "ML backend process not found – it may already be stopped."
     try:
         os.kill(pid, signal.SIGTERM)
-        return True, f"SIGTERM sent to ML backend (PID {pid})."
+        return True, (
+            f"SIGTERM sent to ML backend (PID {pid}). "
+            "The add-on will restart automatically — the ML system will be "
+            "back online in a few seconds."
+        )
     except Exception as e:
         return False, str(e)
 
@@ -126,7 +151,12 @@ def render_system_controls():
                 with st.spinner("Stopping ML system..."):
                     success, output = stop_ml_system()
                     if success:
-                        st.success("System stopped successfully!")
+                        st.warning(
+                            "⚠️ The ML backend has been signalled to stop. "
+                            "Because all processes share a single process group, "
+                            "the add-on will restart automatically."
+                        )
+                        st.info(output)
                     else:
                         st.error(f"Stop failed: {output}")
         else:

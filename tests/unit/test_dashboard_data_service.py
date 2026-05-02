@@ -269,6 +269,34 @@ class TestGetSystemMetrics:
         metrics = get_system_metrics()
         assert metrics["status"] == "idle"
 
+    def test_utc_offset_aware_active(self, tmp_path, monkeypatch):
+        """A UTC-offset timestamp from 1 minute ago must be classified 'active',
+        not raise TypeError, and not be skewed by the local timezone."""
+        from datetime import timezone
+        path = tmp_path / "s.json"
+        # Construct a timestamp with explicit UTC offset, 1 min ago
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        state = _make_state(last_run_time=recent)
+        path.write_text(json.dumps(state))
+        import data_service as ds
+        monkeypatch.setattr(ds, "_STATE_FILE_CANDIDATES", [str(path)])
+
+        metrics = get_system_metrics()
+        assert metrics["status"] == "active"
+
+    def test_utc_offset_aware_stale(self, tmp_path, monkeypatch):
+        """A UTC-offset timestamp from 2 hours ago must be classified 'stale'."""
+        from datetime import timezone
+        path = tmp_path / "s.json"
+        old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        state = _make_state(last_run_time=old)
+        path.write_text(json.dumps(state))
+        import data_service as ds
+        monkeypatch.setattr(ds, "_STATE_FILE_CANDIDATES", [str(path)])
+
+        metrics = get_system_metrics()
+        assert metrics["status"] == "stale"
+
     def test_returns_empty_when_missing(self, missing_state):
         metrics = get_system_metrics()
         assert metrics == _empty_metrics()
