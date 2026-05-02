@@ -737,7 +737,7 @@ def render_backup_list():
     # Display table
     st.dataframe(
         df[['Name', 'Created', 'Size', 'MD5']],
-        use_container_width=True,
+        width='stretch',
         hide_index=True
     )
     
@@ -921,7 +921,7 @@ def render_backup_analytics():
         height=300
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     
     # Backup statistics
     col1, col2, col3 = st.columns(3)

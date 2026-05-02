@@ -128,7 +128,7 @@ def render_learning_progress():
 
     fig.update_layout(height=400, showlegend=True,
                       title_text="ML System Learning Analytics")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 def render_feature_importance():
     """Render thermal parameter comparison: baseline vs effective."""
@@ -171,7 +171,7 @@ def render_feature_importance():
         xaxis_title="Value",
         height=max(300, 40 * len(param_keys)),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 def render_prediction_accuracy():
     """Render prediction error distribution from real data."""
@@ -195,7 +195,7 @@ def render_prediction_accuracy():
         yaxis_title="Count",
         height=300,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     metrics = get_system_metrics()
     col1, col2, col3 = st.columns(3)
@@ -245,7 +245,7 @@ def render_heat_source_channels():
         yaxis_title="Error (°C)",
         height=350,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 def render_parameter_evolution():
     """Render parameter evolution over time from real parameter history."""
@@ -279,7 +279,7 @@ def render_parameter_evolution():
         yaxis_title="Value",
         height=400,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def render_system_insights():

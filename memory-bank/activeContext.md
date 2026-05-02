@@ -1,5 +1,24 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Dashboard HLC Calibrate Bug Fixes — May 2026**
+
+#### **What changed**
+
+- **`dashboard/components/control.py`**: Removed `supervisorctl` subprocess calls (binary not present in container). Added `_get_ml_pid()` helper using `pgrep -f src.main`. Rewrote `restart_ml_system()` and `stop_ml_system()` to use `os.kill(pid, signal.SIGTERM)`. Rewrote `start_ml_system()` to return a descriptive error instead of raising `FileNotFoundError`. Added `import signal`.
+- **`dashboard/components/performance.py`**: Replaced 5× `use_container_width=True` → `width='stretch'` in `st.plotly_chart()` calls.
+- **`dashboard/components/backup.py`**: Replaced 1× `use_container_width=True` in `st.dataframe()` and 1× in `st.plotly_chart()` → `width='stretch'`.
+- **`dashboard/components/overview.py`**: Replaced 1× `use_container_width=True` → `width='stretch'` in `st.plotly_chart()`.
+
+#### **Why**
+
+Pressing "HLC Calibrate" in the dashboard produced two errors: a `FileNotFoundError` because `supervisorctl` is not installed/running in the container (processes are launched directly by `run.sh` with `&`), and a Streamlit deprecation warning about `use_container_width` being removed after 2025-12-31.
+
+#### **Files modified**
+
+`dashboard/components/control.py`, `dashboard/components/performance.py`, `dashboard/components/backup.py`, `dashboard/components/overview.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **HLC Session Persistence + Migration Fixes — May 1, 2026**
 
 #### **What changed**

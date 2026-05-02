@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Dashboard: replaced deprecated `use_container_width` parameter with `width='stretch'` in all `st.plotly_chart()` and `st.dataframe()` calls (`performance.py`, `backup.py`, `overview.py`)
+- Dashboard: replaced non-existent `supervisorctl` subprocess calls in `control.py` with signal-based process management (`os.kill(pid, SIGTERM)`) so the HLC Calibrate, Restart, and Stop buttons work correctly in the containerised environment; `start_ml_system()` now returns an informative message instead of raising a `FileNotFoundError`
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

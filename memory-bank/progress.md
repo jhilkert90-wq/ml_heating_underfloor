@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - May 2026 (Dashboard HLC Calibrate Bug Fixes)
+
+### ✅ **FIX: HLC Calibrate button errors — supervisorctl not found & use_container_width deprecation**
+
+**Status**: **COMPLETED**
+
+Fixed two dashboard bugs surfaced when pressing the HLC Calibrate button: (1) `[Errno 2] No such file or directory: 'supervisorctl'` — the container's `run.sh` starts processes directly with `&`, so `supervisorctl` is never available; replaced all three `supervisorctl`-based functions in `control.py` with signal-based management using `pgrep -f src.main` + `os.kill(pid, SIGTERM)`, and made `start_ml_system()` return a clear "use the add-on panel" message; (2) Streamlit deprecation warning for `use_container_width` — replaced all occurrences with `width='stretch'` across `performance.py`, `backup.py`, and `overview.py`.
+
+**Files changed**: `dashboard/components/control.py`, `dashboard/components/performance.py`, `dashboard/components/backup.py`, `dashboard/components/overview.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ## 🎯 CURRENT STATUS - May 1, 2026 (HLC Session Persistence + Migration Fixes)
 
 ### ✅ **FIX: Session restart survival, close-state persistence, and legacy migration**

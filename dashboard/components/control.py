@@ -6,6 +6,7 @@ System control interface for ML heating management
 import streamlit as st
 import json
 import os
+import signal
 import subprocess
 import requests
 from datetime import datetime
@@ -14,49 +15,59 @@ import sys
 # Add app directory to Python path
 sys.path.append('/app')
 
-def get_ml_system_status():
-    """Get current ML system status"""
+def _get_ml_pid():
+    """Return the PID of the running ML backend process, or None."""
     try:
-        # Check if ML system process is running
-        result = subprocess.run(['pgrep', '-f', 'src.main'], 
-                              capture_output=True, text=True)
-        return len(result.stdout.strip()) > 0
-    except Exception:
-        return False
-
-def restart_ml_system():
-    """Restart the ML system"""
-    try:
-        # Use supervisorctl to restart the ML heating service
         result = subprocess.run(
-            ['supervisorctl', 'restart', 'ml_heating'],
+            ['pgrep', '-f', 'src.main'],
             capture_output=True, text=True
         )
-        return result.returncode == 0, result.stdout + result.stderr
+        pids = [int(p) for p in result.stdout.strip().split() if p.strip().isdigit()]
+        return pids[0] if pids else None
+    except Exception:
+        return None
+
+def get_ml_system_status():
+    """Get current ML system status"""
+    return _get_ml_pid() is not None
+
+def restart_ml_system():
+    """Restart the ML system by sending SIGTERM to the backend process.
+
+    The run.sh entrypoint uses ``wait -n``; when the ML process exits the
+    Home Assistant supervisor will restart the whole add-on, which brings
+    the backend back up automatically.
+    """
+    pid = _get_ml_pid()
+    if pid is None:
+        return False, "ML backend process not found – cannot restart."
+    try:
+        os.kill(pid, signal.SIGTERM)
+        return True, f"SIGTERM sent to ML backend (PID {pid}). Add-on will restart automatically."
     except Exception as e:
         return False, str(e)
 
 def stop_ml_system():
-    """Stop the ML system"""
+    """Stop the ML system by sending SIGTERM to the backend process."""
+    pid = _get_ml_pid()
+    if pid is None:
+        return False, "ML backend process not found – it may already be stopped."
     try:
-        result = subprocess.run(
-            ['supervisorctl', 'stop', 'ml_heating'],
-            capture_output=True, text=True
-        )
-        return result.returncode == 0, result.stdout + result.stderr
+        os.kill(pid, signal.SIGTERM)
+        return True, f"SIGTERM sent to ML backend (PID {pid})."
     except Exception as e:
         return False, str(e)
 
 def start_ml_system():
-    """Start the ML system"""
-    try:
-        result = subprocess.run(
-            ['supervisorctl', 'start', 'ml_heating'],
-            capture_output=True, text=True
-        )
-        return result.returncode == 0, result.stdout + result.stderr
-    except Exception as e:
-        return False, str(e)
+    """Starting the ML backend from the dashboard is not supported.
+
+    The backend is managed by the Home Assistant supervisor; use the
+    add-on panel to start it.
+    """
+    return False, (
+        "The ML backend cannot be started from the dashboard. "
+        "Please start the add-on from the Home Assistant add-on panel."
+    )
 
 def trigger_model_recalibration():
     """Trigger model recalibration"""
