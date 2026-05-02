@@ -53,6 +53,11 @@ try:
 except ImportError:
     from unified_thermal_state import get_thermal_state_manager  # type: ignore
 
+try:
+    from .physics_calibration import fetch_historical_data_for_calibration
+except ImportError:
+    from physics_calibration import fetch_historical_data_for_calibration  # type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -711,10 +716,18 @@ def calibrate_hlc(influx_service=None) -> Dict:
     The result is saved to the unified thermal state as a calibrated
     baseline value.
 
+    Data fetching delegates to
+    :func:`physics_calibration.fetch_historical_data_for_calibration`,
+    which respects ``TRAINING_DATA_SOURCE`` ("influx", "ha_history",
+    "auto") and performs HA history fallback/supplement in auto mode —
+    identical to the strategy used for model calibration.
+
     Parameters
     ----------
     influx_service : InfluxService, optional
-        If omitted, a new one is created via :func:`create_influx_service`.
+        Accepted for backward compatibility but no longer used.
+        Data sourcing is handled by
+        :func:`fetch_historical_data_for_calibration`.
 
     Returns
     -------
@@ -731,12 +744,11 @@ def calibrate_hlc(influx_service=None) -> Dict:
     )
 
     # --- Fetch historical data ---
+    # Delegate to the shared helper used by model calibration, which respects
+    # TRAINING_DATA_SOURCE and performs HA history fallback/supplement in auto
+    # mode — the same data-source strategy as physics_calibration.
     try:
-        if influx_service is None:
-            from .influx_service import create_influx_service
-            influx_service = create_influx_service()
-
-        df = influx_service.get_training_data(lookback_hours=lookback_hours)
+        df = fetch_historical_data_for_calibration(lookback_hours=lookback_hours)
     except Exception as exc:
         msg = f"Failed to fetch historical data: {exc}"
         logger.error("❌ HLC calibration: %s", msg)
@@ -747,49 +759,33 @@ def calibrate_hlc(influx_service=None) -> Dict:
         logger.warning("⚠️ HLC calibration: %s", msg)
         return {"success": False, "message": msg}
 
-    # --- Required columns ---
+    # --- Build column map from config entity IDs ---
+    # Use the same short-name convention as physics_calibration and
+    # influx_service.get_training_data(): entity_id.split(".", 1)[-1].
+    # This correctly resolves non-English entity IDs (e.g. "rt_mittelwert")
+    # without relying on keyword guessing.
     required_cols = {
         "indoor_temp", "outdoor_temp", "outlet_temp", "inlet_temp",
         "flow_rate",
     }
-    # Map common InfluxDB column name variants.
-    # Skip derived columns (delta, lag, diff, trend, gradient, forecast)
-    # to avoid overwriting base-temperature mappings.
-    _DERIVED_KEYWORDS = {"delta", "lag", "diff", "trend", "gradient", "forecast", "change"}
-    col_map = {}
-    for col in df.columns:
-        col_lower = col.lower()
-        # Skip derived / computed columns
-        if any(kw in col_lower for kw in _DERIVED_KEYWORDS):
-            continue
-        if "indoor" in col_lower and "temp" in col_lower:
-            col_map.setdefault("indoor_temp", col)
-        elif "outdoor" in col_lower and "temp" in col_lower:
-            col_map.setdefault("outdoor_temp", col)
-        elif "outlet" in col_lower and "temp" in col_lower:
-            col_map.setdefault("outlet_temp", col)
-        elif "supply" in col_lower and "temp" in col_lower:
-            col_map.setdefault("outlet_temp", col)
-        elif "inlet" in col_lower and "temp" in col_lower:
-            col_map.setdefault("inlet_temp", col)
-        elif "return" in col_lower and "temp" in col_lower:
-            col_map.setdefault("inlet_temp", col)
-        elif "flow" in col_lower and "rate" in col_lower:
-            col_map.setdefault("flow_rate", col)
-        elif "pv" in col_lower and ("power" in col_lower or "leistung" in col_lower):
-            col_map.setdefault("pv_power", col)
-        elif "fireplace" in col_lower or "kamin" in col_lower:
-            col_map.setdefault("fireplace", col)
-        elif col_lower in ("tv_on", "tv_status", "fernseher_status"):
-            col_map.setdefault("tv", col)
-        elif "dhw" in col_lower or "warmwasser" in col_lower:
-            col_map.setdefault("dhw", col)
-        elif "defrost" in col_lower:
-            col_map.setdefault("defrost", col)
-        elif "target" in col_lower and "indoor" in col_lower:
-            col_map.setdefault("target_temp", col)
-        elif col_lower in ("soll_rt", "target_temp"):
-            col_map.setdefault("target_temp", col)
+    col_map: Dict[str, str] = {}
+
+    def _add_col(key: str, entity_attr: str) -> None:
+        col_name = getattr(config, entity_attr, "").split(".", 1)[-1]
+        if col_name and col_name in df.columns:
+            col_map[key] = col_name
+
+    _add_col("indoor_temp", "INDOOR_TEMP_ENTITY_ID")
+    _add_col("outdoor_temp", "OUTDOOR_TEMP_ENTITY_ID")
+    _add_col("outlet_temp", "ACTUAL_OUTLET_TEMP_ENTITY_ID")
+    _add_col("inlet_temp", "INLET_TEMP_ENTITY_ID")
+    _add_col("flow_rate", "FLOW_RATE_ENTITY_ID")
+    _add_col("pv_power", "PV_POWER_ENTITY_ID")
+    _add_col("fireplace", "FIREPLACE_STATUS_ENTITY_ID")
+    _add_col("tv", "TV_STATUS_ENTITY_ID")
+    _add_col("dhw", "DHW_STATUS_ENTITY_ID")
+    _add_col("defrost", "DEFROST_STATUS_ENTITY_ID")
+    _add_col("target_temp", "TARGET_INDOOR_TEMP_ENTITY_ID")
 
     missing = required_cols - set(col_map.keys())
     if missing:

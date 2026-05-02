@@ -1,6 +1,23 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Dashboard Comprehensive Bug Fix Round 2)
+## 🎯 CURRENT STATUS - May 2026 (HLC Calibration Column Detection Fix)
+
+### ✅ **FIX: HLC calibration fails with `Missing required columns: {'indoor_temp'}`**
+
+**Status**: **COMPLETED**
+
+Root cause: `calibrate_hlc()` in `src/hlc_learner.py` fetched data via `influx_service.get_training_data()` then used English keyword heuristics (e.g. `"indoor" in col_lower and "temp" in col_lower`) to detect required columns. Non-English entity IDs like `rt_mittelwert` (the actual indoor temp sensor) don't contain these keywords, so the function always aborted.
+
+Fix: replaced both the data-fetch block and the heuristic column-mapping block with the same approach already used by `physics_calibration.py`:
+1. Data is fetched via `fetch_historical_data_for_calibration()` — respects `TRAINING_DATA_SOURCE`, handles HA history fallback/supplement in "auto" mode.
+2. Column mapping uses `config.*_ENTITY_ID.split(".", 1)[-1]` — the exact short names produced by InfluxDB pivot and HA history, no English keyword assumptions.
+
+The `influx_service` parameter is retained for backward compatibility but is no longer used.
+
+**Files changed**: `src/hlc_learner.py`, `tests/unit/test_hlc_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 
 ### ✅ **FIX: 7 dashboard bugs — crashes, logic errors, and non-functional buttons**
 

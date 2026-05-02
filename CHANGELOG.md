@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **HLC calibration `Missing required columns: {'indoor_temp'}`**: `calibrate_hlc()` in `hlc_learner.py` previously used keyword-based heuristics (e.g. "indoor" + "temp") to identify DataFrame columns, which silently failed for non-English entity IDs such as `rt_mittelwert`. The function now uses the shared `fetch_historical_data_for_calibration()` helper from `physics_calibration.py` (same strategy as model calibration), which respects `TRAINING_DATA_SOURCE` and performs HA history fallback/supplement in auto mode. Column identification uses `config.*_ENTITY_ID.split(".", 1)[-1]` — the exact short names produced by InfluxDB and HA history, with no language assumptions.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

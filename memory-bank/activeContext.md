@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **HLC Calibration Column Detection Fix — May 2026**
+
+#### **What changed**
+
+- **`src/hlc_learner.py`**: `calibrate_hlc()` — replaced the manual `influx_service.get_training_data()` call + English keyword-based column map with a delegation to `fetch_historical_data_for_calibration()` (imported from `physics_calibration`) and a config-entity-ID-based `col_map`. The `influx_service` parameter is retained for backward compatibility. Added module-level `try/except` import of `fetch_historical_data_for_calibration`.
+- **`tests/unit/test_hlc_learner.py`**: Rewrote all `TestCalibrateHLC` tests to mock `src.hlc_learner.fetch_historical_data_for_calibration` instead of the influx service. Test DataFrames now use non-English column names (e.g. `rt_mittelwert`) matching real entity short IDs. Added 4 new test cases: `test_non_english_column_names_succeeds`, `test_fetch_exception_returns_failure`, `test_ha_history_fallback_data_succeeds`, `test_backward_compat_influx_service_param_accepted`.
+
+#### **Why**
+
+`calibrate_hlc()` failed with `Missing required columns in historical data: {'indoor_temp'}` because the English keyword matching (`"indoor" in col_lower and "temp" in col_lower`) never matched real entity IDs like `rt_mittelwert`. `fetch_historical_data_for_calibration()` already solves this correctly via config-based short names and also adds HA history fallback — used by all other calibration code.
+
+#### **Files modified**
+
+`src/hlc_learner.py`, `tests/unit/test_hlc_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **Dashboard Comprehensive Bug Fix Round 2 — May 2026**
 
 #### **What changed**
