@@ -22,7 +22,7 @@ def _get_ml_pid():
             ['pgrep', '-f', 'src.main'],
             capture_output=True, text=True
         )
-        pids = [int(p) for p in result.stdout.strip().split() if p.strip().isdigit()]
+        pids = [int(p) for p in result.stdout.strip().split('\n') if p]
         return pids[0] if pids else None
     except Exception:
         return None
