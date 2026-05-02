@@ -1,6 +1,39 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Dashboard Comprehensive Bug Fix Round 2)
+## 🎯 CURRENT STATUS - May 2026 (Cooling-Mode State Isolation Fix)
+
+### ✅ **FIX: Cooling mode writes learning state to heating JSON**
+
+**Status**: **COMPLETED**
+
+Root cause: `EnhancedModelWrapper.__init__` hard-wired `self.state_manager = get_thermal_state_manager()` (the heating singleton). `set_climate_mode()` only updated `self._climate_mode` — it never swapped `self.state_manager`. All subsequent `update_learning_state()`, `add_prediction_record()`, and `update_learning_state()` calls during cooling cycles wrote to the heating JSON. `ThermalEquilibriumModel` had the same problem — `_load_thermal_parameters()`, `_initialize_heat_source_channels()`, `_persist_heat_source_channel_state()`, and `_save_learning_to_thermal_state()` each locally called `get_thermal_state_manager()` with no knowledge of climate mode.
+
+Fix:
+1. `ThermalEquilibriumModel.__init__` now accepts `state_manager=None`. New `_get_state_manager()` helper returns the injected manager or falls back to the heating singleton. All four inline `get_thermal_state_manager()` call-sites inside the model replaced with `self._get_state_manager()`.
+2. `EnhancedModelWrapper.__init__` now creates two paired instances — `_heating_state_manager`/`_heating_thermal_model`/`_heating_prediction_metrics` and the corresponding cooling trio. Each `ThermalEquilibriumModel` is constructed with the correct manager injected.
+3. `set_climate_mode()` swaps `self.thermal_model`, `self.state_manager`, `self.prediction_metrics` and reloads `self.cycle_count` from the newly active manager.
+
+**Files changed**: `src/thermal_equilibrium_model.py`, `src/model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+
+### ✅ **FIX: HLC calibration fails with `Missing required columns: {'indoor_temp'}`**
+
+**Status**: **COMPLETED**
+
+Root cause: `calibrate_hlc()` in `src/hlc_learner.py` fetched data via `influx_service.get_training_data()` then used English keyword heuristics (e.g. `"indoor" in col_lower and "temp" in col_lower`) to detect required columns. Non-English entity IDs like `rt_mittelwert` (the actual indoor temp sensor) don't contain these keywords, so the function always aborted.
+
+Fix: replaced both the data-fetch block and the heuristic column-mapping block with the same approach already used by `physics_calibration.py`:
+1. Data is fetched via `fetch_historical_data_for_calibration()` — respects `TRAINING_DATA_SOURCE`, handles HA history fallback/supplement in "auto" mode.
+2. Column mapping uses `config.*_ENTITY_ID.split(".", 1)[-1]` — the exact short names produced by InfluxDB pivot and HA history, no English keyword assumptions.
+
+The `influx_service` parameter is retained for backward compatibility but is no longer used.
+
+**Files changed**: `src/hlc_learner.py`, `tests/unit/test_hlc_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 
 ### ✅ **FIX: 7 dashboard bugs — crashes, logic errors, and non-functional buttons**
 

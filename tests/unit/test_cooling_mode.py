@@ -301,3 +301,147 @@ class TestThermalConstantsCooling:
             PhysicsConstants.MIN_COOLING_OUTLET_TEMP
             < PhysicsConstants.MIN_OUTLET_TEMP
         )
+
+
+# ── State isolation tests ────────────────────────────────────────────
+
+
+class TestCoolingStateIsolation:
+    """Verify that cooling-mode reads/writes use the cooling state manager
+    and not the heating one — ensuring the two modes never contaminate each
+    other's JSON files."""
+
+    @pytest.fixture
+    def wrapper(self, tmp_path):
+        """Hermetic wrapper fixture: injects temp-file state managers so the
+        tests never touch real filesystem locations or conflict with other
+        singleton-using tests."""
+        import src.unified_thermal_state as uts
+        import src.unified_thermal_state_cooling as utsc
+        import src.model_wrapper as mw
+        from src.unified_thermal_state import ThermalStateManager
+        from src.unified_thermal_state_cooling import CoolingThermalStateManager
+        from src.model_wrapper import EnhancedModelWrapper
+
+        heating_file = str(tmp_path / "heating_state.json")
+        cooling_file = str(tmp_path / "cooling_state.json")
+
+        # Reset the wrapper singleton first so any lingering instance from a
+        # previous test (which may hold stale manager references) is discarded
+        # before we inject the new temp-file managers.
+        mw._enhanced_model_wrapper_instance = None
+        uts._thermal_state_manager = None
+        utsc._cooling_state_manager = None
+
+        # Inject fresh temp-file managers so no real paths are touched.
+        uts._thermal_state_manager = ThermalStateManager(state_file=heating_file)
+        utsc._cooling_state_manager = CoolingThermalStateManager(
+            state_file=cooling_file
+        )
+
+        w = EnhancedModelWrapper()
+        yield w
+
+        # Tear down
+        mw._enhanced_model_wrapper_instance = None
+        uts._thermal_state_manager = None
+        utsc._cooling_state_manager = None
+
+    def test_separate_state_manager_instances(self, wrapper):
+        """Heating and cooling managers must be different objects."""
+        assert wrapper._heating_state_manager is not wrapper._cooling_state_manager
+
+    def test_separate_thermal_model_instances(self, wrapper):
+        """Heating and cooling thermal models must be different objects."""
+        assert wrapper._heating_thermal_model is not wrapper._cooling_thermal_model
+
+    def test_heating_mode_uses_heating_manager(self, wrapper):
+        """In heating mode (default) the active state manager is the heating one."""
+        wrapper.set_climate_mode("heating")
+        assert wrapper.state_manager is wrapper._heating_state_manager
+        assert wrapper.thermal_model is wrapper._heating_thermal_model
+        assert wrapper.prediction_metrics is wrapper._heating_prediction_metrics
+
+    def test_cooling_mode_uses_cooling_manager(self, wrapper):
+        """After switching to cooling mode the active state manager is the cooling one."""
+        wrapper.set_climate_mode("cooling")
+        assert wrapper.state_manager is wrapper._cooling_state_manager
+        assert wrapper.thermal_model is wrapper._cooling_thermal_model
+        assert wrapper.prediction_metrics is wrapper._cooling_prediction_metrics
+
+    def test_mode_switch_back_to_heating(self, wrapper):
+        """Switching back to heating restores the heating pair."""
+        wrapper.set_climate_mode("cooling")
+        wrapper.set_climate_mode("heating")
+        assert wrapper.state_manager is wrapper._heating_state_manager
+        assert wrapper.thermal_model is wrapper._heating_thermal_model
+
+    def test_cooling_state_file_differs_from_heating(self, wrapper):
+        """The state files used by each manager must be different paths."""
+        heating_file = getattr(wrapper._heating_state_manager, "state_file", "")
+        cooling_file = getattr(wrapper._cooling_state_manager, "state_file", "")
+        assert heating_file != cooling_file
+
+    def test_cooling_thermal_model_injected_with_cooling_manager(self, wrapper):
+        """The cooling ThermalEquilibriumModel must have the cooling manager injected."""
+        assert (
+            wrapper._cooling_thermal_model._state_manager
+            is wrapper._cooling_state_manager
+        )
+
+    def test_heating_thermal_model_injected_with_heating_manager(self, wrapper):
+        """The heating ThermalEquilibriumModel must have the heating manager injected."""
+        assert (
+            wrapper._heating_thermal_model._state_manager
+            is wrapper._heating_state_manager
+        )
+
+    def test_update_learning_state_in_cooling_writes_to_cooling_manager(self, wrapper):
+        """update_learning_state calls during cooling mode go to the cooling manager."""
+        wrapper.set_climate_mode("cooling")
+
+        heating_calls_before = 0
+        cooling_calls_before = 0
+
+        with patch.object(
+            wrapper._heating_state_manager, "update_learning_state"
+        ) as mock_heating_update, patch.object(
+            wrapper._cooling_state_manager, "update_learning_state"
+        ) as mock_cooling_update:
+            wrapper.state_manager.update_learning_state(cycle_count=1)
+
+            assert mock_heating_update.call_count == heating_calls_before
+            assert mock_cooling_update.call_count == cooling_calls_before + 1
+
+    def test_add_prediction_record_in_cooling_writes_to_cooling_manager(self, wrapper):
+        """add_prediction_record calls during cooling go to the cooling manager."""
+        wrapper.set_climate_mode("cooling")
+
+        record = {
+            "timestamp": "2026-05-01T12:00:00",
+            "predicted": 20.5,
+            "actual": 20.2,
+            "error": -0.3,
+        }
+        with patch.object(
+            wrapper._heating_state_manager, "add_prediction_record"
+        ) as mock_heating_add, patch.object(
+            wrapper._cooling_state_manager, "add_prediction_record"
+        ) as mock_cooling_add:
+            wrapper.state_manager.add_prediction_record(record)
+
+            mock_heating_add.assert_not_called()
+            mock_cooling_add.assert_called_once_with(record)
+
+    def test_cycle_count_reloaded_on_mode_switch(self, wrapper):
+        """cycle_count is read from the newly active manager on every mode switch."""
+        # Manually set a distinctive cycle count in each mock
+        wrapper._heating_state_manager.state["learning_state"]["cycle_count"] = 42
+        wrapper._cooling_state_manager.state["learning_state"]["cycle_count"] = 7
+
+        wrapper.set_climate_mode("cooling")
+        assert wrapper.cycle_count == 7
+
+        wrapper.set_climate_mode("heating")
+        assert wrapper.cycle_count == 42
+

@@ -22,6 +22,7 @@ import pandas as pd
 # Support both package-relative and direct import for notebooks
 from src.thermal_equilibrium_model import ThermalEquilibriumModel
 from src.unified_thermal_state import get_thermal_state_manager
+from src.unified_thermal_state_cooling import get_cooling_state_manager
 from src.influx_service import create_influx_service
 from src.prediction_metrics import PredictionMetrics
 from src import config
@@ -50,20 +51,40 @@ class EnhancedModelWrapper:
     """
 
     def __init__(self):
-        self.thermal_model = ThermalEquilibriumModel()
+        # ── Per-mode state managers ────────────────────────────────────────
+        # Each mode keeps its own JSON file so heating and cooling learning
+        # histories never cross-contaminate.
+        self._heating_state_manager = get_thermal_state_manager()
+        self._cooling_state_manager = get_cooling_state_manager()
+
+        # ── Per-mode thermal models ────────────────────────────────────────
+        # Each model instance is seeded with its mode-specific state manager
+        # so parameter loads and saves go to the correct file.
+        self._heating_thermal_model = ThermalEquilibriumModel(
+            state_manager=self._heating_state_manager
+        )
+        self._cooling_thermal_model = ThermalEquilibriumModel(
+            state_manager=self._cooling_state_manager
+        )
+
         self.learning_enabled = True
 
         # Climate mode: "heating" (default) or "cooling".
         # Set each cycle by main.py via set_climate_mode().
         self._climate_mode = "heating"
 
-        # Get thermal state manager
-        self.state_manager = get_thermal_state_manager()
+        # Active pair — initially heating.
+        self.thermal_model = self._heating_thermal_model
+        self.state_manager = self._heating_state_manager
 
         # Initialize prediction metrics for MAE/RMSE tracking
-        self.prediction_metrics = PredictionMetrics(
-            state_manager=self.state_manager
+        self._heating_prediction_metrics = PredictionMetrics(
+            state_manager=self._heating_state_manager
         )
+        self._cooling_prediction_metrics = PredictionMetrics(
+            state_manager=self._cooling_state_manager
+        )
+        self.prediction_metrics = self._heating_prediction_metrics
 
         # Adaptive fireplace learning is legacy-only when channel mode is off.
         self.adaptive_fireplace = None
@@ -120,10 +141,39 @@ class EnhancedModelWrapper:
 
     # --- Climate mode helpers ---
     def set_climate_mode(self, mode: str) -> None:
-        """Set the current climate mode ('heating' or 'cooling')."""
+        """Set the current climate mode ('heating' or 'cooling').
+
+        Swaps the active thermal model, state manager, and prediction metrics
+        to the mode-specific instances so all reads and writes go to the
+        correct JSON file.
+        """
         if mode not in ("heating", "cooling"):
             mode = "heating"
+
+        if mode == self._climate_mode:
+            return  # nothing to swap
+
         self._climate_mode = mode
+
+        if mode == "cooling":
+            self.thermal_model = self._cooling_thermal_model
+            self.state_manager = self._cooling_state_manager
+            self.prediction_metrics = self._cooling_prediction_metrics
+        else:
+            self.thermal_model = self._heating_thermal_model
+            self.state_manager = self._heating_state_manager
+            self.prediction_metrics = self._heating_prediction_metrics
+
+        # Reload cycle count from the newly active state manager so online
+        # learning continues from the correct counter.
+        metrics = self.state_manager.get_learning_metrics()
+        self.cycle_count = metrics["current_cycle_count"]
+
+        logging.info(
+            "🔄 Climate mode switched to '%s' — state manager: %s",
+            mode,
+            getattr(self.state_manager, "state_file", "unknown"),
+        )
 
     @property
     def climate_mode(self) -> str:
