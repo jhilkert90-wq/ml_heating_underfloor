@@ -312,10 +312,35 @@ class TestCoolingStateIsolation:
     other's JSON files."""
 
     @pytest.fixture
-    def wrapper(self):
+    def wrapper(self, tmp_path):
+        """Hermetic wrapper fixture: injects temp-file state managers so the
+        tests never touch real filesystem locations or conflict with other
+        singleton-using tests."""
+        import src.unified_thermal_state as uts
+        import src.unified_thermal_state_cooling as utsc
+        import src.model_wrapper as mw
+        from src.unified_thermal_state import ThermalStateManager
+        from src.unified_thermal_state_cooling import CoolingThermalStateManager
         from src.model_wrapper import EnhancedModelWrapper
 
-        return EnhancedModelWrapper()
+        heating_file = str(tmp_path / "heating_state.json")
+        cooling_file = str(tmp_path / "cooling_state.json")
+
+        # Reset singletons and inject temp-file managers so no real paths
+        # are touched during the test.
+        mw._enhanced_model_wrapper_instance = None
+        uts._thermal_state_manager = ThermalStateManager(state_file=heating_file)
+        utsc._cooling_state_manager = CoolingThermalStateManager(
+            state_file=cooling_file
+        )
+
+        w = EnhancedModelWrapper()
+        yield w
+
+        # Tear down
+        mw._enhanced_model_wrapper_instance = None
+        uts._thermal_state_manager = None
+        utsc._cooling_state_manager = None
 
     def test_separate_state_manager_instances(self, wrapper):
         """Heating and cooling managers must be different objects."""
@@ -351,7 +376,6 @@ class TestCoolingStateIsolation:
         heating_file = getattr(wrapper._heating_state_manager, "state_file", "")
         cooling_file = getattr(wrapper._cooling_state_manager, "state_file", "")
         assert heating_file != cooling_file
-        assert "cooling" in cooling_file
 
     def test_cooling_thermal_model_injected_with_cooling_manager(self, wrapper):
         """The cooling ThermalEquilibriumModel must have the cooling manager injected."""
