@@ -18,10 +18,8 @@ def setup_ingress_config():
     """Configure Streamlit for Home Assistant ingress support"""
     ingress_path = os.environ.get('HASSIO_INGRESS_PATH', '')
     
-    # If running under ingress, configure Streamlit appropriately
-    if ingress_path:
-        st.write("<!-- Home Assistant Ingress Mode -->")
-        # Additional ingress-specific configuration can be added here
+    # No st.* calls here – set_page_config() must be the first Streamlit
+    # command, so all st calls are deferred to main().
     
     return ingress_path
 
@@ -42,16 +40,17 @@ except ImportError:
 def main():
     """Main dashboard application"""
     
-    # Setup ingress configuration if running under Home Assistant
-    ingress_path = setup_ingress_config()
-    
-    # Page configuration
+    # Page configuration MUST be the very first Streamlit command.
+    # Calling any st.* function before this raises StreamlitAPIException.
     st.set_page_config(
         page_title="ML Heating Control",
         page_icon="🔥",
         layout="wide",
         initial_sidebar_state="expanded"
     )
+    
+    # Setup ingress configuration if running under Home Assistant
+    ingress_path = setup_ingress_config()
     
     # Display ingress status for debugging
     if is_ingress_mode():

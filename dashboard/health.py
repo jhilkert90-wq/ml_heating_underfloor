@@ -40,7 +40,7 @@ class HealthHandler(BaseHTTPRequestHandler):
                 last_modified = datetime.fromtimestamp(stat.st_mtime)
                 time_diff = datetime.now() - last_modified
                 
-                if time_diff.seconds < 300:  # 5 minutes
+                if time_diff.total_seconds() < 300:  # 5 minutes
                     return 'active'
                 else:
                     return 'inactive'

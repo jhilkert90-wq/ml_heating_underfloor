@@ -145,7 +145,7 @@ def render_performance_trend():
         height=400,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 def render_system_status():
     """Render current system status from real state data."""
