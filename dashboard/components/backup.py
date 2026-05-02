@@ -521,7 +521,9 @@ def render_current_model_download():
             # Resolve the actual state file through the same logic that the
             # data_service uses (honours UNIFIED_STATE_FILE env-var and shadow
             # variants) rather than assuming a hardcoded /data/models path.
-            state_path_str = _ds_find_state_file() if _ds_find_state_file else None
+            # Guard against an empty string: _find_state_file returns "" for a
+            # blank candidate, and Path("") resolves to "." which always exists.
+            state_path_str = (_ds_find_state_file() if _ds_find_state_file else None) or None
             state_path = Path(state_path_str) if state_path_str else None
             if state_path and state_path.exists():
                 with open(state_path, 'rb') as f:

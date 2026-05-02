@@ -28,10 +28,12 @@ def _get_ml_pid():
                 continue
             try:
                 cmdline_path = f'/proc/{entry}/cmdline'
-                with open(cmdline_path, 'r') as fh:
+                with open(cmdline_path, 'rb') as fh:
                     # Arguments are NUL-separated in /proc/PID/cmdline
-                    cmdline = fh.read().replace('\x00', ' ')
-                if 'src.main' in cmdline:
+                    args = fh.read().split(b'\x00')
+                # Match b'src.main' as an exact argument token to avoid false
+                # positives from names like b'other_src.main_file'.
+                if b'src.main' in args:
                     return int(entry)
             except (OSError, ValueError):
                 continue
