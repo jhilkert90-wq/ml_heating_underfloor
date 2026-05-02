@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Cooling-mode state contamination**: `EnhancedModelWrapper` and `ThermalEquilibriumModel` always used the heating-mode state manager (`unified_thermal_state.json`), so prediction records, learning parameter adjustments, and channel states written during cooling cycles contaminated the heating file. Each mode now uses its own state manager: `_heating_state_manager` (heating JSON) and `_cooling_state_manager` (cooling JSON). `set_climate_mode()` swaps the active `thermal_model`, `state_manager`, `prediction_metrics`, and reloads `cycle_count` from the correct file. `ThermalEquilibriumModel.__init__` now accepts an optional `state_manager` injection; the new `_get_state_manager()` helper returns the injected manager or falls back to the heating singleton, replacing all four inline `get_thermal_state_manager()` call-sites inside the model.
-- **HLC calibration `Missing required columns: {'indoor_temp'}`**: `calibrate_hlc()` in `hlc_learner.py` previously used keyword-based heuristics (e.g. "indoor" + "temp") to identify DataFrame columns, which silently failed for non-English entity IDs such as `rt_mittelwert`. The function now uses the shared `fetch_historical_data_for_calibration()` helper from `physics_calibration.py` (same strategy as model calibration), which respects `TRAINING_DATA_SOURCE` and performs HA history fallback/supplement in auto mode. Column identification uses `config.*_ENTITY_ID.split(".", 1)[-1]` — the exact short names produced by InfluxDB and HA history, with no language assumptions.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
