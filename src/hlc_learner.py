@@ -749,6 +749,17 @@ def calibrate_hlc(influx_service=None) -> Dict:
         )
         logger.warning("⚠️ HLC calibration: %s", msg)
         window_size = 12
+        config.HLC_WINDOW_SIZE_ROWS = 12  # keep config consistent
+    elif window_size < 4:
+        # Values 1–3 (5–15 min) are technically valid but far too small to
+        # approximate thermal equilibrium for typical buildings.  Log a
+        # prominent warning so the user knows calibration quality may suffer.
+        logger.warning(
+            "⚠️ HLC calibration: HLC_WINDOW_SIZE_ROWS=%d (< 4 rows / 20 min) "
+            "is very small. Thermal equilibrium approximation may be poor. "
+            "Consider raising to at least 12 (60 min).",
+            window_size,
+        )
     min_flow = getattr(config, "HLC_MIN_FLOW_RATE_LPM", 0.5)
     min_thermal_power = getattr(config, "HEATING_MIN_THERMAL_POWER_KW", 0.5)
     use_intercept = getattr(config, "HLC_REGRESSION_INTERCEPT", False)
