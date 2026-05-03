@@ -114,7 +114,7 @@ def load_state(state_manager=None) -> SystemState:
         return SystemState()
 
 
-def save_state(*_args, state_manager=None, **kwargs: Any) -> None:
+def save_state(state_manager=None, **kwargs: Any) -> None:
     """
     Saves the application's current operational state to unified JSON.
 

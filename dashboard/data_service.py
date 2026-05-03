@@ -25,13 +25,18 @@ _STATE_FILE_CANDIDATES = [
                  "unified_thermal_state.json"),
 ]
 
+def _add_cooling_suffix(path: str) -> str:
+    """Return path with ``_cooling`` inserted before the file extension."""
+    root, ext = os.path.splitext(path)
+    return f"{root}_cooling{ext}" if ext else f"{path}_cooling"
+
+
 # Cooling state file candidates derived from the heating candidates by
 # inserting ``_cooling`` before the ``.json`` extension.
 _COOLING_STATE_FILE_CANDIDATES = [
     os.environ.get("UNIFIED_STATE_FILE_COOLING", ""),
 ] + [
-    (lambda p: os.path.splitext(p)[0] + "_cooling" + os.path.splitext(p)[1]
-     if os.path.splitext(p)[1] else p + "_cooling")(c)
+    _add_cooling_suffix(c)
     for c in _STATE_FILE_CANDIDATES
     if c
 ]
