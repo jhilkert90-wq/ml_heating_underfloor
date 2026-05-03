@@ -35,16 +35,23 @@ except ImportError:
     from unified_thermal_state import get_thermal_state_manager
 
 
-def train_thermal_equilibrium_model():
+def train_thermal_equilibrium_model(state_manager=None):
     """Train the Thermal Equilibrium Model with historical data for optimal
-    thermal parameters using scipy optimization"""
+    thermal parameters using scipy optimization.
+
+    Parameters
+    ----------
+    state_manager:
+        Optional state manager to persist calibrated parameters to.  Defaults
+        to the heating singleton so existing callers are unaffected.
+    """
 
     logging.info(
         "=== THERMAL EQUILIBRIUM MODEL TRAINING (SCIPY OPTIMIZATION) ==="
     )
 
     # Step 0: Backup existing calibration
-    backup_existing_calibration()
+    backup_existing_calibration(state_manager=state_manager)
 
     # Step 1: Fetch historical data
     logging.info("Step 1: Fetching historical data...")
@@ -77,7 +84,9 @@ def train_thermal_equilibrium_model():
     logging.info(
         "Step 3: Optimizing thermal parameters using scipy.optimize..."
     )
-    optimized_params = optimize_thermal_parameters(stable_periods, df=df)
+    optimized_params = optimize_thermal_parameters(
+        stable_periods, df=df, state_manager=state_manager
+    )
 
     if not optimized_params or not optimized_params.get(
         'optimization_success'
@@ -346,7 +355,8 @@ def train_thermal_equilibrium_model():
         "Step 5: Saving calibrated parameters to unified thermal state..."
     )
     try:
-        state_manager = get_thermal_state_manager()
+        if state_manager is None:
+            state_manager = get_thermal_state_manager()
 
         # Use optimized parameters as calibrated baseline
         calibrated_params = {
@@ -1884,8 +1894,15 @@ def _run_optimization_pass(
         return None
 
 
-def optimize_thermal_parameters(stable_periods, df=None):
-    """Multi-parameter optimization with data availability checks."""
+def optimize_thermal_parameters(stable_periods, df=None, state_manager=None):
+    """Multi-parameter optimization with data availability checks.
+
+    Parameters
+    ----------
+    state_manager:
+        Optional state manager to save calibrated parameters to.  Defaults to
+        the heating singleton when *None*.
+    """
     logging.info(
         "=== MULTI-PARAMETER OPTIMIZATION WITH DATA AVAILABILITY CHECKS ==="
     )
@@ -3134,14 +3151,22 @@ def calibrate_solar_decay_tau(decay_periods):
     return result
 
 
-def backup_existing_calibration():
-    """Create a backup of the existing thermal calibration."""
+def backup_existing_calibration(state_manager=None):
+    """Create a backup of the existing thermal calibration.
+
+    Parameters
+    ----------
+    state_manager:
+        Optional state manager whose file should be backed up.  Defaults to
+        the heating singleton when *None*.
+    """
     logging.info("Creating backup of existing thermal calibration...")
 
     try:
         from datetime import datetime
 
-        state_manager = get_thermal_state_manager()
+        if state_manager is None:
+            state_manager = get_thermal_state_manager()
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"pre_calibration_{timestamp}.json"

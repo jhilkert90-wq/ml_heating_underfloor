@@ -1,6 +1,27 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Thermal Power Gate Standardisation)
+## 🎯 CURRENT STATUS - May 2026 (Cooling State Isolation Fix)
+
+### ✅ **FIX: Cooling operational state now written to correct JSON file**
+
+**Status**: **COMPLETED**
+
+Root cause: `src/state_manager.py::save_state()` and `load_state()` hardwired to `get_thermal_state_manager()` (heating singleton). All per-cycle operational state saves — `last_final_temp`, `setpoint_hold_cycles_remaining`, `last_is_blocking`, `last_run_features` — went to `unified_thermal_state.json` even during cooling cycles.
+
+Fix:
+- `state_manager.py` — both functions accept optional `state_manager` param (defaults to heating singleton for backward compat)
+- `main.py` — resolves `_active_state_manager = _wrapper.state_manager` once per cycle; passes it to all 3 `save_state` calls and the initial `load_state`; reloads state after mode-switch to cooling
+- `physics_calibration.py` — `train_thermal_equilibrium_model`, `optimize_thermal_parameters`, `backup_existing_calibration` all accept and thread through optional `state_manager`
+- `main.py` HLC session — passes `thermal_state_manager=_active_state_manager` to `apply_to_thermal_state()`
+- `dashboard/data_service.py` — `load_thermal_state()` and `get_state_file_info()` automatically switch to the cooling file when it is more recently modified (within last 30 minutes)
+
+All 989 tests pass.
+
+**Files changed**: `src/state_manager.py`, `src/main.py`, `src/physics_calibration.py`, `dashboard/data_service.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 PREVIOUS STATUS - May 2026 (Thermal Power Gate Standardisation)
 
 ### ✅ **REFACTOR: Thermal power thresholds standardised across the codebase**
 

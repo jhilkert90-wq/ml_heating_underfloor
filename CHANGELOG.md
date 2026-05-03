@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Cooling state isolation** — operational state, blocking state, and end-of-cycle saves were always written to the heating `unified_thermal_state.json` even during cooling-mode cycles, because `state_manager.save_state()` / `load_state()` were hardwired to the heating singleton (`get_thermal_state_manager()`).
+  - `src/state_manager.py`: `load_state()` and `save_state()` now accept an optional `state_manager` parameter (defaults to the heating singleton so all existing callers are unaffected).
+  - `src/main.py`: At the top of each cycle `_active_state_manager` is resolved from the wrapper's current mode manager; all three `save_state()` call sites pass `state_manager=_active_state_manager`. When cooling mode is detected, operational state is immediately reloaded from the cooling file.
+  - `src/physics_calibration.py`: `train_thermal_equilibrium_model()`, `optimize_thermal_parameters()`, and `backup_existing_calibration()` each accept an optional `state_manager` parameter so calibration results can be directed to the correct file.
+  - `src/main.py`: `HLCSessionLearner.apply_to_thermal_state()` call now passes `thermal_state_manager=_active_state_manager` so HLC updates go to the active mode's file.
+  - `dashboard/data_service.py`: `load_thermal_state()` and `get_state_file_info()` automatically switch to the cooling state file when it is detected as more recently modified than the heating file (cooling mode active heuristic). New helpers `_find_cooling_state_file()` and `_is_cooling_mode_active()` encapsulate the detection logic.
+
 ### Added
 - **HLC calibration quality improvements** — 9 targeted fixes to `calibrate_hlc()` in `src/hlc_learner.py`:
   - **Fix 1**: Date range in log and return dict now shows actual datetime strings (uses `_time` column) instead of integer indices after `reset_index`

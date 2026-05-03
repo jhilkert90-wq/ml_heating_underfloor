@@ -1,5 +1,27 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Cooling State Isolation Fix — May 2026**
+
+#### **What changed**
+
+- **`src/state_manager.py`**: `load_state()` and `save_state()` now accept an optional `state_manager` parameter. When `None`, falls back to the heating singleton (existing behaviour preserved). Both functions now log the actual file path they save to.
+- **`src/main.py`**:
+  - At loop start, `_active_state_manager` is resolved from `_get_wrapper().state_manager` (the wrapper's current mode) so all per-cycle saves use the correct file from the very first save in the cycle.
+  - `state = load_state(state_manager=_active_state_manager)` at top of cycle.
+  - After climate mode is (re-)determined, `_active_state_manager` is refreshed from `_wrapper.state_manager` and the state is reloaded if mode transitioned to cooling.
+  - Grace period `save_state`, blocking `save_state`, and end-of-cycle `save_state` all pass `state_manager=_active_state_manager`.
+  - `_hlc_session_learner.apply_to_thermal_state()` passes `thermal_state_manager=_active_state_manager`.
+- **`src/physics_calibration.py`**: `train_thermal_equilibrium_model(state_manager=None)`, `optimize_thermal_parameters(stable_periods, df=None, state_manager=None)`, and `backup_existing_calibration(state_manager=None)` all accept and thread through an optional state_manager. Step 5 save uses the passed manager (or heating singleton). The CLI calibration path keeps `state_manager=None` (heating default) until a `--mode cooling` flag is added.
+- **`dashboard/data_service.py`**: `_find_state_file()` accepts an optional `candidates` list. New `_COOLING_STATE_FILE_CANDIDATES`, `_find_cooling_state_file()`, `_is_cooling_mode_active()` helpers. `load_thermal_state()` and `get_state_file_info()` automatically use the cooling file when it is detected as more recently modified (within last 30 minutes).
+
+#### **Root cause**
+`src/state_manager.py::save_state()` and `load_state()` were hardwired to call `get_thermal_state_manager()` (heating singleton) regardless of the active climate mode. Per-cycle operational state (last_final_temp, setpoint_hold_cycles_remaining, last_is_blocking, last_run_features) was always written to the heating JSON file even during cooling cycles.
+
+#### **Files changed**
+`src/state_manager.py`, `src/main.py`, `src/physics_calibration.py`, `dashboard/data_service.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **Thermal Power Gate Standardisation — May 2026**
 
 #### **What changed**
