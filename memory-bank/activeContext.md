@@ -1,6 +1,31 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Cooling-Mode State Isolation Fix — May 2026**
+### ✅ **HLC Calibration Quality Fixes — May 2026**
+
+#### **What changed**
+
+- **`src/hlc_learner.py`**: Added `import pandas as pd`. Rewrote `calibrate_hlc()` body:
+  - **Fix 1**: Date range now uses `df["_time"].min()/max()` (column, not index) with DatetimeIndex fallback
+  - **Fix 2**: New `HLC_MIN_FLOW_RATE_LPM` guard before thermal-power calculation rejects low-flow (standby/ffilled) windows
+  - **Fix 3**: Warning when `target_temp` absent from DataFrame
+  - **Fix 4**: Per-window `_time` gap check rejects windows spanning > 10 min gap
+  - **Fix 5**: Computes and returns `r2_fto` (FTO-relative R²) and `r_pearson` (Pearson r) in addition to standard `r2`; extended log line
+  - **Fix 7**: Window size is now configurable via `HLC_WINDOW_SIZE_ROWS` (default 12 = 60 min)
+  - **Fix 8**: Optional with-intercept regression diagnostic (logged only) when `HLC_REGRESSION_INTERCEPT=true`
+  - **Fix 9**: `HLC_MIN_THERMAL_POWER_KW` (default 0.3 kW) replaces `<= 0` thermal-power guard
+- **`src/config.py`**: Added 4 new config vars: `HLC_WINDOW_SIZE_ROWS`, `HLC_MIN_FLOW_RATE_LPM`, `HLC_MIN_THERMAL_POWER_KW`, `HLC_REGRESSION_INTERCEPT`
+- **`src/physics_calibration.py`**: **Fix 6** — before `bfill`, counts leading-NaN rows for quality-gate columns (`defrost`, `tv`, `dhw`, `fireplace`); warns if any gap exceeds 24 h (288 rows)
+- **`tests/unit/test_hlc_learner.py`**: Updated `_apply_entity_ids` to also set 4 new config attrs on mock. Updated `_make_df` to add `_time` column (matching real fetch output). Added `_make_perfect_linear_df` helper and `TestCalibrateHLCQualityFixes` class with 4 tests: datetime date_range, high R² on perfect data, standby window flow-filter rejection, missing target_temp warning.
+
+#### **Why**
+
+Production log showed `R² = 0.018` — essentially no fit. The `ffill/bfill` in `fetch_historical_data_for_calibration` was filling standby periods with stale hydraulic values, and the short 20-min window with loose thermal-power guard let them pass every quality filter. The date_range bug masked data coverage issues. The missing target_temp silently disabled two key equilibrium filters.
+
+#### **Files modified**
+
+`src/hlc_learner.py`, `src/config.py`, `src/physics_calibration.py`, `tests/unit/test_hlc_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 #### **What changed**
 

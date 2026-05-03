@@ -1,6 +1,27 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Cooling-Mode State Isolation Fix)
+## 🎯 CURRENT STATUS - May 2026 (HLC Calibration Quality Fixes)
+
+### ✅ **FIX: HLC calibration quality — 9 bugs fixed, R² diagnostic improved**
+
+**Status**: **COMPLETED**
+
+Root causes (from production log showing R² = 0.018):
+1. `date_range` logged integer indices (0–23881) not actual datetimes — `df.index` is a RangeIndex after `reset_index` in `fetch_historical_data_for_calibration`
+2. `ffill/bfill` in `physics_calibration.py` contaminated standby windows with stale sensor values, making them look like active heating periods
+3. Missing `target_temp` column silently disabled two critical quality filters
+4. No per-window timestamp gap check — windows could span multi-hour data gaps
+5. Only standard R² was reported; for FTO regression the relevant metric is FTO-R² and Pearson r
+6. Quality-gate columns bfill-filled for 640 h at dataset start were not flagged
+7. 20-minute window too short for thermal equilibrium (should be 60 min)
+8. No with-intercept regression diagnostic to detect contamination
+9. `<= 0` thermal power check too permissive; standby residuals passed through
+
+Fix: comprehensive rewrite of `calibrate_hlc()` in `src/hlc_learner.py` with all 9 fixes, 4 new config vars, and 4 new unit tests.
+
+**Files changed**: `src/hlc_learner.py`, `src/config.py`, `src/physics_calibration.py`, `tests/unit/test_hlc_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 ### ✅ **FIX: Cooling mode writes learning state to heating JSON**
 

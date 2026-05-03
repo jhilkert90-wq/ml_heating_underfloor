@@ -545,9 +545,27 @@ HLC_SESSION_MAX_UPDATE_FRACTION: float = float(
 HLC_CALIBRATION_LOOKBACK_HOURS: int = int(
     os.getenv("HLC_CALIBRATION_LOOKBACK_HOURS", "720")
 )
-# Minimum number of stable 20-minute periods required for a reliable estimate.
+# Minimum number of stable periods required for a reliable estimate.
 HLC_CALIBRATION_MIN_PERIODS: int = int(
     os.getenv("HLC_CALIBRATION_MIN_PERIODS", "20")
+)
+# Window size in 5-minute rows for the calibration sliding window.
+# Default 12 rows = 60 minutes, which better approximates thermal equilibrium
+# for buildings with multi-hour thermal time constants.
+HLC_WINDOW_SIZE_ROWS: int = int(os.getenv("HLC_WINDOW_SIZE_ROWS", "12"))
+# Minimum water-side flow rate [L/min] required to treat a window as active
+# heating.  Windows below this threshold are rejected with "flow_too_low" to
+# prevent forward-filled standby periods from passing quality gates.
+HLC_MIN_FLOW_RATE_LPM: float = float(os.getenv("HLC_MIN_FLOW_RATE_LPM", "0.5"))
+# Minimum thermal power [kW] to accept a window as genuine active heating.
+# Replaces the previous `<= 0` check with a configurable physical threshold.
+HLC_MIN_THERMAL_POWER_KW: float = float(
+    os.getenv("HLC_MIN_THERMAL_POWER_KW", "0.3")
+)
+# When true, calibrate_hlc also fits Q = HLC*ΔT + Q0 (with intercept) and
+# logs Q0 as a diagnostic — a large |Q0| flags data contamination.
+HLC_REGRESSION_INTERCEPT: bool = (
+    os.getenv("HLC_REGRESSION_INTERCEPT", "false").lower() in ("1", "true", "yes")
 )
 
 # --- Delta Temperature Forecast Calibration ---

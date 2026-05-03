@@ -41,6 +41,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -737,6 +739,10 @@ def calibrate_hlc(influx_service=None) -> Dict:
     """
     lookback_hours = getattr(config, "HLC_CALIBRATION_LOOKBACK_HOURS", 720)
     min_periods = getattr(config, "HLC_CALIBRATION_MIN_PERIODS", 20)
+    window_size = getattr(config, "HLC_WINDOW_SIZE_ROWS", 12)
+    min_flow = getattr(config, "HLC_MIN_FLOW_RATE_LPM", 0.5)
+    min_thermal_power = getattr(config, "HLC_MIN_THERMAL_POWER_KW", 0.3)
+    use_intercept = getattr(config, "HLC_REGRESSION_INTERCEPT", False)
 
     logger.info(
         "🔬 HLC calibration: fetching %d hours of historical data...",
@@ -793,6 +799,17 @@ def calibrate_hlc(influx_service=None) -> Dict:
         logger.error("❌ HLC calibration: %s", msg)
         return {"success": False, "message": msg}
 
+    # Fix 3 — Warn prominently when the target_temp column is absent.
+    # The indoor_far_from_target and low_heating_demand quality gates will be
+    # skipped, which reduces the ability to filter out HP start-up and warm
+    # spring periods from the regression.
+    if "target_temp" not in col_map:
+        logger.warning(
+            "⚠️ HLC calibration: target_temp column not available — "
+            "indoor_far_from_target and low_heating_demand filters disabled. "
+            "Calibration quality may be reduced."
+        )
+
     # --- Calculate thermal power and filter stable periods ---
     specific_heat = getattr(config, "SPECIFIC_HEAT_CAPACITY", 4.186)
     pv_max = getattr(config, "HLC_PV_MAX_W", 50.0)
@@ -805,13 +822,22 @@ def calibrate_hlc(influx_service=None) -> Dict:
     periods_q = []  # thermal power per period [kW]
     periods_dt = []  # delta T per period [K]
 
-    # Use 20-minute windows (4 × 5-min rows)
-    window_size = 4
     n_rows = len(df)
     rejected = {"total": 0, "reasons": {}}
+    _has_time_col = "_time" in df.columns
 
     for start_idx in range(0, n_rows - window_size + 1, window_size):
         window = df.iloc[start_idx:start_idx + window_size]
+
+        # Fix 4 — Reject windows that span a timestamp gap > 10 min.
+        # After HA/InfluxDB concatenation the integer RangeIndex makes
+        # consecutive rows look adjacent even when they are hours apart.
+        # Checking the actual _time values catches these phantom windows.
+        if _has_time_col:
+            max_gap = window["_time"].diff().abs().max()
+            if pd.notna(max_gap) and max_gap > pd.Timedelta("10min"):
+                _reject(rejected, "time_gap_in_window")
+                continue
 
         # Extract values
         try:
@@ -834,12 +860,22 @@ def calibrate_hlc(influx_service=None) -> Dict:
         mean_indoor = indoor_vals.mean()
         mean_outdoor = outdoor_vals.mean()
 
+        # Fix 2 — Reject windows with insufficient flow before computing
+        # thermal power.  This prevents forward-filled standby periods (where
+        # the pump is off) from masquerading as active heating windows.
+        if mean_flow < min_flow:
+            _reject(rejected, "flow_too_low")
+            continue
+
         # Thermal power: Q = (flow_rate / 60) × c_p × (outlet − inlet)
         delta_t_hp = mean_outlet - mean_inlet
         thermal_power_kw = (mean_flow / 60.0) * specific_heat * delta_t_hp
 
-        if thermal_power_kw <= 0:
-            _reject(rejected, "no_thermal_power")
+        # Fix 9 — Use a configurable minimum thermal power instead of a
+        # simple > 0 check so that marginal / residual-heat windows are also
+        # excluded.
+        if thermal_power_kw < min_thermal_power:
+            _reject(rejected, "thermal_power_too_low")
             continue
 
         # ΔT for HLC regression: indoor − outdoor
@@ -940,15 +976,42 @@ def calibrate_hlc(influx_service=None) -> Dict:
         logger.warning("⚠️ HLC calibration: %s", msg)
         return {"success": False, "hlc_kw_per_k": round(hlc, 5), "message": msg}
 
-    # R² (coefficient of determination)
+    # --- Fix 5 — Extended fit-quality diagnostics ---
+    # Standard R² (relative to mean Q) — what was reported before.
     mean_q = sum(periods_q) / n_periods
     ss_res = sum((q - hlc * dt) ** 2 for q, dt in zip(periods_q, periods_dt))
     ss_tot = sum((q - mean_q) ** 2 for q in periods_q)
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-9 else 0.0
 
-    # Date range
+    # FTO-R² (relative to zero) — appropriate measure for a forced-through-
+    # origin model: fraction of variance in Q explained when the null is Q=0.
+    ss_zero = sum(q * q for q in periods_q)
+    r2_fto = 1.0 - ss_res / ss_zero if ss_zero > 1e-9 else 0.0
+
+    # Pearson r between Q and ΔT — the most interpretable scatter indicator.
+    mean_dt = sum(periods_dt) / n_periods
+    cov_qdt = sum(
+        (dt - mean_dt) * (q - mean_q)
+        for dt, q in zip(periods_dt, periods_q)
+    )
+    std_dt = math.sqrt(sum((dt - mean_dt) ** 2 for dt in periods_dt))
+    std_q_stat = math.sqrt(sum((q - mean_q) ** 2 for q in periods_q))
+    r_pearson = (
+        cov_qdt / (std_dt * std_q_stat)
+        if (std_dt > 1e-9 and std_q_stat > 1e-9)
+        else 0.0
+    )
+
+    # Fix 1 — Use the _time column for date range (if present) so that the
+    # logged range shows actual datetime strings instead of integer indices
+    # (which appear after reset_index in fetch_historical_data_for_calibration).
     date_range = ""
-    if hasattr(df.index, 'min') and hasattr(df.index, 'max'):
+    if "_time" in df.columns:
+        try:
+            date_range = f"{df['_time'].min()} — {df['_time'].max()}"
+        except Exception:
+            date_range = "unknown"
+    elif hasattr(df.index, "min") and hasattr(df.index, "max"):
         try:
             date_range = f"{df.index.min()} — {df.index.max()}"
         except Exception:
@@ -956,9 +1019,28 @@ def calibrate_hlc(influx_service=None) -> Dict:
 
     logger.info(
         "✅ HLC calibration result: HLC = %.5f kW/K "
-        "(R² = %.3f, n = %d, range: %s)",
-        hlc, r2, n_periods, date_range,
+        "(R² = %.3f, FTO-R² = %.3f, r = %.3f, n = %d, range: %s)",
+        hlc, r2, r2_fto, r_pearson, n_periods, date_range,
     )
+
+    # Fix 8 — Optional with-intercept regression for contamination diagnosis.
+    # Fits Q = HLC_i × ΔT + Q0; a large |Q0| flags non-zero baseline heat
+    # (e.g. residual DHW heat, ffill-contaminated standby periods).
+    if use_intercept and n_periods >= 3:
+        n_i = n_periods
+        sum_x = sum(periods_dt)
+        sum_y = sum(periods_q)
+        sum_xy = sum(x * y for x, y in zip(periods_dt, periods_q))
+        sum_x2 = sum(x * x for x in periods_dt)
+        denom_i = n_i * sum_x2 - sum_x ** 2
+        if abs(denom_i) > 1e-9:
+            hlc_intercept = (n_i * sum_xy - sum_x * sum_y) / denom_i
+            q0 = (sum_y - hlc_intercept * sum_x) / n_i
+            logger.info(
+                "🔬 HLC with-intercept: HLC = %.5f kW/K, Q0 = %.4f kW "
+                "(large |Q0| indicates contamination)",
+                hlc_intercept, q0,
+            )
 
     # --- Save to unified thermal state ---
     try:
@@ -976,6 +1058,8 @@ def calibrate_hlc(influx_service=None) -> Dict:
             "success": False,
             "hlc_kw_per_k": round(hlc, 5),
             "r2": round(r2, 4),
+            "r2_fto": round(r2_fto, 4),
+            "r_pearson": round(r_pearson, 4),
             "n_periods": n_periods,
             "message": f"Calibration succeeded but save failed: {exc}",
         }
@@ -984,11 +1068,13 @@ def calibrate_hlc(influx_service=None) -> Dict:
         "success": True,
         "hlc_kw_per_k": round(hlc, 5),
         "r2": round(r2, 4),
+        "r2_fto": round(r2_fto, 4),
+        "r_pearson": round(r_pearson, 4),
         "n_periods": n_periods,
         "date_range": date_range,
         "message": (
             f"HLC calibrated to {hlc:.5f} kW/K "
-            f"(R²={r2:.3f}, n={n_periods})"
+            f"(R²={r2:.3f}, FTO-R²={r2_fto:.3f}, r={r_pearson:.3f}, n={n_periods})"
         ),
     }
 

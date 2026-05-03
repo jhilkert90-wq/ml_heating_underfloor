@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **HLC calibration quality improvements** — 9 targeted fixes to `calibrate_hlc()` in `src/hlc_learner.py`:
+  - **Fix 1**: Date range in log and return dict now shows actual datetime strings (uses `_time` column) instead of integer indices after `reset_index`
+  - **Fix 2**: New `HLC_MIN_FLOW_RATE_LPM` config gate (default 0.5 L/min) rejects low/zero-flow windows before thermal-power computation, preventing forward-filled standby rows from passing quality filters
+  - **Fix 3**: Explicit warning when `target_temp` column is absent (indoor_far_from_target and low_heating_demand quality gates disabled)
+  - **Fix 4**: Per-window timestamp-continuity check rejects windows that straddle a `> 10 min` time gap in the `_time` column
+  - **Fix 5**: Three fit-quality metrics now logged and returned: standard R², FTO-R² (forced-through-origin), and Pearson r between Q and ΔT
+  - **Fix 6**: `physics_calibration.py` warns when quality-gate columns (`defrost`, `tv`, `dhw`, `fireplace`) are bfill-filled for > 24 h at the dataset start — the corresponding rejection filter is silently inactive for that period
+  - **Fix 7**: New `HLC_WINDOW_SIZE_ROWS` config var (default 12 = 60 min) for the calibration window size, replacing the hardcoded 20-minute (4-row) window
+  - **Fix 8**: Optional with-intercept regression diagnostic via `HLC_REGRESSION_INTERCEPT=true` — fits `Q = HLC×ΔT + Q0` and logs Q0 as a contamination indicator
+  - **Fix 9**: New `HLC_MIN_THERMAL_POWER_KW` config gate (default 0.3 kW) replaces the `<= 0` check, rejecting marginal/residual-heat windows
+- New config vars: `HLC_WINDOW_SIZE_ROWS`, `HLC_MIN_FLOW_RATE_LPM`, `HLC_MIN_THERMAL_POWER_KW`, `HLC_REGRESSION_INTERCEPT`
+- Return dict of `calibrate_hlc` now includes `r2_fto` and `r_pearson` fields
+- 4 new unit tests in `tests/unit/test_hlc_learner.py` covering: datetime date_range, high-R² on perfect linear data, standby window rejection, missing target_temp warning
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

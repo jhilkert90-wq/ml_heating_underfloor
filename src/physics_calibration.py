@@ -757,8 +757,45 @@ def fetch_historical_data_for_calibration(lookback_hours=672):
     # Final gap-filling pass
     # ------------------------------------------------------------------
     if not df.empty:
+        # Fix 6 — Before bfill, record how many leading NaN rows each
+        # quality-gate column has.  bfill fills them with the first valid
+        # value; if the filled stretch is long the corresponding rejection
+        # filter is silently inactive for that period.
+        _QG_ENTITY_ATTRS = {
+            "defrost": "DEFROST_STATUS_ENTITY_ID",
+            "tv": "TV_STATUS_ENTITY_ID",
+            "dhw": "DHW_STATUS_ENTITY_ID",
+            "fireplace": "FIREPLACE_STATUS_ENTITY_ID",
+        }
+        _bfill_leading_rows: dict = {}
+        for qg_name, attr in _QG_ENTITY_ATTRS.items():
+            qg_col = getattr(config, attr, "").split(".", 1)[-1]
+            if qg_col and qg_col in df.columns:
+                null_series = df[qg_col].isna()
+                # Find first valid index (integer position after reset_index)
+                valid_positions = (~null_series).values.nonzero()[0]
+                if valid_positions.size > 0 and valid_positions[0] > 0:
+                    _bfill_leading_rows[qg_name] = int(valid_positions[0])
+
         df.ffill(inplace=True)
         df.bfill(inplace=True)
+
+        # Warn for quality-gate columns whose leading gap exceeds 24 h.
+        _BFILL_WARN_ROWS = 288  # 24 h × 12 rows/h (5-min intervals)
+        for qg_name, n_leading in _bfill_leading_rows.items():
+            if n_leading >= _BFILL_WARN_ROWS:
+                gap_h = n_leading / 12.0
+                qg_col = getattr(
+                    config,
+                    _QG_ENTITY_ATTRS[qg_name],
+                    "",
+                ).split(".", 1)[-1]
+                logging.warning(
+                    "⚠️  Quality-gate column '%s' ('%s') was bfill-filled "
+                    "for %.1fh at the dataset start — the '%s' rejection "
+                    "filter may be inactive for this period.",
+                    qg_col, qg_name, gap_h, qg_name,
+                )
 
     if df.empty:
         logging.error("❌ No training data available from any source")
