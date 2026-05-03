@@ -141,11 +141,11 @@ def _apply_entity_ids(mock_config) -> None:
     mock_config.DHW_STATUS_ENTITY_ID = _DHW_ID
     mock_config.DEFROST_STATUS_ENTITY_ID = _DEFROST_ID
     mock_config.TARGET_INDOOR_TEMP_ENTITY_ID = _TARGET_ID
-    # New HLC calibration config vars (Fixes 2, 7, 8, 9)
+    # HLC calibration config vars (Fixes 2, 7, 8, 9 — Fix 9 now uses shared var)
     mock_config.HLC_MIN_FLOW_RATE_LPM = 0.5
     mock_config.HLC_WINDOW_SIZE_ROWS = 12
     mock_config.HLC_REGRESSION_INTERCEPT = False
-    mock_config.HLC_MIN_THERMAL_POWER_KW = 0.3
+    mock_config.HEATING_MIN_THERMAL_POWER_KW = 0.5
 
 
 def _make_df(n_rows: int = 100, include_target: bool = True) -> pd.DataFrame:

@@ -340,7 +340,7 @@ class OnlineLearning:
             heat_pump_active = bool(
                 (
                     thermal_power_kw is not None
-                    and thermal_power_kw > 0.05
+                    and thermal_power_kw >= config.HP_ACTIVE_MIN_POWER_KW
                 )
                 or delta_t > 0.5
             )

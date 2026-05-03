@@ -393,6 +393,17 @@ configuration:
     name: "PV Calibration Indoor Temperature Ceiling (°C) [Advanced]"
     description: "Indoor temperatures at or above this value are excluded from PV calibration. When indoor temp is high, automated blinds often close and block solar gain, making PV data unreliable. Set just below your blind trigger threshold. Default: 23.0°C."
 
+  # === Thermal Power Gate Thresholds (Advanced) ===
+  heating_min_thermal_power_kw:
+    name: "Heating Minimum Thermal Power (kW) [Advanced]"
+    description: "Minimum water-side thermal power (kW) required to accept a period as genuine active heating. Applied in HLC historical calibration, physics calibration quality filters, and the session learner per-cycle filter. Periods below this threshold are rejected as standby, pump-recirculation, or forward-filled data gaps. Default: 0.5 kW (aligns with long-standing physics calibration usage)."
+  cooling_min_thermal_power_kw:
+    name: "Cooling Minimum Thermal Power (kW) [Advanced]"
+    description: "Minimum thermal power (kW, always negative in cooling mode) required to accept a period as genuine active cooling. Thermal power is negative during cooling operation because the HP is extracting heat — outlet temperature is below inlet temperature. Reserved for cooling-side calibration quality gates. Default: -0.5 kW."
+  hp_active_min_power_kw:
+    name: "HP Active Noise-Floor Power (kW) [Advanced]"
+    description: "Minimum thermal power (kW) used to detect whether the heat pump is running at all at runtime. Much lower than the calibration quality thresholds — this catches any non-zero pump output so that learning and channel attribution are activated even at minimum HP capacity. Default: 0.05 kW (50 W, approximate standby recirculation level)."
+
   # === HLC Validation Gates (Advanced) ===
   hlc_pv_max_w:
     name: "HLC Max PV Power (W) [Advanced]"
@@ -439,7 +450,16 @@ configuration:
     description: "Number of hours of historical data to fetch from InfluxDB for one-shot HLC calibration. Longer periods improve estimate accuracy but require more data. Default: 720 (30 days)."
   hlc_calibration_min_periods:
     name: "HLC Calibration Minimum Periods [Advanced]"
-    description: "Minimum number of stable 20-minute analysis periods required for a reliable HLC calibration result. If fewer valid periods are found, calibration is aborted. Default: 20."
+    description: "Minimum number of stable 60-minute analysis periods required for a reliable HLC calibration result. If fewer valid periods are found, calibration is aborted. Default: 20."
+  hlc_window_size_rows:
+    name: "HLC Calibration Window Size (rows) [Advanced]"
+    description: "Sliding window size in 5-minute rows for the HLC calibration averaging window. 12 rows = 60 minutes, which better approximates thermal equilibrium for buildings with multi-hour thermal time constants. Increase for slower buildings, decrease for faster ones. Default: 12."
+  hlc_min_flow_rate_lpm:
+    name: "HLC Min Flow Rate (L/min) [Advanced]"
+    description: "Minimum water-side flow rate (L/min) required to treat a calibration window as active heating. Windows below this threshold are rejected as standby or forward-filled data gaps, preventing contamination of the HLC regression. Default: 0.5 L/min."
+  hlc_regression_intercept:
+    name: "HLC Regression With Intercept [Advanced]"
+    description: "When enabled, calibrate_hlc also fits Q = HLC×ΔT + Q₀ (standard OLS with intercept) in addition to the normal forced-through-origin regression. Q₀ is logged as a contamination diagnostic — a value significantly different from zero indicates noisy or mixed-source data. Does not change the applied HLC estimate. Default: false."
 
   # === Delta Temperature Forecast Calibration (Advanced) ===
   enable_delta_forecast_calibration:

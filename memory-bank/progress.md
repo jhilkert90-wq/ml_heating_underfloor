@@ -1,6 +1,23 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (HLC Calibration Quality Fixes)
+## 🎯 CURRENT STATUS - May 2026 (Thermal Power Gate Standardisation)
+
+### ✅ **REFACTOR: Thermal power thresholds standardised across the codebase**
+
+**Status**: **COMPLETED**
+
+Root cause: `HLC_MIN_THERMAL_POWER_KW` (just introduced) was too narrow in scope — the same semantic (`minimum power for genuine heating`) was hardcoded as `0.5` in 7 locations across `physics_calibration.py`, `0.05` in 2 runtime detection locations, and `> 0` in the session learner. Each location was independently brittle and undocumented.
+
+Fix: introduced three shared config vars:
+- `HEATING_MIN_THERMAL_POWER_KW = 0.5` — HLC calibration, physics calibration quality filters, session learner per-cycle filter
+- `COOLING_MIN_THERMAL_POWER_KW = -0.5` — cooling-side quality gate (reserved; thermal power is negative in cooling)
+- `HP_ACTIVE_MIN_POWER_KW = 0.05` — runtime HP-running noise floor in heat_source_channels and temperature_control
+
+All vars synchronised to `config.yaml` (options + schema), `.env_sample`, and `translations/en.yaml` (tooltips). The old `HLC_MIN_THERMAL_POWER_KW` removed; existing 4 HLC calibration fix vars (`HLC_WINDOW_SIZE_ROWS`, `HLC_MIN_FLOW_RATE_LPM`, `HLC_REGRESSION_INTERCEPT`) added to `config.yaml` and `.env_sample`.
+
+**Files changed**: `src/config.py`, `src/hlc_learner.py`, `src/physics_calibration.py`, `src/heat_source_channels.py`, `src/temperature_control.py`, `tests/unit/test_hlc_learner.py`, `tests/unit/test_hlc_session_learner.py`, `tests/unit/test_physics_calibration.py`, `tests/unit/test_channel_calibration.py`, `ml_heating_underfloor/config.yaml`, `.env_sample`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 ### ✅ **FIX: HLC calibration quality — 9 bugs fixed, R² diagnostic improved**
 

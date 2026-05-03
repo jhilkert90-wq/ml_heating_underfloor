@@ -124,7 +124,7 @@ def _is_heat_pump_active(context: Dict) -> bool:
         return bool(explicit_state)
 
     thermal_power = _to_float(context.get("thermal_power", 0.0))
-    if thermal_power > 0.05:
+    if thermal_power >= getattr(config, "HP_ACTIVE_MIN_POWER_KW", 0.05):
         return True
 
     delta_t = _to_float(context.get("delta_t", 0.0))

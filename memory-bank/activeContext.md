@@ -1,6 +1,34 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **HLC Calibration Quality Fixes — May 2026**
+### ✅ **Thermal Power Gate Standardisation — May 2026**
+
+#### **What changed**
+
+- **`src/config.py`**: Removed `HLC_MIN_THERMAL_POWER_KW`. Added new "Thermal Power Gate Thresholds" section with three vars:
+  - `HEATING_MIN_THERMAL_POWER_KW = 0.5` — calibration quality gate (meaningful heating)
+  - `COOLING_MIN_THERMAL_POWER_KW = -0.5` — cooling quality gate (reserved; negative = cooling)
+  - `HP_ACTIVE_MIN_POWER_KW = 0.05` — runtime HP-running noise floor
+- **`src/hlc_learner.py`**: `calibrate_hlc()` reads `HEATING_MIN_THERMAL_POWER_KW`; session learner `_close_session` changed `c.thermal_power_kw > 0` → `>= config.HEATING_MIN_THERMAL_POWER_KW`
+- **`src/physics_calibration.py`**: All 7 hardcoded `0.5 kW` comparisons (cooling group HP-off detection, direct heat loss filter, `_filter_hp_only_periods` × 2, slab tau startup detection, delta-T floor calibration) replaced with `config.HEATING_MIN_THERMAL_POWER_KW`. Docstring updated.
+- **`src/heat_source_channels.py`**: `_is_heat_pump_active()` `> 0.05` → `>= config.HP_ACTIVE_MIN_POWER_KW`
+- **`src/temperature_control.py`**: `_perform_learning()` `> 0.05` → `>= config.HP_ACTIVE_MIN_POWER_KW`
+- **`tests/unit/test_hlc_session_learner.py`**: Added `HEATING_MIN_THERMAL_POWER_KW: 0.5` to `_CONFIG_DEFAULTS`
+- **`tests/unit/test_physics_calibration.py`**: Added `mock_config.HEATING_MIN_THERMAL_POWER_KW = 0.5` to mock fixture
+- **`tests/unit/test_channel_calibration.py`**: Added `mock_cfg.HEATING_MIN_THERMAL_POWER_KW = 0.5` to both slab tau tests
+- **`tests/unit/test_hlc_learner.py`**: Renamed `HLC_MIN_THERMAL_POWER_KW` → `HEATING_MIN_THERMAL_POWER_KW` in `_apply_entity_ids`
+- **`ml_heating_underfloor/config.yaml`**: Added thermal power gate section to options and schema; added missing HLC calibration fix vars (`hlc_window_size_rows`, `hlc_min_flow_rate_lpm`, `hlc_regression_intercept`)
+- **`.env_sample`**: Added new thermal power gate section; added missing HLC calibration fix vars
+- **`ml_heating_underfloor/translations/en.yaml`**: Added 3 tooltips for thermal power vars; updated existing HLC calibration tooltip for 60-min window; added 3 new tooltips for HLC fix vars
+
+#### **Why**
+
+The `HLC_MIN_THERMAL_POWER_KW = 0.3` introduced in the calibration fix session was too HLC-specific. The same concept ("is the HP delivering real heat?") was hardcoded in 9 places with three different values (0, 0.05, 0.5), making the system hard to tune consistently. A single `HEATING_MIN_THERMAL_POWER_KW = 0.5` (matching the dominant usage in physics_calibration.py) provides one tuning knob for all.
+
+#### **Files modified**
+
+`src/config.py`, `src/hlc_learner.py`, `src/physics_calibration.py`, `src/heat_source_channels.py`, `src/temperature_control.py`, `tests/unit/test_hlc_learner.py`, `tests/unit/test_hlc_session_learner.py`, `tests/unit/test_physics_calibration.py`, `tests/unit/test_channel_calibration.py`, `ml_heating_underfloor/config.yaml`, `.env_sample`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 #### **What changed**
 

@@ -486,6 +486,42 @@ PV_CALIBRATION_INDOOR_CEILING: float = float(
     os.getenv("PV_CALIBRATION_INDOOR_CEILING", "23.0")
 )
 
+# --- Thermal Power Gate Thresholds ---
+# Standardised thresholds applied consistently across calibration, session
+# learning, and runtime HP-active detection.
+#
+# HEATING_MIN_THERMAL_POWER_KW
+#   Minimum water-side thermal power [kW] accepted as genuine *heating*.
+#   Used as a quality gate in HLC calibration (both historical and session-
+#   based), in physics_calibration stable-period filters, and in the session
+#   learner's per-cycle filter.  Windows/cycles below this threshold are
+#   rejected because they are indistinguishable from pump-recirculation
+#   standby, forward-filled data gaps, or low-load slab warm-up.
+#   Default 0.5 kW aligns with the long-standing physics_calibration.py
+#   usage and the slab-tau / HP-startup detection code.
+HEATING_MIN_THERMAL_POWER_KW: float = float(
+    os.getenv("HEATING_MIN_THERMAL_POWER_KW", "0.5")
+)
+# COOLING_MIN_THERMAL_POWER_KW
+#   Minimum thermal power [kW] accepted as genuine *cooling* (always negative
+#   in cooling mode: outlet < inlet).  Used in cooling-side calibration to
+#   reject low-load or standby rows.
+#   Default -0.5 kW (symmetric with the heating threshold).
+COOLING_MIN_THERMAL_POWER_KW: float = float(
+    os.getenv("COOLING_MIN_THERMAL_POWER_KW", "-0.5")
+)
+# HP_ACTIVE_MIN_POWER_KW
+#   Noise-floor threshold [kW] for detecting whether the heat pump is
+#   *running at all* at runtime.  Semantically different from the calibration
+#   thresholds above: this catches any non-zero pump output so that learning
+#   and channel attribution are activated even at minimum HP capacity.
+#   Used in heat_source_channels._is_heat_pump_active() and
+#   temperature_control._perform_learning().
+#   Default 0.05 kW (50 W), the approximate standby recirculation level.
+HP_ACTIVE_MIN_POWER_KW: float = float(
+    os.getenv("HP_ACTIVE_MIN_POWER_KW", "0.05")
+)
+
 # --- HLC Validation Gates ---
 # Shared quality thresholds used by both the day-level session learner
 # (_close_day) and the historical calibration function (calibrate_hlc).
@@ -557,11 +593,8 @@ HLC_WINDOW_SIZE_ROWS: int = int(os.getenv("HLC_WINDOW_SIZE_ROWS", "12"))
 # heating.  Windows below this threshold are rejected with "flow_too_low" to
 # prevent forward-filled standby periods from passing quality gates.
 HLC_MIN_FLOW_RATE_LPM: float = float(os.getenv("HLC_MIN_FLOW_RATE_LPM", "0.5"))
-# Minimum thermal power [kW] to accept a window as genuine active heating.
-# Replaces the previous `<= 0` check with a configurable physical threshold.
-HLC_MIN_THERMAL_POWER_KW: float = float(
-    os.getenv("HLC_MIN_THERMAL_POWER_KW", "0.3")
-)
+# Minimum thermal power for the calibration window is now governed by the
+# shared HEATING_MIN_THERMAL_POWER_KW variable defined above.
 # When true, calibrate_hlc also fits Q = HLC*ΔT + Q0 (with intercept) and
 # logs Q0 as a diagnostic — a large |Q0| flags data contamination.
 HLC_REGRESSION_INTERCEPT: bool = (

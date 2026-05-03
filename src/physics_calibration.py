@@ -1021,8 +1021,11 @@ def calculate_cooling_time_constant(df):
             * config.SPECIFIC_HEAT_CAPACITY
             * delta_t
         ).clip(lower=0.0)
-        logging.info("Using thermal-power based HP-off detection (power < 0.5 kW)")
-        hp_off = df_cooling['_thermal_power_kw'] < 0.5
+        logging.info(
+            "Using thermal-power based HP-off detection (power < %.2f kW)",
+            config.HEATING_MIN_THERMAL_POWER_KW,
+        )
+        hp_off = df_cooling['_thermal_power_kw'] < config.HEATING_MIN_THERMAL_POWER_KW
         df_cooling['cooling_group'] = (hp_off != hp_off.shift()).cumsum()
         group_col = 'cooling_group'
         filter_val = True  # select groups where hp_off is True
@@ -1044,7 +1047,7 @@ def calculate_cooling_time_constant(df):
     for _, group in df_cooling.groupby(group_col):
         # Filter: only HP-off groups (power-based) or DHW-on groups (DHW-based)
         if filter_val is True:
-            if not (group['_thermal_power_kw'].iloc[0] < 0.5):
+            if not (group['_thermal_power_kw'].iloc[0] < config.HEATING_MIN_THERMAL_POWER_KW):
                 continue
         else:
             if group[dhw_col].iloc[0] == 0:
@@ -1557,7 +1560,7 @@ def calculate_direct_heat_loss(stable_periods):
         # Ensure significant temperature difference and heating power
         # to avoid division by zero or noise amplification
         delta_t = p['indoor_temp'] - p['outdoor_temp']
-        if delta_t < 5.0 or p['thermal_power_kw'] < 0.5:
+        if delta_t < 5.0 or p['thermal_power_kw'] < config.HEATING_MIN_THERMAL_POWER_KW:
             continue
 
         # Exclude post-defrost slab recovery and outlet ≤ inlet periods
@@ -1600,7 +1603,7 @@ def _filter_hp_only_periods(stable_periods):
 
     Criteria:
     - PV < 100 W, fireplace off, TV off
-    - HP delivering meaningful thermal power (≥ 0.5 kW)
+    - HP delivering meaningful thermal power (≥ HEATING_MIN_THERMAL_POWER_KW)
     - Not in post-defrost slab recovery (outlet > inlet, grace elapsed)
 
     Without the power threshold HP-off periods (pump recirculating at
@@ -1609,19 +1612,20 @@ def _filter_hp_only_periods(stable_periods):
     defrost stole heat) bias OE downward in cold weather.
     """
     grace = config.DEFROST_RECOVERY_GRACE_MINUTES
+    min_power = config.HEATING_MIN_THERMAL_POWER_KW
     filtered = [
         p for p in stable_periods
         if p.get('pv_power', 0) < 100
         and p.get('fireplace_on', 0) == 0
         and p.get('tv_on', 0) == 0
-        and p.get('thermal_power_kw', 0) >= 0.5
+        and p.get('thermal_power_kw', 0) >= min_power
         and p.get('minutes_since_defrost', float('inf')) >= grace
         and p.get('effective_temp', p.get('outlet_temp', 1))
             > p.get('inlet_temp', 0)
     ]
     n_defrost = sum(
         1 for p in stable_periods
-        if p.get('thermal_power_kw', 0) >= 0.5
+        if p.get('thermal_power_kw', 0) >= min_power
         and p.get('pv_power', 0) < 100
         and p.get('fireplace_on', 0) == 0
         and p.get('tv_on', 0) == 0
@@ -2686,8 +2690,9 @@ def calibrate_slab_time_constant(df, delta_t_floor=None):
         alpha = min(1.0, dt / slab_tau)
         t_slab += alpha * ((outlet - delta_t_floor) - t_slab)
 
-    HP startup is detected via thermal_power transitioning from < 0.5 kW
-    to >= 0.5 kW.  For each event we fit the first 90 min of HP-ON data.
+    HP startup is detected via thermal_power transitioning from below
+    HEATING_MIN_THERMAL_POWER_KW to at or above it.
+    For each event we fit the first 90 min of HP-ON data.
 
     Returns tau in hours, or None if insufficient data.
     """
@@ -2719,7 +2724,7 @@ def calibrate_slab_time_constant(df, delta_t_floor=None):
     ).clip(lower=0.0)
 
     # Detect HP startup transitions (rising edges: off → on)
-    hp_on = thermal_power >= 0.5
+    hp_on = thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW
     hp_on_prev = hp_on.shift(1, fill_value=False)
     startups = hp_on & ~hp_on_prev
 
@@ -2940,7 +2945,7 @@ def calibrate_delta_t_floor(stable_periods):
         if not isinstance(inlet, (int, float)) or not isinstance(outlet, (int, float)):
             continue
         dt = outlet - inlet
-        if dt > 1.0 and thermal_power > 0.5:
+        if dt > 1.0 and thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW:
             deltas.append(dt)
 
     if len(deltas) < 10:

@@ -29,6 +29,7 @@ def mock_config():
         mock_config.PV_CALIBRATION_INDOOR_CEILING = 23.0
         mock_config.CLOUD_COVER_CORRECTION_ENABLED = False
         mock_config.LIVING_ROOM_TEMP_ENTITY_ID = "sensor.living_room_temp"
+        mock_config.HEATING_MIN_THERMAL_POWER_KW = 0.5
         yield mock_config
 
 

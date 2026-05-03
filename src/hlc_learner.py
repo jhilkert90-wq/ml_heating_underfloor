@@ -570,7 +570,7 @@ class HLCSessionLearner:
         # the session itself is NOT rejected.
         active = [
             c for c in all_cycles
-            if c.thermal_power_kw > 0
+            if c.thermal_power_kw >= config.HEATING_MIN_THERMAL_POWER_KW
             and c.tv_on <= 0.5
             and c.dhw_heating <= 0.5
             and c.defrosting <= 0.5
@@ -741,7 +741,7 @@ def calibrate_hlc(influx_service=None) -> Dict:
     min_periods = getattr(config, "HLC_CALIBRATION_MIN_PERIODS", 20)
     window_size = getattr(config, "HLC_WINDOW_SIZE_ROWS", 12)
     min_flow = getattr(config, "HLC_MIN_FLOW_RATE_LPM", 0.5)
-    min_thermal_power = getattr(config, "HLC_MIN_THERMAL_POWER_KW", 0.3)
+    min_thermal_power = getattr(config, "HEATING_MIN_THERMAL_POWER_KW", 0.5)
     use_intercept = getattr(config, "HLC_REGRESSION_INTERCEPT", False)
 
     logger.info(

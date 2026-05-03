@@ -17,8 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix 6**: `physics_calibration.py` warns when quality-gate columns (`defrost`, `tv`, `dhw`, `fireplace`) are bfill-filled for > 24 h at the dataset start — the corresponding rejection filter is silently inactive for that period
   - **Fix 7**: New `HLC_WINDOW_SIZE_ROWS` config var (default 12 = 60 min) for the calibration window size, replacing the hardcoded 20-minute (4-row) window
   - **Fix 8**: Optional with-intercept regression diagnostic via `HLC_REGRESSION_INTERCEPT=true` — fits `Q = HLC×ΔT + Q0` and logs Q0 as a contamination indicator
-  - **Fix 9**: New `HLC_MIN_THERMAL_POWER_KW` config gate (default 0.3 kW) replaces the `<= 0` check, rejecting marginal/residual-heat windows
-- New config vars: `HLC_WINDOW_SIZE_ROWS`, `HLC_MIN_FLOW_RATE_LPM`, `HLC_MIN_THERMAL_POWER_KW`, `HLC_REGRESSION_INTERCEPT`
+  - **Fix 9**: `HLC_MIN_THERMAL_POWER_KW` promoted to `HEATING_MIN_THERMAL_POWER_KW` (default 0.5 kW), shared across HLC calibration, physics calibration, and session learner
+- **Thermal power gate standardisation** — replaced all hardcoded `0.5 kW` and `> 0` thermal-power comparisons with shared config vars:
+  - `HEATING_MIN_THERMAL_POWER_KW = 0.5` — calibration quality gate applied in `hlc_learner.py` (calibration + session learner) and `physics_calibration.py` (7 call sites: slab tau, HP-off detection, direct heat loss, `_filter_hp_only_periods`, delta-T floor)
+  - `COOLING_MIN_THERMAL_POWER_KW = -0.5` — reserved for cooling-side calibration quality gates (thermal power is negative in cooling mode)
+  - `HP_ACTIVE_MIN_POWER_KW = 0.05` — runtime HP-running noise-floor check in `heat_source_channels._is_heat_pump_active()` and `temperature_control._perform_learning()`
+- New config vars: `HLC_WINDOW_SIZE_ROWS`, `HLC_MIN_FLOW_RATE_LPM`, `HLC_REGRESSION_INTERCEPT`, `HEATING_MIN_THERMAL_POWER_KW`, `COOLING_MIN_THERMAL_POWER_KW`, `HP_ACTIVE_MIN_POWER_KW`
+- All new vars synchronised in `ml_heating_underfloor/config.yaml` (options + schema), `.env_sample`, and `ml_heating_underfloor/translations/en.yaml` (tooltips)
 - Return dict of `calibrate_hlc` now includes `r2_fto` and `r_pearson` fields
 - 4 new unit tests in `tests/unit/test_hlc_learner.py` covering: datetime date_range, high-R² on perfect linear data, standby window rejection, missing target_temp warning
 
