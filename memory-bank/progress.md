@@ -1,6 +1,24 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Cooling State Isolation Fix)
+## 🎯 CURRENT STATUS - May 2026 (Cooling Inlet Guard)
+
+### ✅ **FIX: HP idle clamp when outlet ≥ inlet − MIN_COOLING_DELTA_K in cooling mode**
+
+**Status**: **COMPLETED**
+
+Root cause: binary search could converge to outlet within `MIN_COOLING_DELTA_K` of inlet (e.g. inlet=22, outlet=21.5, delta=2 → gap 0.5 < 2). NIBE can't run the compressor at this setpoint → short-cycles or rejects command. Intended behavior: send `inlet` as setpoint (HP stays idle; circulator only).
+
+Fix:
+1. `_calculate_required_outlet_temp`: tighten `outlet_max` to `min(indoor−delta, inlet−delta)` when `inlet_temp` is available
+2. `calculate_optimal_outlet_temp`: post-search inlet guard — if result `> inlet − delta`, clamp to `inlet_temp` and log HP idle
+
+6 new tests, all 995 pass.
+
+**Files changed**: `src/model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 PREVIOUS STATUS - May 2026 (Cooling State Isolation Fix)
 
 ### ✅ **FIX: Cooling operational state now written to correct JSON file**
 

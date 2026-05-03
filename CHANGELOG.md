@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Cooling inlet guard** — in cooling mode, when the binary search converges to an outlet temperature within `MIN_COOLING_DELTA_K` of the actual inlet (return-water) temperature, the NIBE compressor cannot operate — the gap is too small. Previously the impossible setpoint was sent as-is, causing the heat pump to short-cycle or reject the command.
+  - `src/model_wrapper.py` (`_calculate_required_outlet_temp`): the binary search upper bound is now tightened with `inlet − MIN_COOLING_DELTA_K` when `inlet_temp` is available in features, in addition to the existing `indoor − MIN_COOLING_DELTA_K` proxy.
+  - `src/model_wrapper.py` (`calculate_optimal_outlet_temp`): new post-search **inlet guard** — when the result is `> inlet − MIN_COOLING_DELTA_K`, the outlet is clamped to `inlet_temp` so the compressor stays idle (circulator only). The HP idle signal is `outlet = inlet` (supply water at return temperature = no compressor work needed).
+  - 6 new tests in `tests/unit/test_cooling_mode.py` covering: gap too small → clamp, gap sufficient → pass-through, exact boundary → pass-through, heating mode not affected, inlet unavailable → pass-through, binary search bound tightened by inlet.
 - **Cooling state isolation** — operational state, blocking state, and end-of-cycle saves were always written to the heating `unified_thermal_state.json` even during cooling-mode cycles, because `state_manager.save_state()` / `load_state()` were hardwired to the heating singleton (`get_thermal_state_manager()`).
   - `src/state_manager.py`: `load_state()` and `save_state()` now accept an optional `state_manager` parameter (defaults to the heating singleton so all existing callers are unaffected).
   - `src/main.py`: At the top of each cycle `_active_state_manager` is resolved from the wrapper's current mode manager; all three `save_state()` call sites pass `state_manager=_active_state_manager`. When cooling mode is detected, operational state is immediately reloaded from the cooling file.

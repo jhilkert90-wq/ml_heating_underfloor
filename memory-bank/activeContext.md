@@ -1,5 +1,19 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Cooling Inlet Guard — May 2026**
+
+#### **What changed**
+- **Root cause**: In cooling mode the binary search could converge to an outlet temperature within `MIN_COOLING_DELTA_K` of the inlet (return-water) temperature. E.g. inlet=22°C, delta=2°C, outlet=21.5°C → gap=0.5°C < 2°C → NIBE compressor can't run, causing short-cycling or rejection.
+- **Fix 1 — tighter binary search bound** (`src/model_wrapper.py: _calculate_required_outlet_temp`): when `inlet_temp` is available in `_current_features`, the cooling `outlet_max` is further tightened to `inlet − MIN_COOLING_DELTA_K` (previously only `indoor − MIN_COOLING_DELTA_K` was used, which is a rougher proxy).
+- **Fix 2 — post-search inlet guard** (`src/model_wrapper.py: calculate_optimal_outlet_temp`): after binary search, if the result is `> inlet − MIN_COOLING_DELTA_K`, the outlet is clamped to `inlet_temp`. This sends a "HP idle" signal to NIBE — supply water at return temperature means the compressor stays off, only the circulator runs.
+- **Guard semantics**: `outlet == inlet` → no compressor work → passive circulator. Does NOT apply in heating mode. Skipped when `inlet_temp` is unavailable.
+- **Tests**: 6 new tests in `tests/unit/test_cooling_mode.py` (classes `TestCoolingInletGuard`, `test_cooling_outlet_max_clamped_by_inlet`).
+
+#### **Files changed**
+`src/model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **Cooling State Isolation Fix — May 2026**
 
 #### **What changed**
