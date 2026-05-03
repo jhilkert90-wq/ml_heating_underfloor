@@ -740,6 +740,15 @@ def calibrate_hlc(influx_service=None) -> Dict:
     lookback_hours = getattr(config, "HLC_CALIBRATION_LOOKBACK_HOURS", 720)
     min_periods = getattr(config, "HLC_CALIBRATION_MIN_PERIODS", 20)
     window_size = getattr(config, "HLC_WINDOW_SIZE_ROWS", 12)
+    # Guard against misconfiguration: window_size must be >= 1 to avoid
+    # a ZeroDivisionError / ValueError from range(..., step=0).
+    if window_size < 1:
+        msg = (
+            f"HLC_WINDOW_SIZE_ROWS must be >= 1, got {window_size}. "
+            "Resetting to default (12 rows = 60 min)."
+        )
+        logger.warning("⚠️ HLC calibration: %s", msg)
+        window_size = 12
     min_flow = getattr(config, "HLC_MIN_FLOW_RATE_LPM", 0.5)
     min_thermal_power = getattr(config, "HEATING_MIN_THERMAL_POWER_KW", 0.5)
     use_intercept = getattr(config, "HLC_REGRESSION_INTERCEPT", False)

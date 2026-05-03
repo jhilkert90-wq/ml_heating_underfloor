@@ -453,7 +453,7 @@ configuration:
     description: "Minimum number of stable 60-minute analysis periods required for a reliable HLC calibration result. If fewer valid periods are found, calibration is aborted. Default: 20."
   hlc_window_size_rows:
     name: "HLC Calibration Window Size (rows) [Advanced]"
-    description: "Sliding window size in 5-minute rows for the HLC calibration averaging window. 12 rows = 60 minutes, which better approximates thermal equilibrium for buildings with multi-hour thermal time constants. Increase for slower buildings, decrease for faster ones. Default: 12."
+    description: "Block size in 5-minute rows for the HLC calibration averaging window. Each non-overlapping block of this size is treated as one stable measurement period. 12 rows = 60 minutes, which better approximates thermal equilibrium for buildings with multi-hour thermal time constants. Increase for slower buildings, decrease for faster ones. Default: 12."
   hlc_min_flow_rate_lpm:
     name: "HLC Min Flow Rate (L/min) [Advanced]"
     description: "Minimum water-side flow rate (L/min) required to treat a calibration window as active heating. Windows below this threshold are rejected as standby or forward-filled data gaps, preventing contamination of the HLC regression. Default: 0.5 L/min."

@@ -585,7 +585,8 @@ HLC_CALIBRATION_LOOKBACK_HOURS: int = int(
 HLC_CALIBRATION_MIN_PERIODS: int = int(
     os.getenv("HLC_CALIBRATION_MIN_PERIODS", "20")
 )
-# Window size in 5-minute rows for the calibration sliding window.
+# Window size in 5-minute rows for the HLC calibration.
+# calibrate_hlc() processes data in non-overlapping blocks of this size.
 # Default 12 rows = 60 minutes, which better approximates thermal equilibrium
 # for buildings with multi-hour thermal time constants.
 HLC_WINDOW_SIZE_ROWS: int = int(os.getenv("HLC_WINDOW_SIZE_ROWS", "12"))

@@ -350,7 +350,7 @@ options:
   hlc_calibration_lookback_hours: 720
   # Minimum stable 60-minute periods required for reliable HLC estimate
   hlc_calibration_min_periods: 20
-  # Window size in 5-min rows for the calibration sliding window (12 = 60 min)
+  # Window size in 5-min rows for the HLC calibration block averaging (12 = 60 min)
   hlc_window_size_rows: 12
   # Minimum water-side flow rate (L/min) to accept a window as active heating
   hlc_min_flow_rate_lpm: 0.5

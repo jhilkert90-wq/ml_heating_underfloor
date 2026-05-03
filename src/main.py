@@ -1175,19 +1175,27 @@ def main():
             # outlet bounds and fallbacks.
             from .model_wrapper import get_enhanced_model_wrapper as _get_wrapper
             _wrapper = _get_wrapper()
+            _prev_state_manager = _wrapper.state_manager
             _wrapper.set_climate_mode(climate_mode)
             # Re-resolve after mode swap so all saves below use the correct file.
             _active_state_manager = _wrapper.state_manager
+            # Reload operational state whenever the active state file changes
+            # (heating→cooling AND cooling→heating transitions) so this cycle
+            # starts with the correct context (last_final_temp,
+            # setpoint_hold_cycles_remaining, etc.).
+            if _active_state_manager is not _prev_state_manager:
+                state = load_state(state_manager=_active_state_manager)
+                logging.info(
+                    "♻️ Climate mode transition → reloaded operational state "
+                    "from %s",
+                    _active_state_manager.state_file,
+                )
             if climate_mode == "cooling":
                 logging.info(
                     "❄️ COOLING MODE: ML will calculate cooling outlet "
                     "temperature (outlet < inlet) — using cooling state %s",
                     _active_state_manager.state_file,
                 )
-                # Re-load operational state from the cooling file so this
-                # cycle starts with the correct context (last_final_temp,
-                # setpoint_hold_cycles_remaining, etc.).
-                state = load_state(state_manager=_active_state_manager)
 
             if is_blocking:
                 logging.info(
