@@ -373,30 +373,30 @@ def _make_perfect_linear_df() -> pd.DataFrame:
     temperature is set so that the computed thermal power equals
     ``HLC_TRUE × ΔT`` for each window, yielding a perfect linear fit.
     """
-    HLC_TRUE = 0.12  # kW/K
-    CP = 4.186       # kJ/(kg·K)
-    FLOW = 10.0      # L/min
-    INDOOR = 21.0    # °C
-    OUTLET_BASE = 35.0
+    hlc_true = 0.12  # kW/K
+    cp = 4.186       # kJ/(kg·K)
+    flow = 10.0      # L/min
+    indoor = 21.0    # °C
+    outlet_base = 35.0
 
     outdoor_temps = [0.0, 2.0, 5.0, 7.0, 9.0, 11.0, 13.0]
     rows: list = []
     t0 = pd.Timestamp("2026-01-01 00:00:00")
     for t_out in outdoor_temps:
-        delta_t = INDOOR - t_out          # K
-        q_target = HLC_TRUE * delta_t     # kW
+        delta_t = indoor - t_out             # K
+        q_target = hlc_true * delta_t        # kW
         # Invert: q = (flow/60) * cp * (outlet - inlet) -> outlet - inlet
-        dt_hp = q_target / ((FLOW / 60.0) * CP)
-        inlet = OUTLET_BASE - dt_hp
+        dt_hp = q_target / ((flow / 60.0) * cp)
+        inlet = outlet_base - dt_hp
         for i in range(12):
             rows.append({
                 "_time": t0,
-                _INDOOR_ID.split(".", 1)[-1]: INDOOR,
+                _INDOOR_ID.split(".", 1)[-1]: indoor,
                 _OUTDOOR_ID.split(".", 1)[-1]: t_out,
-                _OUTLET_ID.split(".", 1)[-1]: OUTLET_BASE,
+                _OUTLET_ID.split(".", 1)[-1]: outlet_base,
                 _INLET_ID.split(".", 1)[-1]: inlet,
-                _FLOW_ID.split(".", 1)[-1]: FLOW,
-                _TARGET_ID.split(".", 1)[-1]: INDOOR,
+                _FLOW_ID.split(".", 1)[-1]: flow,
+                _TARGET_ID.split(".", 1)[-1]: indoor,
             })
             t0 += pd.Timedelta("5min")
     return pd.DataFrame(rows)

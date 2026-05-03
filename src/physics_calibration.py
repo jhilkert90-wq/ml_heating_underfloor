@@ -781,7 +781,9 @@ def fetch_historical_data_for_calibration(lookback_hours=672):
         df.bfill(inplace=True)
 
         # Warn for quality-gate columns whose leading gap exceeds 24 h.
-        _BFILL_WARN_ROWS = 288  # 24 h × 12 rows/h (5-min intervals)
+        _BFILL_WARN_HOURS = 24
+        _ROWS_PER_HOUR = 12  # 5-min intervals → 12 rows/h
+        _BFILL_WARN_ROWS = _BFILL_WARN_HOURS * _ROWS_PER_HOUR
         for qg_name, n_leading in _bfill_leading_rows.items():
             if n_leading >= _BFILL_WARN_ROWS:
                 gap_h = n_leading / 12.0

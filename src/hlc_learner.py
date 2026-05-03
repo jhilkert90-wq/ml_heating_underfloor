@@ -995,10 +995,10 @@ def calibrate_hlc(influx_service=None) -> Dict:
         for dt, q in zip(periods_dt, periods_q)
     )
     std_dt = math.sqrt(sum((dt - mean_dt) ** 2 for dt in periods_dt))
-    std_q_stat = math.sqrt(sum((q - mean_q) ** 2 for q in periods_q))
+    std_q = math.sqrt(sum((q - mean_q) ** 2 for q in periods_q))
     r_pearson = (
-        cov_qdt / (std_dt * std_q_stat)
-        if (std_dt > 1e-9 and std_q_stat > 1e-9)
+        cov_qdt / (std_dt * std_q)
+        if (std_dt > 1e-9 and std_q > 1e-9)
         else 0.0
     )
 
