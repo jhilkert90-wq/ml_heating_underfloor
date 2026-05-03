@@ -72,15 +72,23 @@ class SystemState:
             setattr(self, key, value)
 
 
-def load_state() -> SystemState:
+def load_state(state_manager=None) -> SystemState:
     """
     Loads the application operational state from unified JSON into a
     SystemState object.
 
+    Parameters
+    ----------
+    state_manager:
+        Optional pre-resolved state manager (e.g. the cooling manager when in
+        cooling mode).  Defaults to the heating singleton so callers that do
+        not pass a manager retain their existing behaviour.
+
     If the state doesn't exist, it returns a fresh, empty SystemState.
     """
     try:
-        state_manager = get_thermal_state_manager()
+        if state_manager is None:
+            state_manager = get_thermal_state_manager()
         operational_state_dict = state_manager.get_operational_state()
 
         # Filter dict to only include known fields to avoid TypeError
@@ -91,7 +99,10 @@ def load_state() -> SystemState:
             if k in known_fields
         }
 
-        logging.info("Successfully loaded operational state from unified JSON")
+        logging.info(
+            "Successfully loaded operational state from %s",
+            getattr(state_manager, "state_file", "unified JSON"),
+        )
         return SystemState(**filtered_state)
 
     except Exception as e:
@@ -103,14 +114,22 @@ def load_state() -> SystemState:
         return SystemState()
 
 
-def save_state(**kwargs: Any) -> None:
+def save_state(state_manager=None, **kwargs: Any) -> None:
     """
     Saves the application's current operational state to unified JSON.
 
     This function merges provided keys into the existing persisted state.
+
+    Parameters
+    ----------
+    state_manager:
+        Optional pre-resolved state manager (e.g. the cooling manager when in
+        cooling mode).  Defaults to the heating singleton so existing callers
+        that do not pass a manager retain their existing behaviour.
     """
     try:
-        state_manager = get_thermal_state_manager()
+        if state_manager is None:
+            state_manager = get_thermal_state_manager()
 
         # Update operational state with provided keys
         state_manager.update_operational_state(**kwargs)
@@ -120,7 +139,9 @@ def save_state(**kwargs: Any) -> None:
 
         # Log which keys were updated for easier debugging
         logging.debug(
-            "Operational state saved; updated keys: %s", list(kwargs.keys())
+            "Operational state saved to %s; updated keys: %s",
+            getattr(state_manager, "state_file", "unified JSON"),
+            list(kwargs.keys()),
         )
 
     except Exception as e:

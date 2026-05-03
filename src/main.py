@@ -446,7 +446,13 @@ def main():
             )
 
             # Load the application state at the beginning of each cycle.
-            state = load_state()
+            # Use the wrapper's currently-active state manager so a cooling-
+            # mode cycle reads from the cooling file even before climate mode
+            # is re-detected below.  On the very first cycle the wrapper
+            # defaults to the heating manager, which is the correct fallback.
+            from .model_wrapper import get_enhanced_model_wrapper as _get_wrapper
+            _active_state_manager = _get_wrapper().state_manager
+            state = load_state(state_manager=_active_state_manager)
             # Create a new Home Assistant client for each cycle.
             ha_client = create_ha_client()
             # Fetch all states from Home Assistant at once to minimize
@@ -1144,6 +1150,7 @@ def main():
                 # Mark this as a grace period passthrough so the next cycle
                 # knows this wasn't a calculated target
                 save_state(
+                    state_manager=_active_state_manager,
                     last_final_temp=preserved_target,
                     last_is_blocking=False,  # Grace period is not blocking
                     # Preserve end time
@@ -1168,16 +1175,26 @@ def main():
             # outlet bounds and fallbacks.
             from .model_wrapper import get_enhanced_model_wrapper as _get_wrapper
             _wrapper = _get_wrapper()
+            _prev_state_manager = _wrapper.state_manager
             _wrapper.set_climate_mode(climate_mode)
-            if climate_mode == "cooling":
-                from .unified_thermal_state_cooling import (
-                    get_cooling_state_manager,
+            # Re-resolve after mode swap so all saves below use the correct file.
+            _active_state_manager = _wrapper.state_manager
+            # Reload operational state whenever the active state file changes
+            # (heating→cooling AND cooling→heating transitions) so this cycle
+            # starts with the correct context (last_final_temp,
+            # setpoint_hold_cycles_remaining, etc.).
+            if _active_state_manager is not _prev_state_manager:
+                state = load_state(state_manager=_active_state_manager)
+                logging.info(
+                    "♻️ Climate mode transition → reloaded operational state "
+                    "from %s",
+                    _active_state_manager.state_file,
                 )
-                _cooling_state = get_cooling_state_manager()
+            if climate_mode == "cooling":
                 logging.info(
                     "❄️ COOLING MODE: ML will calculate cooling outlet "
                     "temperature (outlet < inlet) — using cooling state %s",
-                    _cooling_state.state_file,
+                    _active_state_manager.state_file,
                 )
 
             if is_blocking:
@@ -1221,6 +1238,7 @@ def main():
                 # last_final_temp and record which entities caused the
                 # blocking so we can avoid learning from DHW-like cycles).
                 save_state(
+                    state_manager=_active_state_manager,
                     last_is_blocking=True,
                     last_final_temp=state.get("last_final_temp"),
                     last_blocking_reasons=blocking_reasons,
@@ -1360,7 +1378,9 @@ def main():
                             )
                             if _n_sessions >= config.HLC_SESSION_MIN_SESSIONS:
                                 _sess_ok, _sess_msg = (
-                                    _hlc_session_learner.apply_to_thermal_state()
+                                    _hlc_session_learner.apply_to_thermal_state(
+                                        thermal_state_manager=_active_state_manager
+                                    )
                                 )
                                 if _sess_ok:
                                     logging.info(
@@ -2026,7 +2046,7 @@ def main():
                 ),
                 "setpoint_hold_cycles_remaining": new_hold_cycles,
             }
-            save_state(**state_to_save)
+            save_state(state_manager=_active_state_manager, **state_to_save)
             # Update in-memory state so the idle poll uses fresh data
             state.update(state_to_save)
 

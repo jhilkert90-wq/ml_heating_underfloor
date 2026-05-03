@@ -1,6 +1,83 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Cooling-Mode State Isolation Fix)
+## 🎯 CURRENT STATUS - May 2026 (Cooling Inlet Guard)
+
+### ✅ **FIX: HP idle clamp when outlet ≥ inlet − MIN_COOLING_DELTA_K in cooling mode**
+
+**Status**: **COMPLETED**
+
+Root cause: binary search could converge to outlet within `MIN_COOLING_DELTA_K` of inlet (e.g. inlet=22, outlet=21.5, delta=2 → gap 0.5 < 2). NIBE can't run the compressor at this setpoint → short-cycles or rejects command. Intended behavior: send `inlet` as setpoint (HP stays idle; circulator only).
+
+Fix:
+1. `_calculate_required_outlet_temp`: tighten `outlet_max` to `min(indoor−delta, inlet−delta)` when `inlet_temp` is available
+2. `calculate_optimal_outlet_temp`: post-search inlet guard — if result `> inlet − delta`, clamp to `inlet_temp` and log HP idle
+
+6 new tests, all 995 pass.
+
+**Files changed**: `src/model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 PREVIOUS STATUS - May 2026 (Cooling State Isolation Fix)
+
+### ✅ **FIX: Cooling operational state now written to correct JSON file**
+
+**Status**: **COMPLETED**
+
+Root cause: `src/state_manager.py::save_state()` and `load_state()` hardwired to `get_thermal_state_manager()` (heating singleton). All per-cycle operational state saves — `last_final_temp`, `setpoint_hold_cycles_remaining`, `last_is_blocking`, `last_run_features` — went to `unified_thermal_state.json` even during cooling cycles.
+
+Fix:
+- `state_manager.py` — both functions accept optional `state_manager` param (defaults to heating singleton for backward compat)
+- `main.py` — resolves `_active_state_manager = _wrapper.state_manager` once per cycle; passes it to all 3 `save_state` calls and the initial `load_state`; reloads state after mode-switch to cooling
+- `physics_calibration.py` — `train_thermal_equilibrium_model`, `optimize_thermal_parameters`, `backup_existing_calibration` all accept and thread through optional `state_manager`
+- `main.py` HLC session — passes `thermal_state_manager=_active_state_manager` to `apply_to_thermal_state()`
+- `dashboard/data_service.py` — `load_thermal_state()` and `get_state_file_info()` automatically switch to the cooling file when it is more recently modified (within last 30 minutes)
+
+All 989 tests pass.
+
+**Files changed**: `src/state_manager.py`, `src/main.py`, `src/physics_calibration.py`, `dashboard/data_service.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 PREVIOUS STATUS - May 2026 (Thermal Power Gate Standardisation)
+
+### ✅ **REFACTOR: Thermal power thresholds standardised across the codebase**
+
+**Status**: **COMPLETED**
+
+Root cause: `HLC_MIN_THERMAL_POWER_KW` (just introduced) was too narrow in scope — the same semantic (`minimum power for genuine heating`) was hardcoded as `0.5` in 7 locations across `physics_calibration.py`, `0.05` in 2 runtime detection locations, and `> 0` in the session learner. Each location was independently brittle and undocumented.
+
+Fix: introduced three shared config vars:
+- `HEATING_MIN_THERMAL_POWER_KW = 0.5` — HLC calibration, physics calibration quality filters, session learner per-cycle filter
+- `COOLING_MIN_THERMAL_POWER_KW = -0.5` — cooling-side quality gate (reserved; thermal power is negative in cooling)
+- `HP_ACTIVE_MIN_POWER_KW = 0.05` — runtime HP-running noise floor in heat_source_channels and temperature_control
+
+All vars synchronised to `config.yaml` (options + schema), `.env_sample`, and `translations/en.yaml` (tooltips). The old `HLC_MIN_THERMAL_POWER_KW` removed; existing 4 HLC calibration fix vars (`HLC_WINDOW_SIZE_ROWS`, `HLC_MIN_FLOW_RATE_LPM`, `HLC_REGRESSION_INTERCEPT`) added to `config.yaml` and `.env_sample`.
+
+**Files changed**: `src/config.py`, `src/hlc_learner.py`, `src/physics_calibration.py`, `src/heat_source_channels.py`, `src/temperature_control.py`, `tests/unit/test_hlc_learner.py`, `tests/unit/test_hlc_session_learner.py`, `tests/unit/test_physics_calibration.py`, `tests/unit/test_channel_calibration.py`, `ml_heating_underfloor/config.yaml`, `.env_sample`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### ✅ **FIX: HLC calibration quality — 9 bugs fixed, R² diagnostic improved**
+
+**Status**: **COMPLETED**
+
+Root causes (from production log showing R² = 0.018):
+1. `date_range` logged integer indices (0–23881) not actual datetimes — `df.index` is a RangeIndex after `reset_index` in `fetch_historical_data_for_calibration`
+2. `ffill/bfill` in `physics_calibration.py` contaminated standby windows with stale sensor values, making them look like active heating periods
+3. Missing `target_temp` column silently disabled two critical quality filters
+4. No per-window timestamp gap check — windows could span multi-hour data gaps
+5. Only standard R² was reported; for FTO regression the relevant metric is FTO-R² and Pearson r
+6. Quality-gate columns bfill-filled for 640 h at dataset start were not flagged
+7. 20-minute window too short for thermal equilibrium (should be 60 min)
+8. No with-intercept regression diagnostic to detect contamination
+9. `<= 0` thermal power check too permissive; standby residuals passed through
+
+Fix: comprehensive rewrite of `calibrate_hlc()` in `src/hlc_learner.py` with all 9 fixes, 4 new config vars, and 4 new unit tests.
+
+**Files changed**: `src/hlc_learner.py`, `src/config.py`, `src/physics_calibration.py`, `tests/unit/test_hlc_learner.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 ### ✅ **FIX: Cooling mode writes learning state to heating JSON**
 

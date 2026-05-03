@@ -35,16 +35,23 @@ except ImportError:
     from unified_thermal_state import get_thermal_state_manager
 
 
-def train_thermal_equilibrium_model():
+def train_thermal_equilibrium_model(state_manager=None):
     """Train the Thermal Equilibrium Model with historical data for optimal
-    thermal parameters using scipy optimization"""
+    thermal parameters using scipy optimization.
+
+    Parameters
+    ----------
+    state_manager:
+        Optional state manager to persist calibrated parameters to.  Defaults
+        to the heating singleton so existing callers are unaffected.
+    """
 
     logging.info(
         "=== THERMAL EQUILIBRIUM MODEL TRAINING (SCIPY OPTIMIZATION) ==="
     )
 
     # Step 0: Backup existing calibration
-    backup_existing_calibration()
+    backup_existing_calibration(state_manager=state_manager)
 
     # Step 1: Fetch historical data
     logging.info("Step 1: Fetching historical data...")
@@ -77,7 +84,9 @@ def train_thermal_equilibrium_model():
     logging.info(
         "Step 3: Optimizing thermal parameters using scipy.optimize..."
     )
-    optimized_params = optimize_thermal_parameters(stable_periods, df=df)
+    optimized_params = optimize_thermal_parameters(
+        stable_periods, df=df, state_manager=state_manager
+    )
 
     if not optimized_params or not optimized_params.get(
         'optimization_success'
@@ -346,7 +355,8 @@ def train_thermal_equilibrium_model():
         "Step 5: Saving calibrated parameters to unified thermal state..."
     )
     try:
-        state_manager = get_thermal_state_manager()
+        if state_manager is None:
+            state_manager = get_thermal_state_manager()
 
         # Use optimized parameters as calibrated baseline
         calibrated_params = {
@@ -757,8 +767,47 @@ def fetch_historical_data_for_calibration(lookback_hours=672):
     # Final gap-filling pass
     # ------------------------------------------------------------------
     if not df.empty:
+        # Fix 6 — Before bfill, record how many leading NaN rows each
+        # quality-gate column has.  bfill fills them with the first valid
+        # value; if the filled stretch is long the corresponding rejection
+        # filter is silently inactive for that period.
+        _QG_ENTITY_ATTRS = {
+            "defrost": "DEFROST_STATUS_ENTITY_ID",
+            "tv": "TV_STATUS_ENTITY_ID",
+            "dhw": "DHW_STATUS_ENTITY_ID",
+            "fireplace": "FIREPLACE_STATUS_ENTITY_ID",
+        }
+        _bfill_leading_rows: dict = {}
+        for qg_name, attr in _QG_ENTITY_ATTRS.items():
+            qg_col = getattr(config, attr, "").split(".", 1)[-1]
+            if qg_col and qg_col in df.columns:
+                null_series = df[qg_col].isna()
+                # Find first valid index (integer position after reset_index)
+                valid_positions = (~null_series).values.nonzero()[0]
+                if valid_positions.size > 0 and valid_positions[0] > 0:
+                    _bfill_leading_rows[qg_name] = int(valid_positions[0])
+
         df.ffill(inplace=True)
         df.bfill(inplace=True)
+
+        # Warn for quality-gate columns whose leading gap exceeds 24 h.
+        _BFILL_WARN_HOURS = 24
+        _ROWS_PER_HOUR = 12  # 5-min intervals → 12 rows/h
+        _BFILL_WARN_ROWS = _BFILL_WARN_HOURS * _ROWS_PER_HOUR
+        for qg_name, n_leading in _bfill_leading_rows.items():
+            if n_leading >= _BFILL_WARN_ROWS:
+                gap_h = n_leading / 12.0
+                qg_col = getattr(
+                    config,
+                    _QG_ENTITY_ATTRS[qg_name],
+                    "",
+                ).split(".", 1)[-1]
+                logging.warning(
+                    "⚠️  Quality-gate column '%s' ('%s') was bfill-filled "
+                    "for %.1fh at the dataset start — the '%s' rejection "
+                    "filter may be inactive for this period.",
+                    qg_col, qg_name, gap_h, qg_name,
+                )
 
     if df.empty:
         logging.error("❌ No training data available from any source")
@@ -982,8 +1031,11 @@ def calculate_cooling_time_constant(df):
             * config.SPECIFIC_HEAT_CAPACITY
             * delta_t
         ).clip(lower=0.0)
-        logging.info("Using thermal-power based HP-off detection (power < 0.5 kW)")
-        hp_off = df_cooling['_thermal_power_kw'] < 0.5
+        logging.info(
+            "Using thermal-power based HP-off detection (power < %.2f kW)",
+            config.HEATING_MIN_THERMAL_POWER_KW,
+        )
+        hp_off = df_cooling['_thermal_power_kw'] < config.HEATING_MIN_THERMAL_POWER_KW
         df_cooling['cooling_group'] = (hp_off != hp_off.shift()).cumsum()
         group_col = 'cooling_group'
         filter_val = True  # select groups where hp_off is True
@@ -1005,7 +1057,7 @@ def calculate_cooling_time_constant(df):
     for _, group in df_cooling.groupby(group_col):
         # Filter: only HP-off groups (power-based) or DHW-on groups (DHW-based)
         if filter_val is True:
-            if not (group['_thermal_power_kw'].iloc[0] < 0.5):
+            if not (group['_thermal_power_kw'].iloc[0] < config.HEATING_MIN_THERMAL_POWER_KW):
                 continue
         else:
             if group[dhw_col].iloc[0] == 0:
@@ -1518,7 +1570,7 @@ def calculate_direct_heat_loss(stable_periods):
         # Ensure significant temperature difference and heating power
         # to avoid division by zero or noise amplification
         delta_t = p['indoor_temp'] - p['outdoor_temp']
-        if delta_t < 5.0 or p['thermal_power_kw'] < 0.5:
+        if delta_t < 5.0 or p['thermal_power_kw'] < config.HEATING_MIN_THERMAL_POWER_KW:
             continue
 
         # Exclude post-defrost slab recovery and outlet ≤ inlet periods
@@ -1561,7 +1613,7 @@ def _filter_hp_only_periods(stable_periods):
 
     Criteria:
     - PV < 100 W, fireplace off, TV off
-    - HP delivering meaningful thermal power (≥ 0.5 kW)
+    - HP delivering meaningful thermal power (≥ HEATING_MIN_THERMAL_POWER_KW)
     - Not in post-defrost slab recovery (outlet > inlet, grace elapsed)
 
     Without the power threshold HP-off periods (pump recirculating at
@@ -1570,19 +1622,20 @@ def _filter_hp_only_periods(stable_periods):
     defrost stole heat) bias OE downward in cold weather.
     """
     grace = config.DEFROST_RECOVERY_GRACE_MINUTES
+    min_power = config.HEATING_MIN_THERMAL_POWER_KW
     filtered = [
         p for p in stable_periods
         if p.get('pv_power', 0) < 100
         and p.get('fireplace_on', 0) == 0
         and p.get('tv_on', 0) == 0
-        and p.get('thermal_power_kw', 0) >= 0.5
+        and p.get('thermal_power_kw', 0) >= min_power
         and p.get('minutes_since_defrost', float('inf')) >= grace
         and p.get('effective_temp', p.get('outlet_temp', 1))
             > p.get('inlet_temp', 0)
     ]
     n_defrost = sum(
         1 for p in stable_periods
-        if p.get('thermal_power_kw', 0) >= 0.5
+        if p.get('thermal_power_kw', 0) >= min_power
         and p.get('pv_power', 0) < 100
         and p.get('fireplace_on', 0) == 0
         and p.get('tv_on', 0) == 0
@@ -1841,8 +1894,15 @@ def _run_optimization_pass(
         return None
 
 
-def optimize_thermal_parameters(stable_periods, df=None):
-    """Multi-parameter optimization with data availability checks."""
+def optimize_thermal_parameters(stable_periods, df=None, state_manager=None):
+    """Multi-parameter optimization with data availability checks.
+
+    Parameters
+    ----------
+    state_manager:
+        Optional state manager to save calibrated parameters to.  Defaults to
+        the heating singleton when *None*.
+    """
     logging.info(
         "=== MULTI-PARAMETER OPTIMIZATION WITH DATA AVAILABILITY CHECKS ==="
     )
@@ -2647,8 +2707,9 @@ def calibrate_slab_time_constant(df, delta_t_floor=None):
         alpha = min(1.0, dt / slab_tau)
         t_slab += alpha * ((outlet - delta_t_floor) - t_slab)
 
-    HP startup is detected via thermal_power transitioning from < 0.5 kW
-    to >= 0.5 kW.  For each event we fit the first 90 min of HP-ON data.
+    HP startup is detected via thermal_power transitioning from below
+    HEATING_MIN_THERMAL_POWER_KW to at or above it.
+    For each event we fit the first 90 min of HP-ON data.
 
     Returns tau in hours, or None if insufficient data.
     """
@@ -2680,7 +2741,7 @@ def calibrate_slab_time_constant(df, delta_t_floor=None):
     ).clip(lower=0.0)
 
     # Detect HP startup transitions (rising edges: off → on)
-    hp_on = thermal_power >= 0.5
+    hp_on = thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW
     hp_on_prev = hp_on.shift(1, fill_value=False)
     startups = hp_on & ~hp_on_prev
 
@@ -2901,7 +2962,7 @@ def calibrate_delta_t_floor(stable_periods):
         if not isinstance(inlet, (int, float)) or not isinstance(outlet, (int, float)):
             continue
         dt = outlet - inlet
-        if dt > 1.0 and thermal_power > 0.5:
+        if dt > 1.0 and thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW:
             deltas.append(dt)
 
     if len(deltas) < 10:
@@ -3090,14 +3151,22 @@ def calibrate_solar_decay_tau(decay_periods):
     return result
 
 
-def backup_existing_calibration():
-    """Create a backup of the existing thermal calibration."""
+def backup_existing_calibration(state_manager=None):
+    """Create a backup of the existing thermal calibration.
+
+    Parameters
+    ----------
+    state_manager:
+        Optional state manager whose file should be backed up.  Defaults to
+        the heating singleton when *None*.
+    """
     logging.info("Creating backup of existing thermal calibration...")
 
     try:
         from datetime import datetime
 
-        state_manager = get_thermal_state_manager()
+        if state_manager is None:
+            state_manager = get_thermal_state_manager()
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"pre_calibration_{timestamp}.json"

@@ -337,6 +337,7 @@ class TestSlabTauCoOptimization:
             mock_cfg.FLOW_RATE_ENTITY_ID = "sensor.flow"
             mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
             mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+            mock_cfg.HEATING_MIN_THERMAL_POWER_KW = 0.5
             result = calibrate_slab_time_constant(df, delta_t_floor=delta_t_floor)
 
         assert result is not None
@@ -360,6 +361,7 @@ class TestSlabTauCoOptimization:
             mock_cfg.FLOW_RATE_ENTITY_ID = "sensor.flow"
             mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
             mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+            mock_cfg.HEATING_MIN_THERMAL_POWER_KW = 0.5
             result = calibrate_slab_time_constant(df, delta_t_floor=3.0)
 
         assert result is None

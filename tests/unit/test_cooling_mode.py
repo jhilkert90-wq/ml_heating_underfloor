@@ -272,6 +272,36 @@ class TestModelWrapperCoolingMode:
         assert result >= config.CLAMP_MIN_ABS
         assert result <= config.CLAMP_MAX_ABS
 
+    def test_cooling_outlet_max_clamped_by_inlet(self, wrapper):
+        """
+        When inlet < indoor − MIN_COOLING_DELTA_K, the binary search upper
+        bound must use inlet − delta (tighter) not indoor − delta.
+        inlet=22, MIN_COOLING_DELTA_K=2 → outlet_max must be ≤ 20°C.
+        """
+        wrapper.set_climate_mode("cooling")
+        # inlet=22 < indoor(24) - delta(2) = 22 — equal, so outlet_max=20
+        wrapper._current_features = {
+            "inlet_temp": 22.0,
+            "delta_t": 3.0,
+        }
+        mock_trajectory = {"trajectory": [22.0], "timestamps": [""]}
+        wrapper.thermal_model.predict_thermal_trajectory = Mock(
+            return_value=mock_trajectory
+        )
+        wrapper.thermal_model.predict_equilibrium_temperature = Mock(
+            return_value=22.0
+        )
+        result = wrapper._calculate_required_outlet_temp(
+            current_indoor=24.0,
+            target_indoor=22.0,
+            outdoor_temp=30.0,
+            thermal_features={"pv_power": 0.0, "fireplace_on": 0.0, "tv_on": 0.0},
+        )
+        # outlet must be ≤ inlet − MIN_COOLING_DELTA_K = 22 − 2 = 20°C
+        assert result <= 22.0 - config.MIN_COOLING_DELTA_K, (
+            f"Expected outlet ≤ {22.0 - config.MIN_COOLING_DELTA_K}°C, got {result}"
+        )
+
 
 # ── Thermal constants tests ──────────────────────────────────────────
 
@@ -445,3 +475,231 @@ class TestCoolingStateIsolation:
         wrapper.set_climate_mode("heating")
         assert wrapper.cycle_count == 42
 
+
+
+# ── Inlet guard tests (HP idle when outlet > inlet − MIN_COOLING_DELTA_K) ──
+
+
+class TestCoolingInletGuard:
+    """
+    Verify that calculate_optimal_outlet_temp() applies the inlet guard in
+    cooling mode: when the binary-search result would be within
+    MIN_COOLING_DELTA_K of the inlet temperature, it is clamped to inlet_temp
+    so the NIBE compressor stays idle (circulator only) instead of receiving
+    an un-achievable setpoint.
+
+    Scenario from product context:
+        inlet=22°C, MIN_COOLING_DELTA_K=2°C, required outlet=21.5°C
+        → gap (0.5°C) < delta (2°C) → clamp to inlet (22°C)
+    """
+
+    @pytest.fixture
+    def wrapper(self):
+        from src.model_wrapper import EnhancedModelWrapper
+        w = EnhancedModelWrapper()
+        return w
+
+    def _run_optimal(self, wrapper, features, current_indoor, target_indoor,
+                     outdoor_temp=30.0, price_data=None):
+        """Helper: calls calculate_optimal_outlet_temp and returns outlet."""
+        full_features = dict(features)
+        full_features.setdefault("indoor_temp_lag_30m", current_indoor)
+        full_features.setdefault("target_temp", target_indoor)
+        full_features.setdefault("outdoor_temp", outdoor_temp)
+        result, _ = wrapper.calculate_optimal_outlet_temp(features=full_features)
+        return result
+
+    def _make_features(self, inlet, current_indoor, target_indoor,
+                       outdoor_temp=30.0, extra=None):
+        """Build a minimal features dict for calculate_optimal_outlet_temp."""
+        f = {
+            "indoor_temp_lag_30m": current_indoor,
+            "target_temp": target_indoor,
+            "outdoor_temp": outdoor_temp,
+            "inlet_temp": inlet,
+            "delta_t": 2.5,
+            "pv_now": 0.0,
+            "pv_forecast_electrical_1h": 0.0,
+            "pv_forecast_1h": 0.0,
+            "indoor_temp_delta_60m": 0.0,
+        }
+        if extra:
+            f.update(extra)
+        return f
+
+    def test_outlet_clamped_to_inlet_when_gap_too_small(self, wrapper):
+        """
+        inlet=22, outlet computed to 21.5 → gap=0.5 < delta=2
+        → outlet must be clamped to inlet=22 (HP idle).
+        """
+        wrapper.set_climate_mode("cooling")
+
+        INLET = 22.0
+        with patch.object(
+            wrapper,
+            "_calculate_required_outlet_temp",
+            return_value=21.5,
+        ):
+            wrapper._current_features = {
+                "inlet_temp": INLET,
+                "delta_t": 2.5,
+                "pv_now": 0.0,
+                "pv_forecast_electrical_1h": 0.0,
+                "pv_forecast_1h": 0.0,
+                "indoor_temp_delta_60m": 0.0,
+            }
+            features = self._make_features(INLET, 23.0, 22.0)
+            result, _ = wrapper.calculate_optimal_outlet_temp(
+                features=features,
+            )
+
+        assert result == INLET, (
+            f"Expected outlet clamped to inlet {INLET}°C, got {result}°C"
+        )
+
+    def test_outlet_not_clamped_when_gap_sufficient(self, wrapper):
+        """
+        inlet=22, outlet computed to 19.5 → gap=2.5 ≥ delta=2
+        → outlet passes through unchanged.
+        """
+        wrapper.set_climate_mode("cooling")
+
+        INLET = 22.0
+        OUTLET = 19.5  # gap = 2.5 ≥ MIN_COOLING_DELTA_K=2 → no clamp
+        with patch.object(
+            wrapper,
+            "_calculate_required_outlet_temp",
+            return_value=OUTLET,
+        ):
+            wrapper._current_features = {
+                "inlet_temp": INLET,
+                "delta_t": 2.5,
+                "pv_now": 0.0,
+                "pv_forecast_electrical_1h": 0.0,
+                "pv_forecast_1h": 0.0,
+                "indoor_temp_delta_60m": 0.0,
+            }
+            features = self._make_features(INLET, 23.0, 22.0)
+            result, _ = wrapper.calculate_optimal_outlet_temp(
+                features=features,
+            )
+
+        assert result == OUTLET, (
+            f"Expected outlet unchanged at {OUTLET}°C, got {result}°C"
+        )
+
+    def test_outlet_clamped_at_exact_delta_boundary(self, wrapper):
+        """
+        inlet=22, outlet=20 → gap=exactly 2=MIN_COOLING_DELTA_K
+        → boundary: outlet passes (just enough delta for HP to run).
+        """
+        wrapper.set_climate_mode("cooling")
+
+        INLET = 22.0
+        OUTLET = 20.0  # gap = exactly 2 = MIN_COOLING_DELTA_K → no clamp
+        with patch.object(
+            wrapper,
+            "_calculate_required_outlet_temp",
+            return_value=OUTLET,
+        ):
+            wrapper._current_features = {
+                "inlet_temp": INLET,
+                "delta_t": 2.5,
+                "pv_now": 0.0,
+                "pv_forecast_electrical_1h": 0.0,
+                "pv_forecast_1h": 0.0,
+                "indoor_temp_delta_60m": 0.0,
+            }
+            features = self._make_features(INLET, 23.0, 22.0)
+            result, _ = wrapper.calculate_optimal_outlet_temp(
+                features=features,
+            )
+
+        # gap == delta → threshold is NOT exceeded → no clamp
+        assert result == OUTLET, (
+            f"Expected outlet unchanged at {OUTLET}°C, got {result}°C"
+        )
+
+    def test_inlet_guard_not_applied_in_heating_mode(self, wrapper):
+        """
+        In heating mode the inlet guard must NOT be applied even when outlet
+        < inlet (e.g. a low setpoint during a mild day is intentional in
+        heating mode).
+        """
+        wrapper.set_climate_mode("heating")
+
+        INLET = 30.0
+        OUTLET = 28.0  # below inlet but valid in heating mode
+        with patch.object(
+            wrapper,
+            "_calculate_required_outlet_temp",
+            return_value=OUTLET,
+        ):
+            wrapper._current_features = {
+                "inlet_temp": INLET,
+                "delta_t": 5.0,
+                "pv_now": 0.0,
+                "pv_forecast_electrical_1h": 0.0,
+                "pv_forecast_1h": 0.0,
+                "indoor_temp_delta_60m": 0.0,
+            }
+            features = {
+                "indoor_temp_lag_30m": 20.0,
+                "target_temp": 21.0,
+                "outdoor_temp": 5.0,
+                "inlet_temp": INLET,
+                "delta_t": 5.0,
+                "pv_now": 0.0,
+                "pv_forecast_electrical_1h": 0.0,
+                "pv_forecast_1h": 0.0,
+                "indoor_temp_delta_60m": 0.0,
+            }
+            result, _ = wrapper.calculate_optimal_outlet_temp(
+                features=features,
+            )
+
+        # Inlet guard must not change the value in heating mode
+        assert result == OUTLET, (
+            f"Inlet guard must not apply in heating mode; "
+            f"expected {OUTLET}°C, got {result}°C"
+        )
+
+    def test_inlet_guard_skipped_when_inlet_unavailable(self, wrapper):
+        """
+        When inlet_temp is not in features, the guard should not crash and
+        the outlet passes through unchanged.
+        """
+        wrapper.set_climate_mode("cooling")
+
+        OUTLET = 21.5
+        with patch.object(
+            wrapper,
+            "_calculate_required_outlet_temp",
+            return_value=OUTLET,
+        ):
+            wrapper._current_features = {
+                # no inlet_temp key
+                "delta_t": 2.5,
+                "pv_now": 0.0,
+                "pv_forecast_electrical_1h": 0.0,
+                "pv_forecast_1h": 0.0,
+                "indoor_temp_delta_60m": 0.0,
+            }
+            features = {
+                "indoor_temp_lag_30m": 23.0,
+                "target_temp": 22.0,
+                "outdoor_temp": 30.0,
+                "delta_t": 2.5,
+                "pv_now": 0.0,
+                "pv_forecast_electrical_1h": 0.0,
+                "pv_forecast_1h": 0.0,
+                "indoor_temp_delta_60m": 0.0,
+            }
+            result, _ = wrapper.calculate_optimal_outlet_temp(
+                features=features,
+            )
+
+        assert result == OUTLET, (
+            f"Without inlet_temp, outlet should pass through unchanged; "
+            f"expected {OUTLET}°C, got {result}°C"
+        )

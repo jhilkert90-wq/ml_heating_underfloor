@@ -514,6 +514,35 @@ class EnhancedModelWrapper:
                 thermal_features,
             )
 
+            # COOLING INLET GUARD: In cooling mode, if the computed outlet
+            # is within MIN_COOLING_DELTA_K of the inlet (return-water
+            # temperature), the heat-pump compressor cannot run at that
+            # setpoint — it would either short-cycle or be rejected by the
+            # NIBE controller. Clamp to inlet_temp so the HP stays in
+            # passive (circulator only) mode instead of trying to cool
+            # water that is already at the desired temperature.
+            if self._climate_mode == "cooling":
+                _inlet_guard = (
+                    self._current_features.get("inlet_temp")
+                    if hasattr(self, "_current_features")
+                    else None
+                )
+                if _inlet_guard is not None:
+                    _idle_threshold = _inlet_guard - config.MIN_COOLING_DELTA_K
+                    if optimal_outlet_temp > _idle_threshold:
+                        logging.info(
+                            "❄️ Cooling inlet guard: outlet %.1f°C > "
+                            "inlet %.1f°C − delta %.1f°C = %.1f°C → "
+                            "clamping to inlet %.1f°C (HP idle / "
+                            "circulator only)",
+                            optimal_outlet_temp,
+                            _inlet_guard,
+                            config.MIN_COOLING_DELTA_K,
+                            _idle_threshold,
+                            _inlet_guard,
+                        )
+                        optimal_outlet_temp = _inlet_guard
+
             # This ensures we have a valid target prediction for logging
             predicted_indoor = self.predict_indoor_temp(
                 outlet_temp=optimal_outlet_temp,
@@ -754,12 +783,31 @@ class EnhancedModelWrapper:
         
         if self._climate_mode == "cooling":
             # COOLING MODE: outlet must be below room temperature.
-            # The HP needs at least MIN_COOLING_DELTA_K between room
-            # temperature and outlet to run. Clamp the effective max to
-            # (current_indoor - delta) so the search space makes physical
-            # sense.
+            # The HP needs at least MIN_COOLING_DELTA_K between inlet
+            # (return water from slab) and outlet to run.
+            # Clamp the effective max using both the indoor temperature
+            # (coarse proxy) and the actual inlet temperature if known,
+            # so the search space is always physically achievable.
             indoor_based_max = current_indoor - config.MIN_COOLING_DELTA_K
             outlet_max = min(outlet_max, indoor_based_max)
+            # Tighten further with actual inlet temp when available —
+            # outlet must stay below inlet − delta for the HP to run.
+            _inlet_for_bounds = (
+                self._current_features.get("inlet_temp")
+                if hasattr(self, "_current_features")
+                else None
+            )
+            if _inlet_for_bounds is not None:
+                inlet_based_max = _inlet_for_bounds - config.MIN_COOLING_DELTA_K
+                if inlet_based_max < outlet_max:
+                    outlet_max = inlet_based_max
+                    logging.debug(
+                        "❄️ Cooling: tightened outlet_max to %.1f°C "
+                        "(inlet=%.1f°C − delta=%.1f°C)",
+                        outlet_max,
+                        _inlet_for_bounds,
+                        config.MIN_COOLING_DELTA_K,
+                    )
             # Ensure min < max; if the room is already cool there is no
             # scope for the HP to do useful work.
             if outlet_min >= outlet_max:

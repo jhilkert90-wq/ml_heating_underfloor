@@ -309,6 +309,18 @@ options:
   # Indoor temperature ceiling for PV calibration
   pv_calibration_indoor_ceiling: 23.0
 
+  # === Thermal Power Gate Thresholds ===
+  # Minimum water-side thermal power (kW) to accept a period as genuine heating.
+  # Applied in HLC calibration, physics calibration, and session learner.
+  # Default 0.5 kW — aligns with slab-tau/startup detection and filters standby.
+  heating_min_thermal_power_kw: 0.5
+  # Minimum thermal power (kW, always negative in cooling mode) to accept a
+  # period as genuine cooling. Reserved for cooling-side calibration quality gate.
+  cooling_min_thermal_power_kw: -0.5
+  # Noise-floor threshold (kW) for detecting whether the heat pump is running
+  # at all at runtime. Used in heat_source_channels and temperature_control.
+  hp_active_min_power_kw: 0.05
+
   # === HLC Validation Gates ===
   # Shared quality thresholds for day-level learner and historical calibration
   hlc_pv_max_w: 50.0
@@ -336,8 +348,14 @@ options:
   # === Historical HLC Calibration ===
   # Hours of historical data to fetch for one-shot HLC calibration
   hlc_calibration_lookback_hours: 720
-  # Minimum stable 20-minute periods required for reliable HLC estimate
+  # Minimum stable 60-minute periods required for reliable HLC estimate
   hlc_calibration_min_periods: 20
+  # Window size in 5-min rows for the HLC calibration block averaging (12 = 60 min)
+  hlc_window_size_rows: 12
+  # Minimum water-side flow rate (L/min) to accept a window as active heating
+  hlc_min_flow_rate_lpm: 0.5
+  # Fit Q = HLC*ΔT + Q0 (with intercept) as a contamination diagnostic
+  hlc_regression_intercept: false
 
   # === Delta Temperature Forecast Calibration ===
   # Enable delta calibration using local temperature offset
@@ -568,6 +586,10 @@ schema:
   min_stable_period_minutes: "int(15,120)"
   optimization_method: "str"
   pv_calibration_indoor_ceiling: "float(18.0,30.0)"
+  # Thermal Power Gate Thresholds
+  heating_min_thermal_power_kw: "float(0.1,5.0)"
+  cooling_min_thermal_power_kw: "float(-5.0,-0.05)"
+  hp_active_min_power_kw: "float(0.01,0.5)"
   # HLC Validation Gates
   hlc_pv_max_w: "float(0.0,500.0)"
   hlc_max_indoor_delta: "float(0.1,1.0)"
@@ -585,6 +607,9 @@ schema:
   # Historical HLC Calibration
   hlc_calibration_lookback_hours: "int(24,2000)"
   hlc_calibration_min_periods: "int(5,200)"
+  hlc_window_size_rows: "int(4,48)"
+  hlc_min_flow_rate_lpm: "float(0.1,10.0)"
+  hlc_regression_intercept: "bool"
   # Delta Temperature Forecast Calibration
   enable_delta_forecast_calibration: "bool"
   delta_calibration_max_offset: "float(1.0,20.0)"

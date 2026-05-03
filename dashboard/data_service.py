@@ -25,6 +25,22 @@ _STATE_FILE_CANDIDATES = [
                  "unified_thermal_state.json"),
 ]
 
+def _add_cooling_suffix(path: str) -> str:
+    """Return path with ``_cooling`` inserted before the file extension."""
+    root, ext = os.path.splitext(path)
+    return f"{root}_cooling{ext}" if ext else f"{path}_cooling"
+
+
+# Cooling state file candidates derived from the heating candidates by
+# inserting ``_cooling`` before the ``.json`` extension.
+_COOLING_STATE_FILE_CANDIDATES = [
+    os.environ.get("UNIFIED_STATE_FILE_COOLING", ""),
+] + [
+    _add_cooling_suffix(c)
+    for c in _STATE_FILE_CANDIDATES
+    if c
+]
+
 _SHADOW_SUFFIX = "_shadow"
 
 
@@ -42,14 +58,16 @@ def _shadow_variant(path: str) -> str:
     return f"{root}{_SHADOW_SUFFIX}{ext}"
 
 
-def _find_state_file() -> Optional[str]:
+def _find_state_file(candidates=None) -> Optional[str]:
     """Locate the unified thermal state JSON file.
 
     For each candidate path the shadow-mode variant
     (e.g. ``*_shadow.json``) is checked first so that the dashboard
     automatically picks up shadow deployments.
     """
-    for candidate in _STATE_FILE_CANDIDATES:
+    if candidates is None:
+        candidates = _STATE_FILE_CANDIDATES
+    for candidate in candidates:
         if not candidate:
             continue
         # Shadow deployments write to a suffixed file – prefer it.
@@ -61,13 +79,57 @@ def _find_state_file() -> Optional[str]:
     return None
 
 
+def _find_cooling_state_file() -> Optional[str]:
+    """Locate the cooling-mode unified thermal state JSON file."""
+    return _find_state_file(candidates=_COOLING_STATE_FILE_CANDIDATES)
+
+
+def _is_cooling_mode_active() -> bool:
+    """Return True when the system appears to be in cooling mode.
+
+    Heuristic: cooling state file exists AND was modified more recently
+    than the heating file (within the last 30 minutes).  This avoids
+    switching to stale cooling data from a previous season.
+    """
+    cooling_path = _find_cooling_state_file()
+    if cooling_path is None:
+        return False
+    heating_path = _find_state_file()
+    if heating_path is None:
+        # Only cooling file present – use it.
+        return True
+    try:
+        cooling_mtime = os.path.getmtime(cooling_path)
+        heating_mtime = os.path.getmtime(heating_path)
+        # Cooling is "active" when its file was touched more recently,
+        # but only if it was updated within the last 30 minutes (one cycle
+        # is 10 min by default, so 30 min = 3 missed cycles).
+        import time as _time
+        COOLING_RECENCY_SECS = 1800
+        return (
+            cooling_mtime > heating_mtime
+            and (_time.time() - cooling_mtime) < COOLING_RECENCY_SECS
+        )
+    except OSError:
+        return False
+
+
 def load_thermal_state() -> Optional[Dict[str, Any]]:
     """Load the unified thermal state from JSON.
+
+    Automatically selects the cooling state file when the system is
+    currently in cooling mode (cooling file updated more recently than
+    the heating file).
 
     Returns the full state dict, or ``None`` when the file cannot be found
     or parsed.
     """
-    path = _find_state_file()
+    if _is_cooling_mode_active():
+        path = _find_cooling_state_file()
+        if path is None:
+            path = _find_state_file()
+    else:
+        path = _find_state_file()
     if path is None:
         logger.warning("Unified thermal state file not found")
         return None
@@ -274,8 +336,14 @@ def get_operational_state() -> Dict[str, Any]:
 
 
 def get_state_file_info() -> Optional[Dict[str, Any]]:
-    """Return file-system info about the state file (path, size, mtime)."""
-    path = _find_state_file()
+    """Return file-system info about the active state file (path, size, mtime).
+
+    Reflects the cooling state file when the system is in cooling mode.
+    """
+    if _is_cooling_mode_active():
+        path = _find_cooling_state_file() or _find_state_file()
+    else:
+        path = _find_state_file()
     if path is None:
         return None
     try:

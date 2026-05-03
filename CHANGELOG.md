@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Cooling inlet guard** — in cooling mode, when the binary search converges to an outlet temperature within `MIN_COOLING_DELTA_K` of the actual inlet (return-water) temperature, the NIBE compressor cannot operate — the gap is too small. Previously the impossible setpoint was sent as-is, causing the heat pump to short-cycle or reject the command.
+  - `src/model_wrapper.py` (`_calculate_required_outlet_temp`): the binary search upper bound is now tightened with `inlet − MIN_COOLING_DELTA_K` when `inlet_temp` is available in features, in addition to the existing `indoor − MIN_COOLING_DELTA_K` proxy.
+  - `src/model_wrapper.py` (`calculate_optimal_outlet_temp`): new post-search **inlet guard** — when the result is `> inlet − MIN_COOLING_DELTA_K`, the outlet is clamped to `inlet_temp` so the compressor stays idle (circulator only). The HP idle signal is `outlet = inlet` (supply water at return temperature = no compressor work needed).
+  - 6 new tests in `tests/unit/test_cooling_mode.py` covering: gap too small → clamp, gap sufficient → pass-through, exact boundary → pass-through, heating mode not affected, inlet unavailable → pass-through, binary search bound tightened by inlet.
+- **State file reload on both heating↔cooling transitions** — previously operational state (`last_final_temp`, `setpoint_hold_cycles_remaining`, etc.) was only reloaded from the new file when switching TO cooling. Switching FROM cooling BACK TO heating left `state` stale (still pointing at the cooling file's data).
+  - `src/main.py`: captures `_prev_state_manager` before `set_climate_mode()` and reloads `state` whenever `_active_state_manager is not _prev_state_manager`, covering both directions of the transition.
+- **HLC calibration `window_size` validation** — if `HLC_WINDOW_SIZE_ROWS` was misconfigured to 0 or a negative value, `calibrate_hlc()` would raise a `ValueError` from `range()` (step must not be zero). Added an explicit guard that resets the value to the default (12) and logs a warning.
+  - `src/hlc_learner.py`: clamp `window_size` to `max(1, window_size)` with a warning log.
+- **"Sliding window" wording corrected** — `calibrate_hlc()` processes data in non-overlapping blocks (stride == window size), not a sliding window. The misleading description has been updated in:
+  - `src/config.py`: comment for `HLC_WINDOW_SIZE_ROWS`
+  - `ml_heating_underfloor/config.yaml`: inline comment for `hlc_window_size_rows`
+  - `ml_heating_underfloor/translations/en.yaml`: UI description for `hlc_window_size_rows`
+- **Cooling state isolation** — operational state, blocking state, and end-of-cycle saves were always written to the heating `unified_thermal_state.json` even during cooling-mode cycles, because `state_manager.save_state()` / `load_state()` were hardwired to the heating singleton (`get_thermal_state_manager()`).
+  - `src/state_manager.py`: `load_state()` and `save_state()` now accept an optional `state_manager` parameter (defaults to the heating singleton so all existing callers are unaffected).
+  - `src/main.py`: At the top of each cycle `_active_state_manager` is resolved from the wrapper's current mode manager; all three `save_state()` call sites pass `state_manager=_active_state_manager`. When cooling mode is detected, operational state is immediately reloaded from the cooling file.
+  - `src/physics_calibration.py`: `train_thermal_equilibrium_model()`, `optimize_thermal_parameters()`, and `backup_existing_calibration()` each accept an optional `state_manager` parameter so calibration results can be directed to the correct file.
+  - `src/main.py`: `HLCSessionLearner.apply_to_thermal_state()` call now passes `thermal_state_manager=_active_state_manager` so HLC updates go to the active mode's file.
+  - `dashboard/data_service.py`: `load_thermal_state()` and `get_state_file_info()` automatically switch to the cooling state file when it is detected as more recently modified than the heating file (cooling mode active heuristic). New helpers `_find_cooling_state_file()` and `_is_cooling_mode_active()` encapsulate the detection logic.
+
+### Added
+- **HLC calibration quality improvements** — 9 targeted fixes to `calibrate_hlc()` in `src/hlc_learner.py`:
+  - **Fix 1**: Date range in log and return dict now shows actual datetime strings (uses `_time` column) instead of integer indices after `reset_index`
+  - **Fix 2**: New `HLC_MIN_FLOW_RATE_LPM` config gate (default 0.5 L/min) rejects low/zero-flow windows before thermal-power computation, preventing forward-filled standby rows from passing quality filters
+  - **Fix 3**: Explicit warning when `target_temp` column is absent (indoor_far_from_target and low_heating_demand quality gates disabled)
+  - **Fix 4**: Per-window timestamp-continuity check rejects windows that straddle a `> 10 min` time gap in the `_time` column
+  - **Fix 5**: Three fit-quality metrics now logged and returned: standard R², FTO-R² (forced-through-origin), and Pearson r between Q and ΔT
+  - **Fix 6**: `physics_calibration.py` warns when quality-gate columns (`defrost`, `tv`, `dhw`, `fireplace`) are bfill-filled for > 24 h at the dataset start — the corresponding rejection filter is silently inactive for that period
+  - **Fix 7**: New `HLC_WINDOW_SIZE_ROWS` config var (default 12 = 60 min) for the calibration window size, replacing the hardcoded 20-minute (4-row) window
+  - **Fix 8**: Optional with-intercept regression diagnostic via `HLC_REGRESSION_INTERCEPT=true` — fits `Q = HLC×ΔT + Q0` and logs Q0 as a contamination indicator
+  - **Fix 9**: `HLC_MIN_THERMAL_POWER_KW` promoted to `HEATING_MIN_THERMAL_POWER_KW` (default 0.5 kW), shared across HLC calibration, physics calibration, and session learner
+- **Thermal power gate standardisation** — replaced all hardcoded `0.5 kW` and `> 0` thermal-power comparisons with shared config vars:
+  - `HEATING_MIN_THERMAL_POWER_KW = 0.5` — calibration quality gate applied in `hlc_learner.py` (calibration + session learner) and `physics_calibration.py` (7 call sites: slab tau, HP-off detection, direct heat loss, `_filter_hp_only_periods`, delta-T floor)
+  - `COOLING_MIN_THERMAL_POWER_KW = -0.5` — reserved for cooling-side calibration quality gates (thermal power is negative in cooling mode)
+  - `HP_ACTIVE_MIN_POWER_KW = 0.05` — runtime HP-running noise-floor check in `heat_source_channels._is_heat_pump_active()` and `temperature_control._perform_learning()`
+- New config vars: `HLC_WINDOW_SIZE_ROWS`, `HLC_MIN_FLOW_RATE_LPM`, `HLC_REGRESSION_INTERCEPT`, `HEATING_MIN_THERMAL_POWER_KW`, `COOLING_MIN_THERMAL_POWER_KW`, `HP_ACTIVE_MIN_POWER_KW`
+- All new vars synchronised in `ml_heating_underfloor/config.yaml` (options + schema), `.env_sample`, and `ml_heating_underfloor/translations/en.yaml` (tooltips)
+- Return dict of `calibrate_hlc` now includes `r2_fto` and `r_pearson` fields
+- 4 new unit tests in `tests/unit/test_hlc_learner.py` covering: datetime date_range, high-R² on perfect linear data, standby window rejection, missing target_temp warning
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
