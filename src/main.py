@@ -908,8 +908,6 @@ def main():
                             # _is_heat_pump_active() checks thermal_power,
                             # delta_t, and outlet/indoor thresholds with
                             # correct signs for heating vs cooling.
-                            "delta_t": learning_features.get("delta_t", 0.0),
-                            "inlet_temp": learning_features.get("inlet_temp"),
                             "climate_mode": previous_cycle_climate_mode,
                             # Pass auxiliary heat if available in features
                             "auxiliary_heat": learning_features.get(
@@ -1316,11 +1314,20 @@ def main():
                     config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID, all_states
                 )
                 if _cooling_target is not None:
-                    target_indoor_temp = _cooling_target
-                    logging.info(
-                        "❄️ Using cooling target entity: %.1f°C",
-                        float(target_indoor_temp),
-                    )
+                    try:
+                        target_indoor_temp = float(_cooling_target)
+                        logging.info(
+                            "❄️ Using cooling target entity: %.1f°C",
+                            target_indoor_temp,
+                        )
+                    except (TypeError, ValueError):
+                        logging.warning(
+                            "❄️ Cooling target entity returned "
+                            "non-numeric value '%s' — using heating "
+                            "target %.1f°C instead.",
+                            _cooling_target,
+                            float(target_indoor_temp),
+                        )
 
             # --- Step 1: State Retrieval ---
             # Heat balance controller doesn't use prediction history anymore.
@@ -1347,8 +1354,12 @@ def main():
             # estimate instead of the raw dropped reading.  This prevents the
             # heat pump from starting unnecessarily — the house will recover
             # within ~30 min after the door closes.
+            # NOTE: Only applies in HEATING mode.  In cooling mode a temp drop
+            # is normal (HP is actively cooling); a door/window opening would
+            # cause a RISE (warm outdoor air), not a drop.
             if (
-                last_indoor_temp is not None
+                climate_mode != "cooling"
+                and last_indoor_temp is not None
                 and prediction_indoor_temp is not None
             ):
                 _drop = last_indoor_temp - prediction_indoor_temp

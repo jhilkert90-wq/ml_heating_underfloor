@@ -144,6 +144,7 @@ class CoolingThermalStateManager:
                 "last_is_blocking": False,
                 "last_blocking_reasons": [],
                 "last_blocking_end_time": None,
+                "cooling_cycle_gate": "running",
             },
         }
 

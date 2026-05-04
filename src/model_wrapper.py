@@ -78,7 +78,11 @@ class EnhancedModelWrapper:
         # "running"  — HP is actively cooling (or allowed to start)
         # "recovery" — HP recently shut down; wait for inlet to rise
         #              before restarting
-        self._cooling_cycle_state = "running"
+        # Restored from persisted cooling state; defaults to "running".
+        _cooling_ops = self._cooling_state_manager.get_operational_state()
+        self._cooling_cycle_state = _cooling_ops.get(
+            "cooling_cycle_gate", "running"
+        )
 
         # Active pair — initially heating.
         self.thermal_model = self._heating_thermal_model
@@ -166,6 +170,11 @@ class EnhancedModelWrapper:
             self.thermal_model = self._cooling_thermal_model
             self.state_manager = self._cooling_state_manager
             self.prediction_metrics = self._cooling_prediction_metrics
+            # Restore persisted gate state so RECOVERY survives restarts.
+            _cooling_ops = self._cooling_state_manager.get_operational_state()
+            self._cooling_cycle_state = _cooling_ops.get(
+                "cooling_cycle_gate", "running"
+            )
         else:
             self.thermal_model = self._heating_thermal_model
             self.state_manager = self._heating_state_manager
@@ -579,8 +588,17 @@ class EnhancedModelWrapper:
                     # (which equals inlet_temp during RECOVERY), so the gate
                     # uses actual physics instead of a circular self-reference.
                     _learned_dtf = getattr(
-                        self, "_search_delta_t_floor", 0.0
+                        self, "_search_delta_t_floor", None
                     )
+                    if _learned_dtf is None:
+                        # First cycle or early exit from binary search:
+                        # use the thermal model's learned floor (conservative)
+                        # instead of 0.0 which makes margin_ok trivially true.
+                        _learned_dtf = -(
+                            self.thermal_model._resolve_delta_t_floor(
+                                0.0, climate_mode="cooling"
+                            )
+                        )
                     _margin_ok = (
                         _inlet_guard + _learned_dtf
                     ) > _effective_min
@@ -630,6 +648,18 @@ class EnhancedModelWrapper:
                                 _gradient_ok, _margin_ok,
                             )
                             optimal_outlet_temp = _inlet_guard
+
+                    # Persist gate state so it survives add-on restarts.
+                    try:
+                        self._cooling_state_manager.update_operational_state(
+                            cooling_cycle_gate=self._cooling_cycle_state,
+                        )
+                        self._cooling_state_manager.save_state()
+                    except Exception:
+                        logging.debug(
+                            "Failed to persist cooling cycle gate state.",
+                            exc_info=True,
+                        )
 
             # This ensures we have a valid target prediction for logging
             predicted_indoor = self.predict_indoor_temp(
@@ -870,34 +900,11 @@ class EnhancedModelWrapper:
         fallback_temp = config.get_fallback_outlet(self._climate_mode)
         
         if self._climate_mode == "cooling":
-            # COOLING MODE: outlet must be below room temperature.
-            # The HP needs at least MIN_COOLING_DELTA_K between inlet
-            # (return water from slab) and outlet to run.
-            # Clamp the effective max using both the indoor temperature
-            # (coarse proxy) and the actual inlet temperature if known,
-            # so the search space is always physically achievable.
-            indoor_based_max = current_indoor - config.MIN_COOLING_DELTA_K
-            outlet_max = min(outlet_max, indoor_based_max)
-            # Tighten further with actual inlet temp when available —
-            # outlet must stay below inlet − delta for the HP to run.
-            _inlet_for_bounds = (
-                self._current_features.get("inlet_temp")
-                if hasattr(self, "_current_features")
-                else None
-            )
-            if _inlet_for_bounds is not None:
-                inlet_based_max = _inlet_for_bounds - config.MIN_COOLING_DELTA_K
-                if inlet_based_max < outlet_max:
-                    outlet_max = inlet_based_max
-                    logging.debug(
-                        "❄️ Cooling: tightened outlet_max to %.1f°C "
-                        "(inlet=%.1f°C − delta=%.1f°C)",
-                        outlet_max,
-                        _inlet_for_bounds,
-                        config.MIN_COOLING_DELTA_K,
-                    )
-            # Ensure min < max; if the room is already cool there is no
-            # scope for the HP to do useful work.
+            # COOLING MODE: Use the full COOLING_CLAMP_MIN_ABS –
+            # COOLING_CLAMP_MAX_ABS range so the binary search can
+            # explore all physically valid outlets including those near
+            # the inlet (HP-off territory).  The post-search cooling
+            # cycle gate (RUNNING/RECOVERY) handles HP-cannot-run cases.
             if outlet_min >= outlet_max:
                 logging.info(
                     "❄️ Cooling: no viable outlet range "
@@ -905,7 +912,11 @@ class EnhancedModelWrapper:
                     "Room already near target or too cool for HP.",
                     outlet_min, outlet_max,
                 )
-                return outlet_min  # warmest valid cooling outlet; never below effective min
+                # Ensure _search_delta_t_floor is set so the cooling
+                # cycle gate has a valid value (not stale from a
+                # previous cycle).
+                self._search_delta_t_floor = None
+                return outlet_min
             logging.info(
                 "❄️ Cooling mode bounds: outlet %.1f–%.1f°C "
                 "(indoor=%.1f°C, target=%.1f°C)",

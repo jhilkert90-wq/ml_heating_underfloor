@@ -1,6 +1,51 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Slab Epsilon Finalization)
+## 🎯 CURRENT STATUS - May 2026 (Review-Round Bug Fixes)
+
+### ✅ **REVIEW: 10 bugs found and fixed in recent cooling changes**
+
+**Status**: **COMPLETED**
+
+Thorough review of all recent cooling-mode changes found 10 bugs:
+1. Duplicate `inlet_temp`/`delta_t` keys in `prediction_context` dict (main.py)
+2. Transient drop filter fires in cooling mode — disabled for cooling
+3. `_cooling_cycle_state` not reset on heating→cooling transition — now restored from persisted state
+4. `_cooling_cycle_state` not persisted across restarts — added to cooling JSON schema + save
+5. `_search_delta_t_floor` not set on binary search early exit — set to `None`, gate uses learned floor
+6. Test uses old bounds assertion — fixed to `COOLING_CLAMP_MIN_ABS`
+7. `_cooling_target` not validated as numeric — added try/except float()
+8. `_cooling_target` not converted to float — now explicit
+9. `_search_delta_t_floor` default 0.0 too optimistic — gate now falls back to learned floor when None
+10. `_cooling_cycle_state` stale between sessions — gate restored from persistence
+
+8 new tests, 1027 passed (0 regressions), 15 pre-existing failures (dashboard/adaptive learning).
+
+**Files changed**: `src/main.py`, `src/model_wrapper.py`, `src/unified_thermal_state_cooling.py`, `tests/unit/test_cooling_bugfixes.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 PREVIOUS STATUS - May 2026 (Cooling Binary Search Full Range + Config UI)
+
+### ✅ **FIX: Binary search uses full cooling range; cooling target entity visible in HA config UI**
+
+**Status**: **COMPLETED**
+
+The binary search was pre-constrained by both a shutdown margin on `outlet_min` and an inlet-based tightening on `outlet_max`, preventing the search from expressing "HP should be off". The post-search RUNNING/RECOVERY gate already handles HP safety.
+
+Fixes:
+1. `src/config.py` `get_outlet_bounds()`: returns `(COOLING_CLAMP_MIN_ABS, COOLING_CLAMP_MAX_ABS)` without adding `COOLING_SHUTDOWN_MARGIN_K`
+2. `src/model_wrapper.py` `_calculate_required_outlet_temp()`: removed the cooling-mode `outlet_max` tightening by indoor and inlet temperature
+3. `ml_heating_underfloor/config.yaml` schema: added `target_indoor_temp_cooling_entity: "str?"` so it appears in the HA add-on config UI
+4. `ml_heating_underfloor/translations/en.yaml`: added name and description for the cooling target entity
+5. 3 new regression tests in `tests/unit/test_cooling_bugfixes.py`; 4 existing tests in `test_cooling_mode.py` updated
+
+90 tests pass (0 regressions).
+
+**Files changed**: `src/config.py`, `src/model_wrapper.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_cooling_bugfixes.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 PREVIOUS STATUS - May 2026 (Slab Epsilon Finalization)
 
 ### ✅ **Finalized slab epsilon after runtime notebook rerun**
 

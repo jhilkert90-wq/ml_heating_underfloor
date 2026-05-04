@@ -722,9 +722,11 @@ def get_outlet_bounds(climate_mode: str) -> tuple[float, float]:
     In cooling mode the outlet is below room temperature.
     """
     if climate_mode == "cooling":
-        # Add safety margin above the HP shutdown limit to avoid short-cycling.
-        effective_min = COOLING_CLAMP_MIN_ABS + COOLING_SHUTDOWN_MARGIN_K
-        return effective_min, COOLING_CLAMP_MAX_ABS
+        # Return the full physical range.  The post-search cooling cycle
+        # gate (RUNNING/RECOVERY) handles HP-cannot-run scenarios;
+        # COOLING_SHUTDOWN_MARGIN_K is only used in the RECOVERY→RUNNING
+        # transition check.
+        return COOLING_CLAMP_MIN_ABS, COOLING_CLAMP_MAX_ABS
     return CLAMP_MIN_ABS, CLAMP_MAX_ABS
 
 

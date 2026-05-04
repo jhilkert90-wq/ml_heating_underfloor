@@ -3,6 +3,9 @@ configuration:
   target_indoor_temp_entity:
     name: "Target Indoor Temperature Entity"
     description: "The input_number or sensor entity that holds the desired indoor setpoint (e.g. input_number.soll_rt). ML Heating reads this value as its temperature target."
+  target_indoor_temp_cooling_entity:
+    name: "Target Indoor Temperature Entity (Cooling)"
+    description: "Optional separate target temperature entity for cooling mode. When set, cooling mode reads its setpoint from this entity instead of the heating target. Leave empty to use the same target for both modes."
   indoor_temp_entity:
     name: "Indoor Temperature Sensor"
     description: "Primary indoor temperature sensor the system tries to maintain at the target setpoint. Use a reliable, representative sensor (e.g. average of main living areas)."

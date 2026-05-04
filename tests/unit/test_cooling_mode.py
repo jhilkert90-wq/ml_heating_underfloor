@@ -57,18 +57,20 @@ class TestGetOutletBounds:
         assert low == config.CLAMP_MIN_ABS
         assert high == config.CLAMP_MAX_ABS
 
-    def test_cooling_bounds_include_safety_margin(self):
+    def test_cooling_bounds_use_full_clamp_range(self):
+        """Cooling bounds must use the full CLAMP_MIN_ABS–CLAMP_MAX_ABS range.
+
+        The post-search cooling cycle gate handles HP-cannot-run scenarios;
+        the search itself should not pre-constrain with the shutdown margin.
+        """
         low, high = config.get_outlet_bounds("cooling")
-        expected_min = (
-            config.COOLING_CLAMP_MIN_ABS + config.COOLING_SHUTDOWN_MARGIN_K
-        )
-        assert low == expected_min
+        assert low == config.COOLING_CLAMP_MIN_ABS
         assert high == config.COOLING_CLAMP_MAX_ABS
 
-    def test_cooling_min_above_shutdown_limit(self):
-        """The effective minimum must be above the HP hard shutdown limit."""
+    def test_cooling_min_equals_shutdown_limit(self):
+        """The effective minimum equals the HP hard shutdown limit."""
         low, _ = config.get_outlet_bounds("cooling")
-        assert low > config.COOLING_CLAMP_MIN_ABS
+        assert low == config.COOLING_CLAMP_MIN_ABS
 
     def test_unknown_mode_returns_heating_bounds(self):
         low, high = config.get_outlet_bounds("off")
@@ -196,12 +198,10 @@ class TestModelWrapperCoolingMode:
             },
         )
 
-        # Result must be within cooling bounds
-        effective_min = (
-            config.COOLING_CLAMP_MIN_ABS + config.COOLING_SHUTDOWN_MARGIN_K
-        )
-        assert result >= effective_min, (
-            f"Cooling outlet {result} below effective minimum {effective_min}"
+        # Result must be within cooling bounds (full range, no margin)
+        assert result >= config.COOLING_CLAMP_MIN_ABS, (
+            f"Cooling outlet {result} below absolute minimum "
+            f"{config.COOLING_CLAMP_MIN_ABS}"
         )
         assert result <= config.COOLING_CLAMP_MAX_ABS, (
             f"Cooling outlet {result} above cooling max "
@@ -231,12 +231,10 @@ class TestModelWrapperCoolingMode:
             },
         )
 
-        # Must never go below the effective cooling minimum.
-        effective_min = (
-            config.COOLING_CLAMP_MIN_ABS + config.COOLING_SHUTDOWN_MARGIN_K
-        )
-        assert result >= effective_min, (
-            f"Cooling outlet {result} below effective minimum {effective_min}"
+        # Must never go below the absolute cooling minimum.
+        assert result >= config.COOLING_CLAMP_MIN_ABS, (
+            f"Cooling outlet {result} below absolute minimum "
+            f"{config.COOLING_CLAMP_MIN_ABS}"
         )
 
     def test_heating_mode_uses_standard_bounds(self, wrapper):
@@ -272,17 +270,16 @@ class TestModelWrapperCoolingMode:
         assert result >= config.CLAMP_MIN_ABS
         assert result <= config.CLAMP_MAX_ABS
 
-    def test_cooling_outlet_max_clamped_by_inlet(self, wrapper):
-        """
-        When inlet < indoor − MIN_COOLING_DELTA_K, the binary search upper
-        bound must use inlet − delta (tighter) not indoor − delta.
-        inlet=22, MIN_COOLING_DELTA_K=2 → outlet_max must be ≤ 20°C.
+    def test_cooling_outlet_not_tightened_by_inlet_in_search(self, wrapper):
+        """Binary search does NOT tighten outlet_max by inlet.
+
+        The post-search RUNNING/RECOVERY gate handles HP-cannot-run
+        scenarios when the outlet converges near the inlet.
         """
         wrapper.set_climate_mode("cooling")
-        # inlet=22 < indoor(24) - delta(2) = 22 — equal, so outlet_max=20
         wrapper._current_features = {
             "inlet_temp": 22.0,
-            "delta_t": 3.0,
+            "delta_t": -2.3,
         }
         mock_trajectory = {"trajectory": [22.0], "timestamps": [""]}
         wrapper.thermal_model.predict_thermal_trajectory = Mock(
@@ -297,10 +294,9 @@ class TestModelWrapperCoolingMode:
             outdoor_temp=30.0,
             thermal_features={"pv_power": 0.0, "fireplace_on": 0.0, "tv_on": 0.0},
         )
-        # outlet must be ≤ inlet − MIN_COOLING_DELTA_K = 22 − 2 = 20°C
-        assert result <= 22.0 - config.MIN_COOLING_DELTA_K, (
-            f"Expected outlet ≤ {22.0 - config.MIN_COOLING_DELTA_K}°C, got {result}"
-        )
+        # Result may be above inlet − delta; the gate will handle it.
+        assert result >= config.COOLING_CLAMP_MIN_ABS
+        assert result <= config.COOLING_CLAMP_MAX_ABS
 
 
 # ── Thermal constants tests ──────────────────────────────────────────

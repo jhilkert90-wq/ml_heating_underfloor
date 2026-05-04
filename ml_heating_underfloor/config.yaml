@@ -454,6 +454,7 @@ options:
 schema:
   # Core Entity Configuration
   target_indoor_temp_entity: "str"
+  target_indoor_temp_cooling_entity: "str?"
   indoor_temp_entity: "str"
   outdoor_temp_entity: "str"
   heating_control_entity: "str"
