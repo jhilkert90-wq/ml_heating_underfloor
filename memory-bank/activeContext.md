@@ -1,39 +1,5 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Review-Round Bug Fixes — May 2026**
-
-#### **What changed**
-- `src/main.py`: Removed duplicate `inlet_temp`/`delta_t` keys from `prediction_context`; transient drop filter now skipped in cooling mode; `_cooling_target` validated with `float()` + `try/except`
-- `src/model_wrapper.py`: `_cooling_cycle_state` restored from persisted JSON on init and mode switch; gate default changed from `0.0` to learned floor when `_search_delta_t_floor` is `None`; early exit sets `_search_delta_t_floor = None`; gate state persisted after transitions via `update_operational_state + save_state`
-- `src/unified_thermal_state_cooling.py`: Added `cooling_cycle_gate: "running"` to default operational state schema
-- `tests/unit/test_cooling_bugfixes.py`: Added 8 new tests (transient filter, gate persistence×3, delta_t default×2, duplicate keys, target validation)
-- `tests/unit/test_cooling_mode.py`: Fixed `test_cooling_binary_search_uses_cooling_bounds` assertion to use `COOLING_CLAMP_MIN_ABS` (no margin)
-
-#### **Why**
-Code review of recent cooling-mode changes under the assumption of ≥10 bugs. Found duplicate dict keys, mode-unaware filters, missing persistence, unsafe defaults, and stale test assertions.
-
-#### **Files changed**
-`src/main.py`, `src/model_wrapper.py`, `src/unified_thermal_state_cooling.py`, `tests/unit/test_cooling_bugfixes.py`, `tests/unit/test_cooling_mode.py`
-
----
-
-### ✅ **Cooling Binary Search Full Range + Config UI — May 2026**
-
-#### **What changed**
-- `src/config.py` `get_outlet_bounds()`: cooling return now `(COOLING_CLAMP_MIN_ABS, COOLING_CLAMP_MAX_ABS)` — no shutdown margin added. `COOLING_SHUTDOWN_MARGIN_K` is still used in the RECOVERY→RUNNING `_margin_ok` check.
-- `src/model_wrapper.py` `_calculate_required_outlet_temp()`: removed the 17-line cooling-mode `outlet_max` tightening block (indoor_based_max, inlet_based_max). The search now uses the full physical range.
-- `ml_heating_underfloor/config.yaml` schema: added `target_indoor_temp_cooling_entity: "str?"` so it appears in the HA add-on configuration UI.
-- `ml_heating_underfloor/translations/en.yaml`: added name + description for the cooling target entity.
-- Tests: 3 new in `test_cooling_bugfixes.py`, 4 updated in `test_cooling_mode.py`.
-
-#### **Why**
-Production log showed binary search range `18.3–20.5°C` (narrowed by margin + inlet guard). The search converged at the ceiling (20.5°C) with predicted indoor still 0.57°C below target — it couldn’t express “HP should be off”. The post-search RUNNING/RECOVERY gate already handles HP safety.
-
-#### **Files changed**
-`src/config.py`, `src/model_wrapper.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_cooling_bugfixes.py`, `tests/unit/test_cooling_mode.py`
-
----
-
 ### ✅ **Slab epsilon finalized after notebook rerun — May 2026**
 
 #### **What changed**

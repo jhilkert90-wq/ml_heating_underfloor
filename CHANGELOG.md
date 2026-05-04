@@ -25,24 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `main.py` learning context: removed inline `heat_pump_active` calculation, uses `_is_heat_pump_active()` via `climate_mode` in context
 
 ### Added
-- `target_indoor_temp_cooling_entity` now visible in the Home Assistant add-on configuration UI with label and description (`config.yaml` schema + `translations/en.yaml`)
-- **Cooling cycle gate persistence**: Gate state (`running`/`recovery`) persisted in cooling JSON and restored on mode switch and add-on restart
-- `cooling_cycle_gate` key in cooling operational state schema (`unified_thermal_state_cooling.py`)
-- 8 new review-round regression tests in `test_cooling_bugfixes.py` (transient filter, gate persistence, delta_t default, duplicate keys, target validation)
 - **Cooling cycle gate** (Bug 11): State machine with `RUNNING`/`RECOVERY` states prevents HP short-cycling in cooling mode using gradient-based transitions with existing `cooling_shutdown_margin_k` parameter
 - **`TARGET_INDOOR_TEMP_COOLING_ENTITY_ID`** (Bug 5): Separate target temperature entity for cooling mode in `config.py`, `config.yaml`, `.env_sample`, and `config_adapter.py`
 - **Early climate mode detection** (Bug 3): Climate mode determined before learning step so learning context uses correct mode
 - Comprehensive cooling bugfix test suite (`test_cooling_bugfixes.py`) with 19 tests
 
 ### Fixed
-- **Duplicate keys in learning `prediction_context`**: Removed duplicate `inlet_temp` and `delta_t` entries from the dict literal in `main.py`; Python silently used the last value
-- **Transient drop filter fires incorrectly in cooling mode**: Filter now skipped when `climate_mode == "cooling"` — in cooling a temp drop is normal (HP is cooling); a door opening causes a RISE
-- **Cooling cycle gate state lost on restart**: `_cooling_cycle_state` persisted to cooling JSON; restored in `__init__` and `set_climate_mode("cooling")`
-- **`_search_delta_t_floor` stale/zero on binary search early exit**: Early exit now sets `_search_delta_t_floor = None`; gate falls back to the thermal model's learned delta_t floor instead of optimistic 0.0
-- **Cooling target entity not validated**: `_cooling_target` from HA now wrapped in `float()` with `try/except` to reject non-numeric values ("unavailable" is already `None`-filtered by `ha_client.get_state`)
-- **Test `test_cooling_binary_search_uses_cooling_bounds` used old bounds**: Assertion changed from `effective_min = COOLING_CLAMP_MIN_ABS + SHUTDOWN_MARGIN` to `COOLING_CLAMP_MIN_ABS`
-- **Cooling binary search uses full outlet range**: `get_outlet_bounds("cooling")` now returns `(COOLING_CLAMP_MIN_ABS, COOLING_CLAMP_MAX_ABS)` without adding `COOLING_SHUTDOWN_MARGIN_K` — the post-search RUNNING/RECOVERY gate handles HP safety
-- **Removed inlet-guard tightening from binary search bounds**: `_calculate_required_outlet_temp()` no longer clamps `outlet_max` to `inlet − MIN_COOLING_DELTA_K` before the search; the search explores the full range and the cycle gate prevents HP short-cycling after convergence
 - **Previous-cycle learning context after mode changes**: Persist `last_climate_mode` and `last_target_indoor_temp`, reuse them during next-cycle online learning, and switch the wrapper to the previous cycle's mode before feedback learning runs
 - **Cooling forecast demand semantics in feature building**: `build_physics_features()` now accepts climate mode plus a resolved target override, uses the cooling target consistently, and computes forecast demand as `forecast - target` in cooling mode
 - **HP active detection in cooling** (Bug 1): `_is_heat_pump_active()` now mode-aware — uses `HEATING_MIN_THERMAL_POWER_KW` (0.5) for heating, `COOLING_MIN_THERMAL_POWER_KW` (-0.5) for cooling; delta_t and outlet checks inverted for cooling
