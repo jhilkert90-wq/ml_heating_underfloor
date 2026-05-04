@@ -427,7 +427,8 @@ class HeatPumpChannel(HeatSourceChannel):
         # Determine operating mode from the most recent record.
         climate_mode = (
             recent[-1].get("context", {}).get("climate_mode", "heating")
-            if recent else "heating"
+            if recent
+            else "heating"
         )
 
         # Mode-aware delta_t filter: outlet > inlet in heating (positive
@@ -1197,7 +1198,7 @@ class HeatSourceChannelOrchestrator:
                     update_events,
                 )
             routed_cooling = ["heat_pump"] + (
-                ["pv"] if (pv_active or pv_in_decay) else []
+                ["pv"] if pv_active or pv_in_decay else []
             )
             self._log_channel_parameter_updates(update_events)
             self._log_routing_summary(
