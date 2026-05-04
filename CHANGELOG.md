@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Duplicate `env:` key in `.github/workflows/ai-code-review.yaml` (merged `PR_TITLE`/`PR_BODY` into the existing step `env:` block)
+
+### Changed
+- Updated GitHub Actions to Node.js 24-compatible versions: `actions/checkout` v4→v6, `docker/login-action` v3→v4, `docker/setup-qemu-action` v3→v4, `docker/setup-buildx-action` v3→v4, `docker/build-push-action` v5→v7
+
 ### Changed
 - **Runtime-replay epsilon tuning**: Finalized finite-difference epsilon calibration using sensitivity analysis and the calibration review notebook so each runtime-reachable parameter produces ΔT ≈ 0.1–0.3°C while remaining in the linear regime
   - `THERMAL_TIME_CONSTANT_EPSILON`: 2.0 → 0.2

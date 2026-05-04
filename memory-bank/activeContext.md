@@ -1,5 +1,19 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **CI workflow fixes — May 2026**
+
+#### **What changed**
+- `.github/workflows/ai-code-review.yaml` — Fixed invalid workflow error: merged duplicate `env:` blocks on the "Run AI Code Review" step (`PR_TITLE`/`PR_BODY` moved into the existing `env:` block); upgraded `actions/checkout` v4→v6
+- `.github/workflows/build.yaml` — Upgraded all actions to Node.js 24-compatible versions: `actions/checkout` v4→v6, `docker/login-action` v3→v4, `docker/setup-qemu-action` v3→v4, `docker/setup-buildx-action` v3→v4, `docker/build-push-action` v5→v7
+
+#### **Why**
+GitHub reported an invalid workflow file error due to `env:` being defined twice in one step. The Node.js 20 deprecation warnings required action version upgrades before the June 2026 forced cutover.
+
+#### **Files changed**
+- `.github/workflows/ai-code-review.yaml`, `.github/workflows/build.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **Slab epsilon finalized after notebook rerun — May 2026**
 
 #### **What changed**
