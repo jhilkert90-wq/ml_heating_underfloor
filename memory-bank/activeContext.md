@@ -1,5 +1,79 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Slab epsilon finalized after notebook rerun — May 2026**
+
+#### **What changed**
+- `src/thermal_constants.py` — Increased `SLAB_TIME_CONSTANT_EPSILON` from 0.5 to 1.595 after rerunning the runtime-replay calibration notebook; kept `SOLAR_LAG_EPSILON` at 5.0 and documented why it remains intentionally conservative
+- `CHANGELOG.md` — Merged duplicate `### Changed` sections under `## [Unreleased]` and recorded the slab/solar epsilon follow-up
+
+#### **Why**
+The latest runtime-replay calibration still showed `solar_lag_minutes` as weakly observable: the best sweep candidate (`epsilon=22.5`) remained linear but only produced ΔT≈0.0097°C, so the target window is not reachable yet. `slab_time_constant_hours` was different: the current epsilon 0.5 only produced ΔT≈0.0357°C, while 1.595 reached ΔT≈0.1215°C and stayed linear.
+
+#### **Files changed**
+- `src/thermal_constants.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### ✅ **Epsilon Recalibration — May 2026**
+
+#### **What changed**
+- `src/thermal_constants.py` — Recalibrated 4 epsilon values (`THERMAL_TIME_CONSTANT_EPSILON` 2.0→0.2, `HEAT_LOSS_COEFFICIENT_EPSILON` 0.005→0.008, `OUTLET_EFFECTIVENESS_EPSILON` 0.05→0.1, `TV_HEAT_WEIGHT_EPSILON` 0.05→0.1); added 2 new constants (`SOLAR_LAG_EPSILON=5.0`, `SLAB_TIME_CONSTANT_EPSILON=0.5`)
+- `src/thermal_equilibrium_model.py` — `_calculate_solar_lag_gradient` and `_calculate_slab_time_constant_gradient` wrappers now use `PhysicsConstants` constants instead of hardcoded values
+- `tests/unit/test_learning_stability.py` — Added `TestEpsilonConstants` class (8 tests: existence, value regression)
+- `scripts/epsilon_sensitivity_analysis.py` — New calibration script that sweeps epsilon values and measures ΔT sensitivity per parameter
+
+#### **Why**
+Finite-difference epsilon values were hand-tuned with no systematic calibration. `THERMAL_TIME_CONSTANT_EPSILON=2.0` was 45.6% of the default value, producing ΔT=2.15°C — far outside the linear regime. Two epsilons (`solar_lag_minutes`, `slab_time_constant_hours`) were hardcoded in wrapper methods instead of centralized in `PhysicsConstants`.
+
+#### **Files changed**
+- `src/thermal_constants.py`, `src/thermal_equilibrium_model.py`, `tests/unit/test_learning_stability.py`, `scripts/epsilon_sensitivity_analysis.py`
+
+---
+
+### ✅ **Persisted Previous-Cycle Learning Context — May 2026**
+
+#### **What changed**
+- `src/state_manager.py` now carries `last_climate_mode` and `last_target_indoor_temp` so new persisted learning-context fields survive round-trips through `load_state()`
+- `src/main.py` now saves the active cycle's mode and resolved target temperature, then reuses those persisted values during the next cycle's online learning instead of reading the current HA mode/target
+- `src/main.py` switches the wrapper to the previous cycle's persisted mode before calling `learn_from_prediction_feedback()` so mode-aware feedback learning runs against the correct channel
+- `src/physics_features.py` now accepts `climate_mode` and `target_indoor_temp_override`; cooling demand uses `forecast - target`, and the feature builder no longer re-reads the heating target when a cooling target has already been resolved
+- Added regression coverage in `tests/integration/test_main.py` and `tests/unit/test_physics_features.py`
+
+#### **Why**
+Cooling-to-heating transitions could cause the previous cycle's learning step to reuse the current cycle's heating mode and target. Separately, the feature builder still encoded cooling demand with heating math and could reintroduce the heating target even when `main.py` had already selected a cooling target.
+
+#### **Files changed**
+`src/state_manager.py`, `src/main.py`, `src/physics_features.py`, `tests/integration/test_main.py`, `tests/unit/test_physics_features.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### ✅ **Cooling Mode Comprehensive Bug Fixes — May 2026**
+
+#### **What changed**
+12 bugs fixed across the cooling mode pipeline. The cooling mode was fundamentally broken — it reused the heating pipeline without mode-aware logic at critical decision points.
+
+**Key fixes:**
+- `_is_heat_pump_active()` now mode-aware: uses `HEATING_MIN_THERMAL_POWER_KW` / `COOLING_MIN_THERMAL_POWER_KW` instead of `HP_ACTIVE_MIN_POWER_KW`; delta_t and outlet checks inverted for cooling
+- Slab model `pump_on` gate works for cooling (outlet < t_slab, delta_t <= -1.0)
+- `_resolve_delta_t_floor()` handles negative delta_t in cooling, returns absolute magnitude
+- HP-OFF detection in binary search: cooling HP off when delta_t > -1.0 (not < 1.0)
+- Climate mode propagated through all `predict_thermal_trajectory()` calls
+- PV surplus and price offsets inverted in cooling mode (more cooling with free energy)
+- `heating_demand_forecast` uses target_temp instead of hardcoded 21.0
+- Cooling baselines: `pv_heat_weight` 0.002 (was 0.0003), `slab_time_constant_hours` 3.19 (was 0.8)
+- `TARGET_INDOOR_TEMP_COOLING_ENTITY_ID` added to config.py, config.yaml, .env_sample
+- Cooling cycle gate state machine (RUNNING/RECOVERY) replaces simple inlet guard
+- Climate mode determined before learning step (was detected after)
+- Learning context passes `climate_mode` instead of inline `heat_pump_active` calculation
+
+#### **Why**
+After 69 cooling cycles, the HP channel had 0 history entries (never learned), the slab model was permanently in passive mode, PV surplus raised the target instead of lowering it, and the HP short-cycled without prevention.
+
+#### **Files changed**
+`src/heat_source_channels.py`, `src/thermal_equilibrium_model.py`, `src/model_wrapper.py`, `src/main.py`, `src/config.py`, `src/thermal_config.py`, `src/physics_features.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `.env_sample`, `tests/unit/test_cooling_bugfixes.py`, `tests/unit/test_unified_thermal_state_cooling.py`
+
+---
+
 ### ✅ **Cooling Inlet Guard — May 2026**
 
 #### **What changed**

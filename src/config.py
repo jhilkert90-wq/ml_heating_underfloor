@@ -124,6 +124,12 @@ TARGET_INDOOR_TEMP_ENTITY_ID: str = os.getenv(
     "TARGET_INDOOR_TEMP_ENTITY_ID",
     "input_number.hp_auto_correct_target",
 )
+# Separate target temperature entity for cooling mode.
+# If set, cooling mode reads its target from this entity instead of
+# TARGET_INDOOR_TEMP_ENTITY_ID.  When empty, the heating target is used.
+TARGET_INDOOR_TEMP_COOLING_ENTITY_ID: str = os.getenv(
+    "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", ""
+)
 INDOOR_TEMP_ENTITY_ID: str = os.getenv(
     "INDOOR_TEMP_ENTITY_ID", "sensor.kuche_temperatur"
 )

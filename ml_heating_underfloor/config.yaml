@@ -25,6 +25,10 @@ options:
   # === Core Entity Configuration ===
   # An input_number or sensor that holds the desired target indoor temperature
   target_indoor_temp_entity: "input_number.soll_rt"
+  # Separate target temperature entity for cooling mode (optional).
+  # When set, cooling mode reads its target from this entity instead of the heating target.
+  # Leave empty to use the same target for both modes.
+  target_indoor_temp_cooling_entity: ""
   # The primary indoor temperature sensor that the system will try to maintain
   indoor_temp_entity: "sensor.rt_mittelwert"
   # The outdoor temperature sensor, preferably compensated or located near the heat pump

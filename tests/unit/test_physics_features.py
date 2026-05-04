@@ -79,6 +79,41 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     assert abs(features_df['cop_realtime'][0] - expected_cop) < 0.01
 
 
+def test_build_physics_features_cooling_demand_uses_forecast_above_target(
+    mock_ha_client, mock_influx_service
+):
+    """Cooling demand should increase when forecast exceeds target."""
+    mock_ha_client.get_calibrated_hourly_forecast.return_value = [24.0] * 4
+
+    features_df, _ = build_physics_features(
+        mock_ha_client,
+        mock_influx_service,
+        climate_mode="cooling",
+    )
+
+    assert features_df is not None
+    assert features_df["target_temp"][0] == 21.0
+    assert features_df["heating_demand_forecast"][0] == pytest.approx(0.3)
+    assert features_df["combined_forecast_thermal_load"][0] == pytest.approx(0.3)
+
+
+def test_build_physics_features_heating_demand_keeps_heating_sign(
+    mock_ha_client, mock_influx_service
+):
+    """Heating mode should retain target-minus-forecast demand semantics."""
+    mock_ha_client.get_calibrated_hourly_forecast.return_value = [18.0] * 4
+
+    features_df, _ = build_physics_features(
+        mock_ha_client,
+        mock_influx_service,
+        climate_mode="heating",
+    )
+
+    assert features_df is not None
+    assert features_df["heating_demand_forecast"][0] == pytest.approx(0.3)
+    assert features_df["combined_forecast_thermal_load"][0] == pytest.approx(0.3)
+
+
 def test_build_physics_features_missing_data(mock_ha_client, mock_influx_service):
     """Test feature building with missing critical data."""
     # Fail on first critical sensor (Indoor Temp)

@@ -82,6 +82,8 @@ def build_physics_features(
     ha_client: HAClient,
     influx_service: InfluxService,
     sensor_buffer: Optional[SensorBuffer] = None,
+    climate_mode: str = "heating",
+    target_indoor_temp_override: Optional[float] = None,
 ) -> Tuple[Optional[pd.DataFrame], list[float]]:
     """
     Build enhanced features for RealisticPhysicsModel with thermal momentum.
@@ -100,12 +102,20 @@ def build_physics_features(
         ha_client: Home Assistant client
         influx_service: InfluxDB service
         sensor_buffer: Optional in-memory buffer for sensor smoothing
+        climate_mode: Current climate mode for mode-aware demand features
+        target_indoor_temp_override: Pre-resolved target temperature to use
+            instead of reading Home Assistant again
         
     Returns:
         DataFrame with single row containing all features, or None if missing
     """
     # Fetch current sensor values
     all_states = ha_client.get_all_states()
+    normalized_climate_mode = (
+        str(climate_mode).lower() if climate_mode else "heating"
+    )
+    if normalized_climate_mode not in {"heating", "cooling"}:
+        normalized_climate_mode = "heating"
 
     actual_indoor = ha_client.get_state(
         config.INDOOR_TEMP_ENTITY_ID, all_states
@@ -120,8 +130,18 @@ def build_physics_features(
     outlet_temp = ha_client.get_state(
         config.ACTUAL_OUTLET_TEMP_ENTITY_ID, all_states
     )
-    target_indoor_temp = ha_client.get_state(
-        config.TARGET_INDOOR_TEMP_ENTITY_ID, all_states
+    target_entity_id = config.TARGET_INDOOR_TEMP_ENTITY_ID
+    if (
+        target_indoor_temp_override is None
+        and normalized_climate_mode == "cooling"
+        and getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
+    ):
+        target_entity_id = config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID
+
+    target_indoor_temp = (
+        target_indoor_temp_override
+        if target_indoor_temp_override is not None
+        else ha_client.get_state(target_entity_id, all_states)
     )
     
     # Fetch thermodynamic sensors (New in Feature/Sensor-Update)
@@ -443,6 +463,14 @@ def build_physics_features(
     # Calculate time period for gradient (in hours)
     time_period = config.HISTORY_STEP_MINUTES / 60.0
 
+    forecast_temp_at_horizon = temp_forecasts[_n_fc - 1]
+    thermal_demand_delta = (
+        forecast_temp_at_horizon - target_temp_f
+        if normalized_climate_mode == "cooling"
+        else target_temp_f - forecast_temp_at_horizon
+    )
+    thermal_demand_forecast = max(0.0, thermal_demand_delta * 0.1)
+
     # FIX: Handle missing history (defaults) to prevent artificial gradients
     # If history is default (21.0) but actual is different, clamp to actual
     # to avoid a fake massive temperature drop skewing gradient/lag features.
@@ -529,12 +557,12 @@ def build_physics_features(
         # === WEEK 4 ENHANCED FORECAST FEATURES ===
         # Enhanced forecast analysis (3 new features)
         # °C/hour trend (use up to TRAJECTORY_STEPS hours)
-        'temp_trend_forecast': ((temp_forecasts[_n_fc - 1] - outdoor_temp_f) / _n_fc),
-        # Simple heating demand (use TRAJECTORY_STEPS hours)
-        'heating_demand_forecast': max(0.0, (21.0 - temp_forecasts[_n_fc - 1]) * 0.1),
+        'temp_trend_forecast': ((forecast_temp_at_horizon - outdoor_temp_f) / _n_fc),
+        # Legacy feature name retained for compatibility; value is mode-aware.
+        'heating_demand_forecast': thermal_demand_forecast,
         # Net thermal load (use TRAJECTORY_STEPS hours)
         'combined_forecast_thermal_load': (
-            max(0.0, (21.0 - temp_forecasts[_n_fc - 1]) * 0.1)
+            thermal_demand_forecast
             - (pv_forecasts[_n_fc - 1] * 0.001)
         ),
         # PV power history for solar lag computation

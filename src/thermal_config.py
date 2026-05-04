@@ -147,7 +147,7 @@ class ThermalParameterConfig:
         'thermal_time_constant': 3.0,       # hours (cooling response is faster)
         'equilibrium_ratio': 0.20,          # dimensionless (higher: outdoor heat gain)
         'total_conductance': 0.6,           # 1/hour
-        'pv_heat_weight': 0.0003,           # °C/W (solar works against cooling)
+        'pv_heat_weight': 0.002,            # °C/W (building property — same as heating)
         'fireplace_heat_weight': 1.0,       # °C (works against cooling)
         'tv_heat_weight': 0.35,             # °C (works against cooling)
         'fp_heat_output_kw': 3.0,           # kW
@@ -159,11 +159,11 @@ class ThermalParameterConfig:
         'max_learning_rate': 0.08,
         'heat_loss_coefficient': 0.12,      # 1/hour (heat gain from outside)
         'outlet_effectiveness': 0.90,       # dimensionless (cooling effectiveness)
-        'delta_t_floor': 2.0,               # °C (cooling delta-T floor)
+        'delta_t_floor': 2.5,               # °C (cooling delta-T floor), changed to 2.5 by user
         'cloud_factor_exponent': 1.0,       # dimensionless
         'solar_lag_minutes': 45.0,          # minutes
         'solar_decay_tau_hours': 1.0,       # hours
-        'slab_time_constant_hours': 0.8,    # hours (cold water ↔ warm slab, faster exchange)
+        'slab_time_constant_hours': 3.19,   # hours (same slab mass as heating)
     }
 
     # Cooling-mode parameter bounds
@@ -189,7 +189,7 @@ class ThermalParameterConfig:
         'cloud_factor_exponent': (0.1, 3.0),
         'solar_lag_minutes': (0.0, 180.0),
         'solar_decay_tau_hours': (0.0, 3.0),
-        'slab_time_constant_hours': (0.3, 2.5),
+        'slab_time_constant_hours': (0.3, 8.0),
     }
 
     @classmethod

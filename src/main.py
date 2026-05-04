@@ -726,6 +726,14 @@ def main():
                 )
             )
 
+            # Determine climate mode EARLY — before learning — so that the
+            # learning context can pass the correct mode to
+            # _is_heat_pump_active() and other mode-aware helpers.
+            _early_checker = HeatingSystemStateChecker()
+            climate_mode = _early_checker.get_climate_mode(
+                ha_client, all_states
+            )
+
             # --- Step 1: Online Learning from Previous Cycle ---
             # Learn from the results of the previous cycle. This allows the
             # model to continuously adapt to the actual house behavior,
@@ -761,17 +769,10 @@ def main():
                 )
 
                 if current_indoor is not None:
-                    # Ensure target_indoor_temp is set for learning context
-                    target_indoor_temp = ha_client.get_state(config.TARGET_INDOOR_TEMP_ENTITY_ID, all_states)
-                    if target_indoor_temp is not None:
-                        target_indoor_temp = float(target_indoor_temp)
-                    else:
-                        target_indoor_temp = last_indoor_temp  # fallback
-                        logging.debug(
-                            "target_indoor_temp unavailable from HA, using last_indoor_temp as fallback: %.2f",
-                            last_indoor_temp
-                        )
                     actual_indoor_change = current_indoor - last_indoor_temp
+                    previous_cycle_climate_mode = (
+                        state.get("last_climate_mode") or climate_mode
+                    )
 
                     # Create learning features with the actual outlet temp
                     # that was applied
@@ -811,6 +812,42 @@ def main():
                             else {}
                         )
 
+                    persisted_target_temp = state.get(
+                        "last_target_indoor_temp"
+                    )
+                    if persisted_target_temp is None:
+                        persisted_target_temp = learning_features.get(
+                            "target_temp"
+                        )
+
+                    if persisted_target_temp is None:
+                        target_entity_id = config.TARGET_INDOOR_TEMP_ENTITY_ID
+                        if (
+                            previous_cycle_climate_mode == "cooling"
+                            and getattr(
+                                config,
+                                "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID",
+                                "",
+                            )
+                        ):
+                            target_entity_id = (
+                                config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID
+                            )
+                        persisted_target_temp = ha_client.get_state(
+                            target_entity_id, all_states
+                        )
+
+                    if persisted_target_temp is not None:
+                        target_indoor_temp = float(persisted_target_temp)
+                    else:
+                        target_indoor_temp = last_indoor_temp
+                        logging.debug(
+                            "target_indoor_temp unavailable for previous cycle, using last_indoor_temp fallback: %.2f",
+                            last_indoor_temp,
+                        )
+
+                    learning_features["target_temp"] = target_indoor_temp
+
                     learning_features["outlet_temp"] = actual_applied_temp
                     learning_features["outlet_temp_sq"] = (
                         actual_applied_temp**2
@@ -827,6 +864,9 @@ def main():
 
                         # Create wrapper instance
                         wrapper = get_enhanced_model_wrapper()
+                        wrapper.set_climate_mode(
+                            previous_cycle_climate_mode
+                        )
 
                         # Prepare prediction context for learning
                         pv_history = learning_features.get("pv_power_history")
@@ -863,17 +903,14 @@ def main():
                             "thermal_power": learning_features.get(
                                 "thermal_power_kw", None
                             ),
-                            "heat_pump_active": bool(
-                                (
-                                    learning_features.get("thermal_power_kw")
-                                    is not None
-                                    and learning_features.get(
-                                        "thermal_power_kw", 0.0
-                                    )
-                                    > 0.05
-                                )
-                                or learning_features.get("delta_t", 0.0) > 0.5
-                            ),
+                            # HP active detection is now mode-aware via
+                            # climate_mode — no explicit flag needed.
+                            # _is_heat_pump_active() checks thermal_power,
+                            # delta_t, and outlet/indoor thresholds with
+                            # correct signs for heating vs cooling.
+                            "delta_t": learning_features.get("delta_t", 0.0),
+                            "inlet_temp": learning_features.get("inlet_temp"),
+                            "climate_mode": previous_cycle_climate_mode,
                             # Pass auxiliary heat if available in features
                             "auxiliary_heat": learning_features.get(
                                 "total_auxiliary_heat_kw", 0.0
@@ -1269,6 +1306,22 @@ def main():
             outdoor_temp = sensor_data["outdoor_temp"]
             owm_temp = sensor_data["owm_temp"]
 
+            # In cooling mode, use the cooling-specific target entity if
+            # configured.  Fall back to the standard heating target otherwise.
+            if (
+                climate_mode == "cooling"
+                and getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
+            ):
+                _cooling_target = ha_client.get_state(
+                    config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID, all_states
+                )
+                if _cooling_target is not None:
+                    target_indoor_temp = _cooling_target
+                    logging.info(
+                        "❄️ Using cooling target entity: %.1f°C",
+                        float(target_indoor_temp),
+                    )
+
             # --- Step 1: State Retrieval ---
             # Heat balance controller doesn't use prediction history anymore.
             # Removed prediction_history retrieval.
@@ -1326,7 +1379,11 @@ def main():
                 )
 
             features, outlet_history = build_physics_features(
-                ha_client, influx_service, sensor_buffer
+                ha_client,
+                influx_service,
+                sensor_buffer,
+                climate_mode=climate_mode,
+                target_indoor_temp_override=target_indoor_temp,
             )
             # Handle both DataFrame and dict features properly
             if isinstance(features, pd.DataFrame):
@@ -2035,6 +2092,12 @@ def main():
                 "last_avg_other_rooms_temp": avg_other_rooms_temp,
                 "last_fireplace_on": fireplace_on,
                 "last_final_temp": final_temp,
+                "last_climate_mode": climate_mode,
+                "last_target_indoor_temp": (
+                    float(target_indoor_temp)
+                    if target_indoor_temp is not None
+                    else None
+                ),
                 "last_predicted_indoor": (
                     applied_prediction
                     if 'applied_prediction' in locals()

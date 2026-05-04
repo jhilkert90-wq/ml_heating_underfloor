@@ -59,7 +59,8 @@ class TestCoolingThermalStateManager:
         cd = ThermalParameterConfig.COOLING_DEFAULTS
         hd = ThermalParameterConfig.DEFAULTS
         assert cd['thermal_time_constant'] != hd['thermal_time_constant']
-        assert cd['slab_time_constant_hours'] != hd['slab_time_constant_hours']
+        # slab_time_constant_hours intentionally matches heating — same slab mass
+        assert cd['slab_time_constant_hours'] == hd['slab_time_constant_hours']
         assert cd['outlet_effectiveness'] != hd['outlet_effectiveness']
 
     def test_save_and_load(self, cooling_manager, temp_state_file):

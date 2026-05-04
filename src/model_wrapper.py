@@ -73,6 +73,13 @@ class EnhancedModelWrapper:
         # Set each cycle by main.py via set_climate_mode().
         self._climate_mode = "heating"
 
+        # Cooling cycle gate: prevents HP short-cycling by tracking
+        # whether the HP is in RUNNING or RECOVERY state.
+        # "running"  — HP is actively cooling (or allowed to start)
+        # "recovery" — HP recently shut down; wait for inlet to rise
+        #              before restarting
+        self._cooling_cycle_state = "running"
+
         # Active pair — initially heating.
         self.thermal_model = self._heating_thermal_model
         self.state_manager = self._heating_state_manager
@@ -384,6 +391,7 @@ class EnhancedModelWrapper:
                     fireplace_power_kw=fireplace_power_kw,
                     fireplace_decay_kw=fp_decay_kw,
                     cloud_cover_pct=self._avg_cloud_cover,
+                    climate_mode=self._climate_mode,
                 )
             )
 
@@ -423,8 +431,11 @@ class EnhancedModelWrapper:
             # --- Electricity Price Integration ---
             # Shift binary search target based on price level.
             # Learning always uses the original target_indoor.
+            # In cooling mode the offset is inverted: cheap → cool more
+            # (lower target), expensive → cool less (raise target).
             target_adjusted = target_indoor
             price_info = {}
+            _price_sign = -1.0 if self._climate_mode == "cooling" else 1.0
             if getattr(config, "ELECTRICITY_PRICE_ENABLED", False):
                 from .price_optimizer import PriceLevel, get_price_optimizer
 
@@ -435,7 +446,7 @@ class EnhancedModelWrapper:
                         price_data["current_price"],
                         price_data["today"],
                     )
-                    offset = optimizer.get_target_offset(level)
+                    offset = optimizer.get_target_offset(level) * _price_sign
                     target_adjusted = target_indoor + offset
                     price_info = optimizer.get_price_info()
                     if offset != 0.0:
@@ -446,9 +457,8 @@ class EnhancedModelWrapper:
 
             # --- PV Surplus CHEAP Override ---
             # When current PV production exceeds the configured threshold the
-            # target is shifted by +PRICE_TARGET_OFFSET (same as a CHEAP grid
-            # price).  This works independently of the Tibber price feed and
-            # allows surplus solar energy to be used for extra heating.
+            # target is shifted.  In heating mode: raise target (store heat).
+            # In cooling mode: lower target (cool more with free energy).
             if getattr(config, "PV_SURPLUS_CHEAP_ENABLED", False):
                 pv_threshold = getattr(
                     config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000
@@ -468,9 +478,6 @@ class EnhancedModelWrapper:
                         config, "PV_SURPLUS_CHEAP_RAMP_W", pv_threshold
                     ))
                     # Clamp to [1, threshold] so ramp_floor is always >= 0.
-                    # Without the upper clamp a misconfigured ramp_w > threshold
-                    # would make ramp_floor negative, producing a positive offset
-                    # even at near-zero PV output.
                     ramp_w = max(1.0, min(ramp_w, float(pv_threshold)))
                     ramp_floor = pv_threshold - ramp_w
                     if pv_now >= pv_threshold:
@@ -484,19 +491,37 @@ class EnhancedModelWrapper:
                     else:
                         partial_offset = 0.0
                     if partial_offset > 0.0:
-                        # Only raise the target, never lower it via this path
-                        new_adjusted = target_indoor + partial_offset
-                        if new_adjusted > target_adjusted:
-                            target_adjusted = new_adjusted
-                            price_info["price_level"] = "cheap"
-                            price_info["price_target_offset"] = partial_offset
-                            logging.info(
-                                "☀️ PV surplus %.0fW (threshold %.0fW): "
-                                "target %.1f → %.1f°C "
-                                "(CHEAP ramp offset +%.2f)",
-                                pv_now, pv_threshold,
-                                target_indoor, target_adjusted, partial_offset,
-                            )
+                        # Apply sign inversion for cooling mode
+                        signed_offset = partial_offset * _price_sign
+                        new_adjusted = target_indoor + signed_offset
+                        if self._climate_mode == "cooling":
+                            # In cooling: lower target = more cooling
+                            if new_adjusted < target_adjusted:
+                                target_adjusted = new_adjusted
+                                price_info["price_level"] = "cheap"
+                                price_info["price_target_offset"] = signed_offset
+                                logging.info(
+                                    "☀️ PV surplus %.0fW (threshold %.0fW): "
+                                    "target %.1f → %.1f°C "
+                                    "(COOLING offset %.2f)",
+                                    pv_now, pv_threshold,
+                                    target_indoor, target_adjusted,
+                                    signed_offset,
+                                )
+                        else:
+                            # In heating: raise target = store more heat
+                            if new_adjusted > target_adjusted:
+                                target_adjusted = new_adjusted
+                                price_info["price_level"] = "cheap"
+                                price_info["price_target_offset"] = signed_offset
+                                logging.info(
+                                    "☀️ PV surplus %.0fW (threshold %.0fW): "
+                                    "target %.1f → %.1f°C "
+                                    "(CHEAP ramp offset +%.2f)",
+                                    pv_now, pv_threshold,
+                                    target_indoor, target_adjusted,
+                                    signed_offset,
+                                )
 
             # Store current indoor for trajectory correction
             self._current_indoor = current_indoor
@@ -514,13 +539,22 @@ class EnhancedModelWrapper:
                 thermal_features,
             )
 
-            # COOLING INLET GUARD: In cooling mode, if the computed outlet
-            # is within MIN_COOLING_DELTA_K of the inlet (return-water
-            # temperature), the heat-pump compressor cannot run at that
-            # setpoint — it would either short-cycle or be rejected by the
-            # NIBE controller. Clamp to inlet_temp so the HP stays in
-            # passive (circulator only) mode instead of trying to cool
-            # water that is already at the desired temperature.
+            # COOLING CYCLE GATE: Prevents HP short-cycling in cooling
+            # mode.  The gate tracks two states:
+            #   RUNNING  — HP is allowed to cool (normal operation)
+            #   RECOVERY — HP recently shut down; send inlet_temp as
+            #              target so NIBE keeps the HP off until the
+            #              slab has absorbed enough room heat for a
+            #              long next cooling cycle.
+            #
+            # Transition RUNNING → RECOVERY:
+            #   When the computed outlet is too close to inlet (HP
+            #   would short-cycle).
+            # Transition RECOVERY → RUNNING:
+            #   When both conditions are met:
+            #     1) inlet - required_outlet > MIN_COOLING_DELTA_K
+            #     2) required_outlet > COOLING_CLAMP_MIN_ABS +
+            #        COOLING_SHUTDOWN_MARGIN_K
             if self._climate_mode == "cooling":
                 _inlet_guard = (
                     self._current_features.get("inlet_temp")
@@ -528,20 +562,74 @@ class EnhancedModelWrapper:
                     else None
                 )
                 if _inlet_guard is not None:
-                    _idle_threshold = _inlet_guard - config.MIN_COOLING_DELTA_K
-                    if optimal_outlet_temp > _idle_threshold:
-                        logging.info(
-                            "❄️ Cooling inlet guard: outlet %.1f°C > "
-                            "inlet %.1f°C − delta %.1f°C = %.1f°C → "
-                            "clamping to inlet %.1f°C (HP idle / "
-                            "circulator only)",
-                            optimal_outlet_temp,
-                            _inlet_guard,
-                            config.MIN_COOLING_DELTA_K,
-                            _idle_threshold,
-                            _inlet_guard,
+                    _effective_min = (
+                        config.COOLING_CLAMP_MIN_ABS
+                        + config.COOLING_SHUTDOWN_MARGIN_K
+                    )
+                    _gradient_ok = (
+                        _inlet_guard - optimal_outlet_temp
+                        > config.MIN_COOLING_DELTA_K
+                    )
+                    # _margin_ok: slab has warmed enough that the HP can
+                    # produce a useful outlet temperature.  Uses the learned
+                    # delta_t floor (negative in cooling → outlet < inlet):
+                    #   inlet + delta_t_floor > COOLING_CLAMP_MIN_ABS
+                    #                          + COOLING_SHUTDOWN_MARGIN_K
+                    # This is independent of the clamped optimal_outlet_temp
+                    # (which equals inlet_temp during RECOVERY), so the gate
+                    # uses actual physics instead of a circular self-reference.
+                    _learned_dtf = getattr(
+                        self, "_search_delta_t_floor", 0.0
+                    )
+                    _margin_ok = (
+                        _inlet_guard + _learned_dtf
+                    ) > _effective_min
+
+                    if self._cooling_cycle_state == "running":
+                        # Check if HP should enter recovery
+                        _idle_threshold = (
+                            _inlet_guard - config.MIN_COOLING_DELTA_K
                         )
-                        optimal_outlet_temp = _inlet_guard
+                        if optimal_outlet_temp > _idle_threshold:
+                            self._cooling_cycle_state = "recovery"
+                            logging.info(
+                                "❄️ Cooling cycle gate: RUNNING → RECOVERY "
+                                "(outlet %.1f°C too close to inlet %.1f°C, "
+                                "delta %.1fK < %.1fK). "
+                                "Sending inlet_temp to keep HP off.",
+                                optimal_outlet_temp, _inlet_guard,
+                                _inlet_guard - optimal_outlet_temp,
+                                config.MIN_COOLING_DELTA_K,
+                            )
+                            optimal_outlet_temp = _inlet_guard
+                    else:
+                        # RECOVERY state: check if conditions allow restart
+                        if _gradient_ok and _margin_ok:
+                            self._cooling_cycle_state = "running"
+                            logging.info(
+                                "❄️ Cooling cycle gate: RECOVERY → RUNNING "
+                                "(inlet %.1f°C − outlet %.1f°C = %.1fK > "
+                                "%.1fK, inlet+Δt_floor=%.1f°C > %.1f°C). "
+                                "HP may start.",
+                                _inlet_guard, optimal_outlet_temp,
+                                _inlet_guard - optimal_outlet_temp,
+                                config.MIN_COOLING_DELTA_K,
+                                _inlet_guard + _learned_dtf,
+                                _effective_min,
+                            )
+                        else:
+                            logging.info(
+                                "❄️ Cooling cycle gate: RECOVERY — waiting "
+                                "(inlet %.1f°C, inlet+Δt_floor=%.1f°C, "
+                                "required_outlet %.1f°C, "
+                                "gradient_ok=%s, margin_ok=%s). "
+                                "Sending inlet_temp.",
+                                _inlet_guard,
+                                _inlet_guard + _learned_dtf,
+                                optimal_outlet_temp,
+                                _gradient_ok, _margin_ok,
+                            )
+                            optimal_outlet_temp = _inlet_guard
 
             # This ensures we have a valid target prediction for logging
             predicted_indoor = self.predict_indoor_temp(
@@ -877,20 +965,30 @@ class EnhancedModelWrapper:
             else 0.0
         )
 
-        # HP-OFF FIX: When HP is off (delta_t < 1.0), the slab pump
-        # gate blocks ALL binary-search candidates identically (passive
-        # branch ignores outlet_temp).  Substitute the learned HP
-        # delta_t_floor so the trajectory simulates "HP running at this
-        # outlet" — letting candidates differentiate and conveying the
-        # correct setpoint for NIBE to start heating.
-        if _dtf < 1.0:
+        # HP-OFF FIX: When HP is off, the slab pump gate blocks ALL
+        # binary-search candidates identically (passive branch ignores
+        # outlet_temp).  Substitute the learned HP delta_t_floor so the
+        # trajectory simulates "HP running at this outlet" — letting
+        # candidates differentiate and conveying the correct setpoint
+        # for NIBE to start.
+        # In heating: HP off when delta_t < 1.0
+        # In cooling: HP off when delta_t > -1.0 (near zero)
+        _hp_is_off = (
+            _dtf > -1.0 if self._climate_mode == "cooling" else _dtf < 1.0
+        )
+        if _hp_is_off:
             _dtf_simulated = (
-                self.thermal_model._resolve_delta_t_floor(_dtf)
+                self.thermal_model._resolve_delta_t_floor(
+                    _dtf, climate_mode=self._climate_mode
+                )
             )
+            if self._climate_mode == "cooling":
+                # In cooling, the simulated delta_t must be negative
+                _dtf_simulated = -_dtf_simulated
             logging.info(
-                "🔄 HP off (delta_t=%.2f): simulating HP-on "
+                "🔄 HP off (delta_t=%.2f, mode=%s): simulating HP-on "
                 "delta_t=%.2f for binary search",
-                _dtf, _dtf_simulated,
+                _dtf, self._climate_mode, _dtf_simulated,
             )
             _dtf = _dtf_simulated
         # Store the resolved delta_t for use by trajectory verification too
@@ -978,6 +1076,7 @@ class EnhancedModelWrapper:
                         inlet_temp=_inlet,
                         delta_t_floor=_dtf,
                         indoor_temp_delta_60m=_trend_60m,
+                        climate_mode=self._climate_mode,
                     )
                 )
 
@@ -1490,6 +1589,7 @@ class EnhancedModelWrapper:
                     if hasattr(self, "_current_features")
                     else 0.0
                 ),
+                climate_mode=self._climate_mode,
             )
 
             _it = (

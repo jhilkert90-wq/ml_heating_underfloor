@@ -533,13 +533,28 @@ class ThermalEquilibriumModel:
         except (TypeError, ValueError):
             return fallback
 
-    def _resolve_delta_t_floor(self, observed_delta_t: float) -> float:
-        """Prefer the observed loop delta-T when present, else fall back to HP channel state."""
-        if observed_delta_t >= 1.0:
-            return observed_delta_t
-        return self._get_channel_parameter_value(
-            "heat_pump", "delta_t_floor", 2.0
-        )
+    def _resolve_delta_t_floor(self, observed_delta_t: float, climate_mode: str = "heating") -> float:
+        """Prefer the observed loop delta-T when present, else fall back to HP channel state.
+
+        In cooling mode delta_t is negative. The returned value is always
+        the *absolute* magnitude of the floor so callers can use it
+        symmetrically (e.g. ``outlet ± delta_t_floor``).
+        """
+        if climate_mode == "cooling":
+            # Cooling: HP is ON when delta_t <= -1.0
+            if observed_delta_t <= -1.0:
+                return abs(observed_delta_t)
+            # HP is OFF in cooling — use learned floor
+            return self._get_channel_parameter_value(
+                "heat_pump", "delta_t_floor", 2.0
+            )
+        else:
+            # Heating (default): HP is ON when delta_t >= 1.0
+            if observed_delta_t >= 1.0:
+                return observed_delta_t
+            return self._get_channel_parameter_value(
+                "heat_pump", "delta_t_floor", 2.0
+            )
 
     @property
     def thermal_time_constant(self) -> float:
@@ -1702,13 +1717,33 @@ class ThermalEquilibriumModel:
                 if pred.get("pump_off", False):
                     continue
 
+            climate_mode = context.get("climate_mode", "heating")
+            thermal_power_kw = context.get(
+                "thermal_power_kw", context.get("thermal_power")
+            )
+            delta_t = float(context.get("delta_t", 0.0))
+
             # PUMP-OFF FIX: when pump was off, use inlet_temp instead of
             # stale Sollwert so the slab model correctly simulates pump-OFF.
+            # The detection must stay mode-aware because cooling uses
+            # negative delta-T and negative thermal power.
             effective_outlet = context["outlet_temp"]
-            if (
-                context.get("delta_t", 999) < 1.0
-                or context.get("thermal_power_kw", 999) < 0.2
-            ):
+            if climate_mode == "cooling":
+                pump_off = delta_t > -1.0
+                if thermal_power_kw is not None:
+                    pump_off = pump_off or (
+                        thermal_power_kw
+                        > getattr(config, "COOLING_MIN_THERMAL_POWER_KW", -0.5)
+                    )
+            else:
+                pump_off = delta_t < 1.0
+                if thermal_power_kw is not None:
+                    pump_off = pump_off or (
+                        thermal_power_kw
+                        < getattr(config, "HEATING_MIN_THERMAL_POWER_KW", 0.5)
+                    )
+
+            if pump_off:
                 effective_outlet = context.get(
                     "inlet_temp", context["outlet_temp"]
                 )
@@ -1730,6 +1765,13 @@ class ThermalEquilibriumModel:
                 if _g_outdoor_fc
                 else _g_outdoor_now
             )
+            _g_pv_input = context.get("pv_power_history")
+            if isinstance(_g_pv_input, np.ndarray):
+                _g_pv_input = _g_pv_input.tolist()
+            elif isinstance(_g_pv_input, tuple):
+                _g_pv_input = list(_g_pv_input)
+            if not _g_pv_input:
+                _g_pv_input = context.get("pv_power", 0)
             _g_pv_fc = context.get("pv_forecast")
             _g_horizon = float(config.TRAJECTORY_STEPS)
 
@@ -1741,13 +1783,18 @@ class ThermalEquilibriumModel:
                 outdoor_temp=_g_outdoor,
                 time_horizon_hours=_g_horizon,
                 time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
-                pv_power=context.get("pv_power", 0),
+                pv_power=_g_pv_input,
                 pv_forecasts=_g_pv_fc,
                 fireplace_on=context.get("fireplace_on", 0),
                 tv_on=context.get("tv_on", 0),
+                auxiliary_heat=context.get("auxiliary_heat", 0.0),
                 cloud_cover_pct=context.get("avg_cloud_cover", 50.0),
                 inlet_temp=context.get("inlet_temp"),
                 delta_t_floor=context.get("delta_t", 0.0),
+                climate_mode=climate_mode,
+                indoor_temp_delta_60m=context.get(
+                    "indoor_temp_delta_60m", 0.0
+                ),
                 # thermal_power deliberately omitted: energy-mode formula
                 # T=outdoor+P/HLC bypasses outlet_effectiveness entirely,
                 # producing zero gradient for OE and an inconsistent gradient
@@ -1763,13 +1810,18 @@ class ThermalEquilibriumModel:
                 outdoor_temp=_g_outdoor,
                 time_horizon_hours=_g_horizon,
                 time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
-                pv_power=context.get("pv_power", 0),
+                pv_power=_g_pv_input,
                 pv_forecasts=_g_pv_fc,
                 fireplace_on=context.get("fireplace_on", 0),
                 tv_on=context.get("tv_on", 0),
+                auxiliary_heat=context.get("auxiliary_heat", 0.0),
                 cloud_cover_pct=context.get("avg_cloud_cover", 50.0),
                 inlet_temp=context.get("inlet_temp"),
                 delta_t_floor=context.get("delta_t", 0.0),
+                climate_mode=climate_mode,
+                indoor_temp_delta_60m=context.get(
+                    "indoor_temp_delta_60m", 0.0
+                ),
                 # thermal_power deliberately omitted (see above)
             )
             pred_minus = pred_minus_trajectory["trajectory"][-1]
@@ -1881,15 +1933,17 @@ class ThermalEquilibriumModel:
     def _calculate_solar_lag_gradient(
         self, recent_predictions: List[Dict]
     ) -> float:
-        """Calculate solar lag gradient (epsilon=5 minutes)."""
+        """Calculate solar lag gradient."""
         return self._calculate_parameter_gradient(
-            "solar_lag_minutes", 5.0, recent_predictions
+            "solar_lag_minutes",
+            PhysicsConstants.SOLAR_LAG_EPSILON,
+            recent_predictions,
         )
 
     def _calculate_slab_time_constant_gradient(
         self, recent_predictions: List[Dict]
     ) -> float:
-        """Calculate slab time-constant gradient (epsilon=0.1 h).
+        """Calculate slab time-constant gradient.
 
         Uses finite-difference via _calculate_parameter_gradient, exactly as
         all other learnable parameters.  The gradient is non-zero only when
@@ -1897,7 +1951,9 @@ class ThermalEquilibriumModel:
         during transient heating/cooling phases.
         """
         return self._calculate_parameter_gradient(
-            "slab_time_constant_hours", 0.1, recent_predictions
+            "slab_time_constant_hours",
+            PhysicsConstants.SLAB_TIME_CONSTANT_EPSILON,
+            recent_predictions,
         )
 
     def _calculate_adaptive_learning_rate(self) -> float:
@@ -2045,7 +2101,11 @@ class ThermalEquilibriumModel:
         # = thermal_power / (flow_rate × C_P).  Passed from caller as
         # delta_t_floor; defaults to 0 to preserve backward-compat behaviour.
         measured_delta_t = float(external_sources.get("delta_t_floor", 0.0))
-        delta_t_floor = self._resolve_delta_t_floor(measured_delta_t)
+        # Climate mode for mode-aware slab pump-on gating
+        _traj_climate_mode = external_sources.get("climate_mode", "heating")
+        delta_t_floor = self._resolve_delta_t_floor(
+            measured_delta_t, climate_mode=_traj_climate_mode
+        )
         # Observed indoor trend (°C over last 60 min) — captures unmeasured
         # heat sources (solar through windows, body heat, appliances, thermal
         # mass).  Applied as a decaying bias in the step loop below.
@@ -2125,28 +2185,40 @@ class ThermalEquilibriumModel:
             # T_slab tracks the return temperature (BT3 / Rücklauf).
             # T_slab(0) = inlet_temp; when None the slab model is inactive.
             #
-            # Pump-ON  (BT2 > BT3 AND measured ΔT ≥ 1): forced convection
-            #   drives BT3 toward BT2 − ΔT_floor.
-            # Pump-OFF (measured ΔT < 1 OR BT2 ≤ BT3): NIBE shuts down;
-            #   BT3 cools passively toward indoor air temperature.
-            #
-            # Using measured_delta_t as the gate prevents the pump-ON branch
-            # from firing when the HP is actually off but outlet happens to
-            # read higher than inlet due to sensor values or calculated targets.
+            # HEATING:
+            #   Pump-ON  (BT2 > BT3 AND measured ΔT ≥ 1): forced convection
+            #     drives BT3 toward BT2 − ΔT_floor.
+            #   Pump-OFF (measured ΔT < 1 OR BT2 ≤ BT3): NIBE shuts down;
+            #     BT3 cools passively toward indoor air temperature.
+            # COOLING:
+            #   Pump-ON  (BT2 < BT3 AND measured ΔT ≤ -1): forced cooling
+            #     drives BT3 toward BT2 + ΔT_floor.
+            #   Pump-OFF (measured ΔT > -1 OR BT2 ≥ BT3): HP idle;
+            #     BT3 warms passively toward indoor air temperature.
             if step == 0:
                 t_slab = (
                     float(inlet_temp)
                     if inlet_temp is not None
                     else float(outlet_temp)
                 )
-            pump_on = (
-                float(outlet_temp) > t_slab and measured_delta_t >= 1.0
-            )
+            if _traj_climate_mode == "cooling":
+                pump_on = (
+                    float(outlet_temp) < t_slab and measured_delta_t <= -1.0
+                )
+            else:
+                pump_on = (
+                    float(outlet_temp) > t_slab and measured_delta_t >= 1.0
+                )
             if pump_on:
                 alpha = min(1.0, time_step_hours / self.slab_time_constant_hours)
-                t_slab_target = float(outlet_temp) - delta_t_floor
+                if _traj_climate_mode == "cooling":
+                    # Cooling: slab target is outlet + delta_t_floor
+                    # (water warms as it absorbs heat from slab)
+                    t_slab_target = float(outlet_temp) + delta_t_floor
+                else:
+                    t_slab_target = float(outlet_temp) - delta_t_floor
                 t_slab = t_slab + alpha * (t_slab_target - t_slab)
-                # Floor emits heat based on mean water temp across the loop
+                # Floor effective temp = mean water temp across the loop
                 t_effective = (float(outlet_temp) + t_slab) / 2.0
             else:  # pump off: passive cooling toward indoor air
                 alpha_passive = 1.0 - np.exp(

@@ -79,6 +79,9 @@ def convert_addon_to_env(config):
         'TARGET_INDOOR_TEMP_ENTITY_ID': config.get(
             'target_indoor_temp_entity', ''
         ),
+        'TARGET_INDOOR_TEMP_COOLING_ENTITY_ID': config.get(
+            'target_indoor_temp_cooling_entity', ''
+        ),
         'INDOOR_TEMP_ENTITY_ID': config.get('indoor_temp_entity', ''),
         'OUTDOOR_TEMP_ENTITY_ID': config.get('outdoor_temp_entity', ''),
         'HEATING_STATUS_ENTITY_ID': config.get('heating_control_entity', ''),

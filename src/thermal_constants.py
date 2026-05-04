@@ -64,17 +64,28 @@ class PhysicsConstants:
     MIN_EFFECTIVENESS = 0.01   # Minimum outlet effectiveness (1%)
     MAX_EFFECTIVENESS = 1.0    # Maximum outlet effectiveness (100%)
     
-    # Gradient calculation epsilon values (Phase 3.2 addition)
+    # Gradient calculation epsilon values
+    # Calibrated via scripts/epsilon_sensitivity_analysis.py so that each
+    # epsilon produces a ΔT of ~0.1–0.2 °C in the finite-difference, keeping
+    # the gradient in the linear regime while staying above float noise.
     # Hours - step size for thermal time constant gradients
-    THERMAL_TIME_CONSTANT_EPSILON = 2.0
+    THERMAL_TIME_CONSTANT_EPSILON = 0.2
     # Step size for heat loss coefficient gradients
-    HEAT_LOSS_COEFFICIENT_EPSILON = 0.005
+    HEAT_LOSS_COEFFICIENT_EPSILON = 0.008
     # Step size for outlet effectiveness gradients
-    OUTLET_EFFECTIVENESS_EPSILON = 0.05
+    OUTLET_EFFECTIVENESS_EPSILON = 0.1
     # Step size for PV heat weight gradients
     PV_HEAT_WEIGHT_EPSILON = 0.0005
     # Step size for TV heat weight gradients
-    TV_HEAT_WEIGHT_EPSILON = 0.05
+    TV_HEAT_WEIGHT_EPSILON = 0.1
+    # Minutes - step size for solar lag gradients. Keep this conservative
+    # because the current runtime replay path cannot reach the target signal
+    # window even at much larger perturbations.
+    SOLAR_LAG_EPSILON = 5.0
+    # Hours - step size for slab time constant gradients. Runtime replay
+    # calibration shows 1.595 reaches the target signal window while
+    # remaining in the linear regime.
+    SLAB_TIME_CONSTANT_EPSILON = 1.595
 
     # Solar gain saturation cap (°C)
     # Represents the maximum direct temperature-equivalent indoor warming

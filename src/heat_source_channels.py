@@ -123,18 +123,27 @@ def _is_heat_pump_active(context: Dict) -> bool:
     if explicit_state is not None:
         return bool(explicit_state)
 
+    climate_mode = context.get("climate_mode", "heating")
     thermal_power = _to_float(context.get("thermal_power", 0.0))
-    if thermal_power >= getattr(config, "HP_ACTIVE_MIN_POWER_KW", 0.05):
-        return True
-
     delta_t = _to_float(context.get("delta_t", 0.0))
-    if delta_t > 0.5:
-        return True
-
     outlet = _to_float(context.get("outlet_temp", 0.0))
     indoor = _to_float(context.get("current_indoor", 0.0))
     inlet = _to_float(context.get("inlet_temp", indoor))
-    return outlet > indoor + 1.0 and outlet > inlet + 0.5
+
+    if climate_mode == "cooling":
+        # Cooling: thermal power is negative, delta_t is negative
+        if thermal_power <= getattr(config, "COOLING_MIN_THERMAL_POWER_KW", -0.5):
+            return True
+        if delta_t < -0.5:
+            return True
+        return outlet < indoor - 1.0 and outlet < inlet - 0.5
+    else:
+        # Heating (default)
+        if thermal_power >= getattr(config, "HEATING_MIN_THERMAL_POWER_KW", 0.5):
+            return True
+        if delta_t > 0.5:
+            return True
+        return outlet > indoor + 1.0 and outlet > inlet + 0.5
 
 
 def _average_recent_error(history: List[Dict]) -> Optional[float]:
@@ -334,6 +343,10 @@ class HeatPumpChannel(HeatSourceChannel):
             return 0.0
         outlet = context.get("outlet_temp", 40.0)
         indoor = context.get("current_indoor", 21.0)
+        climate_mode = context.get("climate_mode", "heating")
+        if climate_mode == "cooling":
+            # Cooling: outlet < indoor, contribution is negative (heat extraction)
+            return self.outlet_effectiveness * min(0.0, outlet - indoor)
         return self.outlet_effectiveness * max(0.0, outlet - indoor)
 
     def estimate_decay_contribution(

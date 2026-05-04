@@ -1,6 +1,84 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Cooling Inlet Guard)
+## 🎯 CURRENT STATUS - May 2026 (Slab Epsilon Finalization)
+
+### ✅ **Finalized slab epsilon after runtime notebook rerun**
+
+**Status**: **COMPLETED**
+
+Applied the runtime-replay follow-up from `notebooks/analysis/02_epsilon_calibration_review.ipynb`. `SLAB_TIME_CONSTANT_EPSILON` now matches the notebook-recommended linear value (0.5 → 1.595), while `SOLAR_LAG_EPSILON` remains 5.0 because the current runtime replay path still cannot reach the target signal window even at the best sweep candidate.
+
+Files changed:
+- `src/thermal_constants.py` — Raised `SLAB_TIME_CONSTANT_EPSILON` to 1.595 and documented why `SOLAR_LAG_EPSILON` stays unchanged
+- `CHANGELOG.md` — Merged duplicate `Changed` headings and recorded the slab/solar decision
+- `memory-bank/progress.md` — Added milestone entry for the calibration follow-up
+- `memory-bank/activeContext.md` — Recorded the final slab/solar epsilon decision
+
+---
+
+## 🎯 CURRENT STATUS - May 2026 (Epsilon Recalibration)
+
+### ✅ **Recalibrated Finite-Difference Gradient Epsilon Values**
+
+**Status**: **COMPLETED**
+
+Systematically calibrated all 7 learnable-parameter epsilon values using a sensitivity analysis script (`scripts/epsilon_sensitivity_analysis.py`). Previous values were hand-tuned with relative epsilon varying 15× across parameters (3.1%–45.6% of default). New values target ΔT ≈ 0.1–0.3°C per perturbation.
+
+Files changed:
+- `src/thermal_constants.py` — Updated 4 epsilon values, added 2 new constants (`SOLAR_LAG_EPSILON`, `SLAB_TIME_CONSTANT_EPSILON`)
+- `src/thermal_equilibrium_model.py` — `_calculate_solar_lag_gradient` and `_calculate_slab_time_constant_gradient` now use `PhysicsConstants` instead of hardcoded values
+- `tests/unit/test_learning_stability.py` — Added `TestEpsilonConstants` class with 8 tests
+- `scripts/epsilon_sensitivity_analysis.py` — New calibration script
+
+---
+
+## 🎯 CURRENT STATUS - May 2026 (Persisted Learning Context In Cooling)
+
+### ✅ **FIX: Previous-cycle learning now reuses persisted mode/target and mode-aware demand features**
+
+**Status**: **COMPLETED**
+
+Previous-cycle online learning could back-learn with the current cycle's mode and target after a mode change, while `build_physics_features()` still encoded cooling demand with heating semantics and re-read the default heating target.
+
+Fixes implemented:
+1. `src/state_manager.py` now persists `last_climate_mode` and `last_target_indoor_temp`
+2. `src/main.py` now saves those values each cycle and reuses them for next-cycle online learning instead of live HA state
+3. `src/main.py` switches the model wrapper to the previous cycle's persisted mode before feedback learning runs
+4. `src/physics_features.py` now accepts `climate_mode` and `target_indoor_temp_override`, uses the resolved cooling target consistently, and computes forecast demand with mode-aware sign semantics
+5. Regression tests added for persisted learning context and cooling/heating forecast demand behavior
+
+21 touched-slice tests pass.
+
+**Files changed**: `src/state_manager.py`, `src/main.py`, `src/physics_features.py`, `tests/integration/test_main.py`, `tests/unit/test_physics_features.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 CURRENT STATUS - May 2026 (Cooling Mode Comprehensive Bug Fixes)
+
+### ✅ **FIX: 12 cooling mode bugs — HP learning, slab model, optimization, short-cycling**
+
+**Status**: **COMPLETED**
+
+The cooling mode pipeline was reusing heating logic without mode-aware adaptation, causing:
+- HP channel never learning (0 history entries after 69 cycles)
+- Slab model permanently in passive mode during cooling
+- PV surplus / price offsets working backwards (less cooling when more free energy)
+- HP short-cycling without proper prevention
+
+Fixes implemented across 7 phases:
+1. **Phase 1** — HP active detection (`_is_heat_pump_active`), slab pump_on gate, HP-OFF delta_t floor, early climate mode detection
+2. **Phase 2** — Cooling baselines: `pv_heat_weight` 0.0003→0.002, `slab_time_constant_hours` 0.8→3.19
+3. **Phase 3** — `TARGET_INDOOR_TEMP_COOLING_ENTITY_ID` config, PV surplus/price offset inversion
+4. **Phase 4** — `heating_demand_forecast` hardcoded 21°C → `target_temp`
+5. **Phase 5** — Cooling cycle gate state machine (RUNNING/RECOVERY) replacing simple inlet guard
+
+19 new tests, 997 pass (0 regressions).
+
+**Files changed**: `src/heat_source_channels.py`, `src/thermal_equilibrium_model.py`, `src/model_wrapper.py`, `src/main.py`, `src/config.py`, `src/thermal_config.py`, `src/physics_features.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `.env_sample`, `tests/unit/test_cooling_bugfixes.py`, `tests/unit/test_unified_thermal_state_cooling.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 PREVIOUS STATUS - May 2026 (Cooling Inlet Guard)
 
 ### ✅ **FIX: HP idle clamp when outlet ≥ inlet − MIN_COOLING_DELTA_K in cooling mode**
 

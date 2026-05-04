@@ -331,6 +331,152 @@ def test_main_online_learning_passes_previous_cycle_heat_source_context(
 @patch("src.main.simplified_outlet_prediction")
 @patch("src.main.load_state")
 @patch("src.main.save_state")
+def test_main_online_learning_uses_persisted_previous_cycle_mode_and_target(
+    mock_save_state,
+    mock_load_state,
+    mock_simplified_outlet_prediction,
+    mock_create_influx_service,
+    mock_create_ha_client,
+    mock_build_features,
+    mock_get_attributes,
+):
+    """Previous-cycle learning must use the persisted mode and target, not current HA state."""
+    mock_ha_instance = MagicMock()
+    mock_create_ha_client.return_value = mock_ha_instance
+    mock_get_attributes.side_effect = lambda *args: {}
+
+    mock_influx_instance = MagicMock()
+    mock_create_influx_service.return_value = mock_influx_instance
+
+    with patch.object(config, "SHADOW_MODE", False), patch.object(
+        config, "INDOOR_TEMP_ENTITY_ID", "sensor.test_indoor_temp"
+    ), patch.object(
+        config,
+        "AVG_OTHER_ROOMS_TEMP_ENTITY_ID",
+        "sensor.test_avg_other_rooms_temp",
+    ), patch.object(
+        config,
+        "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID",
+        "input_number.cooling_target",
+    ):
+        all_states = {
+            config.HEATING_STATUS_ENTITY_ID: {"state": "heat"},
+            config.ML_HEATING_CONTROL_ENTITY_ID: {"state": "on"},
+            config.TARGET_INDOOR_TEMP_ENTITY_ID: {"state": "21.0"},
+            config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID: {"state": "19.0"},
+            config.INDOOR_TEMP_ENTITY_ID: {"state": "21.0"},
+            config.OUTDOOR_TEMP_ENTITY_ID: {"state": "10.0"},
+            config.ACTUAL_OUTLET_TEMP_ENTITY_ID: {"state": "45.0"},
+            config.AVG_OTHER_ROOMS_TEMP_ENTITY_ID: {"state": "19.5"},
+            config.FIREPLACE_STATUS_ENTITY_ID: {"state": "off"},
+            config.OPENWEATHERMAP_TEMP_ENTITY_ID: {"state": "9.0"},
+            config.DHW_STATUS_ENTITY_ID: {"state": "off"},
+            config.DEFROST_STATUS_ENTITY_ID: {"state": "off"},
+            config.DISINFECTION_STATUS_ENTITY_ID: {"state": "off"},
+            config.DHW_BOOST_HEATER_STATUS_ENTITY_ID: {"state": "off"},
+            config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID: {"state": "18.4"},
+            config.TV_STATUS_ENTITY_ID: {"state": "off"},
+            config.PV_POWER_ENTITY_ID: {"state": "0.0"},
+            config.PV_FORECAST_ENTITY_ID: {
+                "state": "0.0",
+                "attributes": {},
+            },
+        }
+
+        mock_ha_instance.get_all_states.side_effect = [
+            all_states,
+            all_states,
+            KeyboardInterrupt("End of test loop"),
+        ]
+
+        def get_state_side_effect(entity_id, states_dict, is_binary=False):
+            entity_info = states_dict.get(entity_id)
+            if not entity_info:
+                return None
+            state = entity_info.get("state")
+            if is_binary:
+                return state == "on"
+            try:
+                return float(state)
+            except (ValueError, TypeError):
+                return state
+
+        mock_ha_instance.get_state.side_effect = get_state_side_effect
+
+        mock_load_state.return_value = SystemState(
+            last_run_features={
+                "outdoor_temp": 24.0,
+                "pv_now": 0.0,
+                "pv_power_history": [],
+                "tv_on": 0.0,
+                "thermal_power_kw": -2.0,
+                "delta_t": -2.4,
+                "inlet_temp": 22.0,
+                "indoor_temp_gradient": 0.02,
+                "indoor_temp_delta_60m": 0.1,
+                "living_room_temp": 23.0,
+                "target_temp": 19.0,
+                "cloud_cover_forecast_1h": 40.0,
+                "cloud_cover_forecast_2h": 45.0,
+                "cloud_cover_forecast_3h": 50.0,
+                "cloud_cover_forecast_4h": 55.0,
+                "cloud_cover_forecast_5h": 60.0,
+                "cloud_cover_forecast_6h": 65.0,
+            },
+            last_indoor_temp=23.5,
+            last_avg_other_rooms_temp=22.8,
+            last_fireplace_on=False,
+            last_final_temp=18.6,
+            last_climate_mode="cooling",
+            last_target_indoor_temp=19.0,
+        )
+        mock_simplified_outlet_prediction.return_value = (
+            35.0,
+            0.9,
+            {"predicted_indoor": 21.1},
+        )
+
+        from src import main
+
+        with patch.object(main, "time") as mock_time, patch(
+            "src.model_wrapper.get_enhanced_model_wrapper"
+        ) as mock_get_wrapper, patch.object(
+            BlockingStateManager, "poll_for_blocking"
+        ) as mock_poll_blocking:
+            mock_wrapper = MagicMock()
+            mock_get_wrapper.return_value = mock_wrapper
+            mock_wrapper.predict_indoor_temp.return_value = 21.0
+            mock_wrapper.thermal_model.predict_thermal_trajectory.return_value = {
+                "trajectory": [23.1]
+            }
+
+            mock_time.time.side_effect = [1000.0 + idx for idx in range(20)]
+            mock_time.sleep.return_value = None
+
+            with patch("sys.argv", ["main.py"]):
+                try:
+                    main.main()
+                except KeyboardInterrupt:
+                    pass
+
+    mock_wrapper.learn_from_prediction_feedback.assert_called_once()
+    learn_call = mock_wrapper.learn_from_prediction_feedback.call_args.kwargs
+    learning_context = learn_call["prediction_context"]
+
+    assert learning_context["climate_mode"] == "cooling"
+    assert learning_context["target_temp"] == 19.0
+    assert learning_context["outlet_temp"] == 18.4
+    mock_poll_blocking.assert_called_once()
+    mock_build_features.assert_called_once()
+
+
+@patch("src.main.get_sensor_attributes")
+@patch("src.main.build_physics_features", return_value=({}, []))
+@patch("src.main.create_ha_client")
+@patch("src.main.create_influx_service")
+@patch("src.main.simplified_outlet_prediction")
+@patch("src.main.load_state")
+@patch("src.main.save_state")
 def test_main_dynamic_shadow_mode_suppresses_live_control_outputs(
     mock_save_state,
     mock_load_state,
