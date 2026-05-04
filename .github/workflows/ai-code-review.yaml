@@ -18,11 +18,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Get PR diff
         id: pr_diff
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,6 +49,8 @@ jobs:
         id: review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           pip install openai==1.* 2>/dev/null
 
@@ -160,10 +160,6 @@ jobs:
           Path("/tmp/review_result.json").write_text(json.dumps(result, indent=2))
           print(json.dumps(result, indent=2))
           PYTHON_SCRIPT
-
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
 
       - name: Post review comment
         if: steps.pr_diff.outputs.file_count != '0'

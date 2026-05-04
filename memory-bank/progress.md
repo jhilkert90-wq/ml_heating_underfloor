@@ -1,5 +1,22 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - May 2026 (CI Workflow Fixes)
+
+### ✅ **Fixed workflow yaml error and upgraded actions to Node.js 24**
+
+**Status**: **COMPLETED**
+
+Fixed a duplicate `env:` key error in `ai-code-review.yaml` and upgraded all GitHub Actions to Node.js 24-compatible versions to eliminate deprecation warnings.
+
+Files changed:
+- `.github/workflows/ai-code-review.yaml` — Merged duplicate `env:` blocks; upgraded `actions/checkout` v4→v6
+- `.github/workflows/build.yaml` — Upgraded `actions/checkout` v4→v6, `docker/login-action` v3→v4, `docker/setup-qemu-action` v3→v4, `docker/setup-buildx-action` v3→v4, `docker/build-push-action` v5→v7
+- `CHANGELOG.md` — Added entries under `[Unreleased]`
+- `memory-bank/progress.md` — Added milestone entry
+- `memory-bank/activeContext.md` — Added context entry
+
+---
+
 ## 🎯 CURRENT STATUS - May 2026 (Slab Epsilon Finalization)
 
 ### ✅ **Finalized slab epsilon after runtime notebook rerun**
