@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HeatPumpChannel `_learn_from_recent()` mode-aware fixes**: Delta-t filter now uses `< -0.5` for cooling (was `> 0.5`, rejecting all cooling samples). Outlet-effectiveness gradient sign is negated for cooling (`-avg_error`) to correctly drive OE upward when the model under-predicts cooling. Added mode label to the self-learned debug log.
 - **Trajectory steps ignored when `PV_TRAJ_SCALING_ENABLED=true` and forecast mode disabled**: Removed the `PV_TRAJ_SCALING_ENABLED` block that pre-mutated `config.TRAJECTORY_STEPS` to `PV_TRAJ_MAX_STEPS` before feature-building. `physics_features.py` already expands the forecast horizon via `_n_fc_full = max(TRAJECTORY_STEPS, PV_TRAJ_MAX_STEPS)` when `PV_TRAJ_FORECAST_MODE_ENABLED=true`, making the pre-mutation redundant when forecast mode is on and harmful (TRAJECTORY_STEPS never reset) when forecast mode is off.
 - **`temperature_control.py` HP-active detection**: Made `heat_pump_active` inference mode-aware — cooling path checks `thermal_power_kw <= COOLING_MIN_THERMAL_POWER_KW` or `delta_t < -0.5`; heating path retains the original `>= HP_ACTIVE_MIN_POWER_KW` / `delta_t > 0.5` logic.
+- **Cooling recovery gate too aggressive**: RUNNING→RECOVERY transition now only fires when the HP was actually running (measured `delta_t < -HP_ACTIVE_COOLING_DELTA_T`). When the HP was already idle and the model wants outlet close to inlet (mild cooling demand), the gate stays in RUNNING and simply clamps outlet to inlet_temp. This prevents a deadlock where mild cooling need → RECOVERY, then RECOVERY→RUNNING also requires a 2K gap that is never met, leaving the HP permanently disabled.
+
+### Added
+- `HP_ACTIVE_COOLING_DELTA_T` config constant (default `0.5` K) — threshold for the cooling cycle gate to determine whether the HP was actively cooling in the previous cycle.
 
 ## [0.2.0] - 2026-02-10
 

@@ -1,5 +1,22 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - May 2026 (Cooling recovery gate fix)
+
+### ✅ **Cooling recovery gate deadlock resolved**
+
+**Status**: **COMPLETED**
+
+Fixed the last remaining cooling bug: RUNNING→RECOVERY transition was firing purely on model-computed outlet being within `MIN_COOLING_DELTA_K` of inlet, regardless of whether the HP was actually running. This caused a deadlock for mild cooling demand: mild need → RECOVERY, but RECOVERY→RUNNING also requires a 2K gap → HP permanently disabled.
+
+Fix: RUNNING→RECOVERY now only fires when measured `delta_t < -HP_ACTIVE_COOLING_DELTA_T` (HP was actually running). When HP was already idle, clamp outlet to inlet_temp without changing gate state. New config constant `HP_ACTIVE_COOLING_DELTA_T=0.5`.
+
+Files changed:
+- `src/model_wrapper.py` — RUNNING→RECOVERY gate conditioned on measured delta_t
+- `src/config.py` — Added `HP_ACTIVE_COOLING_DELTA_T`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ## 🎯 CURRENT STATUS - May 2026 (Cooling-mode learning & trajectory steps fixes)
 
 ### ✅ **HP channel learning in cooling mode + trajectory step override bug**

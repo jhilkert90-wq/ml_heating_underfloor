@@ -641,6 +641,15 @@ MIN_COOLING_DELTA_K: float = float(os.getenv("MIN_COOLING_DELTA_K", "2.0"))
 COOLING_SHUTDOWN_MARGIN_K: float = float(
     os.getenv("COOLING_SHUTDOWN_MARGIN_K", "1.0")
 )
+# Minimum measured delta_t (outlet − inlet) magnitude required for the
+# cooling cycle gate to consider the HP as "actually running".  Only when
+# the HP was actively cooling (delta_t more negative than this threshold)
+# will the gate transition RUNNING → RECOVERY.  When the HP was already
+# idle (|delta_t| < threshold) the gate stays in RUNNING but clamps the
+# outlet to inlet_temp so the HP can restart immediately when demand rises.
+HP_ACTIVE_COOLING_DELTA_T: float = float(
+    os.getenv("HP_ACTIVE_COOLING_DELTA_T", "0.5")
+)
 
 # Thermal Model Parameters
 PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.002"))

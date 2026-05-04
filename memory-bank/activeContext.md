@@ -1,6 +1,20 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Cooling-mode HP learning + trajectory steps fix — May 2026**
+### ✅ **Cooling recovery gate deadlock fix — May 2026**
+
+#### **What changed**
+- `src/model_wrapper.py` — RUNNING→RECOVERY transition now checks `_measured_delta_t < -HP_ACTIVE_COOLING_DELTA_T` (HP actually ran) before entering RECOVERY. When HP was idle and model wants mild cooling (outlet close to inlet), gate stays in RUNNING and clamps outlet to inlet_temp without entering RECOVERY. Log message distinguishes the two cases.
+- `src/config.py` — Added `HP_ACTIVE_COOLING_DELTA_T: float = 0.5` K threshold for the running detection check.
+
+#### **Why**
+The previous gate logic triggered RUNNING→RECOVERY whenever model-computed outlet was within `MIN_COOLING_DELTA_K=2K` of inlet, regardless of whether the HP was actually running. When cooling demand is mild (room close to target), the model naturally wants outlet ≈ inlet. Old code entered RECOVERY immediately. Then RECOVERY→RUNNING also requires `inlet − outlet > 2K`, which is only satisfied for strong cooling demand — so the HP could be permanently locked out of running even when needed. The fix: only enter RECOVERY after the HP was actually running (observed cold delta_t), not preemptively from model computation.
+
+#### **Files changed**
+- `src/model_wrapper.py`, `src/config.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 
 #### **What changed**
 - `src/heat_source_channels.py` — `route_learning()`: added cooling-mode early return that always routes to `heat_pump` and co-routes `pv` if active, bypassing the PV-isolation block that was keeping HP history permanently empty on sunny cooling days. `HeatPumpChannel._learn_from_recent()`: delta_t filter is now `< -0.5` in cooling and `> 0.5` in heating; `outlet_effectiveness` gradient sign is negated for cooling (`-avg_error`); mode label added to debug log.
