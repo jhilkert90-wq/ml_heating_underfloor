@@ -1376,19 +1376,12 @@ def main():
                     )
                     prediction_indoor_temp = _extrapolated
 
-            # --- Step 3a: Ensure forecast arrays cover the maximum possible
-            # horizon before feature building so that dynamic trajectory
-            # scaling can later shrink the horizon without hitting missing-key
-            # fallbacks.  When PV_TRAJ_SCALING_ENABLED the effective
-            # TRAJECTORY_STEPS is determined *after* features are built (we
-            # need pv_now from the features dict); setting the horizon to
-            # PV_TRAJ_MAX_STEPS here guarantees all forecast keys are
-            # populated for any step count the scaling might choose.
-            if getattr(config, "PV_TRAJ_SCALING_ENABLED", False):
-                config.TRAJECTORY_STEPS = int(
-                    getattr(config, "PV_TRAJ_MAX_STEPS", 12)
-                )
-
+            # --- Step 3a: Feature building ---
+            # When PV_TRAJ_FORECAST_MODE_ENABLED is true, physics_features.py
+            # internally expands the forecast horizon to
+            # max(TRAJECTORY_STEPS, PV_TRAJ_MAX_STEPS) via _n_fc_full, so all
+            # keys needed for any dynamic step count are always present.
+            # There is no need to pre-mutate config.TRAJECTORY_STEPS here.
             features, outlet_history = build_physics_features(
                 ha_client,
                 influx_service,

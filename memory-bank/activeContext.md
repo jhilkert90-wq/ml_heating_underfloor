@@ -1,6 +1,23 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Slab epsilon finalized after notebook rerun — May 2026**
+### ✅ **Cooling-mode HP learning + trajectory steps fix — May 2026**
+
+#### **What changed**
+- `src/heat_source_channels.py` — `route_learning()`: added cooling-mode early return that always routes to `heat_pump` and co-routes `pv` if active, bypassing the PV-isolation block that was keeping HP history permanently empty on sunny cooling days. `HeatPumpChannel._learn_from_recent()`: delta_t filter is now `< -0.5` in cooling and `> 0.5` in heating; `outlet_effectiveness` gradient sign is negated for cooling (`-avg_error`); mode label added to debug log.
+- `src/main.py` — Removed the `PV_TRAJ_SCALING_ENABLED` block (lines were: `if getattr(config, "PV_TRAJ_SCALING_ENABLED", False): config.TRAJECTORY_STEPS = PV_TRAJ_MAX_STEPS`) that never reset when forecast mode was disabled, causing TRAJECTORY_STEPS to be overridden to PV_TRAJ_MAX_STEPS regardless of the user's configured value.
+- `src/temperature_control.py` — `_perform_online_learning()`: `heat_pump_active` detection now branches on `climate_mode`; cooling path uses `thermal_power_kw <= COOLING_MIN_THERMAL_POWER_KW or delta_t < -0.5`.
+
+#### **Why**
+Log analysis showed HP channel parameters (`tau`, `HLC`, `outlet_effectiveness`) never changed across 60+ cooling cycles. Root cause: PV was always active on sunny days, making `any_external_active=True` in `route_learning()`, which routed 100% of records to SolarChannel and left HP history empty. Secondary fix: once HP had records, the `delta_t > 0.5` filter in `_learn_from_recent()` would have rejected all cooling samples (delta_t is negative in cooling), and the OE gradient would have driven the parameter in the wrong direction.
+
+Trajectory steps bug: user set `TRAJECTORY_STEPS=4` but model used 6 because `PV_TRAJ_SCALING_ENABLED=true` in env overwrote the value to `PV_TRAJ_MAX_STEPS=6` before feature-building; since `PV_TRAJ_FORECAST_MODE_ENABLED=false`, the forecast block never ran to correct it. `physics_features.py` already handles `_n_fc_full` expansion internally, making the pre-mutation block redundant.
+
+#### **Files changed**
+- `src/heat_source_channels.py`, `src/main.py`, `src/temperature_control.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 
 #### **What changed**
 - `src/thermal_constants.py` — Increased `SLAB_TIME_CONSTANT_EPSILON` from 0.5 to 1.595 after rerunning the runtime-replay calibration notebook; kept `SOLAR_LAG_EPSILON` at 5.0 and documented why it remains intentionally conservative

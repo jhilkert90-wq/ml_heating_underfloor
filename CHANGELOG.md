@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **HP channel never learns in cooling mode**: `route_learning()` now short-circuits for cooling mode before the PV-isolation block, always routing a record to the HP channel. PV co-learns in parallel when active. Previously, sunny cooling days had PV always active, so `any_external_active` was always `True` and HP history stayed permanently empty.
+- **HeatPumpChannel `_learn_from_recent()` mode-aware fixes**: Delta-t filter now uses `< -0.5` for cooling (was `> 0.5`, rejecting all cooling samples). Outlet-effectiveness gradient sign is negated for cooling (`-avg_error`) to correctly drive OE upward when the model under-predicts cooling. Added mode label to the self-learned debug log.
+- **Trajectory steps ignored when `PV_TRAJ_SCALING_ENABLED=true` and forecast mode disabled**: Removed the `PV_TRAJ_SCALING_ENABLED` block that pre-mutated `config.TRAJECTORY_STEPS` to `PV_TRAJ_MAX_STEPS` before feature-building. `physics_features.py` already expands the forecast horizon via `_n_fc_full = max(TRAJECTORY_STEPS, PV_TRAJ_MAX_STEPS)` when `PV_TRAJ_FORECAST_MODE_ENABLED=true`, making the pre-mutation redundant when forecast mode is on and harmful (TRAJECTORY_STEPS never reset) when forecast mode is off.
+- **`temperature_control.py` HP-active detection**: Made `heat_pump_active` inference mode-aware — cooling path checks `thermal_power_kw <= COOLING_MIN_THERMAL_POWER_KW` or `delta_t < -0.5`; heating path retains the original `>= HP_ACTIVE_MIN_POWER_KW` / `delta_t > 0.5` logic.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

@@ -1,6 +1,26 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (CI Workflow Fixes)
+## 🎯 CURRENT STATUS - May 2026 (Cooling-mode learning & trajectory steps fixes)
+
+### ✅ **HP channel learning in cooling mode + trajectory step override bug**
+
+**Status**: **COMPLETED**
+
+Fixed two logical bugs identified via log analysis:
+
+1. **HP never learned in cooling mode** — `route_learning()` was blocked by `any_external_active` (always `True` on sunny days because PV is active), so the HP channel never received any records. Added a cooling-mode early path that always routes to HP and co-routes PV in parallel.
+2. **`HeatPumpChannel._learn_from_recent()` mode blindness** — delta_t filter (`> 0.5`) rejected all cooling samples (delta_t is negative in cooling). Outlet-effectiveness gradient sign was wrong for cooling. Both fixed with mode-aware logic.
+3. **Trajectory steps override bug** — `PV_TRAJ_SCALING_ENABLED` block in `main.py` mutated `config.TRAJECTORY_STEPS = PV_TRAJ_MAX_STEPS` before feature-building, and never reset it when `PV_TRAJ_FORECAST_MODE_ENABLED=False`. Removed the block; `physics_features.py` already handles `_n_fc_full` expansion internally.
+4. **`temperature_control.py` HP-active detection** — Fixed heating-only `heat_pump_active` detection to be mode-aware (cooling path uses negative thresholds).
+
+Files changed:
+- `src/heat_source_channels.py` — `route_learning()` cooling-mode path; `HeatPumpChannel._learn_from_recent()` mode-aware delta_t filter and OE gradient
+- `src/main.py` — Removed `PV_TRAJ_SCALING_ENABLED` pre-mutation block
+- `src/temperature_control.py` — Mode-aware `heat_pump_active` detection
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 
 ### ✅ **Fixed workflow yaml error and upgraded actions to Node.js 24**
 
