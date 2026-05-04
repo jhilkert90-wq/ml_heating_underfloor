@@ -1,5 +1,49 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.23] - 2026-05-04
+
+### Fixed
+- Duplicate `env:` key in `.github/workflows/ai-code-review.yaml` (merged `PR_TITLE`/`PR_BODY` into the existing step `env:` block)
+
+### Changed
+- Updated GitHub Actions to Node.js 24-compatible versions: `actions/checkout` v4→v6, `docker/login-action` v3→v4, `docker/setup-qemu-action` v3→v4, `docker/setup-buildx-action` v3→v4, `docker/build-push-action` v5→v7
+
+### Changed
+- **Runtime-replay epsilon tuning**: Finalized finite-difference epsilon calibration using sensitivity analysis and the calibration review notebook so each runtime-reachable parameter produces ΔT ≈ 0.1–0.3°C while remaining in the linear regime
+  - `THERMAL_TIME_CONSTANT_EPSILON`: 2.0 → 0.2
+  - `HEAT_LOSS_COEFFICIENT_EPSILON`: 0.005 → 0.008
+  - `OUTLET_EFFECTIVENESS_EPSILON`: 0.05 → 0.1
+  - `TV_HEAT_WEIGHT_EPSILON`: 0.05 → 0.1
+  - `SLAB_TIME_CONSTANT_EPSILON`: 0.5 → 1.595
+  - `SOLAR_LAG_EPSILON`: kept at 5.0 because the current runtime replay path cannot reach the target signal window (best sweep at 22.5 only yields ΔT ≈ 0.0097°C)
+- **Consolidated epsilon constants**: Added `SOLAR_LAG_EPSILON` and `SLAB_TIME_CONSTANT_EPSILON` to `PhysicsConstants`; wrapper methods now reference constants instead of hardcoded values
+- `_is_heat_pump_active()` signature: now reads `climate_mode` from context dict
+- `_resolve_delta_t_floor()`: accepts optional `climate_mode` parameter for mode-aware behavior
+- `predict_thermal_trajectory()`: accepts `climate_mode` kwarg, propagated through binary search
+- `COOLING_DEFAULTS`: `pv_heat_weight` 0.0003 → 0.002, `slab_time_constant_hours` 0.8 → 3.19
+- `COOLING_BOUNDS`: `slab_time_constant_hours` upper bound 2.5 → 8.0
+- Cooling inlet guard replaced with full cooling cycle gate state machine
+- `main.py` learning context: removed inline `heat_pump_active` calculation, uses `_is_heat_pump_active()` via `climate_mode` in context
+
+### Added
+- **Cooling cycle gate** (Bug 11): State machine with `RUNNING`/`RECOVERY` states prevents HP short-cycling in cooling mode using gradient-based transitions with existing `cooling_shutdown_margin_k` parameter
+- **`TARGET_INDOOR_TEMP_COOLING_ENTITY_ID`** (Bug 5): Separate target temperature entity for cooling mode in `config.py`, `config.yaml`, `.env_sample`, and `config_adapter.py`
+- **Early climate mode detection** (Bug 3): Climate mode determined before learning step so learning context uses correct mode
+- Comprehensive cooling bugfix test suite (`test_cooling_bugfixes.py`) with 19 tests
+
+### Fixed
+- **Previous-cycle learning context after mode changes**: Persist `last_climate_mode` and `last_target_indoor_temp`, reuse them during next-cycle online learning, and switch the wrapper to the previous cycle's mode before feedback learning runs
+- **Cooling forecast demand semantics in feature building**: `build_physics_features()` now accepts climate mode plus a resolved target override, uses the cooling target consistently, and computes forecast demand as `forecast - target` in cooling mode
+- **HP active detection in cooling** (Bug 1): `_is_heat_pump_active()` now mode-aware — uses `HEATING_MIN_THERMAL_POWER_KW` (0.5) for heating, `COOLING_MIN_THERMAL_POWER_KW` (-0.5) for cooling; delta_t and outlet checks inverted for cooling
+- **Slab model pump_on gate** (Bug 1b): Slab pump-on detection in `thermal_equilibrium_model.py` now works for cooling (outlet < t_slab, delta_t <= -1.0)
+- **HP-OFF delta_t floor substitution** (Bug 1c): In cooling mode, HP-off detected when delta_t > -1.0 (not < 1.0), simulated delta_t is negative for binary search
+- **PV surplus offset inverted in cooling** (Bug 6): High PV now lowers target (more cooling) instead of raising it
+- **Price offset inverted in cooling** (Bug 7): Cheap electricity now lowers target in cooling mode
+- **`heating_demand_forecast` hardcoded 21°C** (Bug 8/9): Replaced with actual `target_temp_f` from sensor data
+- **Cooling `pv_heat_weight` 7× too low** (Bug 4): Set to 0.002 (same as heating — building property)
+- **Cooling `slab_time_constant_hours` wrong** (Bug 2): Set to 3.19h (same as heating — same slab mass)
+- **HP channel never learns in cooling**: All fixes combined enable HP learning in cooling mode (previously 0 history entries after 69 cycles)
+
 ## [0.2.22] - 2026-05-03
 
 ### Fixed
