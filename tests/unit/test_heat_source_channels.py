@@ -316,17 +316,19 @@ def test_heat_pump_cooling_delta_t_floor_learns_positive_magnitude():
     channel = HeatPumpChannel()
     channel.delta_t_floor = 1.0
 
-    for _ in range(_get_min_records_for_learning()):
-        channel.record_learning(
-            1.0,
-            {
-                "climate_mode": "cooling",
-                "delta_t": -4.0,
-                "raw_prediction_error": 1.0,
-            },
-        )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(heat_source_channels.config, "ADAPTIVE_LEARNING_RATE", 0.01)
+        for _ in range(_get_min_records_for_learning()):
+            channel.record_learning(
+                1.0,
+                {
+                    "climate_mode": "cooling",
+                    "delta_t": -4.0,
+                    "raw_prediction_error": 1.0,
+                },
+            )
 
-    assert channel.delta_t_floor > 1.0
+    assert channel.delta_t_floor == pytest.approx(1.03)
 
 
 def test_heat_pump_self_learning_updates_hp_owned_model_parameters():
