@@ -337,13 +337,25 @@ class OnlineLearning:
             previous_indoor = current_indoor - actual_indoor_change
             thermal_power_kw = learning_features.get('thermal_power_kw')
             delta_t = learning_features.get('delta_t', 0.0)
-            heat_pump_active = bool(
-                (
-                    thermal_power_kw is not None
-                    and thermal_power_kw >= config.HP_ACTIVE_MIN_POWER_KW
+            climate_mode_tc = learning_features.get('climate_mode', 'heating')
+            if climate_mode_tc == "cooling":
+                heat_pump_active = bool(
+                    (
+                        thermal_power_kw is not None
+                        and thermal_power_kw <= getattr(
+                            config, "COOLING_MIN_THERMAL_POWER_KW", -0.5
+                        )
+                    )
+                    or delta_t < -0.5
                 )
-                or delta_t > 0.5
-            )
+            else:
+                heat_pump_active = bool(
+                    (
+                        thermal_power_kw is not None
+                        and thermal_power_kw >= config.HP_ACTIVE_MIN_POWER_KW
+                    )
+                    or delta_t > 0.5
+                )
             
             # Shadow mode vs Active mode learning context
             pv_now = learning_features.get('pv_now', 0.0)
@@ -382,6 +394,7 @@ class OnlineLearning:
                     'avg_cloud_cover': learning_features.get('avg_cloud_cover', 50.0),
                     'indoor_temp_gradient': learning_features.get('indoor_temp_gradient', 0.0),
                     'indoor_temp_delta_60m': learning_features.get('indoor_temp_delta_60m', 0.0),
+                    'climate_mode': climate_mode_tc,
                     # NO target temperature in shadow mode learning context!
                 }
                 
@@ -422,6 +435,7 @@ class OnlineLearning:
                     'avg_cloud_cover': learning_features.get('avg_cloud_cover', 50.0),
                     'indoor_temp_gradient': learning_features.get('indoor_temp_gradient', 0.0),
                     'indoor_temp_delta_60m': learning_features.get('indoor_temp_delta_60m', 0.0),
+                    'climate_mode': climate_mode_tc,
                 }
                 
                 # Calculate what the model predicted vs actual result

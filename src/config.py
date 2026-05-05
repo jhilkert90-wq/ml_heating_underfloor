@@ -641,7 +641,6 @@ MIN_COOLING_DELTA_K: float = float(os.getenv("MIN_COOLING_DELTA_K", "2.0"))
 COOLING_SHUTDOWN_MARGIN_K: float = float(
     os.getenv("COOLING_SHUTDOWN_MARGIN_K", "1.0")
 )
-
 # Thermal Model Parameters
 PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.002"))
 FIREPLACE_HEAT_WEIGHT: float = float(os.getenv("FIREPLACE_HEAT_WEIGHT", "5.0"))

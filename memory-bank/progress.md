@@ -1,6 +1,90 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (CI Workflow Fixes)
+## 🎯 CURRENT STATUS - May 2026 (Cooling test helper cleanup)
+
+### ✅ **Cooling test helper cleanup completed**
+
+**Status**: **COMPLETED**
+
+Applied the remaining review-driven cleanup in the cooling regression tests by simplifying `tests/unit/test_heat_source_channels.py::make_context()` to an override-based helper instead of a long parameter list. This keeps the new cooling routing/learning tests readable without changing production logic or test behavior.
+
+Files changed:
+- `tests/unit/test_heat_source_channels.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 CURRENT STATUS - May 2026 (Cooling follow-up review fixes)
+
+### ✅ **Cooling review follow-up fixes completed**
+
+**Status**: **COMPLETED**
+
+Addressed the remaining follow-up issues found during re-review of the cooling fixes. Cooling `delta_t_floor` learning now uses the positive magnitude of negative `delta_t` samples so the learned floor stays physically meaningful. `temperature_control.py` now carries `climate_mode` into both active and shadow `prediction_context` payloads so downstream routing/learning stays in cooling mode. Added focused regression tests for cooling HP+PV routing, PV decay co-routing, positive `delta_t_floor` learning, `climate_mode` propagation, and the RUNNING→RECOVERY gate branches.
+
+Files changed:
+- `src/heat_source_channels.py`
+- `src/temperature_control.py`
+- `tests/unit/test_heat_source_channels.py`
+- `tests/unit/test_temperature_control.py`
+- `tests/unit/test_cooling_mode.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 CURRENT STATUS - May 2026 (Cooling gate: use existing HP detection)
+
+### ✅ **Cooling gate HP detection unified**
+
+**Status**: **COMPLETED**
+
+Removed the `HP_ACTIVE_COOLING_DELTA_T` config constant added in the previous session. The cooling cycle gate RUNNING→RECOVERY transition now reuses `_is_heat_pump_active()` from `heat_source_channels.py` — the same helper used by `_learn_from_recent` and `temperature_control.py` — instead of a bespoke `delta_t < threshold` check. This ensures HP detection is consistent across the entire codebase (checks thermal_power, delta_t, and outlet-vs-inlet signals together).
+
+Files changed:
+- `src/model_wrapper.py` — import and use `_is_heat_pump_active`; build context dict from `_current_features`; updated log messages
+- `src/config.py` — removed `HP_ACTIVE_COOLING_DELTA_T`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 CURRENT STATUS - May 2026 (Cooling recovery gate fix)
+
+### ✅ **Cooling recovery gate deadlock resolved**
+
+**Status**: **COMPLETED**
+
+Fixed the last remaining cooling bug: RUNNING→RECOVERY transition was firing purely on model-computed outlet being within `MIN_COOLING_DELTA_K` of inlet, regardless of whether the HP was actually running. This caused a deadlock for mild cooling demand: mild need → RECOVERY, but RECOVERY→RUNNING also requires a 2K gap → HP permanently disabled.
+
+Fix: RUNNING→RECOVERY now only fires when measured `delta_t < -HP_ACTIVE_COOLING_DELTA_T` (HP was actually running). When HP was already idle, clamp outlet to inlet_temp without changing gate state. New config constant `HP_ACTIVE_COOLING_DELTA_T=0.5`.
+
+Files changed:
+- `src/model_wrapper.py` — RUNNING→RECOVERY gate conditioned on measured delta_t
+- `src/config.py` — Added `HP_ACTIVE_COOLING_DELTA_T`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## 🎯 CURRENT STATUS - May 2026 (Cooling-mode learning & trajectory steps fixes)
+
+### ✅ **HP channel learning in cooling mode + trajectory step override bug**
+
+**Status**: **COMPLETED**
+
+Fixed two logical bugs identified via log analysis:
+
+1. **HP never learned in cooling mode** — `route_learning()` was blocked by `any_external_active` (always `True` on sunny days because PV is active), so the HP channel never received any records. Added a cooling-mode early path that always routes to HP and co-routes PV in parallel.
+2. **`HeatPumpChannel._learn_from_recent()` mode blindness** — delta_t filter (`> 0.5`) rejected all cooling samples (delta_t is negative in cooling). Outlet-effectiveness gradient sign was wrong for cooling. Both fixed with mode-aware logic.
+3. **Trajectory steps override bug** — `PV_TRAJ_SCALING_ENABLED` block in `main.py` mutated `config.TRAJECTORY_STEPS = PV_TRAJ_MAX_STEPS` before feature-building, and never reset it when `PV_TRAJ_FORECAST_MODE_ENABLED=False`. Removed the block; `physics_features.py` already handles `_n_fc_full` expansion internally.
+4. **`temperature_control.py` HP-active detection** — Fixed heating-only `heat_pump_active` detection to be mode-aware (cooling path uses negative thresholds).
+
+Files changed:
+- `src/heat_source_channels.py` — `route_learning()` cooling-mode path; `HeatPumpChannel._learn_from_recent()` mode-aware delta_t filter and OE gradient
+- `src/main.py` — Removed `PV_TRAJ_SCALING_ENABLED` pre-mutation block
+- `src/temperature_control.py` — Mode-aware `heat_pump_active` detection
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 
 ### ✅ **Fixed workflow yaml error and upgraded actions to Node.js 24**
 

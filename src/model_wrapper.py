@@ -30,6 +30,7 @@ from src.ha_client import create_ha_client
 from src.adaptive_fireplace_learning import AdaptiveFireplaceLearning
 from src.prediction_context import prediction_context_manager
 from src.shadow_mode import resolve_shadow_mode
+from src.heat_source_channels import _is_heat_pump_active
 
 
 # Singleton pattern to prevent multiple model instantiation
@@ -557,8 +558,12 @@ class EnhancedModelWrapper:
             #              long next cooling cycle.
             #
             # Transition RUNNING → RECOVERY:
-            #   When the computed outlet is too close to inlet (HP
-            #   would short-cycle).
+            #   When HP was actually running (detected via _is_heat_pump_active:
+            #   thermal_power, delta_t, or outlet-vs-inlet signals) AND
+            #   computed outlet is too close to inlet (would short-cycle).
+            #   If the HP was already idle, the gate stays in RUNNING
+            #   but clamps outlet to inlet_temp so the HP can restart
+            #   as soon as demand rises (avoids deadlock for mild cooling).
             # Transition RECOVERY → RUNNING:
             #   When both conditions are met:
             #     1) inlet - required_outlet > MIN_COOLING_DELTA_K
@@ -604,20 +609,71 @@ class EnhancedModelWrapper:
                     ) > _effective_min
 
                     if self._cooling_cycle_state == "running":
-                        # Check if HP should enter recovery
+                        # Check if HP should enter recovery.
+                        # Only transition to RECOVERY when the HP was actually
+                        # running this cycle.  Use the same _is_heat_pump_active()
+                        # helper that _learn_from_recent and temperature_control
+                        # use so the detection logic is consistent across the
+                        # codebase (checks thermal_power, delta_t, and outlet vs
+                        # inlet/indoor signals together).
+                        # If the HP was already idle the model wanting outlet
+                        # close to inlet just means "circulator-only is enough" —
+                        # entering RECOVERY here would create a deadlock: mild
+                        # cooling need → RECOVERY, then RECOVERY→RUNNING also
+                        # requires a 2K gap that will never be satisfied while
+                        # cooling demand is low.
+                        _features_ctx = getattr(self, "_current_features", {}) or {}
+                        _hp_ctx = {
+                            "climate_mode": "cooling",
+                            "thermal_power": float(
+                                _features_ctx.get("thermal_power_kw", 0.0)
+                            ),
+                            "delta_t": float(_features_ctx.get("delta_t", 0.0)),
+                            "outlet_temp": float(
+                                _features_ctx.get("outlet_temp", 0.0)
+                            ),
+                            "current_indoor": float(
+                                _features_ctx.get("indoor_temp_lag_30m", 0.0)
+                            ),
+                            "inlet_temp": float(
+                                _features_ctx.get("inlet_temp", 0.0)
+                            ),
+                        }
+                        _hp_was_running = _is_heat_pump_active(_hp_ctx)
                         _idle_threshold = (
                             _inlet_guard - config.MIN_COOLING_DELTA_K
                         )
-                        if optimal_outlet_temp > _idle_threshold:
+                        if _hp_was_running and optimal_outlet_temp > _idle_threshold:
                             self._cooling_cycle_state = "recovery"
                             logging.info(
                                 "❄️ Cooling cycle gate: RUNNING → RECOVERY "
                                 "(outlet %.1f°C too close to inlet %.1f°C, "
-                                "delta %.1fK < %.1fK). "
+                                "delta %.1fK < %.1fK, delta_t=%.2fK, "
+                                "thermal_power=%.2fkW). "
                                 "Sending inlet_temp to keep HP off.",
                                 optimal_outlet_temp, _inlet_guard,
                                 _inlet_guard - optimal_outlet_temp,
                                 config.MIN_COOLING_DELTA_K,
+                                _hp_ctx["delta_t"],
+                                _hp_ctx["thermal_power"],
+                            )
+                            optimal_outlet_temp = _inlet_guard
+                        elif optimal_outlet_temp > _idle_threshold:
+                            # HP was not running but model wants outlet close
+                            # to inlet: circulator-only is sufficient.
+                            # Clamp to inlet_temp without entering RECOVERY so
+                            # the HP can start immediately when demand rises.
+                            logging.debug(
+                                "❄️ Cooling cycle gate: RUNNING — HP idle, "
+                                "mild cooling demand (outlet %.1f°C, inlet %.1f°C, "
+                                "delta %.1fK < %.1fK, delta_t=%.2fK, "
+                                "thermal_power=%.2fkW). "
+                                "Clamping to inlet without entering RECOVERY.",
+                                optimal_outlet_temp, _inlet_guard,
+                                _inlet_guard - optimal_outlet_temp,
+                                config.MIN_COOLING_DELTA_K,
+                                _hp_ctx["delta_t"],
+                                _hp_ctx["thermal_power"],
                             )
                             optimal_outlet_temp = _inlet_guard
                     else:

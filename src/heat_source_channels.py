@@ -424,29 +424,54 @@ class HeatPumpChannel(HeatSourceChannel):
         if avg_error is None or raw_avg is None or abs(raw_avg) < _get_learning_dead_zone():
             return
 
-        delta_t_samples = [
-            _to_float(record.get("context", {}).get("delta_t", 0.0))
-            for record in recent
-            if _to_float(record.get("context", {}).get("delta_t", 0.0)) > 0.5
-        ]
+        # Determine operating mode from the most recent record.
+        climate_mode = (
+            recent[-1].get("context", {}).get("climate_mode", "heating")
+            if recent
+            else "heating"
+        )
+
+        # Mode-aware delta_t filter: outlet > inlet in heating (positive
+        # delta_t), outlet < inlet in cooling (negative delta_t).
+        if climate_mode == "cooling":
+            delta_t_samples = [
+                abs(_to_float(record.get("context", {}).get("delta_t", 0.0)))
+                for record in recent
+                if _to_float(record.get("context", {}).get("delta_t", 0.0)) < -0.5
+            ]
+        else:
+            delta_t_samples = [
+                _to_float(record.get("context", {}).get("delta_t", 0.0))
+                for record in recent
+                if _to_float(record.get("context", {}).get("delta_t", 0.0)) > 0.5
+            ]
         avg_delta_t = (
             sum(delta_t_samples) / len(delta_t_samples)
             if delta_t_samples
             else self.delta_t_floor
         )
 
+        # Mode-aware outlet_effectiveness gradient.
+        # In heating: HP contribution = OE*(outlet-indoor) > 0.
+        #   Predicted too low (error > 0) → increase OE → gradient = +avg_error
+        # In cooling: HP contribution = OE*(outlet-indoor) < 0.
+        #   Predicted too high (error < 0) means OE is too low (not enough
+        #   cooling), so we need to INCREASE OE → gradient = -avg_error.
+        oe_gradient = -avg_error if climate_mode == "cooling" else avg_error
+
         gradients: Dict[str, float] = {
             "thermal_time_constant": -avg_error * 0.5,
             "heat_loss_coefficient": -avg_error * 0.1,
-            "outlet_effectiveness": avg_error,
+            "outlet_effectiveness": oe_gradient,
             "slab_time_constant_hours": avg_error * 0.2,
             "delta_t_floor": avg_delta_t - self.delta_t_floor,
         }
         self.apply_gradient_update(gradients, _get_channel_learning_rate())
         logger.debug(
-            "♨️ HeatPumpChannel self-learned: avg_error=%.3f, "
+            "♨️ HeatPumpChannel self-learned (%s): avg_error=%.3f, "
             "tau=%.2fh, hlc=%.3f, outlet_effectiveness=%.3f, "
             "slab_tau=%.2fh, delta_t_floor=%.2f",
+            climate_mode,
             avg_error,
             self.thermal_time_constant,
             self.heat_loss_coefficient,
@@ -1135,6 +1160,51 @@ class HeatSourceChannelOrchestrator:
 
         raw_context = context.copy()
         raw_context["raw_prediction_error"] = error
+
+        # --- Cooling-mode HP routing ---
+        # In cooling mode the heat pump is always the controllable source and
+        # must always receive a learning record, even when PV is active.  PV
+        # solar gain is an opposing force the HP is fighting, not a substitute
+        # signal: blocking HP learning because of PV would leave the cooling
+        # model's outlet_effectiveness and thermal parameters uncalibrated.
+        # PV still co-learns independently for its own weight calibration.
+        if context.get("climate_mode") == "cooling":
+            hp_contributions: Dict[str, float] = {"heat_pump": 1.0}
+            hp_learning_context = self._build_learning_context(
+                raw_context,
+                attributed_error=error,
+                active_contributions=hp_contributions,
+                attribution_applied=False,
+                heat_pump_frozen_by_fireplace=False,
+            )
+            self._record_channel_learning(
+                "heat_pump",
+                error,
+                hp_learning_context,
+                hp_contributions,
+                False,
+                False,
+                update_events,
+            )
+            if pv_active or pv_in_decay:
+                pv_contributions: Dict[str, float] = {"pv": 1.0}
+                self._record_channel_learning(
+                    "pv",
+                    error,
+                    raw_context,
+                    pv_contributions,
+                    False,
+                    False,
+                    update_events,
+                )
+            routed_cooling = ["heat_pump"] + (
+                ["pv"] if pv_active or pv_in_decay else []
+            )
+            self._log_channel_parameter_updates(update_events)
+            self._log_routing_summary(
+                routed_cooling, error, raw_context, update_events,
+            )
+            return update_events
 
         if not any_external_active:
             logger.debug(

@@ -1,6 +1,83 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Slab epsilon finalized after notebook rerun — May 2026**
+### ✅ **Cooling test helper cleanup — May 2026**
+
+#### **What changed**
+- `tests/unit/test_heat_source_channels.py` — simplified `make_context()` to accept override kwargs instead of a long explicit parameter list, while preserving the same derived defaults for HP-active `delta_t` and `thermal_power`.
+
+#### **Why**
+The follow-up review on the cooling regression tests called out that the helper signature had grown too large and was becoming harder to read. Converting it to an override-based helper keeps the test setup compact and makes future cooling routing assertions easier to extend without continually expanding the helper signature.
+
+#### **Files changed**
+- `tests/unit/test_heat_source_channels.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### ✅ **Cooling follow-up review fixes — May 2026**
+
+#### **What changed**
+- `src/heat_source_channels.py` — cooling `delta_t_floor` learning now stores `abs(delta_t)` for cooling samples, keeping the learned parameter as a positive magnitude.
+- `src/temperature_control.py` — both shadow and active `prediction_context` payloads now include `climate_mode`, so `route_learning()` and `HeatPumpChannel._learn_from_recent()` continue using cooling-specific behavior when learning from runtime feedback.
+- Added targeted regression tests for cooling HP+PV routing, PV decay co-routing, positive cooling `delta_t_floor` learning, `climate_mode` propagation, and RUNNING→RECOVERY gate branching.
+
+#### **Why**
+Re-review showed two remaining gaps after the previous cooling fix. First, cooling `delta_t_floor` samples were still averaged as negative numbers, which would push the learned floor toward zero instead of a positive magnitude. Second, `temperature_control.py` computed `climate_mode` for HP detection but dropped it from the `prediction_context`, allowing downstream learning/routing to fall back to heating defaults.
+
+#### **Files changed**
+- `src/heat_source_channels.py`, `src/temperature_control.py`
+- `tests/unit/test_heat_source_channels.py`, `tests/unit/test_temperature_control.py`, `tests/unit/test_cooling_mode.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### ✅ **Cooling gate: unified HP detection — May 2026**
+
+#### **What changed**
+- `src/model_wrapper.py` — RUNNING→RECOVERY gate now calls `_is_heat_pump_active()` (imported from `heat_source_channels`) with a context dict built from `_current_features` (`thermal_power_kw`, `delta_t`, `outlet_temp`, `indoor_temp_lag_30m`, `inlet_temp`). Log messages updated to show delta_t and thermal_power.
+- `src/config.py` — Removed `HP_ACTIVE_COOLING_DELTA_T` constant (was added in previous session, now superseded).
+
+#### **Why**
+The previous fix added a new `HP_ACTIVE_COOLING_DELTA_T` config constant (0.5 K) to guard the RUNNING→RECOVERY gate. The system already has `_is_heat_pump_active()` for exactly this purpose, used by `_learn_from_recent` and `temperature_control.py`. Using the same helper keeps HP detection logic consistent across the codebase: it checks thermal_power, delta_t, and outlet-vs-inlet together, not just delta_t alone.
+
+#### **Files changed**
+- `src/model_wrapper.py`, `src/config.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+
+
+#### **What changed**
+- `src/model_wrapper.py` — RUNNING→RECOVERY transition now checks `_measured_delta_t < -HP_ACTIVE_COOLING_DELTA_T` (HP actually ran) before entering RECOVERY. When HP was idle and model wants mild cooling (outlet close to inlet), gate stays in RUNNING and clamps outlet to inlet_temp without entering RECOVERY. Log message distinguishes the two cases.
+- `src/config.py` — Added `HP_ACTIVE_COOLING_DELTA_T: float = 0.5` K threshold for the running detection check.
+
+#### **Why**
+The previous gate logic triggered RUNNING→RECOVERY whenever model-computed outlet was within `MIN_COOLING_DELTA_K=2K` of inlet, regardless of whether the HP was actually running. When cooling demand is mild (room close to target), the model naturally wants outlet ≈ inlet. Old code entered RECOVERY immediately. Then RECOVERY→RUNNING also requires `inlet − outlet > 2K`, which is only satisfied for strong cooling demand — so the HP could be permanently locked out of running even when needed. The fix: only enter RECOVERY after the HP was actually running (observed cold delta_t), not preemptively from model computation.
+
+#### **Files changed**
+- `src/model_wrapper.py`, `src/config.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+
+#### **What changed**
+- `src/heat_source_channels.py` — `route_learning()`: added cooling-mode early return that always routes to `heat_pump` and co-routes `pv` if active, bypassing the PV-isolation block that was keeping HP history permanently empty on sunny cooling days. `HeatPumpChannel._learn_from_recent()`: delta_t filter is now `< -0.5` in cooling and `> 0.5` in heating; `outlet_effectiveness` gradient sign is negated for cooling (`-avg_error`); mode label added to debug log.
+- `src/main.py` — Removed the `PV_TRAJ_SCALING_ENABLED` block (lines were: `if getattr(config, "PV_TRAJ_SCALING_ENABLED", False): config.TRAJECTORY_STEPS = PV_TRAJ_MAX_STEPS`) that never reset when forecast mode was disabled, causing TRAJECTORY_STEPS to be overridden to PV_TRAJ_MAX_STEPS regardless of the user's configured value.
+- `src/temperature_control.py` — `_perform_online_learning()`: `heat_pump_active` detection now branches on `climate_mode`; cooling path uses `thermal_power_kw <= COOLING_MIN_THERMAL_POWER_KW or delta_t < -0.5`.
+
+#### **Why**
+Log analysis showed HP channel parameters (`tau`, `HLC`, `outlet_effectiveness`) never changed across 60+ cooling cycles. Root cause: PV was always active on sunny days, making `any_external_active=True` in `route_learning()`, which routed 100% of records to SolarChannel and left HP history empty. Secondary fix: once HP had records, the `delta_t > 0.5` filter in `_learn_from_recent()` would have rejected all cooling samples (delta_t is negative in cooling), and the OE gradient would have driven the parameter in the wrong direction.
+
+Trajectory steps bug: user set `TRAJECTORY_STEPS=4` but model used 6 because `PV_TRAJ_SCALING_ENABLED=true` in env overwrote the value to `PV_TRAJ_MAX_STEPS=6` before feature-building; since `PV_TRAJ_FORECAST_MODE_ENABLED=false`, the forecast block never ran to correct it. `physics_features.py` already handles `_n_fc_full` expansion internally, making the pre-mutation block redundant.
+
+#### **Files changed**
+- `src/heat_source_channels.py`, `src/main.py`, `src/temperature_control.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 
 #### **What changed**
 - `src/thermal_constants.py` — Increased `SLAB_TIME_CONSTANT_EPSILON` from 0.5 to 1.595 after rerunning the runtime-replay calibration notebook; kept `SOLAR_LAG_EPSILON` at 5.0 and documented why it remains intentionally conservative

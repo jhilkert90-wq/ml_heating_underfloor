@@ -142,6 +142,54 @@ def test_online_learning_shadow_mode(mock_get_wrapper, online_learning):
     assert kwargs['prediction_context']['outlet_temp'] == 45.0
 
 
+@patch('src.temperature_control.get_enhanced_model_wrapper')
+def test_online_learning_active_mode_includes_climate_mode_in_prediction_context(
+    mock_get_wrapper, online_learning
+):
+    mock_wrapper = MagicMock()
+    mock_get_wrapper.return_value = mock_wrapper
+
+    with patch('src.temperature_control.config.SHADOW_MODE', False):
+        online_learning._perform_online_learning(
+            learning_features={
+                'outdoor_temp': 5.0,
+                'climate_mode': 'cooling',
+                'delta_t': -1.5,
+                'thermal_power_kw': -1.0,
+            },
+            actual_applied_temp=18.0,
+            actual_indoor_change=-0.3,
+            current_indoor=22.0,
+        )
+
+    _, kwargs = mock_wrapper.learn_from_prediction_feedback.call_args
+    assert kwargs['prediction_context']['climate_mode'] == 'cooling'
+
+
+@patch('src.temperature_control.get_enhanced_model_wrapper')
+def test_online_learning_shadow_mode_includes_climate_mode_in_prediction_context(
+    mock_get_wrapper, online_learning
+):
+    mock_wrapper = MagicMock()
+    mock_get_wrapper.return_value = mock_wrapper
+
+    with patch('src.temperature_control.config.SHADOW_MODE', True):
+        online_learning._perform_online_learning(
+            learning_features={
+                'outdoor_temp': 5.0,
+                'climate_mode': 'cooling',
+                'delta_t': -1.5,
+                'thermal_power_kw': -1.0,
+            },
+            actual_applied_temp=18.0,
+            actual_indoor_change=-0.3,
+            current_indoor=22.0,
+        )
+
+    _, kwargs = mock_wrapper.learn_from_prediction_feedback.call_args
+    assert kwargs['prediction_context']['climate_mode'] == 'cooling'
+
+
 @pytest.fixture
 def manager():
     return TemperatureControlManager()
@@ -306,4 +354,3 @@ def test_ema_smoothing_rounds_to_0_1(mock_config):
     # 0.3 * 24.17 + 0.7 * 24.0 = 7.251 + 16.8 = 24.051 → 24.1
     result = apply_ema_smoothing(24.17, 24.0)
     assert result == 24.1
-
