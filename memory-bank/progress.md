@@ -1,5 +1,30 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - May 2026 (Physics-Direct Calibration Path & Dashboard Selector)
+
+### ✅ **Physics-Direct calibration path implemented and selectable from dashboard**
+
+**Status**: **COMPLETED**
+
+- Added a fully analytical, sequential calibration path (`Physics Direct`) that estimates all thermal model parameters from first principles, without scipy optimization.
+- Dashboard now allows users to select between "Scipy Optimizer" and "Physics Direct" calibration methods when triggering model recalibration.
+- All calibration parameters are user-editable in `config.yaml` and validated against bounds.
+- Fixed 6 config default mismatches; config defaults are now aligned and validated.
+- State-file fallback now validates persisted values before accepting them.
+- Refactored calibration code to use named constants for magic numbers.
+- Expanded unit tests for physics-direct calibration; all tests pass.
+
+**Files changed:**
+- `src/physics_calibration_direct.py`
+- `dashboard/components/control.py`
+- `src/config.py`
+- `ml_heating_underfloor/config.yaml`
+- `.env_sample`
+- `src/unified_thermal_state.py`
+- `src/thermal_config.py`
+- `tests/unit/test_physics_calibration_direct.py`
+- `CHANGELOG.md`
+
 ## 🎯 CURRENT STATUS - May 2026 (Calibration fallback + config.yaml exposure)
 
 ### ✅ **All calibration parameters now have a 3-level fallback chain**

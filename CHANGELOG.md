@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Physics-Direct calibration path** — Added a fully analytical, sequential calibration method (`Physics Direct`) that estimates all thermal model parameters from first principles, without relying on scipy optimization. This path is selectable from the dashboard and exposes all parameters for user editing in `config.yaml`.
+- **Calibration method selector in dashboard** — The dashboard now allows users to choose between "Scipy Optimizer" (default) and "Physics Direct" calibration methods when triggering model recalibration.
+
+### Changed
+- **Calibration method config option** — Added `CALIBRATION_METHOD` to `src/config.py` and `config.yaml`, allowing explicit selection of calibration path via config/environment.
+- **Config schema validation** — Updated `config.yaml` schema to include bounds for `cloud_factor_exponent` and `solar_decay_tau_hours`.
+- **Magic numbers refactored** — Extracted magic numbers as constants in calibration code; improved comments for cloud exponent logic.
+
+### Fixed
+- **Config default mismatches** — Fixed 6 mismatches between `src/config.py` defaults and `ThermalParameterConfig.DEFAULTS` (PV, fireplace, TV weights, thermal time constant, slab tau, total conductance). Now config defaults are aligned and validated.
+- **State-file bounds validation** — Persisted calibration parameters are now validated against bounds before being accepted as fallback, preventing corrupted values from overriding config defaults.
+- **Test coverage** — Updated and expanded unit tests for physics-direct calibration, including TV weight and solar lag xcorr edge cases; all tests pass.
+
 ### Fixed
 - **Solar lag xcorr: non-contiguous data bug** — `_calibrate_solar_lag_xcorr()` in `src/physics_calibration_direct.py` previously operated on `stable_periods` (non-adjacent 20-min windows scattered across weeks), making lag shifts meaningless. Rewrote to operate on the raw time-sorted DataFrame, computing xcorr within each **contiguous PV-active episode** and returning the modal best-lag across episodes. Added 3 new edge-case tests.
 - **Slab tau step-ordering dependency** — `_calibrate_slab_tau_grid_search()` used the config default for `delta_t_floor` even though the calibrated value was available from the immediately preceding step 8. Added `delta_t_floor` parameter; `calibrate_thermal_model_physics()` now passes the step-8 calibrated value so the slab-tau estimate is not biased by an incorrect default.
