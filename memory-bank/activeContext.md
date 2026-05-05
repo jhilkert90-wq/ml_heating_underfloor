@@ -1,25 +1,30 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Calibration Code-Review Fixes — May 2026**
+### ✅ **Calibration parameter fallback + config.yaml exposure — May 2026**
 
 #### **What changed**
-- `src/physics_calibration_direct.py` — 6 fixes:
-  1. `_calibrate_solar_lag_xcorr()`: complete rewrite to accept raw DataFrame instead of `stable_periods` list; xcorr now computed within contiguous PV-active episodes; modal lag across episodes returned.
-  2. `_calibrate_slab_tau_grid_search()`: added `delta_t_floor` parameter; call site in `calibrate_thermal_model_physics()` passes the step-8 calibrated value.
-  3. `_calibrate_oe_analytical()`: corrected docstring (weight is `drive`, not `1/drive`).
-  4. `_residual_heat_source_weight()`: added 1.5-IQR outlier rejection before percentile.
-  5. `calibrate_thermal_model_physics()`: added NaN gap detection warning for key columns after data fetch.
-  6. PV `min_periods` raised from 5 to 15.
-- `src/physics_calibration.py` — `calculate_cooling_time_constant()`: added 2-hour minimum HP-off block duration gate.
-- `tests/unit/test_physics_calibration_direct.py` — `TestSolarLagXcorr` rewritten for new DataFrame API; 3 new edge-case tests added (missing column, empty df, insufficient rows). All 22 tests pass.
+- `src/physics_calibration_direct.py` — `calibrate_thermal_model_physics()` resolves the active `ThermalStateManager` at the top of the function (before step 0) and loads `baseline_parameters` from the persisted state file. A `_state_fallback(key)` helper returns the persisted value when it's a valid float, otherwise falls back to `ThermalParameterConfig.get_default()`. All 13 step-level fallbacks now use `_state_fallback()` instead of `ThermalParameterConfig.get_default()`. Log messages now indicate whether "persisted" or "default" was used.
+- `src/unified_thermal_state.py` — `_get_default_state()` now includes `cloud_factor_exponent` and `solar_decay_tau_hours` in the `baseline_parameters` dict. `set_calibrated_baseline()` persists those two parameters if present in the input dict.
+- `src/thermal_config.py` — `ThermalParameterConfig.get_default()` now checks the `config` module (which reads from env vars / `config.yaml`) before returning the hardcoded `DEFAULTS` value. A `_CONFIG_VAR_MAP` dict maps param names to their config variable names.
+- `src/config.py` — Added 7 missing config vars: `HEAT_LOSS_COEFFICIENT`, `OUTLET_EFFECTIVENESS`, `DELTA_T_FLOOR`, `FP_DECAY_TIME_CONSTANT`, `ROOM_SPREAD_DELAY_MINUTES`, `CLOUD_FACTOR_EXPONENT`, `SOLAR_DECAY_TAU_HOURS`.
+- `.env_sample` — Added `CLOUD_FACTOR_EXPONENT` and `SOLAR_DECAY_TAU_HOURS`.
+- `ml_heating_underfloor/config.yaml` — Added `cloud_factor_exponent` and `solar_decay_tau_hours` entries.
 
 #### **Why**
-Code review identified that `_calibrate_solar_lag_xcorr()` applied lag shifts across non-contiguous stable_periods (comparing samples from different days), making the lag estimate random noise. The slab tau grid search used the config default for delta_t_floor even when a calibrated value was available from step 8. IQR rejection and min_periods increase reduce sensitivity to sensor spikes and occupancy noise.
+When calibration data is insufficient for a parameter (e.g. no fireplace-active rows), the fallback chain is now:
+1. Calibrated value from data
+2. Last valid value from `unified_thermal_state.json` (survives restarts)
+3. User-editable value from `config.yaml` / environment variable
+
+Previously the fallback jumped directly to the hardcoded Python constant in `ThermalParameterConfig.DEFAULTS`, bypassing both the state file and the user-editable config. This meant a corrupted or missing parameter silently reverted to a value the user could not change without editing source code.
 
 #### **Files changed**
 - `src/physics_calibration_direct.py`
-- `src/physics_calibration.py`
-- `tests/unit/test_physics_calibration_direct.py`
+- `src/unified_thermal_state.py`
+- `src/thermal_config.py`
+- `src/config.py`
+- `.env_sample`
+- `ml_heating_underfloor/config.yaml`
 - `CHANGELOG.md`
 - `memory-bank/progress.md`
 - `memory-bank/activeContext.md`

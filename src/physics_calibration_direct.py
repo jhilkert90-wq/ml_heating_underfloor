@@ -743,6 +743,40 @@ def calibrate_thermal_model_physics(
     # --- Step 0: Backup existing calibration ---
     backup_existing_calibration(state_manager=state_manager)
 
+    # Resolve the active state manager early so that persisted parameter
+    # values from unified_thermal_state.json are available as warm-start
+    # fallbacks for every step that fails to produce enough calibration data.
+    _active_sm = (
+        state_manager if state_manager is not None else get_thermal_state_manager()
+    )
+    _persisted: Dict[str, float] = _active_sm.state.get("baseline_parameters", {})
+
+    def _state_fallback(key: str) -> float:
+        """Return the persisted state-file value when available and valid;
+        fall back to the hard-coded config default otherwise.
+
+        Priority: calibration result > state-file value > config default.
+        """
+        val = _persisted.get(key)
+        try:
+            fval = float(val)  # type: ignore[arg-type]
+            if not np.isnan(fval):
+                return fval
+        except (TypeError, ValueError):
+            pass
+        return ThermalParameterConfig.get_default(key)
+
+    def _fallback_source(key: str) -> str:
+        """Return 'persisted' when the state file has a valid value, else 'default'."""
+        val = _persisted.get(key)
+        try:
+            fval = float(val)  # type: ignore[arg-type]
+            if not np.isnan(fval):
+                return "persisted"
+        except (TypeError, ValueError):
+            pass
+        return "default"
+
     # --- Fetch data ---
     logging.info("Fetching historical data...")
     df = fetch_historical_data_for_calibration(
@@ -801,17 +835,19 @@ def calibrate_thermal_model_physics(
                      hlc, hlc_result.get("r2", 0), hlc_result.get("n_periods", 0))
     else:
         logging.warning(
-            "⚠️ HLC calibration failed (%s) — using default",
+            "⚠️ HLC calibration failed (%s) — using %s value",
             hlc_result.get("message"),
+            _fallback_source("heat_loss_coefficient"),
         )
-        hlc = ThermalParameterConfig.get_default("heat_loss_coefficient")
+        hlc = _state_fallback("heat_loss_coefficient")
 
     # --- Step 2: OE ---
     logging.info("Step 2: Analytical OE estimation...")
     oe = _calibrate_oe_analytical(stable_periods, hlc)
     if oe is None:
-        logging.warning("⚠️ OE calibration failed — using default")
-        oe = ThermalParameterConfig.get_default("outlet_effectiveness")
+        logging.warning("⚠️ OE calibration failed — using %s value",
+                        _fallback_source("outlet_effectiveness"))
+        oe = _state_fallback("outlet_effectiveness")
 
     # --- Step 3: τ_room (cooling time constant) ---
     logging.info("Step 3: Thermal time constant from cooling curves...")
@@ -819,8 +855,9 @@ def calibrate_thermal_model_physics(
     if tau is not None:
         logging.info("✅ τ_room = %.2fh (R²=%.3f)", tau, tau_r2)
     else:
-        logging.warning("⚠️ Cooling tau failed — using default")
-        tau = ThermalParameterConfig.get_default("thermal_time_constant")
+        logging.warning("⚠️ Cooling tau failed — using %s value",
+                        _fallback_source("thermal_time_constant"))
+        tau = _state_fallback("thermal_time_constant")
 
     # --- Step 4: pv_heat_weight ---
     logging.info("Step 4: PV heat weight (residual method)...")
@@ -833,8 +870,9 @@ def calibrate_thermal_model_physics(
         pv_periods, "pv", hlc, oe, min_periods=15, percentile=50.0
     )
     if pv_weight is None:
-        logging.warning("⚠️ PV weight calibration failed — using default")
-        pv_weight = ThermalParameterConfig.get_default("pv_heat_weight")
+        logging.warning("⚠️ PV weight calibration failed — using %s value",
+                        _fallback_source("pv_heat_weight"))
+        pv_weight = _state_fallback("pv_heat_weight")
 
     # --- Step 5: fireplace_heat_weight ---
     logging.info("Step 5: Fireplace heat weight (residual method)...")
@@ -843,8 +881,9 @@ def calibrate_thermal_model_physics(
         fp_periods, "fp", hlc, oe, min_periods=5, percentile=50.0
     )
     if fp_weight is None:
-        logging.warning("⚠️ Fireplace weight calibration failed — using default")
-        fp_weight = ThermalParameterConfig.get_default("fireplace_heat_weight")
+        logging.warning("⚠️ Fireplace weight calibration failed — using %s value",
+                        _fallback_source("fireplace_heat_weight"))
+        fp_weight = _state_fallback("fireplace_heat_weight")
 
     # --- Step 6: tv_heat_weight ---
     logging.info("Step 6: TV heat weight (residual method)...")
@@ -853,22 +892,25 @@ def calibrate_thermal_model_physics(
         tv_periods, "tv", hlc, oe, min_periods=5, percentile=60.0
     )
     if tv_weight is None:
-        logging.warning("⚠️ TV weight calibration failed — using default")
-        tv_weight = ThermalParameterConfig.get_default("tv_heat_weight")
+        logging.warning("⚠️ TV weight calibration failed — using %s value",
+                        _fallback_source("tv_heat_weight"))
+        tv_weight = _state_fallback("tv_heat_weight")
 
     # --- Step 7: solar_lag_minutes ---
     logging.info("Step 7: Solar lag via cross-correlation...")
     solar_lag = _calibrate_solar_lag_xcorr(df, hlc, oe)
     if solar_lag is None:
-        logging.warning("⚠️ Solar lag calibration failed — using default")
-        solar_lag = ThermalParameterConfig.get_default("solar_lag_minutes")
+        logging.warning("⚠️ Solar lag calibration failed — using %s value",
+                        _fallback_source("solar_lag_minutes"))
+        solar_lag = _state_fallback("solar_lag_minutes")
 
     # --- Step 8: delta_t_floor ---
     logging.info("Step 8: delta_t_floor (P25 of outlet-inlet)...")
     delta_t_floor_val = calibrate_delta_t_floor(stable_periods)
     if delta_t_floor_val is None:
-        logging.warning("⚠️ delta_t_floor calibration failed — using default")
-        delta_t_floor_val = ThermalParameterConfig.get_default("delta_t_floor")
+        logging.warning("⚠️ delta_t_floor calibration failed — using %s value",
+                        _fallback_source("delta_t_floor"))
+        delta_t_floor_val = _state_fallback("delta_t_floor")
 
     # --- Step 9: slab_time_constant_hours (grid search) ---
     # Pass the calibrated delta_t_floor so the slab model is not biased by
@@ -876,27 +918,30 @@ def calibrate_thermal_model_physics(
     logging.info("Step 9: Slab time constant (1-D grid search)...")
     slab_tau = _calibrate_slab_tau_grid_search(df, delta_t_floor=delta_t_floor_val)
     if slab_tau is None:
-        logging.warning("⚠️ Slab tau grid search failed — using default")
-        slab_tau = ThermalParameterConfig.get_default("slab_time_constant_hours")
+        logging.warning("⚠️ Slab tau grid search failed — using %s value",
+                        _fallback_source("slab_time_constant_hours"))
+        slab_tau = _state_fallback("slab_time_constant_hours")
 
     # --- Step 10: fp_decay_time_constant ---
     logging.info("Step 10: FP decay time constant (log-linear OLS)...")
     fp_decay_periods = filter_fp_decay_periods(df, hlc=hlc, oe=oe)
     fp_decay_tau = calibrate_fp_decay_tau(fp_decay_periods)
     if fp_decay_tau is None:
-        logging.warning("⚠️ FP decay tau calibration failed — using default")
-        fp_decay_tau = ThermalParameterConfig.get_default("fp_decay_time_constant")
+        logging.warning("⚠️ FP decay tau calibration failed — using %s value",
+                        _fallback_source("fp_decay_time_constant"))
+        fp_decay_tau = _state_fallback("fp_decay_time_constant")
 
     # --- Step 11: room_spread_delay_minutes ---
     logging.info("Step 11: Room spread delay (cross-correlation)...")
     fp_spread_periods = filter_fp_spread_periods(df)
     room_spread_delay = calibrate_room_spread_delay(fp_spread_periods)
     if room_spread_delay is None:
-        logging.warning("⚠️ Room spread delay calibration failed — using default")
-        room_spread_delay = ThermalParameterConfig.get_default("room_spread_delay_minutes")
+        logging.warning("⚠️ Room spread delay calibration failed — using %s value",
+                        _fallback_source("room_spread_delay_minutes"))
+        room_spread_delay = _state_fallback("room_spread_delay_minutes")
 
     # --- Step 12: cloud_factor_exponent (log-OLS, optional) ---
-    cloud_exponent = ThermalParameterConfig.get_default("cloud_factor_exponent")
+    cloud_exponent = _state_fallback("cloud_factor_exponent")
     if getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False):
         logging.info("Step 12: Cloud factor exponent (log-OLS)...")
         cloud_exp = _calibrate_cloud_exponent_log_ols(df, pv_weight)
@@ -904,7 +949,8 @@ def calibrate_thermal_model_physics(
             cloud_exponent = cloud_exp
         else:
             logging.warning(
-                "⚠️ Cloud factor exponent calibration failed — using default"
+                "⚠️ Cloud factor exponent calibration failed — using %s value",
+                _fallback_source("cloud_factor_exponent"),
             )
     else:
         logging.info(
@@ -917,8 +963,9 @@ def calibrate_thermal_model_physics(
     pv_decay_periods = filter_pv_decay_periods(df)
     solar_decay_tau = calibrate_solar_decay_tau(pv_decay_periods)
     if solar_decay_tau is None:
-        logging.warning("⚠️ Solar decay tau calibration failed — using default")
-        solar_decay_tau = ThermalParameterConfig.get_default("solar_decay_tau_hours")
+        logging.warning("⚠️ Solar decay tau calibration failed — using %s value",
+                        _fallback_source("solar_decay_tau_hours"))
+        solar_decay_tau = _state_fallback("solar_decay_tau_hours")
 
     # --- Assemble result ---
     calibrated_params: Dict[str, float] = {

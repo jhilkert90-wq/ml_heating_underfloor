@@ -1,25 +1,31 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Calibration Code-Review Fixes)
+## 🎯 CURRENT STATUS - May 2026 (Calibration fallback + config.yaml exposure)
 
-### ✅ **Physics-Direct Calibration: 7 edge-case and algorithmic fixes**
+### ✅ **All calibration parameters now have a 3-level fallback chain**
 
 **Status**: **COMPLETED**
 
-Following a detailed code review of the physics-direct calibration path, seven issues were corrected:
+Three separate concerns were addressed together:
 
-1. **Solar lag xcorr rewritten** — function now operates on contiguous df episodes, not non-contiguous stable_periods (critical algorithmic bug: lag shifts were comparing samples from different days/weeks).
-2. **Slab tau step-ordering fixed** — calibrated delta_t_floor from step 8 is now passed to the slab grid search (step 9) instead of using the config default.
-3. **OE docstring corrected** — weight description said `1/(drive)` but code correctly uses `(drive)` directly.
-4. **IQR outlier rejection added** — `_residual_heat_source_weight()` applies a 1.5-IQR fence before taking the percentile.
-5. **bfill gap warnings added** — `calibrate_thermal_model_physics()` warns when key sensor columns have >6 consecutive NaN rows.
-6. **PV min_periods raised** — from 5 to 15 qualifying periods to reduce occupancy noise.
-7. **Tau duration gate added** — `calculate_cooling_time_constant()` skips HP-off blocks shorter than 2 h.
+1. **State-file warm-start fallback** — `calibrate_thermal_model_physics()` now resolves `ThermalStateManager` early and uses `_state_fallback()` so that any parameter that fails to calibrate keeps its last-known good value from `unified_thermal_state.json` instead of reverting to a hardcoded default.
+
+2. **config.yaml editability** — `ThermalParameterConfig.get_default()` now reads from `config` module variables (set via `config.yaml` / env vars) before falling back to hardcoded `DEFAULTS`. 7 missing config vars added to `src/config.py`; 2 undocumented entries added to `.env_sample` and `config.yaml`.
+
+3. **cloud_factor_exponent / solar_decay_tau_hours persisted** — `set_calibrated_baseline()` and `_get_default_state()` in `unified_thermal_state.py` now include both parameters so they survive restarts and are available as warm-start fallbacks.
+
+**Fallback chain for every calibration parameter:**
+1. Calibrated value from current data
+2. Last valid value from `unified_thermal_state.json`
+3. User-editable value from `config.yaml` / environment variable
 
 **Files changed:**
 - `src/physics_calibration_direct.py`
-- `src/physics_calibration.py`
-- `tests/unit/test_physics_calibration_direct.py` (22 tests, all pass)
+- `src/unified_thermal_state.py`
+- `src/thermal_config.py`
+- `src/config.py`
+- `.env_sample`
+- `ml_heating_underfloor/config.yaml`
 - `CHANGELOG.md`
 - `memory-bank/progress.md`
 - `memory-bank/activeContext.md`

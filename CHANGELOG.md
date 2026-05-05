@@ -15,8 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **bfill NaN gap warning** — `calibrate_thermal_model_physics()` now logs a `⚠️` warning for each key column (flow_rate, inlet_temp, target_outlet_temp) that has more than 6 consecutive NaN rows (>30 min gap) after imputation, making silent bfill contamination visible.
 - **Tau calibration duration gate** — `calculate_cooling_time_constant()` in `src/physics_calibration.py` now requires HP-off blocks to span at least 2 hours before including their tau estimate in the weighted average, preventing short blocks (typical in underfloor systems) from systematically underestimating the room thermal time constant.
 
+### Added
+- **State-file fallback for all calibration parameters** — `calibrate_thermal_model_physics()` now resolves the active `ThermalStateManager` early and uses a `_state_fallback()` helper. When a calibration step cannot produce a value (e.g. no fireplace-active rows in the dataset), it uses the previously persisted value from `unified_thermal_state.json` instead of the hardcoded default, preserving any prior calibration result. If the state file also has no valid value, the `config.yaml`-editable default is used as the final fallback.
+- **`cloud_factor_exponent` and `solar_decay_tau_hours` persisted to state file** — `set_calibrated_baseline()` in `unified_thermal_state.py` and `_get_default_state()` now include these two parameters so they survive restarts and are available as warm-start fallbacks on the next calibration run.
+
 ### Changed
 - **PV `min_periods` raised from 5 to 15** — `calibrate_thermal_model_physics()` now requires at least 15 qualifying stable periods for PV heat-weight estimation, reducing sensitivity to occupancy-correlated noise when PV-active days are few.
+- **All calibration parameters now editable in `config.yaml`** — `ThermalParameterConfig.get_default()` now reads from `config` module variables first (which are sourced from `config.yaml` / environment variables) before falling back to the hardcoded `DEFAULTS` dict. Added 7 new config vars to `src/config.py` that were previously missing: `HEAT_LOSS_COEFFICIENT`, `OUTLET_EFFECTIVENESS`, `DELTA_T_FLOOR`, `FP_DECAY_TIME_CONSTANT`, `ROOM_SPREAD_DELAY_MINUTES`, `CLOUD_FACTOR_EXPONENT`, `SOLAR_DECAY_TAU_HOURS`. Both `.env_sample` and `config.yaml` are updated with the two previously undocumented entries (`cloud_factor_exponent`, `solar_decay_tau_hours`).
+
 
 ### Added
 - **Physics-Direct Calibration Path** (`src/physics_calibration_direct.py`): new `calibrate_thermal_model_physics()` function that estimates every thermal parameter analytically — no scipy optimizer, no MAE fitting.  Sequential decoupling derives each parameter after locking previous ones:

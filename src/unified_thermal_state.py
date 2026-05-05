@@ -162,6 +162,10 @@ class ThermalStateManager:
                 "room_spread_delay_minutes":
                 ThermalParameterConfig.get_default(
                     'room_spread_delay_minutes'),
+                "cloud_factor_exponent":
+                ThermalParameterConfig.get_default('cloud_factor_exponent'),
+                "solar_decay_tau_hours":
+                ThermalParameterConfig.get_default('solar_decay_tau_hours'),
                 "source": "config_defaults",
                 "calibration_date": None,
                 "calibration_cycles": 0
@@ -432,6 +436,12 @@ class ThermalStateManager:
         if "room_spread_delay_minutes" in parameters:
             baseline["room_spread_delay_minutes"] = \
                 parameters["room_spread_delay_minutes"]
+        if "cloud_factor_exponent" in parameters:
+            baseline["cloud_factor_exponent"] = \
+                parameters["cloud_factor_exponent"]
+        if "solar_decay_tau_hours" in parameters:
+            baseline["solar_decay_tau_hours"] = \
+                parameters["solar_decay_tau_hours"]
 
         # Update metadata
         baseline["source"] = "calibrated"

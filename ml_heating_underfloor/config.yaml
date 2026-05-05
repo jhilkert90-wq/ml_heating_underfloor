@@ -240,6 +240,10 @@ options:
   fp_decay_time_constant: 3.9144707244638868
   # Fireplace channel room-spread delay (minutes)
   room_spread_delay_minutes: 18.0
+  # Solar channel cloud-cover attenuation exponent (dimensionless)
+  cloud_factor_exponent: 1.0
+  # Solar channel residual-heat decay time constant (hours)
+  solar_decay_tau_hours: 1.0
 
   # === Adaptive Learning Parameters ===
   # Base learning rate for thermal parameter adaptation - UNDERFLOOR: conservative
