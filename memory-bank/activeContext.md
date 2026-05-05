@@ -24,11 +24,6 @@ Code review identified that `_calibrate_solar_lag_xcorr()` applied lag shifts ac
 - `memory-bank/progress.md`
 - `memory-bank/activeContext.md`
 
-
-- `dashboard/components/control.py`
-- `tests/unit/test_physics_calibration_direct.py` (new)
-- `CHANGELOG.md`
-
 ---
 
 ### ✅ **CI Workflow fixes — May 2026**

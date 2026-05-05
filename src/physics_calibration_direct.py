@@ -128,9 +128,9 @@ def _calibrate_oe_analytical(
         → OE = HLC × (T_indoor − T_outdoor) / (T_outlet − T_indoor)
 
     Each qualifying window yields an independent OE estimate.  The
-    weighted median (weight = (T_outlet − T_indoor) to up-weight
-    windows with larger temperature drive, where the formula is most
-    reliable) is returned.
+    weighted median is returned, using ``drive = T_outlet − T_indoor``
+    as the weight so that windows with a larger temperature drive
+    (where the formula is most reliable) contribute more.
 
     Parameters
     ----------

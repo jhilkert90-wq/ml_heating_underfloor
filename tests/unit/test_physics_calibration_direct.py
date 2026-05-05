@@ -248,6 +248,8 @@ def _make_solar_lag_df(n_rows=200, pv_w=600.0, indoor=20.0, outdoor=5.0, outlet=
 
     Uses the default entity ID suffixes (after splitting on '.') so that the
     function under test can derive column names without patching config.
+    For example: ``config.PV_POWER_ENTITY_ID = "sensor.pv_power"`` splits to
+    the column name ``"pv_power"``.
     """
     rng = np.random.default_rng(42)
     base_t = datetime(2024, 6, 1, 8, 0)
