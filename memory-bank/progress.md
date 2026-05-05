@@ -1,5 +1,19 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - May 2026 (Cooling test helper cleanup)
+
+### ✅ **Cooling test helper cleanup completed**
+
+**Status**: **COMPLETED**
+
+Applied the remaining review-driven cleanup in the cooling regression tests by simplifying `tests/unit/test_heat_source_channels.py::make_context()` to an override-based helper instead of a long parameter list. This keeps the new cooling routing/learning tests readable without changing production logic or test behavior.
+
+Files changed:
+- `tests/unit/test_heat_source_channels.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ## 🎯 CURRENT STATUS - May 2026 (Cooling follow-up review fixes)
 
 ### ✅ **Cooling review follow-up fixes completed**

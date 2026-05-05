@@ -1,5 +1,19 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Cooling test helper cleanup — May 2026**
+
+#### **What changed**
+- `tests/unit/test_heat_source_channels.py` — simplified `make_context()` to accept override kwargs instead of a long explicit parameter list, while preserving the same derived defaults for HP-active `delta_t` and `thermal_power`.
+
+#### **Why**
+The follow-up review on the cooling regression tests called out that the helper signature had grown too large and was becoming harder to read. Converting it to an override-based helper keeps the test setup compact and makes future cooling routing assertions easier to extend without continually expanding the helper signature.
+
+#### **Files changed**
+- `tests/unit/test_heat_source_channels.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **Cooling follow-up review fixes — May 2026**
 
 #### **What changed**

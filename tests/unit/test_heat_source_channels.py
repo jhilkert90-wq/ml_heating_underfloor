@@ -26,43 +26,45 @@ def mixed_source_attribution_enabled(monkeypatch):
     )
 
 
-def make_context(
-    fireplace_on=0,
-    pv_power=0,
-    pv_power_current=None,
-    tv_on=0,
-    heat_pump_active=False,
-    avg_cloud_cover=50.0,
-    pv_power_history=None,
-    delta_t=None,
-    thermal_power=None,
-    climate_mode="heating",
-    target_temp=22.0,
-    current_indoor=21.0,
-):
-    resolved_delta_t = 5.0 if delta_t is None and heat_pump_active else (delta_t or 0.0)
-    resolved_thermal_power = (
-        2.0 if thermal_power is None and heat_pump_active else (thermal_power or 0.0)
+def make_context(**overrides):
+    heat_pump_active = overrides.get("heat_pump_active", False)
+    pv_power = overrides.get("pv_power", 0)
+    pv_power_current = overrides.get("pv_power_current")
+    delta_t = overrides.get("delta_t")
+    thermal_power = overrides.get("thermal_power")
+
+    resolved_delta_t = (
+        5.0 if delta_t is None and heat_pump_active else (delta_t or 0.0)
     )
-    return {
+    resolved_thermal_power = (
+        2.0
+        if thermal_power is None and heat_pump_active
+        else (thermal_power or 0.0)
+    )
+
+    context = {
         "outlet_temp": 40.0 if heat_pump_active else 21.0,
-        "current_indoor": current_indoor,
+        "current_indoor": 21.0,
         "outdoor_temp": 5.0,
         "pv_power": pv_power,
         "pv_power_current": (
             pv_power if pv_power_current is None else pv_power_current
         ),
-        "pv_power_history": pv_power_history,
-        "fireplace_on": fireplace_on,
-        "tv_on": tv_on,
-        "avg_cloud_cover": avg_cloud_cover,
+        "pv_power_history": None,
+        "fireplace_on": 0,
+        "tv_on": 0,
+        "avg_cloud_cover": 50.0,
         "inlet_temp": 30.0 if heat_pump_active else 21.0,
         "delta_t": resolved_delta_t,
         "thermal_power": resolved_thermal_power,
         "heat_pump_active": heat_pump_active,
-        "climate_mode": climate_mode,
-        "target_temp": target_temp,
+        "climate_mode": "heating",
+        "target_temp": 22.0,
     }
+    context.update(overrides)
+    context["delta_t"] = resolved_delta_t
+    context["thermal_power"] = resolved_thermal_power
+    return context
 
 
 @pytest.mark.parametrize(
