@@ -1,5 +1,20 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - May 2026 (Cooling gate: use existing HP detection)
+
+### ✅ **Cooling gate HP detection unified**
+
+**Status**: **COMPLETED**
+
+Removed the `HP_ACTIVE_COOLING_DELTA_T` config constant added in the previous session. The cooling cycle gate RUNNING→RECOVERY transition now reuses `_is_heat_pump_active()` from `heat_source_channels.py` — the same helper used by `_learn_from_recent` and `temperature_control.py` — instead of a bespoke `delta_t < threshold` check. This ensures HP detection is consistent across the entire codebase (checks thermal_power, delta_t, and outlet-vs-inlet signals together).
+
+Files changed:
+- `src/model_wrapper.py` — import and use `_is_heat_pump_active`; build context dict from `_current_features`; updated log messages
+- `src/config.py` — removed `HP_ACTIVE_COOLING_DELTA_T`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ## 🎯 CURRENT STATUS - May 2026 (Cooling recovery gate fix)
 
 ### ✅ **Cooling recovery gate deadlock resolved**

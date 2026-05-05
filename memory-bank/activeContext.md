@@ -1,6 +1,21 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Cooling recovery gate deadlock fix — May 2026**
+### ✅ **Cooling gate: unified HP detection — May 2026**
+
+#### **What changed**
+- `src/model_wrapper.py` — RUNNING→RECOVERY gate now calls `_is_heat_pump_active()` (imported from `heat_source_channels`) with a context dict built from `_current_features` (`thermal_power_kw`, `delta_t`, `outlet_temp`, `indoor_temp_lag_30m`, `inlet_temp`). Log messages updated to show delta_t and thermal_power.
+- `src/config.py` — Removed `HP_ACTIVE_COOLING_DELTA_T` constant (was added in previous session, now superseded).
+
+#### **Why**
+The previous fix added a new `HP_ACTIVE_COOLING_DELTA_T` config constant (0.5 K) to guard the RUNNING→RECOVERY gate. The system already has `_is_heat_pump_active()` for exactly this purpose, used by `_learn_from_recent` and `temperature_control.py`. Using the same helper keeps HP detection logic consistent across the codebase: it checks thermal_power, delta_t, and outlet-vs-inlet together, not just delta_t alone.
+
+#### **Files changed**
+- `src/model_wrapper.py`, `src/config.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+
 
 #### **What changed**
 - `src/model_wrapper.py` — RUNNING→RECOVERY transition now checks `_measured_delta_t < -HP_ACTIVE_COOLING_DELTA_T` (HP actually ran) before entering RECOVERY. When HP was idle and model wants mild cooling (outlet close to inlet), gate stays in RUNNING and clamps outlet to inlet_temp without entering RECOVERY. Log message distinguishes the two cases.
