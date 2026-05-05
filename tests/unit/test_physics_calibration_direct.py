@@ -198,6 +198,46 @@ class TestResidualHeatSourceWeight:
         )
         assert result is None
 
+    def test_tv_weight_recovery(self):
+        """TV weight should be recovered within 30 % from synthetic data.
+
+        TV signal is smaller and noisier than fireplace, so a wider
+        tolerance is appropriate (problem statement notes: "wider percentile
+        band to reduce noise").
+        """
+        from src.physics_calibration_direct import _residual_heat_source_weight
+
+        true_oe = 0.95
+        true_hlc = 0.12
+        true_tv = 0.10  # kW — a small TV contribution
+
+        rng = np.random.default_rng(55)
+        periods = []
+        for _ in range(40):
+            t_out = rng.uniform(-5, 10)
+            t_outlet = rng.uniform(30, 45)
+            denom = true_oe + true_hlc
+            t_in = (true_oe * t_outlet + true_hlc * t_out + true_tv) / denom + rng.normal(0, 0.05)
+            periods.append({
+                "indoor_temp": float(t_in),
+                "outdoor_temp": float(t_out),
+                "effective_temp": float(t_outlet),
+                "outlet_temp": float(t_outlet),
+                "pv_power": 0.0,
+                "fireplace_on": 0,
+                "tv_on": 1,
+                "thermal_power_kw": 1.0,
+            })
+
+        result = _residual_heat_source_weight(
+            periods, "tv", true_hlc, true_oe, min_periods=5, percentile=60.0
+        )
+        assert result is not None
+        assert abs(result - true_tv) / true_tv < 0.30, (
+            f"TV weight estimate {result:.4f} deviates more than 30 % "
+            f"from true {true_tv}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Tests for _calibrate_solar_lag_xcorr

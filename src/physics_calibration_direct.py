@@ -94,8 +94,28 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Step 2: Outlet Effectiveness (analytical, HP-only periods)
+# Module-level constants
 # ---------------------------------------------------------------------------
+
+# Minimum PV electrical power [W] to treat a period as "PV active"
+_MIN_PV_POWER_W: float = 100.0
+
+# Minimum PV power [W] for a cross-correlation lag sample to count
+_MIN_PV_ACTIVE_FOR_LAG_W: float = 50.0
+
+# Minimum periods with active PV for the solar lag cross-correlation to run
+_MIN_PV_SAMPLES_FOR_LAG: int = 20
+
+# Sanity bounds for the per-window PV weight estimator [kW/W]
+_PV_WEIGHT_MIN_KW_PER_W: float = 0.0001
+_PV_WEIGHT_MAX_KW_PER_W: float = 0.005
+
+# Upper bound for auxiliary heat-source contribution [kW] (FP / TV)
+_MAX_AUX_HEAT_SOURCE_KW: float = 10.0
+
+# Assumed samples per hour in the training data (5-min intervals)
+_SAMPLES_PER_HOUR: int = 12
+
 
 def _calibrate_oe_analytical(
     stable_periods, hlc: float
@@ -254,15 +274,14 @@ def _residual_heat_source_weight(
 
         if source_key == "pv":
             pv = p.get("pv_power", 0.0)
-            if pv < 100.0:
+            if pv < _MIN_PV_POWER_W:
                 continue
             w = p_source / pv  # kW/W
-            # Sanity bounds: 0.0001 to 0.005 kW/W
-            if 0.0001 <= w <= 0.005:
+            if _PV_WEIGHT_MIN_KW_PER_W <= w <= _PV_WEIGHT_MAX_KW_PER_W:
                 values.append(w)
         else:
-            # FP / TV: direct kW contribution; must be positive and < 10 kW
-            if 0.0 < p_source < 10.0:
+            # FP / TV: direct kW contribution; must be positive and bounded
+            if 0.0 < p_source < _MAX_AUX_HEAT_SOURCE_KW:
                 values.append(p_source)
 
     if len(values) < min_periods:
@@ -281,22 +300,22 @@ def _residual_heat_source_weight(
 
 
 def _filter_fp_only_periods(stable_periods):
-    """HP + fireplace on, no PV (< 100 W), no TV."""
+    """HP + fireplace on, no PV (< _MIN_PV_POWER_W W), no TV."""
     return [
         p for p in stable_periods
         if p.get("fireplace_on", 0) > 0
-        and p.get("pv_power", 0) < 100
+        and p.get("pv_power", 0) < _MIN_PV_POWER_W
         and p.get("tv_on", 0) == 0
         and p.get("thermal_power_kw", 0) >= config.HEATING_MIN_THERMAL_POWER_KW
     ]
 
 
 def _filter_tv_only_periods(stable_periods):
-    """HP + TV on, no PV (< 100 W), no fireplace."""
+    """HP + TV on, no PV (< _MIN_PV_POWER_W W), no fireplace."""
     return [
         p for p in stable_periods
         if p.get("tv_on", 0) > 0
-        and p.get("pv_power", 0) < 100
+        and p.get("pv_power", 0) < _MIN_PV_POWER_W
         and p.get("fireplace_on", 0) == 0
         and p.get("thermal_power_kw", 0) >= config.HEATING_MIN_THERMAL_POWER_KW
     ]
@@ -367,8 +386,8 @@ def _calibrate_solar_lag_xcorr(
     res_arr = np.array(residual_series)
 
     # Only compute cross-correlation when PV is non-zero to avoid noise
-    pv_active_mask = pv_arr > 50.0
-    if pv_active_mask.sum() < 20:
+    pv_active_mask = pv_arr > _MIN_PV_ACTIVE_FOR_LAG_W
+    if pv_active_mask.sum() < _MIN_PV_SAMPLES_FOR_LAG:
         logging.info("Solar lag: not enough PV-active samples, using default")
         return None
 
@@ -552,15 +571,24 @@ def _calibrate_cloud_exponent_log_ols(
 ) -> Optional[float]:
     """Estimate cloud_factor_exponent via closed-form log-OLS.
 
-    Model: ``effective_pv = pv × (1 - cloud/100)^exp``
+    The cloud model is::
 
-    Taking logs::
+        effective_pv = pv × (1 - cloud/100)^exp
 
-        ln(effective_pv) = ln(pv) + exp × ln(1 - cloud/100)
+    Ideal approach: take ``ln(effective_pv / pv) = exp × ln(1 - cloud/100)``
+    and regress. However, we do not have a direct measurement of
+    ``effective_pv`` from the raw DataFrame — we only have raw PV production
+    and cloud-cover fraction.
 
-    The effective PV contribution is estimated as the indoor residual
-    divided by ``pv_heat_weight``.  A simple OLS over (x_i, y_i) gives the
-    exponent directly.
+    Proxy relationship used instead: OLS of ``ln(pv)`` against
+    ``ln(1 - cloud/100)`` over a diverse cloud-cover range.  The slope of
+    this regression is the exponent, on the assumption that ``pv`` production
+    (for a fixed sky brightness) is modulated by ``(1 - cloud/100)^exp``.
+    The intercept absorbs irradiance-level variation; only the slope is used.
+
+    This gives a good first-principles estimate of the exponent but requires
+    periods with varying cloud cover and consistent solar angle — treat as a
+    starting point that online learning refines at runtime.
 
     Returns
     -------
@@ -586,7 +614,7 @@ def _calibrate_cloud_exponent_log_ols(
             return None
 
     mask = (
-        df[pv_col] > 200
+        (df[pv_col] > 200)
         & df[cloud_col].between(10, 90)
         & df[pv_col].notna()
         & df[cloud_col].notna()
@@ -601,27 +629,13 @@ def _calibrate_cloud_exponent_log_ols(
     pv_vals = subset[pv_col].values.astype(float)
     cloud_vals = subset[cloud_col].values.astype(float)
 
-    # x = ln(1 - cloud/100), y = ... requires residuals but we don't have
-    # them from df directly.  Use pv × (1-cloud/100) as effective proxy:
-    # fit ln(pv_effective / pv) ~ exp × ln(1-cloud/100).
-    # Here pv_effective ≈ pv for low cloud → exponent measures the slope
-    # of attenuation with cloud cover.
+    # x = ln(1 - cloud/100): the log of the clear-sky fraction
+    # y = ln(pv) demeaned: removes irradiance-level baseline
+    # The OLS slope estimates the cloud attenuation exponent.
     cloud_frac = cloud_vals / 100.0
     log_attenuation = np.log(np.clip(1.0 - cloud_frac, 1e-6, 1.0))
-    log_ratio = log_attenuation  # This is what exp multiplies
-
-    # OLS: exp = Σ(x×y) / Σ(x²) forced through origin
-    # We treat the relationship as: target ≈ log_attenuation × exp
-    # where target = ln(effective_pv / pv) — but since we don't have
-    # effective_pv measured separately, use the cloud attenuation slope:
-    # Minimize variance of contributions over cloud, i.e. find exp that makes
-    # pv × (1-cloud/100)^exp most uniform.  Equivalently: the natural
-    # exponent is 1.0; we refine via second-order correction.
-    # Fall back to minimising scatter in log-adjusted pv.
     log_pv = np.log(pv_vals)
 
-    # Simple approach: OLS of log_pv ~ a + exp × log_attenuation
-    # gives exp as the slope
     x = log_attenuation
     y = log_pv - np.mean(log_pv)
     x_centered = x - np.mean(x)
@@ -682,7 +696,7 @@ def calibrate_thermal_model_physics(
         logging.error("❌ Failed to fetch historical data")
         return None
     logging.info(
-        "✅ Retrieved %d samples (%.1f hours)", len(df), len(df) / 12
+        "✅ Retrieved %d samples (%.1f hours)", len(df), len(df) / _SAMPLES_PER_HOUR
     )
 
     # Filter stable periods (shared with scipy path)
