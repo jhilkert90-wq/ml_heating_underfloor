@@ -171,19 +171,47 @@ def render_system_controls():
                         st.error(f"Start failed: {output}")
     
     with col3:
+        # Calibration method selector
+        calib_method = st.radio(
+            "Calibration method:",
+            ["Scipy Optimizer", "Physics Direct"],
+            help=(
+                "**Scipy Optimizer**: multi-pass L-BFGS-B joint optimisation (default).\n\n"
+                "**Physics Direct**: fully analytical sequential estimation — "
+                "no scipy dependency, derives every parameter from first principles."
+            ),
+            horizontal=True,
+        )
+
         if st.button("🔧 Recalibrate Model"):
             with st.spinner("Triggering model recalibration..."):
-                success, output = trigger_model_recalibration()
-                if success:
-                    st.success("Model recalibration started!")
-                    st.info("This will reset learning progress and retrain from historical data.")
+                if calib_method == "Physics Direct":
+                    try:
+                        os.makedirs('/data/config', exist_ok=True)
+                        with open('/data/config/calibrate_physics_direct_flag', 'w') as f:
+                            f.write(datetime.now().isoformat())
+                        success, output = restart_ml_system()
+                        if success:
+                            st.success(
+                                "Physics-direct calibration triggered! "
+                                "The system will calibrate analytically from "
+                                "historical data on next startup."
+                            )
+                        else:
+                            st.warning(f"Flag written but restart failed: {output}")
+                    except Exception as e:
+                        st.error(f"Physics-direct calibration trigger failed: {e}")
                 else:
-                    st.error(f"Recalibration failed: {output}")
+                    success, output = trigger_model_recalibration()
+                    if success:
+                        st.success("Model recalibration started!")
+                        st.info("This will retrain from historical data using scipy optimisation.")
+                    else:
+                        st.error(f"Recalibration failed: {output}")
 
         if st.button("📊 Calibrate HLC"):
             with st.spinner("Writing HLC calibration flag..."):
                 try:
-                    import os
                     os.makedirs('/data/config', exist_ok=True)
                     with open('/data/config/hlc_calibrate_flag', 'w') as f:
                         f.write(datetime.now().isoformat())

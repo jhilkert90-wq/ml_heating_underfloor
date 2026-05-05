@@ -70,7 +70,12 @@ def main():
     parser.add_argument(
         "--calibrate-physics",
         action="store_true",
-        help="Calibrate the physics model.",
+        help="Calibrate the physics model using the method set in CALIBRATION_METHOD config.",
+    )
+    parser.add_argument(
+        "--calibrate-physics-direct",
+        action="store_true",
+        help="Calibrate the physics model using the physics-direct analytical path (no scipy).",
     )
     parser.add_argument(
         "--calibrate-physics-export-only",
@@ -157,6 +162,36 @@ def main():
             else:
                 logging.warning("⚠️ HLC calibration failed: %s", result.get("message"))
 
+    # --- Physics-Direct Calibration Flag Detection ---
+    _physics_direct_flag = "/data/config/calibrate_physics_direct_flag"
+    if os.path.exists(_physics_direct_flag):
+        logging.info(
+            "🔬 Physics-direct calibrate flag detected — running analytics calibration"
+        )
+        try:
+            os.remove(_physics_direct_flag)
+        except OSError as _flag_err:
+            logging.error(
+                "❌ Could not remove physics-direct flag %s — skipping "
+                "to avoid infinite loop: %s", _physics_direct_flag, _flag_err
+            )
+            _physics_direct_flag = None
+        if _physics_direct_flag is not None:
+            try:
+                from .physics_calibration_direct import calibrate_thermal_model_physics
+                result_model = calibrate_thermal_model_physics()
+                if result_model is not None:
+                    logging.info(
+                        "✅ Physics-direct calibration completed — "
+                        "restart the service to apply the new parameters"
+                    )
+                else:
+                    logging.error("❌ Physics-direct calibration returned None")
+            except Exception as _phys_err:
+                logging.error(
+                    "❌ Physics-direct calibration error: %s", _phys_err, exc_info=True
+                )
+
     # --- InfluxDB Write Permission Check ---
     # Verify early that the token can write to the features bucket
     try:
@@ -233,7 +268,11 @@ def main():
             else:
                 logging.info("ℹ️ No existing thermal state found to backup")
 
-            result = train_thermal_equilibrium_model()
+            # Use CALIBRATION_METHOD from config as the default; --calibrate-physics
+            # respects the configured method.
+            result = train_thermal_equilibrium_model(
+                method=getattr(config, "CALIBRATION_METHOD", "scipy")
+            )
             if result:
                 logging.info("✅ Thermal model calibrated successfully!")
                 logging.info(
@@ -244,6 +283,24 @@ def main():
         except Exception as e:
             logging.error(
                 "Thermal model calibration error: %s", e, exc_info=True
+            )
+        return
+
+    # --- Physics-Direct Calibration (explicit CLI flag) ---
+    if _bool_arg(args, "calibrate_physics_direct"):
+        try:
+            from .physics_calibration_direct import calibrate_thermal_model_physics
+
+            logging.info("=== CALIBRATING THERMAL EQUILIBRIUM MODEL (PHYSICS-DIRECT) ===")
+            result = calibrate_thermal_model_physics()
+            if result:
+                logging.info("✅ Physics-direct calibration completed successfully!")
+                logging.info("🔄 Restart ml_heating to use trained thermal model")
+            else:
+                logging.error("❌ Physics-direct calibration failed")
+        except Exception as e:
+            logging.error(
+                "Physics-direct calibration error: %s", e, exc_info=True
             )
         return
 

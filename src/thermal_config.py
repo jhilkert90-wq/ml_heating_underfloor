@@ -211,10 +211,41 @@ class ThermalParameterConfig:
         """Get all cooling-mode default parameter values."""
         return cls.COOLING_DEFAULTS.copy()
 
+    # Maps ThermalParameterConfig param names to their config.py variable names.
+    # When a config module variable exists it is used as the default so that
+    # users can override defaults via config.yaml / environment variables
+    # without touching source code.
+    _CONFIG_VAR_MAP: Dict[str, str] = {
+        'thermal_time_constant': 'THERMAL_TIME_CONSTANT',
+        'heat_loss_coefficient': 'HEAT_LOSS_COEFFICIENT',
+        'outlet_effectiveness': 'OUTLET_EFFECTIVENESS',
+        'pv_heat_weight': 'PV_HEAT_WEIGHT',
+        'fireplace_heat_weight': 'FIREPLACE_HEAT_WEIGHT',
+        'tv_heat_weight': 'TV_HEAT_WEIGHT',
+        'solar_lag_minutes': 'SOLAR_LAG_MINUTES',
+        'slab_time_constant_hours': 'SLAB_TIME_CONSTANT_HOURS',
+        'delta_t_floor': 'DELTA_T_FLOOR',
+        'fp_decay_time_constant': 'FP_DECAY_TIME_CONSTANT',
+        'room_spread_delay_minutes': 'ROOM_SPREAD_DELAY_MINUTES',
+        'cloud_factor_exponent': 'CLOUD_FACTOR_EXPONENT',
+        'solar_decay_tau_hours': 'SOLAR_DECAY_TAU_HOURS',
+        'equilibrium_ratio': 'EQUILIBRIUM_RATIO',
+        'total_conductance': 'TOTAL_CONDUCTANCE',
+        'adaptive_learning_rate': 'ADAPTIVE_LEARNING_RATE',
+        'learning_confidence': 'LEARNING_CONFIDENCE',
+        'min_learning_rate': 'MIN_LEARNING_RATE',
+        'max_learning_rate': 'MAX_LEARNING_RATE',
+    }
+
     @classmethod
     def get_default(cls, param_name: str) -> float:
         """
         Get the default value for a thermal parameter.
+
+        Resolution order:
+        1. ``config`` module variable (set via config.yaml / environment) —
+           allows the operator to override defaults without touching source code.
+        2. Hardcoded ``DEFAULTS`` dict — baseline values baked into the release.
 
         Args:
             param_name: Name of the thermal parameter
@@ -227,6 +258,23 @@ class ThermalParameterConfig:
         """
         if param_name not in cls.DEFAULTS:
             raise KeyError(f"Unknown thermal parameter: {param_name}")
+
+        # Prefer the value from config module (config.yaml / env var) when
+        # the parameter has a mapped config variable.
+        config_var = cls._CONFIG_VAR_MAP.get(param_name)
+        if config_var:
+            try:
+                import config as _cfg  # type: ignore[import]
+                if hasattr(_cfg, config_var):
+                    return float(getattr(_cfg, config_var))
+            except ImportError:
+                try:
+                    from src import config as _cfg  # type: ignore[import]
+                    if hasattr(_cfg, config_var):
+                        return float(getattr(_cfg, config_var))
+                except ImportError:
+                    pass
+
         return cls.DEFAULTS[param_name]
 
     @classmethod

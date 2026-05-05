@@ -483,6 +483,10 @@ MIN_STABLE_PERIOD_MINUTES: int = int(
     os.getenv("MIN_STABLE_PERIOD_MINUTES", "30")
 )
 OPTIMIZATION_METHOD: str = os.getenv("OPTIMIZATION_METHOD", "L-BFGS-B")
+# Calibration method for train_thermal_equilibrium_model().
+# "scipy" (default): multi-pass L-BFGS-B joint optimisation.
+# "physics": fully analytical, sequential physics-direct path (no scipy).
+CALIBRATION_METHOD: str = os.getenv("CALIBRATION_METHOD", "scipy")
 
 # Indoor temperature ceiling for PV calibration periods.
 # Periods with indoor_temp >= this value are excluded from PV Pass 2
@@ -678,12 +682,19 @@ PRE_COOL_MIN_OUTDOOR_FORECAST_C: float = float(
 )
 
 # Thermal Model Parameters
-PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.002"))
-FIREPLACE_HEAT_WEIGHT: float = float(os.getenv("FIREPLACE_HEAT_WEIGHT", "5.0"))
-TV_HEAT_WEIGHT: float = float(os.getenv("TV_HEAT_WEIGHT", "0.2"))
-THERMAL_TIME_CONSTANT: float = float(os.getenv("THERMAL_TIME_CONSTANT", "4.0"))
+PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.0020704649305198215"))
+FIREPLACE_HEAT_WEIGHT: float = float(os.getenv("FIREPLACE_HEAT_WEIGHT", "0.387"))
+TV_HEAT_WEIGHT: float = float(os.getenv("TV_HEAT_WEIGHT", "0.35"))
+THERMAL_TIME_CONSTANT: float = float(os.getenv("THERMAL_TIME_CONSTANT", "4.390554703745845"))
+HEAT_LOSS_COEFFICIENT: float = float(os.getenv("HEAT_LOSS_COEFFICIENT", "0.1245214561975565"))
+OUTLET_EFFECTIVENESS: float = float(os.getenv("OUTLET_EFFECTIVENESS", "0.9526723072021629"))
+DELTA_T_FLOOR: float = float(os.getenv("DELTA_T_FLOOR", "2.3"))
+FP_DECAY_TIME_CONSTANT: float = float(os.getenv("FP_DECAY_TIME_CONSTANT", "3.9144707244638868"))
+ROOM_SPREAD_DELAY_MINUTES: float = float(os.getenv("ROOM_SPREAD_DELAY_MINUTES", "18.0"))
+CLOUD_FACTOR_EXPONENT: float = float(os.getenv("CLOUD_FACTOR_EXPONENT", "1.0"))
+SOLAR_DECAY_TAU_HOURS: float = float(os.getenv("SOLAR_DECAY_TAU_HOURS", "1.0"))
 EQUILIBRIUM_RATIO: float = float(os.getenv("EQUILIBRIUM_RATIO", "0.17"))
-TOTAL_CONDUCTANCE: float = float(os.getenv("TOTAL_CONDUCTANCE", "0.24"))
+TOTAL_CONDUCTANCE: float = float(os.getenv("TOTAL_CONDUCTANCE", "0.8"))
 ADAPTIVE_LEARNING_RATE: float = float(
     os.getenv("ADAPTIVE_LEARNING_RATE", "0.01")
 )
@@ -694,7 +705,7 @@ SOLAR_LAG_MINUTES: float = float(os.getenv("SOLAR_LAG_MINUTES", "45.0"))
 CLOUD_CORRECTION_MIN_FACTOR: float = float(
     os.getenv("CLOUD_CORRECTION_MIN_FACTOR", "0.1")
 )
-SLAB_TIME_CONSTANT_HOURS: float = float(os.getenv("SLAB_TIME_CONSTANT_HOURS", "1.0"))
+SLAB_TIME_CONSTANT_HOURS: float = float(os.getenv("SLAB_TIME_CONSTANT_HOURS", "3.19"))
 MAX_PREDICTION_HISTORY: int = int(os.getenv("MAX_PREDICTION_HISTORY", "700"))
 MAX_PARAMETER_HISTORY: int = int(os.getenv("MAX_PARAMETER_HISTORY", "700"))
 INFLUX_METRICS_EXPORT_INTERVAL_CYCLES: int = int(

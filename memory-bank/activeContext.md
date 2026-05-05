@@ -1,5 +1,36 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Calibration parameter fallback + config.yaml exposure — May 2026**
+
+#### **What changed**
+- `src/physics_calibration_direct.py` — `calibrate_thermal_model_physics()` resolves the active `ThermalStateManager` at the top of the function (before step 0) and loads `baseline_parameters` from the persisted state file. A `_state_fallback(key)` helper returns the persisted value when it's a valid float, otherwise falls back to `ThermalParameterConfig.get_default()`. All 13 step-level fallbacks now use `_state_fallback()` instead of `ThermalParameterConfig.get_default()`. Log messages now indicate whether "persisted" or "default" was used.
+- `src/unified_thermal_state.py` — `_get_default_state()` now includes `cloud_factor_exponent` and `solar_decay_tau_hours` in the `baseline_parameters` dict. `set_calibrated_baseline()` persists those two parameters if present in the input dict.
+- `src/thermal_config.py` — `ThermalParameterConfig.get_default()` now checks the `config` module (which reads from env vars / `config.yaml`) before returning the hardcoded `DEFAULTS` value. A `_CONFIG_VAR_MAP` dict maps param names to their config variable names.
+- `src/config.py` — Added 7 missing config vars: `HEAT_LOSS_COEFFICIENT`, `OUTLET_EFFECTIVENESS`, `DELTA_T_FLOOR`, `FP_DECAY_TIME_CONSTANT`, `ROOM_SPREAD_DELAY_MINUTES`, `CLOUD_FACTOR_EXPONENT`, `SOLAR_DECAY_TAU_HOURS`.
+- `.env_sample` — Added `CLOUD_FACTOR_EXPONENT` and `SOLAR_DECAY_TAU_HOURS`.
+- `ml_heating_underfloor/config.yaml` — Added `cloud_factor_exponent` and `solar_decay_tau_hours` entries.
+
+#### **Why**
+When calibration data is insufficient for a parameter (e.g. no fireplace-active rows), the fallback chain is now:
+1. Calibrated value from data
+2. Last valid value from `unified_thermal_state.json` (survives restarts)
+3. User-editable value from `config.yaml` / environment variable
+
+Previously the fallback jumped directly to the hardcoded Python constant in `ThermalParameterConfig.DEFAULTS`, bypassing both the state file and the user-editable config. This meant a corrupted or missing parameter silently reverted to a value the user could not change without editing source code.
+
+#### **Files changed**
+- `src/physics_calibration_direct.py`
+- `src/unified_thermal_state.py`
+- `src/thermal_config.py`
+- `src/config.py`
+- `.env_sample`
+- `ml_heating_underfloor/config.yaml`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **CI Workflow fixes — May 2026**
 
 #### **What changed**

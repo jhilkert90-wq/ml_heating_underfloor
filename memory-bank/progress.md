@@ -1,32 +1,38 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (CI Workflow fixes)
+## 🎯 CURRENT STATUS - May 2026 (Calibration fallback + config.yaml exposure)
 
-### ✅ **CI workflow bugs fixed**
-
-**Status**: **COMPLETED**
-
-Fixed two GitHub Actions warnings in the `update-docs` workflow:
-1. Upgraded `actions/checkout@v4` → `@v6` (Node.js 20 deprecation).
-2. Switched API base URL from `https://api.githubcopilot.com` to `https://models.inference.ai.azure.com` in both `auto-docs.yaml` and `ai-code-review.yaml` — the Copilot endpoint rejects server-to-server tokens; GitHub Models endpoint accepts `GITHUB_TOKEN` with `models: read` permission.
-
-**Files changed:**
-- `.github/workflows/auto-docs.yaml`
-- `.github/workflows/ai-code-review.yaml`
-
-## 🎯 CURRENT STATUS - May 2026 (CI Workflow fixes)
-
-### ✅ **CI workflow bugs fixed**
+### ✅ **All calibration parameters now have a 3-level fallback chain**
 
 **Status**: **COMPLETED**
 
-Fixed two GitHub Actions warnings in the `update-docs` workflow:
-1. Upgraded `actions/checkout@v4` → `@v6` (Node.js 20 deprecation).
-2. Switched API base URL from `https://api.githubcopilot.com` to `https://models.inference.ai.azure.com` in both `auto-docs.yaml` and `ai-code-review.yaml` — the Copilot endpoint rejects server-to-server tokens; GitHub Models endpoint accepts `GITHUB_TOKEN` with `models: read` permission.
+Three separate concerns were addressed together:
+
+1. **State-file warm-start fallback** — `calibrate_thermal_model_physics()` now resolves `ThermalStateManager` early and uses `_state_fallback()` so that any parameter that fails to calibrate keeps its last-known good value from `unified_thermal_state.json` instead of reverting to a hardcoded default.
+
+2. **config.yaml editability** — `ThermalParameterConfig.get_default()` now reads from `config` module variables (set via `config.yaml` / env vars) before falling back to hardcoded `DEFAULTS`. 7 missing config vars added to `src/config.py`; 2 undocumented entries added to `.env_sample` and `config.yaml`.
+
+3. **cloud_factor_exponent / solar_decay_tau_hours persisted** — `set_calibrated_baseline()` and `_get_default_state()` in `unified_thermal_state.py` now include both parameters so they survive restarts and are available as warm-start fallbacks.
+
+**Fallback chain for every calibration parameter:**
+1. Calibrated value from current data
+2. Last valid value from `unified_thermal_state.json`
+3. User-editable value from `config.yaml` / environment variable
 
 **Files changed:**
-- `.github/workflows/auto-docs.yaml`
-- `.github/workflows/ai-code-review.yaml`
+- `src/physics_calibration_direct.py`
+- `src/unified_thermal_state.py`
+- `src/thermal_config.py`
+- `src/config.py`
+- `.env_sample`
+- `ml_heating_underfloor/config.yaml`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+
+
+
 
 ## 🎯 PREVIOUS STATUS - June 2025 (Predictive Pre-Cooling)
 

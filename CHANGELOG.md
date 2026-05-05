@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Solar lag xcorr: non-contiguous data bug** — `_calibrate_solar_lag_xcorr()` in `src/physics_calibration_direct.py` previously operated on `stable_periods` (non-adjacent 20-min windows scattered across weeks), making lag shifts meaningless. Rewrote to operate on the raw time-sorted DataFrame, computing xcorr within each **contiguous PV-active episode** and returning the modal best-lag across episodes. Added 3 new edge-case tests.
+- **Slab tau step-ordering dependency** — `_calibrate_slab_tau_grid_search()` used the config default for `delta_t_floor` even though the calibrated value was available from the immediately preceding step 8. Added `delta_t_floor` parameter; `calibrate_thermal_model_physics()` now passes the step-8 calibrated value so the slab-tau estimate is not biased by an incorrect default.
+- **OE docstring incorrect** — Corrected the docstring in `_calibrate_oe_analytical()`: weight description now consistently uses the term `drive = T_outlet − T_indoor` to avoid confusion with the reciprocal.
+- **IQR outlier rejection in residual weight estimator** — `_residual_heat_source_weight()` now applies a 1.5-IQR fence to the collected sample distribution before taking the percentile, preventing extreme residuals from transient slab effects or sensor spikes from biasing the estimate.
+- **bfill NaN gap warning** — `calibrate_thermal_model_physics()` now logs a `⚠️` warning for each key column (flow_rate, inlet_temp, target_outlet_temp) that has more than 6 consecutive NaN rows (>30 min gap) after imputation, making silent bfill contamination visible.
+- **Tau calibration duration gate** — `calculate_cooling_time_constant()` in `src/physics_calibration.py` now requires HP-off blocks to span at least 2 hours before including their tau estimate in the weighted average, preventing short blocks (typical in underfloor systems) from systematically underestimating the room thermal time constant.
+
+### Added
+- **State-file fallback for all calibration parameters** — `calibrate_thermal_model_physics()` now resolves the active `ThermalStateManager` early and uses a `_state_fallback()` helper. When a calibration step cannot produce a value (e.g. no fireplace-active rows in the dataset), it uses the previously persisted value from `unified_thermal_state.json` instead of the hardcoded default, preserving any prior calibration result. If the state file also has no valid value, the `config.yaml`-editable default is used as the final fallback.
+- **`cloud_factor_exponent` and `solar_decay_tau_hours` persisted to state file** — `set_calibrated_baseline()` in `unified_thermal_state.py` and `_get_default_state()` now include these two parameters so they survive restarts and are available as warm-start fallbacks on the next calibration run.
+
+### Changed
+- **PV `min_periods` raised from 5 to 15** — `calibrate_thermal_model_physics()` now requires at least 15 qualifying stable periods for PV heat-weight estimation, reducing sensitivity to occupancy-correlated noise when PV-active days are few.
+- **All calibration parameters now editable in `config.yaml`** — `ThermalParameterConfig.get_default()` now reads from `config` module variables first (which are sourced from `config.yaml` / environment variables) before falling back to the hardcoded `DEFAULTS` dict. Added 7 new config vars to `src/config.py` that were previously missing: `HEAT_LOSS_COEFFICIENT`, `OUTLET_EFFECTIVENESS`, `DELTA_T_FLOOR`, `FP_DECAY_TIME_CONSTANT`, `ROOM_SPREAD_DELAY_MINUTES`, `CLOUD_FACTOR_EXPONENT`, `SOLAR_DECAY_TAU_HOURS`. Both `.env_sample` and `config.yaml` are updated with the two previously undocumented entries (`cloud_factor_exponent`, `solar_decay_tau_hours`).
+
+
+### Added
+- **Physics-Direct Calibration Path** (`src/physics_calibration_direct.py`): new `calibrate_thermal_model_physics()` function that estimates every thermal parameter analytically — no scipy optimizer, no MAE fitting.  Sequential decoupling derives each parameter after locking previous ones:
+  1. HLC via `calibrate_hlc()` (OLS flow-meter regression)
+  2. OE via per-window algebra from HP-only stable periods
+  3. τ_room from log-linear OLS on HP-off cooling curves
+  4. `pv_heat_weight` via residual energy balance on PV-on periods
+  5. `fireplace_heat_weight` via residual energy balance on FP-on periods
+  6. `tv_heat_weight` via residual energy balance on TV-on periods
+  7. `solar_lag_minutes` via PV ↔ indoor-residual cross-correlation
+  8. `delta_t_floor` via P25 percentile of (outlet − inlet)
+  9. `slab_time_constant_hours` via 1-D grid search over [0.1, 4.0 h] (replaces scipy dependency)
+  10. `fp_decay_time_constant` via existing log-linear OLS
+  11. `room_spread_delay_minutes` via existing cross-correlation
+  12. `cloud_factor_exponent` via log-OLS (when `CLOUD_COVER_CORRECTION_ENABLED`)
+  13. `solar_decay_tau_hours` via existing log-linear OLS
+- `CALIBRATION_METHOD` config variable (`"scipy"` default, or `"physics"`): selects the calibration path system-wide.
+- `--calibrate-physics-direct` CLI flag to `src/main.py`: runs the physics-direct path explicitly, exits after calibration.
+- Flag-file support in `src/main.py`: writing `/data/config/calibrate_physics_direct_flag` triggers the physics-direct path on next startup (same pattern as the existing HLC flag).
+- Dashboard calibration method radio toggle in `dashboard/components/control.py`: "Scipy Optimizer" vs "Physics Direct" — selecting Physics Direct writes the `calibrate_physics_direct_flag`.
+- 19 new unit tests in `tests/unit/test_physics_calibration_direct.py` covering all new analytical estimators.
+
+### Changed
+- `train_thermal_equilibrium_model()` in `src/physics_calibration.py` now accepts a `method` parameter (`"scipy"` or `"physics"`).  Existing callers are unaffected (default remains `"scipy"`).  When `CALIBRATION_METHOD="physics"` is set in config and `method="scipy"` is passed (the default), the config value takes precedence.
+- `--calibrate-physics` CLI flag now respects `CALIBRATION_METHOD` from config rather than always running scipy.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
