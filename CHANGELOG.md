@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **CI: Node.js 20 deprecation** — upgraded `actions/checkout@v4` to `@v6` in `auto-docs.yaml`
+- **CI: AI API token error** — switched `auto-docs.yaml` and `ai-code-review.yaml` from `https://api.githubcopilot.com` to `https://models.inference.ai.azure.com` (GitHub Models); server-to-server tokens are not supported on the Copilot endpoint
+
 ### Added
 - **Predictive Pre-Cooling**: Forecast-driven overheating prevention that simulates passive indoor trajectory using PV and outdoor temperature forecasts. Starts cooling before the room overheats by shifting the binary-search target temperature down. Only active in cooling mode.
 - New `OverheatingPredictor` class (`src/overheating_predictor.py`) with configurable guard thresholds, horizon, and lead time

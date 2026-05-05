@@ -1,6 +1,20 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - June 2025 (Predictive Pre-Cooling)
+## 🎯 CURRENT STATUS - May 2026 (CI Workflow fixes)
+
+### ✅ **CI workflow bugs fixed**
+
+**Status**: **COMPLETED**
+
+Fixed two GitHub Actions warnings in the `update-docs` workflow:
+1. Upgraded `actions/checkout@v4` → `@v6` (Node.js 20 deprecation).
+2. Switched API base URL from `https://api.githubcopilot.com` to `https://models.inference.ai.azure.com` in both `auto-docs.yaml` and `ai-code-review.yaml` — the Copilot endpoint rejects server-to-server tokens; GitHub Models endpoint accepts `GITHUB_TOKEN` with `models: read` permission.
+
+**Files changed:**
+- `.github/workflows/auto-docs.yaml`
+- `.github/workflows/ai-code-review.yaml`
+
+## 🎯 PREVIOUS STATUS - June 2025 (Predictive Pre-Cooling)
 
 ### ✅ **Predictive Pre-Cooling implemented**
 

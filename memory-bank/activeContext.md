@@ -1,5 +1,20 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **CI Workflow fixes — May 2026**
+
+#### **What changed**
+- `.github/workflows/auto-docs.yaml` — upgraded `actions/checkout@v4` → `@v6` to fix Node.js 20 deprecation warning; changed API base URL from `https://api.githubcopilot.com` to `https://models.inference.ai.azure.com` to fix "server-to-server token not supported" error; updated model comment.
+- `.github/workflows/ai-code-review.yaml` — same API base URL fix; model changed from `gpt-5.4` to `gpt-4.1`; updated footer comment.
+
+#### **Why**
+The `update-docs` workflow was emitting two warnings on every push to main:
+1. `actions/checkout@v4` running on Node.js 20 (deprecated, forced to Node.js 24 from June 2026).
+2. `AI call failed: checking server-to-server token: bad request` — the GitHub Copilot endpoint (`api.githubcopilot.com`) does not accept the `GITHUB_TOKEN` server-to-server token issued to GitHub Actions. The GitHub Models endpoint (`models.inference.ai.azure.com`) supports it with the `models: read` permission already present in both workflows.
+
+#### **Files changed**
+- `.github/workflows/auto-docs.yaml`
+- `.github/workflows/ai-code-review.yaml`
+
 ### ✅ **Predictive Pre-Cooling Implementation — June 2025**
 
 #### **What changed**
