@@ -1,23 +1,30 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Physics-Direct Calibration)
+## 🎯 CURRENT STATUS - May 2026 (Calibration Code-Review Fixes)
 
-### ✅ **Physics-Direct Calibration Path implemented**
+### ✅ **Physics-Direct Calibration: 7 edge-case and algorithmic fixes**
 
 **Status**: **COMPLETED**
 
-Implemented a fully analytical calibration path `calibrate_thermal_model_physics()` in `src/physics_calibration_direct.py`.  Every thermal parameter is estimated from first principles using closed-form algebra, percentile statistics, cross-correlation, and 1-D grid search — no scipy optimizer required.  The user can choose between the existing scipy path and the new physics-direct path via the `CALIBRATION_METHOD` config variable, the `--calibrate-physics-direct` CLI flag, a dashboard radio toggle, or a flag file.
+Following a detailed code review of the physics-direct calibration path, seven issues were corrected:
+
+1. **Solar lag xcorr rewritten** — function now operates on contiguous df episodes, not non-contiguous stable_periods (critical algorithmic bug: lag shifts were comparing samples from different days/weeks).
+2. **Slab tau step-ordering fixed** — calibrated delta_t_floor from step 8 is now passed to the slab grid search (step 9) instead of using the config default.
+3. **OE docstring corrected** — weight description said `1/(drive)` but code correctly uses `(drive)` directly.
+4. **IQR outlier rejection added** — `_residual_heat_source_weight()` applies a 1.5-IQR fence before taking the percentile.
+5. **bfill gap warnings added** — `calibrate_thermal_model_physics()` warns when key sensor columns have >6 consecutive NaN rows.
+6. **PV min_periods raised** — from 5 to 15 qualifying periods to reduce occupancy noise.
+7. **Tau duration gate added** — `calculate_cooling_time_constant()` skips HP-off blocks shorter than 2 h.
 
 **Files changed:**
-- `src/physics_calibration_direct.py` (new)
-- `src/physics_calibration.py` (method dispatch)
-- `src/config.py` (CALIBRATION_METHOD)
-- `src/main.py` (--calibrate-physics-direct flag, flag-file handler)
-- `dashboard/components/control.py` (calibration method radio toggle)
-- `tests/unit/test_physics_calibration_direct.py` (new, 19 tests)
+- `src/physics_calibration_direct.py`
+- `src/physics_calibration.py`
+- `tests/unit/test_physics_calibration_direct.py` (22 tests, all pass)
 - `CHANGELOG.md`
 - `memory-bank/progress.md`
 - `memory-bank/activeContext.md`
+
+
 
 
 

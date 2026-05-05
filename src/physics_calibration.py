@@ -1099,6 +1099,13 @@ def calculate_cooling_time_constant(df):
             group['_time'] - group['_time'].iloc[0]
         ).dt.total_seconds() / 3600.0
 
+        # Require at least 2 h of observed HP-off to get a reliable tau
+        # estimate.  In underfloor systems the HP restarts frequently; short
+        # blocks (<2 h) produce near-flat cooling curves whose slope maps to
+        # a systematically short apparent tau.
+        if times.max() < 2.0:
+            continue
+
         # Calculate log diff
         # T(t) - T_out = Delta * exp(-t/tau)
         # ln(T(t) - T_out) = ln(Delta) - t/tau

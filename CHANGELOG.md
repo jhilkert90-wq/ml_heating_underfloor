@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Solar lag xcorr: non-contiguous data bug** — `_calibrate_solar_lag_xcorr()` in `src/physics_calibration_direct.py` previously operated on `stable_periods` (non-adjacent 20-min windows scattered across weeks), making lag shifts meaningless. Rewrote to operate on the raw time-sorted DataFrame, computing xcorr within each **contiguous PV-active episode** and returning the modal best-lag across episodes. Added 3 new edge-case tests.
+- **Slab tau step-ordering dependency** — `_calibrate_slab_tau_grid_search()` used the config default for `delta_t_floor` even though the calibrated value was available from the immediately preceding step 8. Added `delta_t_floor` parameter; `calibrate_thermal_model_physics()` now passes the step-8 calibrated value so the slab-tau estimate is not biased by an incorrect default.
+- **OE docstring incorrect** — Corrected the docstring in `_calibrate_oe_analytical()`: weight description said `1/(T_outlet−T_indoor)` but the code correctly uses `(T_outlet−T_indoor)` directly (larger temperature drive → more reliable OE estimate).
+- **IQR outlier rejection in residual weight estimator** — `_residual_heat_source_weight()` now applies a 1.5-IQR fence to the collected sample distribution before taking the percentile, preventing extreme residuals from transient slab effects or sensor spikes from biasing the estimate.
+- **bfill NaN gap warning** — `calibrate_thermal_model_physics()` now logs a `⚠️` warning for each key column (flow_rate, inlet_temp, target_outlet_temp) that has more than 6 consecutive NaN rows (>30 min gap) after imputation, making silent bfill contamination visible.
+- **PV min_periods raised** — PV heat-weight estimation now requires ≥15 qualifying periods (was 5), reducing occupancy-correlated noise in the PV-weight estimate.
+- **Tau calibration duration gate** — `calculate_cooling_time_constant()` in `src/physics_calibration.py` now requires HP-off blocks to span at least 2 hours before including their tau estimate in the weighted average, preventing short blocks (typical in underfloor systems) from systematically underestimating the room thermal time constant.
+
 ### Added
 - **Physics-Direct Calibration Path** (`src/physics_calibration_direct.py`): new `calibrate_thermal_model_physics()` function that estimates every thermal parameter analytically — no scipy optimizer, no MAE fitting.  Sequential decoupling derives each parameter after locking previous ones:
   1. HLC via `calibrate_hlc()` (OLS flow-meter regression)

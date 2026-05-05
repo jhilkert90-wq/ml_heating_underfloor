@@ -243,44 +243,79 @@ class TestResidualHeatSourceWeight:
 # Tests for _calibrate_solar_lag_xcorr
 # ---------------------------------------------------------------------------
 
-class TestSolarLagXcorr:
-    """Unit tests for the solar lag cross-correlation estimator."""
+def _make_solar_lag_df(n_rows=200, pv_w=600.0, indoor=20.0, outdoor=5.0, outlet=38.0):
+    """Build a minimal DataFrame for solar lag xcorr tests.
 
-    def test_returns_float_for_valid_data(self):
-        """Should return a float lag value for data with meaningful PV signal."""
+    Uses the default entity ID suffixes (after splitting on '.') so that the
+    function under test can derive column names without patching config.
+    """
+    rng = np.random.default_rng(42)
+    base_t = datetime(2024, 6, 1, 8, 0)
+    rows = []
+    for i in range(n_rows):
+        rows.append({
+            "_time": base_t + timedelta(minutes=5 * i),
+            # Default entity IDs split to these column names:
+            "pv_power": pv_w + rng.normal(0, 20),       # sensor.pv_power
+            "kuche_temperatur": indoor + rng.normal(0, 0.1),  # INDOOR_TEMP
+            "thermometer_waermepume_kompensiert": outdoor + rng.normal(0, 0.1),  # OUTDOOR
+            "hp_outlet_temp": outlet + rng.normal(0, 0.1),    # ACTUAL_OUTLET
+        })
+    return pd.DataFrame(rows)
+
+
+class TestSolarLagXcorr:
+    """Unit tests for the solar lag cross-correlation estimator.
+
+    The function now accepts a raw time-series DataFrame (not period dicts)
+    so that cross-correlation is computed on temporally contiguous samples.
+    """
+
+    def test_returns_float_or_none_for_valid_data(self):
+        """Should return None or a valid float lag in [0, 180] for a
+        sustained PV-active DataFrame.  The test is lenient (allows None)
+        because the default correlation threshold may not be met with
+        synthetic white-noise data — what matters is no crash and correct
+        range if a result is returned."""
         from src.physics_calibration_direct import _calibrate_solar_lag_xcorr
 
-        rng = np.random.default_rng(1234)
-        n = 100
-        periods = []
-        for i in range(n):
-            periods.append({
-                "indoor_temp": 20.0 + rng.normal(0, 0.3),
-                "outdoor_temp": 5.0,
-                "effective_temp": 38.0,
-                "outlet_temp": 38.0,
-                "pv_power": float(max(0, 500 * np.sin(i / 10) + rng.normal(0, 50))),
-                "timestamp": None,
-            })
-        result = _calibrate_solar_lag_xcorr(periods, hlc=0.12, oe=0.95)
-        # May return None or a valid float in [0, 180]
+        df = _make_solar_lag_df(n_rows=200)
+        result = _calibrate_solar_lag_xcorr(df, hlc=0.12, oe=0.95)
         if result is not None:
             assert 0 <= result <= 180
 
-    def test_returns_none_for_insufficient_periods(self):
+    def test_returns_none_for_insufficient_rows(self):
+        """A DataFrame with fewer rows than min_ep_len should return None."""
         from src.physics_calibration_direct import _calibrate_solar_lag_xcorr
-        periods = [{"indoor_temp": 20, "outdoor_temp": 5, "effective_temp": 38,
-                    "outlet_temp": 38, "pv_power": 500}]
-        result = _calibrate_solar_lag_xcorr(periods, hlc=0.12, oe=0.95)
+
+        df = _make_solar_lag_df(n_rows=5)
+        result = _calibrate_solar_lag_xcorr(df, hlc=0.12, oe=0.95)
         assert result is None
 
     def test_returns_none_for_zero_denom(self):
+        """hlc=0 and oe=0 → denom=0 → must return None immediately."""
         from src.physics_calibration_direct import _calibrate_solar_lag_xcorr
-        rng = np.random.default_rng(0)
-        periods = [{"indoor_temp": float(20+rng.normal()), "outdoor_temp": 5.0,
-                    "effective_temp": 38.0, "outlet_temp": 38.0,
-                    "pv_power": 100.0} for _ in range(50)]
-        result = _calibrate_solar_lag_xcorr(periods, hlc=0.0, oe=0.0)
+
+        df = _make_solar_lag_df(n_rows=200)
+        result = _calibrate_solar_lag_xcorr(df, hlc=0.0, oe=0.0)
+        assert result is None
+
+    def test_returns_none_for_missing_column(self):
+        """DataFrame without PV column should return None gracefully."""
+        from src.physics_calibration_direct import _calibrate_solar_lag_xcorr
+
+        df = _make_solar_lag_df(n_rows=200)
+        df = df.drop(columns=["pv_power"])
+        result = _calibrate_solar_lag_xcorr(df, hlc=0.12, oe=0.95)
+        assert result is None
+
+    def test_returns_none_for_empty_df(self):
+        from src.physics_calibration_direct import _calibrate_solar_lag_xcorr
+
+        result = _calibrate_solar_lag_xcorr(None, hlc=0.12, oe=0.95)
+        assert result is None
+
+        result = _calibrate_solar_lag_xcorr(pd.DataFrame(), hlc=0.12, oe=0.95)
         assert result is None
 
 

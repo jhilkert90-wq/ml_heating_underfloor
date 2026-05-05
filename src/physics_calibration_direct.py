@@ -43,7 +43,7 @@ fireplace_status, tv_status.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -128,7 +128,7 @@ def _calibrate_oe_analytical(
         → OE = HLC × (T_indoor − T_outdoor) / (T_outlet − T_indoor)
 
     Each qualifying window yields an independent OE estimate.  The
-    weighted median (weight = 1 / (T_outlet − T_indoor) to up-weight
+    weighted median (weight = (T_outlet − T_indoor) to up-weight
     windows with larger temperature drive, where the formula is most
     reliable) is returned.
 
@@ -284,6 +284,26 @@ def _residual_heat_source_weight(
             if 0.0 < p_source < _MAX_AUX_HEAT_SOURCE_KW:
                 values.append(p_source)
 
+    # IQR-based outlier rejection before taking the percentile.
+    # Sensor noise or transient slab effects can produce extreme residuals
+    # that bias the estimate even after the initial bounds filter.
+    if len(values) >= 4:
+        q1 = float(np.percentile(values, 25))
+        q3 = float(np.percentile(values, 75))
+        iqr = q3 - q1
+        if iqr > 0:
+            lo = q1 - 1.5 * iqr
+            hi = q3 + 1.5 * iqr
+            n_before = len(values)
+            values = [v for v in values if lo <= v <= hi]
+            n_removed = n_before - len(values)
+            if n_removed:
+                logging.debug(
+                    "  %s residual: removed %d/%d outliers "
+                    "(IQR fence [%.5f, %.5f])",
+                    label, n_removed, n_before, lo, hi,
+                )
+
     if len(values) < min_periods:
         logging.warning(
             "⚠️ Insufficient periods for %s weight estimation: %d (need %d)",
@@ -328,22 +348,35 @@ def _filter_tv_only_periods(stable_periods):
 # ---------------------------------------------------------------------------
 
 def _calibrate_solar_lag_xcorr(
-    stable_periods, hlc: float, oe: float
+    df, hlc: float, oe: float
 ) -> Optional[float]:
-    """Estimate solar_lag_minutes by cross-correlating PV and the PV residual.
+    """Estimate solar_lag_minutes from time-contiguous PV-active episodes.
 
     The PV residual is the thermal contribution not explained by HP alone::
 
         residual_i = T_indoor_i - (OE × T_outlet_i + HLC × T_outdoor_i)
                                   / (OE + HLC)
 
-    The lag is the shift at which raw PV power most strongly correlates with
-    this residual signal.  Evaluated over lags 0–180 min in 5-min steps.
+    Cross-correlation between PV power and this residual is computed
+    **within each contiguous PV-active episode** (PV > threshold for at
+    least ``_MIN_PV_SAMPLES_FOR_LAG`` consecutive rows) so that lag shifts
+    compare temporally adjacent samples.  Using non-contiguous stable_periods
+    would corrupt the lag structure by comparing samples from different
+    days/weeks.
+
+    The modal best-lag across all qualifying episodes is returned.
+
+    Parameters
+    ----------
+    df:
+        Raw time-series DataFrame from ``fetch_historical_data_for_calibration``.
+    hlc, oe:
+        Heat-loss coefficient and outlet effectiveness [kW/K].
 
     Returns
     -------
     float or None
-        Lag in minutes, or *None* if insufficient data.
+        Lag in minutes, or *None* if insufficient qualifying episodes.
     """
     logging.info("=== STEP 7: SOLAR LAG CROSS-CORRELATION ===")
 
@@ -352,94 +385,106 @@ def _calibrate_solar_lag_xcorr(
         logging.warning("⚠️ Solar lag: OE+HLC ≤ 0, skipping")
         return None
 
-    pv_series = []
-    residual_series = []
-    timestamps = []
+    if df is None or df.empty:
+        return None
 
-    for p in stable_periods:
-        pv = p.get("pv_power", 0.0)
-        t_in = p.get("indoor_temp")
-        t_out = p.get("outdoor_temp")
-        t_outlet = p.get("effective_temp", p.get("outlet_temp"))
-        ts = p.get("timestamp")
+    pv_col = config.PV_POWER_ENTITY_ID.split(".", 1)[-1]
+    indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outdoor_col = config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
+    outlet_col = config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
 
-        if t_in is None or t_out is None or t_outlet is None:
+    for c in (pv_col, indoor_col, outdoor_col, outlet_col):
+        if c not in df.columns:
+            logging.info("Solar lag: column %s missing — skipping", c)
+            return None
+
+    df_s = df.sort_values("_time").reset_index(drop=True)
+    pv_arr = df_s[pv_col].fillna(0.0).values.astype(float)
+    t_in_arr = df_s[indoor_col].values.astype(float)
+    t_out_arr = df_s[outdoor_col].values.astype(float)
+    t_outlet_arr = df_s[outlet_col].values.astype(float)
+
+    # HP-equilibrium residual for the full time-sorted series
+    hp_eq = (oe * t_outlet_arr + hlc * t_out_arr) / denom
+    residual_arr = t_in_arr - hp_eq
+
+    max_lag_steps = 36   # 180 min in 5-min steps
+    step_min = 5
+    # Each episode needs enough rows for the lag-0 correlation window plus
+    # the maximum lag shift without running out of samples.
+    min_ep_len = _MIN_PV_SAMPLES_FOR_LAG + max_lag_steps
+
+    pv_active = pv_arr > _MIN_PV_ACTIVE_FOR_LAG_W
+    episode_lags: List[int] = []
+
+    # Segment into contiguous PV-active runs and compute per-episode xcorr
+    i = 0
+    n = len(pv_arr)
+    while i < n:
+        if not pv_active[i]:
+            i += 1
             continue
-        if np.isnan(t_in) or np.isnan(t_out) or np.isnan(t_outlet):
+
+        ep_start = i
+        while i < n and pv_active[i]:
+            i += 1
+        ep_end = i  # exclusive
+
+        if ep_end - ep_start < min_ep_len:
             continue
 
-        hp_eq = (oe * t_outlet + hlc * t_out) / denom
-        residual = t_in - hp_eq
+        ep_pv = pv_arr[ep_start:ep_end]
+        ep_res = residual_arr[ep_start:ep_end]
 
-        pv_series.append(float(pv))
-        residual_series.append(float(residual))
-        timestamps.append(ts)
+        pv_std = float(ep_pv.std())
+        res_std = float(ep_res.std())
+        if pv_std < 1e-6 or res_std < 1e-6:
+            continue
 
-    n = len(pv_series)
-    if n < 36:
-        logging.warning(
-            "⚠️ Solar lag: insufficient periods %d (need ≥36)", n
+        pv_norm = (ep_pv - ep_pv.mean()) / pv_std
+        res_norm = (ep_res - ep_res.mean()) / res_std
+
+        best_lag = 0
+        best_corr = float(np.corrcoef(pv_norm, res_norm)[0, 1])
+        for lag in range(1, max_lag_steps + 1):
+            corr = float(np.corrcoef(pv_norm[lag:], res_norm[:-lag])[0, 1])
+            if corr > best_corr:
+                best_corr = corr
+                best_lag = lag
+
+        # Only include this episode if the correlation is meaningful
+        if best_corr >= 0.1:
+            episode_lags.append(best_lag)
+
+    if not episode_lags:
+        logging.info(
+            "Solar lag: no qualifying contiguous PV episodes found — "
+            "using default"
         )
         return None
 
-    pv_arr = np.array(pv_series)
-    res_arr = np.array(residual_series)
-
-    # Only compute cross-correlation when PV is non-zero to avoid noise
-    pv_active_mask = pv_arr > _MIN_PV_ACTIVE_FOR_LAG_W
-    if pv_active_mask.sum() < _MIN_PV_SAMPLES_FOR_LAG:
-        logging.info("Solar lag: not enough PV-active samples, using default")
-        return None
-
-    # Normalise
-    pv_std = pv_arr.std()
-    res_std = res_arr.std()
-    if pv_std < 1e-6 or res_std < 1e-6:
-        logging.info("Solar lag: near-zero variance in PV or residual, using default")
-        return None
-
-    pv_norm = (pv_arr - pv_arr.mean()) / pv_std
-    res_norm = (res_arr - res_arr.mean()) / res_std
-
-    # Max lag to test: 36 samples = 180 min
-    max_lag_steps = 36
-    step_min = 5
-    corr_at_lag = []
-    for lag in range(0, max_lag_steps + 1):
-        if lag == 0:
-            corr_at_lag.append(float(np.corrcoef(pv_norm, res_norm)[0, 1]))
-        else:
-            corr_at_lag.append(
-                float(np.corrcoef(pv_norm[lag:], res_norm[:-lag])[0, 1])
-            )
-
-    best_lag_idx = int(np.argmax(corr_at_lag))
-    best_corr = corr_at_lag[best_lag_idx]
-    best_lag_min = best_lag_idx * step_min
+    # Use the modal best-lag across episodes (robust to individual noisy days)
+    unique, counts = np.unique(episode_lags, return_counts=True)
+    modal_lag_steps = int(unique[np.argmax(counts)])
+    modal_lag_min = float(modal_lag_steps * step_min)
 
     logging.info(
-        "✅ Solar lag estimate: %d min (peak correlation %.3f at lag %d steps)",
-        best_lag_min, best_corr, best_lag_idx,
+        "✅ Solar lag estimate: %.0f min (modal across %d PV episodes)",
+        modal_lag_min, len(episode_lags),
     )
 
-    # Only use if correlation is meaningful
-    if best_corr < 0.05:
-        logging.info(
-            "Solar lag: peak correlation %.3f too weak — using default", best_corr
-        )
-        return None
-
-    # Clamp to bounds
     bounds = ThermalParameterConfig.get_bounds("solar_lag_minutes")
-    best_lag_min = max(bounds[0], min(bounds[1], best_lag_min))
-    return float(best_lag_min)
+    modal_lag_min = max(bounds[0], min(bounds[1], modal_lag_min))
+    return modal_lag_min
 
 
 # ---------------------------------------------------------------------------
 # Step 9: Slab time constant via 1-D grid search
 # ---------------------------------------------------------------------------
 
-def _calibrate_slab_tau_grid_search(df) -> Optional[float]:
+def _calibrate_slab_tau_grid_search(
+    df, delta_t_floor: Optional[float] = None
+) -> Optional[float]:
     """Estimate slab_time_constant_hours via a 1-D grid search.
 
     Uses the same physical model as ``calibrate_slab_time_constant()`` but
@@ -447,6 +492,16 @@ def _calibrate_slab_tau_grid_search(df) -> Optional[float]:
     ``[0.1, 4.0]`` hours in 0.05 h steps.  The MSE function is well-behaved
     and unimodal for this parameter, so the grid gives the same result
     without requiring scipy.
+
+    Parameters
+    ----------
+    df:
+        Raw time-series DataFrame.
+    delta_t_floor:
+        Calibrated heat-pump loop delta-T floor [°C].  When provided the
+        calibrated value is used; when *None* the config default is used.
+        Pass the value from Step 8 so that the slab-tau estimate is not
+        biased by an incorrect default.
 
     Returns
     -------
@@ -468,7 +523,8 @@ def _calibrate_slab_tau_grid_search(df) -> Optional[float]:
             )
             return None
 
-    delta_t_floor = ThermalParameterConfig.get_default("delta_t_floor")
+    if delta_t_floor is None:
+        delta_t_floor = ThermalParameterConfig.get_default("delta_t_floor")
 
     df_s = df.sort_values("_time").reset_index(drop=True)
     delta_t_vals = df_s[outlet_col] - df_s[inlet_col]
@@ -699,6 +755,32 @@ def calibrate_thermal_model_physics(
         "✅ Retrieved %d samples (%.1f hours)", len(df), len(df) / _SAMPLES_PER_HOUR
     )
 
+    # Warn if key columns have large NaN gaps — bfill/ffill imputation can
+    # silently fill sensor-offline stretches and bias calibration parameters.
+    _nan_gap_cols = (
+        config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1],
+        config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+        config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+    )
+    _NAN_GAP_WARN_ROWS = 6  # > 30 min of consecutive NaN at 5-min resolution
+    for _col in _nan_gap_cols:
+        if _col not in df.columns:
+            continue
+        _nan_mask = df[_col].isna()
+        if not _nan_mask.any():
+            continue
+        # Count consecutive NaN runs
+        _run_len = (
+            _nan_mask.groupby((~_nan_mask).cumsum()).transform("sum")
+        )
+        _max_gap = int(_run_len[_nan_mask].max()) if _nan_mask.any() else 0
+        if _max_gap > _NAN_GAP_WARN_ROWS:
+            logging.warning(
+                "⚠️ Column '%s' has %d consecutive NaN rows (>%d min gap) "
+                "— bfill/ffill imputation may bias calibrated parameters",
+                _col, _max_gap, _max_gap * 5,
+            )
+
     # Filter stable periods (shared with scipy path)
     logging.info("Filtering for stable thermal equilibrium periods...")
     stable_periods = filter_stable_periods(df)
@@ -748,7 +830,7 @@ def calibrate_thermal_model_physics(
         from physics_calibration import _filter_pv_only_periods as _fpvo  # type: ignore
     pv_periods = _fpvo(stable_periods, hlc=hlc, oe=oe)
     pv_weight = _residual_heat_source_weight(
-        pv_periods, "pv", hlc, oe, min_periods=5, percentile=50.0
+        pv_periods, "pv", hlc, oe, min_periods=15, percentile=50.0
     )
     if pv_weight is None:
         logging.warning("⚠️ PV weight calibration failed — using default")
@@ -776,7 +858,7 @@ def calibrate_thermal_model_physics(
 
     # --- Step 7: solar_lag_minutes ---
     logging.info("Step 7: Solar lag via cross-correlation...")
-    solar_lag = _calibrate_solar_lag_xcorr(stable_periods, hlc, oe)
+    solar_lag = _calibrate_solar_lag_xcorr(df, hlc, oe)
     if solar_lag is None:
         logging.warning("⚠️ Solar lag calibration failed — using default")
         solar_lag = ThermalParameterConfig.get_default("solar_lag_minutes")
@@ -789,8 +871,10 @@ def calibrate_thermal_model_physics(
         delta_t_floor_val = ThermalParameterConfig.get_default("delta_t_floor")
 
     # --- Step 9: slab_time_constant_hours (grid search) ---
+    # Pass the calibrated delta_t_floor so the slab model is not biased by
+    # the config default when the actual value differs.
     logging.info("Step 9: Slab time constant (1-D grid search)...")
-    slab_tau = _calibrate_slab_tau_grid_search(df)
+    slab_tau = _calibrate_slab_tau_grid_search(df, delta_t_floor=delta_t_floor_val)
     if slab_tau is None:
         logging.warning("⚠️ Slab tau grid search failed — using default")
         slab_tau = ThermalParameterConfig.get_default("slab_time_constant_hours")

@@ -1,23 +1,30 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Physics-Direct Calibration Path — May 2026**
+### ✅ **Calibration Code-Review Fixes — May 2026**
 
 #### **What changed**
-- `src/physics_calibration_direct.py` (new) — `calibrate_thermal_model_physics()` implementing fully analytical, sequential parameter estimation.
-- `src/physics_calibration.py` — `train_thermal_equilibrium_model()` gains a `method` parameter that dispatches to the new physics path when `method="physics"` (or when `CALIBRATION_METHOD="physics"` is in config).
-- `src/config.py` — new `CALIBRATION_METHOD` variable (default `"scipy"`).
-- `src/main.py` — new `--calibrate-physics-direct` CLI flag; flag-file handler for `/data/config/calibrate_physics_direct_flag`.
-- `dashboard/components/control.py` — "Recalibrate Model" button now shows a radio toggle: "Scipy Optimizer" vs "Physics Direct".
-- `tests/unit/test_physics_calibration_direct.py` (new, 19 tests).
+- `src/physics_calibration_direct.py` — 6 fixes:
+  1. `_calibrate_solar_lag_xcorr()`: complete rewrite to accept raw DataFrame instead of `stable_periods` list; xcorr now computed within contiguous PV-active episodes; modal lag across episodes returned.
+  2. `_calibrate_slab_tau_grid_search()`: added `delta_t_floor` parameter; call site in `calibrate_thermal_model_physics()` passes the step-8 calibrated value.
+  3. `_calibrate_oe_analytical()`: corrected docstring (weight is `drive`, not `1/drive`).
+  4. `_residual_heat_source_weight()`: added 1.5-IQR outlier rejection before percentile.
+  5. `calibrate_thermal_model_physics()`: added NaN gap detection warning for key columns after data fetch.
+  6. PV `min_periods` raised from 5 to 15.
+- `src/physics_calibration.py` — `calculate_cooling_time_constant()`: added 2-hour minimum HP-off block duration gate.
+- `tests/unit/test_physics_calibration_direct.py` — `TestSolarLagXcorr` rewritten for new DataFrame API; 3 new edge-case tests added (missing column, empty df, insufficient rows). All 22 tests pass.
 
 #### **Why**
-scipy joint optimization entangles all parameters in a single objective, which can converge to local minima and makes individual parameters hard to interpret.  The physics-direct path exploits the sequential decoupling of the equilibrium equation: each parameter is estimated after locking the previous ones, giving interpretable, first-principles estimates without an optimizer dependency.
+Code review identified that `_calibrate_solar_lag_xcorr()` applied lag shifts across non-contiguous stable_periods (comparing samples from different days), making the lag estimate random noise. The slab tau grid search used the config default for delta_t_floor even when a calibrated value was available from step 8. IQR rejection and min_periods increase reduce sensitivity to sensor spikes and occupancy noise.
 
 #### **Files changed**
-- `src/physics_calibration_direct.py` (new)
+- `src/physics_calibration_direct.py`
 - `src/physics_calibration.py`
-- `src/config.py`
-- `src/main.py`
+- `tests/unit/test_physics_calibration_direct.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+
 - `dashboard/components/control.py`
 - `tests/unit/test_physics_calibration_direct.py` (new)
 - `CHANGELOG.md`
