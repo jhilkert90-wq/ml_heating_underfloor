@@ -755,24 +755,41 @@ def calibrate_thermal_model_physics(
         """Return the persisted state-file value when available and valid;
         fall back to the hard-coded config default otherwise.
 
-        Priority: calibration result > state-file value > config default.
+        Priority: calibration result > state-file value (within bounds) > config default.
         """
         val = _persisted.get(key)
         try:
             fval = float(val)  # type: ignore[arg-type]
             if not np.isnan(fval):
-                return fval
+                # Validate against parameter bounds to reject corrupted values.
+                try:
+                    lo, hi = ThermalParameterConfig.get_bounds(key)
+                    if lo <= fval <= hi:
+                        return fval
+                    logging.warning(
+                        "⚠️ Persisted '%s'=%.4g is outside bounds [%.4g, %.4g]"
+                        " — falling back to config default",
+                        key, fval, lo, hi,
+                    )
+                except KeyError:
+                    # No bounds defined for this key — accept any finite value.
+                    return fval
         except (TypeError, ValueError):
             pass
         return ThermalParameterConfig.get_default(key)
 
     def _fallback_source(key: str) -> str:
-        """Return 'persisted' when the state file has a valid value, else 'default'."""
+        """Return 'persisted' when the state file has a valid, in-bounds value, else 'default'."""
         val = _persisted.get(key)
         try:
             fval = float(val)  # type: ignore[arg-type]
             if not np.isnan(fval):
-                return "persisted"
+                try:
+                    lo, hi = ThermalParameterConfig.get_bounds(key)
+                    if lo <= fval <= hi:
+                        return "persisted"
+                except KeyError:
+                    return "persisted"
         except (TypeError, ValueError):
             pass
         return "default"
