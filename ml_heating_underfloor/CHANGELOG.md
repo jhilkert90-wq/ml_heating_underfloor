@@ -1,5 +1,21 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.26] - 2026-05-05
+
+### Added
+- **Predictive Pre-Cooling**: Forecast-driven overheating prevention that simulates passive indoor trajectory using PV and outdoor temperature forecasts. Starts cooling before the room overheats by shifting the binary-search target temperature down. Only active in cooling mode.
+- New `OverheatingPredictor` class (`src/overheating_predictor.py`) with configurable guard thresholds, horizon, and lead time
+- 7 new configuration parameters (`PRE_COOL_*`) for fine-tuning pre-cooling behavior
+- Pre-cooling state persistence and HA sensor attributes (`pre_cool_active`, `pre_cool_peak_temp`, `pre_cool_peak_hour`)
+- 37 unit tests covering predictor logic, mode isolation, guard thresholds, and integration scenarios
+
+### Fixed
+- **CI: Node.js 20 deprecation** — upgraded `actions/checkout@v4` to `@v6` in `auto-docs.yaml`
+- **CI: AI API token error** — switched `auto-docs.yaml` and `ai-code-review.yaml` from `https://api.githubcopilot.com` to `https://models.inference.ai.azure.com` (GitHub Models); server-to-server tokens are not supported on the Copilot endpoint
+- **Pre-cooling guard bypass for reactive cooling**: Room already above target now bypasses PV/outdoor guards — cooling activates even at night with no PV
+- **PV forecast consistency**: Predictor now uses thermal-corrected `pv_forecast_{h}h` values consistently (was mixing raw electrical with thermal-corrected anchor)
+- **Cloud cover key mismatch**: Predictor now reads per-hour `cloud_cover_forecast_{h}h` keys from features_dict (was reading nonexistent `avg_cloud_cover` key, always falling back to 50%)
+
 ## [0.2.25] - 2026-05-05
 
 ### Changed
