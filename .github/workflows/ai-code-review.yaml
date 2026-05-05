@@ -69,8 +69,8 @@ jobs:
               Path("/tmp/review_result.json").write_text(json.dumps({"skip": True}))
               sys.exit(0)
 
-          # Use the GitHub Copilot API — no separate API key needed,
-          # the built-in GITHUB_TOKEN provides access via Copilot premium requests.
+          # Use the GitHub Models API — no separate API key needed,
+          # the built-in GITHUB_TOKEN provides access via the models: read permission.
           github_token = os.environ.get("GITHUB_TOKEN", "")
           if not github_token:
               print("::warning::GITHUB_TOKEN not available. Skipping AI review.")
@@ -78,7 +78,7 @@ jobs:
               sys.exit(0)
 
           client = OpenAI(
-              base_url="https://api.githubcopilot.com",
+              base_url="https://models.inference.ai.azure.com",
               api_key=github_token,
           )
 
@@ -140,8 +140,7 @@ jobs:
 
           try:
               resp = client.chat.completions.create(
-                  model="gpt-5.4",  # gpt-5.4 via GitHub Copilot API (https://api.githubcopilot.com).
-                  # To list available models: GET https://api.githubcopilot.com/models with GITHUB_TOKEN.
+                  model="gpt-4.1",  # gpt-4.1 via GitHub Models API (https://models.inference.ai.azure.com).
                   messages=[{"role": "user", "content": prompt}],
                   temperature=0.1,
                   max_tokens=3000,
@@ -192,7 +191,7 @@ jobs:
           icon = {"approve": "✅", "request_changes": "🔴", "comment": "💬"}.get(verdict, "💬")
           severity_icon = {"critical": "🔴", "warning": "⚠️", "suggestion": "💡"}
 
-          body = f"## {icon} AI Code Review (GitHub Copilot)\n\n"
+          body = f"## {icon} AI Code Review (GitHub Models)\n\n"
           body += f"**Verdict: {verdict.upper().replace('_', ' ')}**\n\n"
           body += f"{summary}\n\n"
 
@@ -213,7 +212,7 @@ jobs:
               body += "\n"
 
           body += "---\n"
-          body += "*This review was generated automatically by GitHub Copilot (gpt-5.4). "
+          body += "*This review was generated automatically by GitHub Models (gpt-4.1). "
           body += "You can reject suggestions by dismissing or replying to this comment. "
           body += "To re-run the review, push a new commit or re-run the workflow.*\n"
 
