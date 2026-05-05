@@ -483,6 +483,10 @@ MIN_STABLE_PERIOD_MINUTES: int = int(
     os.getenv("MIN_STABLE_PERIOD_MINUTES", "30")
 )
 OPTIMIZATION_METHOD: str = os.getenv("OPTIMIZATION_METHOD", "L-BFGS-B")
+# Calibration method for train_thermal_equilibrium_model().
+# "scipy" (default): multi-pass L-BFGS-B joint optimisation.
+# "physics": fully analytical, sequential physics-direct path (no scipy).
+CALIBRATION_METHOD: str = os.getenv("CALIBRATION_METHOD", "scipy")
 
 # Indoor temperature ceiling for PV calibration periods.
 # Periods with indoor_temp >= this value are excluded from PV Pass 2

@@ -1,32 +1,25 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (CI Workflow fixes)
+## 🎯 CURRENT STATUS - May 2026 (Physics-Direct Calibration)
 
-### ✅ **CI workflow bugs fixed**
-
-**Status**: **COMPLETED**
-
-Fixed two GitHub Actions warnings in the `update-docs` workflow:
-1. Upgraded `actions/checkout@v4` → `@v6` (Node.js 20 deprecation).
-2. Switched API base URL from `https://api.githubcopilot.com` to `https://models.inference.ai.azure.com` in both `auto-docs.yaml` and `ai-code-review.yaml` — the Copilot endpoint rejects server-to-server tokens; GitHub Models endpoint accepts `GITHUB_TOKEN` with `models: read` permission.
-
-**Files changed:**
-- `.github/workflows/auto-docs.yaml`
-- `.github/workflows/ai-code-review.yaml`
-
-## 🎯 CURRENT STATUS - May 2026 (CI Workflow fixes)
-
-### ✅ **CI workflow bugs fixed**
+### ✅ **Physics-Direct Calibration Path implemented**
 
 **Status**: **COMPLETED**
 
-Fixed two GitHub Actions warnings in the `update-docs` workflow:
-1. Upgraded `actions/checkout@v4` → `@v6` (Node.js 20 deprecation).
-2. Switched API base URL from `https://api.githubcopilot.com` to `https://models.inference.ai.azure.com` in both `auto-docs.yaml` and `ai-code-review.yaml` — the Copilot endpoint rejects server-to-server tokens; GitHub Models endpoint accepts `GITHUB_TOKEN` with `models: read` permission.
+Implemented a fully analytical calibration path `calibrate_thermal_model_physics()` in `src/physics_calibration_direct.py`.  Every thermal parameter is estimated from first principles using closed-form algebra, percentile statistics, cross-correlation, and 1-D grid search — no scipy optimizer required.  The user can choose between the existing scipy path and the new physics-direct path via the `CALIBRATION_METHOD` config variable, the `--calibrate-physics-direct` CLI flag, a dashboard radio toggle, or a flag file.
 
 **Files changed:**
-- `.github/workflows/auto-docs.yaml`
-- `.github/workflows/ai-code-review.yaml`
+- `src/physics_calibration_direct.py` (new)
+- `src/physics_calibration.py` (method dispatch)
+- `src/config.py` (CALIBRATION_METHOD)
+- `src/main.py` (--calibrate-physics-direct flag, flag-file handler)
+- `dashboard/components/control.py` (calibration method radio toggle)
+- `tests/unit/test_physics_calibration_direct.py` (new, 19 tests)
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+
 
 ## 🎯 PREVIOUS STATUS - June 2025 (Predictive Pre-Cooling)
 

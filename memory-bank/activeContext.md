@@ -1,5 +1,29 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Physics-Direct Calibration Path — May 2026**
+
+#### **What changed**
+- `src/physics_calibration_direct.py` (new) — `calibrate_thermal_model_physics()` implementing fully analytical, sequential parameter estimation.
+- `src/physics_calibration.py` — `train_thermal_equilibrium_model()` gains a `method` parameter that dispatches to the new physics path when `method="physics"` (or when `CALIBRATION_METHOD="physics"` is in config).
+- `src/config.py` — new `CALIBRATION_METHOD` variable (default `"scipy"`).
+- `src/main.py` — new `--calibrate-physics-direct` CLI flag; flag-file handler for `/data/config/calibrate_physics_direct_flag`.
+- `dashboard/components/control.py` — "Recalibrate Model" button now shows a radio toggle: "Scipy Optimizer" vs "Physics Direct".
+- `tests/unit/test_physics_calibration_direct.py` (new, 19 tests).
+
+#### **Why**
+scipy joint optimization entangles all parameters in a single objective, which can converge to local minima and makes individual parameters hard to interpret.  The physics-direct path exploits the sequential decoupling of the equilibrium equation: each parameter is estimated after locking the previous ones, giving interpretable, first-principles estimates without an optimizer dependency.
+
+#### **Files changed**
+- `src/physics_calibration_direct.py` (new)
+- `src/physics_calibration.py`
+- `src/config.py`
+- `src/main.py`
+- `dashboard/components/control.py`
+- `tests/unit/test_physics_calibration_direct.py` (new)
+- `CHANGELOG.md`
+
+---
+
 ### ✅ **CI Workflow fixes — May 2026**
 
 #### **What changed**

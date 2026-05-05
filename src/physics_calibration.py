@@ -35,16 +35,44 @@ except ImportError:
     from unified_thermal_state import get_thermal_state_manager
 
 
-def train_thermal_equilibrium_model(state_manager=None):
-    """Train the Thermal Equilibrium Model with historical data for optimal
-    thermal parameters using scipy optimization.
+def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
+    """Train the Thermal Equilibrium Model with historical data.
 
     Parameters
     ----------
     state_manager:
         Optional state manager to persist calibrated parameters to.  Defaults
         to the heating singleton so existing callers are unaffected.
+    method:
+        Calibration method to use.  Accepted values:
+
+        ``"scipy"`` (default)
+            Multi-pass L-BFGS-B joint optimization — the original behaviour.
+        ``"physics"``
+            Fully analytical, sequential physics-direct path.  No scipy
+            dependency.  Each parameter is derived from first principles and
+            locked before the next one is estimated.  Implemented in
+            :mod:`physics_calibration_direct`.
+
+        The config variable ``CALIBRATION_METHOD`` provides the system-wide
+        default; this argument overrides it for a single call.
+
+    Returns the calibrated :class:`ThermalEquilibriumModel` on success,
+    or *None* on failure.
     """
+    # Allow config to override the default when the caller passes the default
+    if method == "scipy":
+        method = getattr(config, "CALIBRATION_METHOD", "scipy").lower()
+
+    if method == "physics":
+        logging.info(
+            "=== DISPATCHING TO PHYSICS-DIRECT CALIBRATION PATH ==="
+        )
+        try:
+            from .physics_calibration_direct import calibrate_thermal_model_physics
+        except ImportError:
+            from physics_calibration_direct import calibrate_thermal_model_physics  # type: ignore
+        return calibrate_thermal_model_physics(state_manager=state_manager)
 
     logging.info(
         "=== THERMAL EQUILIBRIUM MODEL TRAINING (SCIPY OPTIMIZATION) ==="

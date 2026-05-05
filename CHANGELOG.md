@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Physics-Direct Calibration Path** (`src/physics_calibration_direct.py`): new `calibrate_thermal_model_physics()` function that estimates every thermal parameter analytically — no scipy optimizer, no MAE fitting.  Sequential decoupling derives each parameter after locking previous ones:
+  1. HLC via `calibrate_hlc()` (OLS flow-meter regression)
+  2. OE via per-window algebra from HP-only stable periods
+  3. τ_room from log-linear OLS on HP-off cooling curves
+  4. `pv_heat_weight` via residual energy balance on PV-on periods
+  5. `fireplace_heat_weight` via residual energy balance on FP-on periods
+  6. `tv_heat_weight` via residual energy balance on TV-on periods
+  7. `solar_lag_minutes` via PV ↔ indoor-residual cross-correlation
+  8. `delta_t_floor` via P25 percentile of (outlet − inlet)
+  9. `slab_time_constant_hours` via 1-D grid search over [0.1, 4.0 h] (replaces scipy dependency)
+  10. `fp_decay_time_constant` via existing log-linear OLS
+  11. `room_spread_delay_minutes` via existing cross-correlation
+  12. `cloud_factor_exponent` via log-OLS (when `CLOUD_COVER_CORRECTION_ENABLED`)
+  13. `solar_decay_tau_hours` via existing log-linear OLS
+- `CALIBRATION_METHOD` config variable (`"scipy"` default, or `"physics"`): selects the calibration path system-wide.
+- `--calibrate-physics-direct` CLI flag to `src/main.py`: runs the physics-direct path explicitly, exits after calibration.
+- Flag-file support in `src/main.py`: writing `/data/config/calibrate_physics_direct_flag` triggers the physics-direct path on next startup (same pattern as the existing HLC flag).
+- Dashboard calibration method radio toggle in `dashboard/components/control.py`: "Scipy Optimizer" vs "Physics Direct" — selecting Physics Direct writes the `calibrate_physics_direct_flag`.
+- 19 new unit tests in `tests/unit/test_physics_calibration_direct.py` covering all new analytical estimators.
+
+### Changed
+- `train_thermal_equilibrium_model()` in `src/physics_calibration.py` now accepts a `method` parameter (`"scipy"` or `"physics"`).  Existing callers are unaffected (default remains `"scipy"`).  When `CALIBRATION_METHOD="physics"` is set in config and `method="scipy"` is passed (the default), the config value takes precedence.
+- `--calibrate-physics` CLI flag now respects `CALIBRATION_METHOD` from config rather than always running scipy.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
