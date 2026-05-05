@@ -61,9 +61,13 @@ def make_context(**overrides):
         "climate_mode": "heating",
         "target_temp": 22.0,
     }
-    context.update(overrides)
-    context["delta_t"] = resolved_delta_t
-    context["thermal_power"] = resolved_thermal_power
+    context.update(
+        {
+            key: value
+            for key, value in overrides.items()
+            if key not in {"delta_t", "thermal_power"}
+        }
+    )
     return context
 
 
