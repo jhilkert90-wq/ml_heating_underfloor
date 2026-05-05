@@ -1,0 +1,7 @@
+Concrete day-long example
+Time	Room	Demand	HP running?	delta_t	Old gate	New gate
+13:00	23.5°C	mild	No	−0.05 K	RECOVERY 🔴	RUNNING, clamp to inlet ✅
+14:00	24.0°C	moderate	No	−0.05 K	RECOVERY (stuck) 🔴	RUNNING, model sends 21.5°C
+14:30	24.0°C	moderate	Yes, starting	−1.2 K	stuck 🔴	RUNNING → HP cools ✅
+15:10	23.2°C	HP stops	Yes was running	−2.8 K	—	RUNNING → RECOVERY ✅
+15:40	23.8°C	mild again	No	−0.1 K	RECOVERY forever 🔴	RECOVERY → RUNNING (slab warm, 2K gap met) ✅

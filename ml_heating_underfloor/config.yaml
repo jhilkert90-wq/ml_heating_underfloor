@@ -116,6 +116,22 @@ options:
   # Safety margin above the HP shutdown limit to prevent short-cycling
   cooling_shutdown_margin_k: 1.0
 
+  # === Pre-Cooling (Predictive Overheating Prevention) ===
+  # Enable forecast-driven pre-cooling before the room overheats
+  pre_cool_enabled: true
+  # How many K above the cooling target the peak must exceed to count as risk
+  pre_cool_trigger_margin_k: 0.5
+  # How many hours ahead to simulate the passive trajectory
+  pre_cool_horizon_hours: 12
+  # Start pre-cooling when peak is within this many hours
+  pre_cool_lead_time_hours: 3.0
+  # How much to shift the binary-search target down (K) when pre-cooling
+  pre_cool_target_offset_k: 0.5
+  # Minimum total PV forecast (W) to consider pre-cooling worthwhile
+  pre_cool_min_pv_forecast_w: 1000.0
+  # Minimum peak outdoor forecast (°C) to consider overheating likely
+  pre_cool_min_outdoor_forecast_c: 22.0
+
   # === InfluxDB Configuration ===
   # URL of your InfluxDB instance, including the protocol and port
   influx_url: "http://192.168.0.223:8089"
@@ -498,6 +514,14 @@ schema:
   cooling_clamp_max_abs: "float(18.0,28.0)"
   min_cooling_delta_k: "float(0.5,5.0)"
   cooling_shutdown_margin_k: "float(0.0,3.0)"
+  # Pre-Cooling Configuration
+  pre_cool_enabled: "bool"
+  pre_cool_trigger_margin_k: "float(0.1,2.0)"
+  pre_cool_horizon_hours: "int(4,24)"
+  pre_cool_lead_time_hours: "float(1.0,8.0)"
+  pre_cool_target_offset_k: "float(0.1,2.0)"
+  pre_cool_min_pv_forecast_w: "float(0,5000)"
+  pre_cool_min_outdoor_forecast_c: "float(15.0,35.0)"
   # InfluxDB Configuration
   influx_url: "str"
   influx_token: "str"

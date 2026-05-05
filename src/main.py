@@ -1559,6 +1559,76 @@ def main():
                 target_indoor_temp - prediction_indoor_temp
             )
 
+            # --- Pre-Cooling: Predictive Overheating Prevention ---
+            # In cooling mode, run a passive trajectory simulation to detect
+            # future overheating.  If the forecast shows indoor temp will
+            # exceed the cooling target, shift the binary-search target down
+            # to trigger the HP *before* the room actually overheats.
+            _pre_cool_active = False
+            _pre_cool_result = None
+            if (
+                climate_mode == "cooling"
+                and getattr(config, "PRE_COOL_ENABLED", True)
+            ):
+                try:
+                    from .overheating_predictor import OverheatingPredictor
+
+                    _pre_cool_predictor = OverheatingPredictor()
+                    _pre_cool_result = (
+                        _pre_cool_predictor.predict_overheating_risk(
+                            current_indoor=prediction_indoor_temp,
+                            target_cooling=target_indoor_temp,
+                            features=features_dict,
+                            thermal_model=_wrapper.thermal_model,
+                            climate_mode=climate_mode,
+                        )
+                    )
+                    if (
+                        _pre_cool_result.get("should_cool_now")
+                        and prediction_indoor_temp <= target_indoor_temp
+                    ):
+                        _offset = float(
+                            getattr(
+                                config, "PRE_COOL_TARGET_OFFSET_K", 0.5
+                            )
+                        )
+                        _original_target = target_indoor_temp
+                        target_indoor_temp = (
+                            prediction_indoor_temp - _offset
+                        )
+                        _pre_cool_active = True
+                        logging.info(
+                            "❄️ PRE-COOL: target shifted %.1f → %.1f°C "
+                            "(room %.1f°C, predicted peak %.1f°C in "
+                            "%.1fh). Reason: %s",
+                            _original_target,
+                            target_indoor_temp,
+                            prediction_indoor_temp,
+                            _pre_cool_result.get("peak_temp", 0),
+                            _pre_cool_result.get("peak_hour", 0),
+                            _pre_cool_result.get("reason", ""),
+                        )
+                    # Persist pre-cooling state for dashboard / restart
+                    try:
+                        _active_state_manager.update_operational_state(
+                            pre_cool_active=_pre_cool_active,
+                            pre_cool_peak_temp=float(
+                                _pre_cool_result.get("peak_temp", 0)
+                            ),
+                            pre_cool_peak_hour=float(
+                                _pre_cool_result.get("peak_hour", 0)
+                            ),
+                            pre_cool_risk=bool(
+                                _pre_cool_result.get("risk", False)
+                            ),
+                        )
+                    except Exception:
+                        pass
+                except Exception as _pre_cool_exc:
+                    logging.debug(
+                        "Pre-cooling check failed: %s", _pre_cool_exc
+                    )
+
             suggested_temp, confidence, metadata = (
                 simplified_outlet_prediction(
                     features, prediction_indoor_temp, target_indoor_temp,
@@ -1943,6 +2013,17 @@ def main():
                             "temperature_error": round(
                                 abs(error_target_vs_actual), 3
                             ),
+                            "pre_cool_active": _pre_cool_active,
+                            "pre_cool_peak_temp": round(
+                                float(
+                                    _pre_cool_result.get("peak_temp", 0)
+                                ), 1
+                            ) if _pre_cool_result else None,
+                            "pre_cool_peak_hour": round(
+                                float(
+                                    _pre_cool_result.get("peak_hour", 0)
+                                ), 1
+                            ) if _pre_cool_result else None,
                             # Note: ThermalEquilibriumModel trust metrics
                             # moved to sensor.ml_heating_learning to
                             # eliminate redundancy

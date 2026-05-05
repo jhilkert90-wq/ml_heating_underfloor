@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Predictive Pre-Cooling Implementation — June 2025**
+
+#### **What changed**
+- NEW `src/overheating_predictor.py` — `OverheatingPredictor` class that runs a passive thermal trajectory simulation (HP OFF, outlet=inlet) using PV + outdoor forecasts to predict future room temperature peaks.
+- `src/config.py` — 7 new `PRE_COOL_*` parameters (enabled, trigger margin, horizon, lead time, target offset, min PV, min outdoor).
+- `src/main.py` — Integrated pre-cool check before `simplified_outlet_prediction()`. When `should_cool_now` and room ≤ target, shifts `target_indoor_temp` down by `PRE_COOL_TARGET_OFFSET_K` to make binary search start the HP proactively. Added pre-cool state to HA sensor attributes and persisted to unified thermal state.
+- `ml_heating_underfloor/config.yaml` + `translations/en.yaml` — Config UI options and schema.
+- NEW `tests/unit/test_overheating_predictor.py` (27 tests) + `tests/unit/test_pre_cooling_integration.py` (9 tests).
+
+#### **Why**
+Underfloor cooling starts too late when rooms are already overheated. Due to thermal inertia (~0.8h slab tau), active cooldown is nearly impossible once the room exceeds the cooling target. This predictive approach uses the existing physics model to look ahead and start cooling before overheating occurs.
+
+#### **Key design decisions**
+- Target-shift method: no changes to binary search algorithm needed — shifting target down makes existing logic find the correct cooling outlet (~20°C).
+- Cooling mode only: safety gate prevents pre-cooling in heating/idle modes.
+- Guard thresholds: both PV AND outdoor must be below minimums to block (either one being high is enough to allow pre-cooling).
+- Reactive fallback: if room is already above target, pre-cooling fires regardless of forecast guards.
+
 ### ✅ **Cooling test helper cleanup — May 2026**
 
 #### **What changed**

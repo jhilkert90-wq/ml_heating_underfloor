@@ -641,6 +641,42 @@ MIN_COOLING_DELTA_K: float = float(os.getenv("MIN_COOLING_DELTA_K", "2.0"))
 COOLING_SHUTDOWN_MARGIN_K: float = float(
     os.getenv("COOLING_SHUTDOWN_MARGIN_K", "1.0")
 )
+
+# --- Pre-Cooling (Predictive Overheating Prevention) ---
+# When enabled in cooling mode, the system runs a passive trajectory
+# simulation (HP OFF) using PV + outdoor forecasts.  If the trajectory
+# predicts indoor temperature will exceed the cooling target, the system
+# activates the heat pump proactively — before the room actually overheats.
+PRE_COOL_ENABLED: bool = (
+    os.getenv("PRE_COOL_ENABLED", "true").lower() == "true"
+)
+# Trigger pre-cooling when predicted peak exceeds cooling target + this margin [K].
+PRE_COOL_TRIGGER_MARGIN_K: float = float(
+    os.getenv("PRE_COOL_TRIGGER_MARGIN_K", "0.5")
+)
+# How many hours ahead to simulate the passive trajectory.
+PRE_COOL_HORIZON_HOURS: int = int(
+    os.getenv("PRE_COOL_HORIZON_HOURS", "12")
+)
+# Start pre-cooling this many hours before the predicted peak.
+PRE_COOL_LEAD_TIME_HOURS: float = float(
+    os.getenv("PRE_COOL_LEAD_TIME_HOURS", "3.0")
+)
+# How much to shift the binary-search target temperature down [K] to trigger
+# the heat pump when the room hasn't overheated yet.
+PRE_COOL_TARGET_OFFSET_K: float = float(
+    os.getenv("PRE_COOL_TARGET_OFFSET_K", "0.5")
+)
+# Minimum total PV forecast [W] over the horizon to consider overheating risk.
+# Prevents triggering on cold rainy days where PV forecast is near zero.
+PRE_COOL_MIN_PV_FORECAST_W: float = float(
+    os.getenv("PRE_COOL_MIN_PV_FORECAST_W", "1000.0")
+)
+# Minimum peak outdoor temperature forecast [°C] to consider overheating risk.
+PRE_COOL_MIN_OUTDOOR_FORECAST_C: float = float(
+    os.getenv("PRE_COOL_MIN_OUTDOOR_FORECAST_C", "22.0")
+)
+
 # Thermal Model Parameters
 PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.002"))
 FIREPLACE_HEAT_WEIGHT: float = float(os.getenv("FIREPLACE_HEAT_WEIGHT", "5.0"))

@@ -1,6 +1,23 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Cooling test helper cleanup)
+## 🎯 CURRENT STATUS - June 2025 (Predictive Pre-Cooling)
+
+### ✅ **Predictive Pre-Cooling implemented**
+
+**Status**: **COMPLETED**
+
+Implemented forecast-driven pre-cooling to prevent underfloor cooling from starting too late. The system now simulates a passive indoor trajectory (HP OFF) using PV and outdoor temperature forecasts. When overheating is predicted within the lead time, the binary-search target is shifted down to start cooling proactively.
+
+**Files changed:**
+- `src/overheating_predictor.py` — NEW: OverheatingPredictor class
+- `src/config.py` — Added 7 PRE_COOL_* parameters
+- `src/main.py` — Integrated pre-cool check before outlet prediction, added HA sensor attributes
+- `ml_heating_underfloor/config.yaml` — Added config options + schema entries
+- `ml_heating_underfloor/translations/en.yaml` — Added English translations
+- `tests/unit/test_overheating_predictor.py` — NEW: 27 unit tests
+- `tests/unit/test_pre_cooling_integration.py` — NEW: 9 integration tests
+
+## 🎯 PREVIOUS STATUS - May 2026 (Cooling test helper cleanup)
 
 ### ✅ **Cooling test helper cleanup completed**
 
