@@ -435,7 +435,7 @@ class HeatPumpChannel(HeatSourceChannel):
         # delta_t), outlet < inlet in cooling (negative delta_t).
         if climate_mode == "cooling":
             delta_t_samples = [
-                _to_float(record.get("context", {}).get("delta_t", 0.0))
+                abs(_to_float(record.get("context", {}).get("delta_t", 0.0)))
                 for record in recent
                 if _to_float(record.get("context", {}).get("delta_t", 0.0)) < -0.5
             ]

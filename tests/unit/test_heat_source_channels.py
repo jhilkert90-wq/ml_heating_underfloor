@@ -36,6 +36,9 @@ def make_context(
     pv_power_history=None,
     delta_t=None,
     thermal_power=None,
+    climate_mode="heating",
+    target_temp=22.0,
+    current_indoor=21.0,
 ):
     resolved_delta_t = 5.0 if delta_t is None and heat_pump_active else (delta_t or 0.0)
     resolved_thermal_power = (
@@ -43,7 +46,7 @@ def make_context(
     )
     return {
         "outlet_temp": 40.0 if heat_pump_active else 21.0,
-        "current_indoor": 21.0,
+        "current_indoor": current_indoor,
         "outdoor_temp": 5.0,
         "pv_power": pv_power,
         "pv_power_current": (
@@ -57,6 +60,8 @@ def make_context(
         "delta_t": resolved_delta_t,
         "thermal_power": resolved_thermal_power,
         "heat_pump_active": heat_pump_active,
+        "climate_mode": climate_mode,
+        "target_temp": target_temp,
     }
 
 
@@ -216,6 +221,54 @@ def test_current_pv_signal_routes_learning_to_pv_when_smoothed_value_is_low(
     assert orch.channels["heat_pump"].history == []
 
 
+def test_cooling_mode_routes_hp_and_pv_when_pv_is_active(
+    mixed_source_attribution_enabled,
+):
+    orch = HeatSourceChannelOrchestrator()
+
+    orch.route_learning(
+        0.75,
+        make_context(
+            climate_mode="cooling",
+            heat_pump_active=False,
+            thermal_power=0.0,
+            delta_t=0.0,
+            pv_power=850.0,
+            pv_power_current=850.0,
+            current_indoor=23.0,
+            target_temp=22.0,
+        ),
+    )
+
+    assert len(orch.channels["heat_pump"].history) == 1
+    assert len(orch.channels["pv"].history) == 1
+
+
+def test_cooling_mode_routes_hp_and_pv_during_pv_decay(
+    mixed_source_attribution_enabled,
+):
+    orch = HeatSourceChannelOrchestrator()
+    orch._pv_was_active = True
+    orch._pv_off_cycle_count = 1
+
+    orch.route_learning(
+        0.5,
+        make_context(
+            climate_mode="cooling",
+            heat_pump_active=False,
+            thermal_power=0.0,
+            delta_t=0.0,
+            pv_power=0.0,
+            pv_power_current=0.0,
+            current_indoor=23.0,
+            target_temp=22.0,
+        ),
+    )
+
+    assert len(orch.channels["heat_pump"].history) == 1
+    assert len(orch.channels["pv"].history) == 1
+
+
 def test_subthreshold_current_pv_still_falls_back_to_heat_pump():
     orch = HeatSourceChannelOrchestrator()
 
@@ -257,6 +310,23 @@ def test_active_channel_self_learning_updates_parameters(
 
     updated_value = channel.get_learnable_parameters()[parameter_name]
     assert updated_value != pytest.approx(initial_value)
+
+
+def test_heat_pump_cooling_delta_t_floor_learns_positive_magnitude():
+    channel = HeatPumpChannel()
+    channel.delta_t_floor = 1.0
+
+    for _ in range(_get_min_records_for_learning()):
+        channel.record_learning(
+            1.0,
+            {
+                "climate_mode": "cooling",
+                "delta_t": -4.0,
+                "raw_prediction_error": 1.0,
+            },
+        )
+
+    assert channel.delta_t_floor > 1.0
 
 
 def test_heat_pump_self_learning_updates_hp_owned_model_parameters():

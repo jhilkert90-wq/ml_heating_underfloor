@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ **Cooling follow-up review fixes — May 2026**
+
+#### **What changed**
+- `src/heat_source_channels.py` — cooling `delta_t_floor` learning now stores `abs(delta_t)` for cooling samples, keeping the learned parameter as a positive magnitude.
+- `src/temperature_control.py` — both shadow and active `prediction_context` payloads now include `climate_mode`, so `route_learning()` and `HeatPumpChannel._learn_from_recent()` continue using cooling-specific behavior when learning from runtime feedback.
+- Added targeted regression tests for cooling HP+PV routing, PV decay co-routing, positive cooling `delta_t_floor` learning, `climate_mode` propagation, and RUNNING→RECOVERY gate branching.
+
+#### **Why**
+Re-review showed two remaining gaps after the previous cooling fix. First, cooling `delta_t_floor` samples were still averaged as negative numbers, which would push the learned floor toward zero instead of a positive magnitude. Second, `temperature_control.py` computed `climate_mode` for HP detection but dropped it from the `prediction_context`, allowing downstream learning/routing to fall back to heating defaults.
+
+#### **Files changed**
+- `src/heat_source_channels.py`, `src/temperature_control.py`
+- `tests/unit/test_heat_source_channels.py`, `tests/unit/test_temperature_control.py`, `tests/unit/test_cooling_mode.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ **Cooling gate: unified HP detection — May 2026**
 
 #### **What changed**

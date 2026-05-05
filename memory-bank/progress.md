@@ -1,5 +1,23 @@
 # ML Heating System - Current Progress
 
+## 🎯 CURRENT STATUS - May 2026 (Cooling follow-up review fixes)
+
+### ✅ **Cooling review follow-up fixes completed**
+
+**Status**: **COMPLETED**
+
+Addressed the remaining follow-up issues found during re-review of the cooling fixes. Cooling `delta_t_floor` learning now uses the positive magnitude of negative `delta_t` samples so the learned floor stays physically meaningful. `temperature_control.py` now carries `climate_mode` into both active and shadow `prediction_context` payloads so downstream routing/learning stays in cooling mode. Added focused regression tests for cooling HP+PV routing, PV decay co-routing, positive `delta_t_floor` learning, `climate_mode` propagation, and the RUNNING→RECOVERY gate branches.
+
+Files changed:
+- `src/heat_source_channels.py`
+- `src/temperature_control.py`
+- `tests/unit/test_heat_source_channels.py`
+- `tests/unit/test_temperature_control.py`
+- `tests/unit/test_cooling_mode.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ## 🎯 CURRENT STATUS - May 2026 (Cooling gate: use existing HP detection)
 
 ### ✅ **Cooling gate HP detection unified**

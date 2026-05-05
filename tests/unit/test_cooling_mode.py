@@ -616,6 +616,54 @@ class TestCoolingInletGuard:
             f"Expected outlet unchanged at {OUTLET}°C, got {result}°C"
         )
 
+    @patch("src.model_wrapper._is_heat_pump_active", return_value=False)
+    def test_running_gate_stays_running_when_hp_is_idle(
+        self, _mock_hp_active, wrapper
+    ):
+        wrapper.set_climate_mode("cooling")
+        wrapper._cooling_cycle_state = "running"
+
+        inlet = 22.0
+        with patch.object(
+            wrapper,
+            "_calculate_required_outlet_temp",
+            return_value=21.5,
+        ):
+            features = self._make_features(
+                inlet,
+                23.0,
+                22.0,
+                extra={"thermal_power_kw": 0.0, "delta_t": -0.1},
+            )
+            result, _ = wrapper.calculate_optimal_outlet_temp(features=features)
+
+        assert result == inlet
+        assert wrapper._cooling_cycle_state == "running"
+
+    @patch("src.model_wrapper._is_heat_pump_active", return_value=True)
+    def test_running_gate_enters_recovery_when_hp_was_running(
+        self, _mock_hp_active, wrapper
+    ):
+        wrapper.set_climate_mode("cooling")
+        wrapper._cooling_cycle_state = "running"
+
+        inlet = 22.0
+        with patch.object(
+            wrapper,
+            "_calculate_required_outlet_temp",
+            return_value=21.5,
+        ):
+            features = self._make_features(
+                inlet,
+                23.0,
+                22.0,
+                extra={"thermal_power_kw": -1.2, "delta_t": -2.5},
+            )
+            result, _ = wrapper.calculate_optimal_outlet_temp(features=features)
+
+        assert result == inlet
+        assert wrapper._cooling_cycle_state == "recovery"
+
     def test_inlet_guard_not_applied_in_heating_mode(self, wrapper):
         """
         In heating mode the inlet guard must NOT be applied even when outlet

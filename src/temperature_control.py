@@ -394,6 +394,7 @@ class OnlineLearning:
                     'avg_cloud_cover': learning_features.get('avg_cloud_cover', 50.0),
                     'indoor_temp_gradient': learning_features.get('indoor_temp_gradient', 0.0),
                     'indoor_temp_delta_60m': learning_features.get('indoor_temp_delta_60m', 0.0),
+                    'climate_mode': climate_mode_tc,
                     # NO target temperature in shadow mode learning context!
                 }
                 
@@ -434,6 +435,7 @@ class OnlineLearning:
                     'avg_cloud_cover': learning_features.get('avg_cloud_cover', 50.0),
                     'indoor_temp_gradient': learning_features.get('indoor_temp_gradient', 0.0),
                     'indoor_temp_delta_60m': learning_features.get('indoor_temp_delta_60m', 0.0),
+                    'climate_mode': climate_mode_tc,
                 }
                 
                 # Calculate what the model predicted vs actual result
