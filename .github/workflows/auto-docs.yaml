@@ -81,8 +81,8 @@ jobs:
               print("::warning::openai package not available. Skipping AI documentation update.")
               sys.exit(0)
 
-          # Use the GitHub Copilot API — no separate API key needed,
-          # the built-in GITHUB_TOKEN provides access via Copilot premium requests.
+          # Use the GitHub Models API — no separate API key needed,
+          # the built-in GITHUB_TOKEN provides access via the models: read permission.
           github_token = os.environ.get("GITHUB_TOKEN", "")
           if not github_token:
               print("::warning::GITHUB_TOKEN not available. Skipping AI documentation update.")
