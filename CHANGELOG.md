@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `stable_periods.json` is now saved to the same directory as `unified_thermal_state.json` (derived from `config.UNIFIED_STATE_FILE`) instead of the hardcoded `/opt/ml_heating/` path, fixing a `FileNotFoundError` when running in Home Assistant add-on environments.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
