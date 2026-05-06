@@ -1,5 +1,24 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.29] - 2026-05-06
+
+### Added
+- **Scipy optimization failure logging**: Added detailed logging and error handling for scipy optimizer failures during OE and transient parameter calibration, improving robustness and traceability.
+- **Enhanced documentation**: Improved inline documentation and comments for calibration routines, clarifying algorithmic steps and parameter meanings.
+
+### Changed
+- **Solar lag calibration**: `_calibrate_solar_lag_xcorr()` now correlates PV with the rate of change of residuals (d(residual)/dt), reducing maximum lag from 36 to 12 steps and increasing correlation threshold from 0.1 to 0.3, addressing slab-mass delay bias and improving lag accuracy.
+- **OE calibration**: `_calibrate_oe_analytical()` now uses a two-stage approach: analytical weighted-median OE as initial guess, followed by scipy `minimize_scalar` refinement, increasing outlet effectiveness (OE) accuracy from ~0.72 to ~0.95.
+- **Thermal time constant calibration**: Calibration now prioritizes transient parameter estimation using `calibrate_transient_parameters()` and `filter_transient_periods()`, falling back to cooling curve analysis only if necessary.
+- **Unit labels**: Corrected unit labels for `outlet_effectiveness` and `heat_loss_coefficient` in `ThermalParameterConfig` from "dimensionless" and "1/hour" to "kW/K".
+
+### Fixed
+- **OE calibration accuracy**: Added scipy 1-D refinement pass using full `ThermalEquilibriumModel.predict_equilibrium_temperature()` — matches the scipy path's objective function exactly. Removed the `drive >= 3°C` filter that was discarding 68% of HP-only periods and biasing OE downward; now uses all HP-only periods (drive > 0) with drive-weighted median for the analytical initial guess
+- **HLC calibration quality gates**: When `target_temp` sensor is unavailable, HLC calibration now synthesises a constant column from `HLC_DEFAULT_TARGET_TEMP` (default 22.6°C) instead of silently disabling the `indoor_far_from_target` and `low_heating_demand` filters. This was causing HLC=0.119 (R²=-0.06) instead of correct ~0.133, which cascaded to OE=0.81 instead of ~0.92
+- **Solar lag calibration**: Fixed `_calibrate_solar_lag_xcorr()` producing 180 min (upper bound) instead of correct ~40 min. Three changes: (1) cross-correlate PV with d(residual)/dt instead of residual level to remove slab-mass smoothing, (2) reduce max lag from 180->60 min since slab delay is modeled separately, (3) raise correlation threshold from 0.1->0.3 and use weighted median instead of brittle mode
+- **Thermal time constant calibration**: Added transient calibration from heating sequences as primary method (was only trying cooling curves which require HP-off >=2h, rarely available in well-controlled UFH). Falls back to cooling curves, then persisted value
+- **OE/HLC unit labels**: Corrected `outlet_effectiveness` and `heat_loss_coefficient` units in `ThermalParameterConfig` from "dimensionless"/"1/hour" to "kW/K" -- both are thermal conductances added in the equilibrium equation
+
 ## [0.2.28] - 2026-05-06
 
 ### Fixed
