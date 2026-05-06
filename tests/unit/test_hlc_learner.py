@@ -513,22 +513,23 @@ class TestCalibrateHLCQualityFixes:
     def test_missing_target_temp_emits_warning(
         self, mock_config, mock_fetch, mock_tsm_fn
     ):
-        """When the target_temp column is absent from the DataFrame, a
-        warning must be logged indicating that quality filters are disabled."""
+        """When the target_temp column is absent from the DataFrame, an
+        info message must be logged indicating that a default target temp
+        is used for quality gates."""
         self._setup_config(mock_config)
         mock_tsm_fn.return_value = MagicMock()
         # DataFrame without target column
         mock_fetch.return_value = _make_df(120, include_target=False)
 
         import logging as _logging
-        with self.assertLogs("src.hlc_learner", level="WARNING") as cm:
+        with self.assertLogs("src.hlc_learner", level="INFO") as cm:
             result = calibrate_hlc()
 
         assert any(
             "target_temp" in msg and "not available" in msg
             for msg in cm.output
-        ), f"Expected target_temp warning, got: {cm.output}"
-        # Calibration may still succeed (just with fewer quality gates)
+        ), f"Expected target_temp info message, got: {cm.output}"
+        # Calibration may still succeed (now with default target quality gates)
         assert "success" in result
 
     def assertLogs(self, logger_name, level="WARNING"):

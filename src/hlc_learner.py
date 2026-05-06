@@ -819,15 +819,21 @@ def calibrate_hlc(influx_service=None) -> Dict:
         logger.error("❌ HLC calibration: %s", msg)
         return {"success": False, "message": msg}
 
-    # Fix 3 — Warn prominently when the target_temp column is absent.
-    # The indoor_far_from_target and low_heating_demand quality gates will be
-    # skipped, which reduces the ability to filter out HP start-up and warm
-    # spring periods from the regression.
+    # Fix 3 — When the target_temp column is absent, synthesise it from
+    # the configured default target temperature.  This keeps the
+    # indoor_far_from_target and low_heating_demand quality gates active
+    # which materially improves HLC regression quality.
     if "target_temp" not in col_map:
-        logger.warning(
-            "⚠️ HLC calibration: target_temp column not available — "
-            "indoor_far_from_target and low_heating_demand filters disabled. "
-            "Calibration quality may be reduced."
+        default_target = float(
+            getattr(config, "HLC_DEFAULT_TARGET_TEMP", 22.6)
+        )
+        synth_col = "_hlc_synth_target_temp"
+        df[synth_col] = default_target
+        col_map["target_temp"] = synth_col
+        logger.info(
+            "ℹ️ HLC calibration: target_temp column not available — "
+            "using default target temperature %.1f°C for quality gates.",
+            default_target,
         )
 
     # --- Calculate thermal power and filter stable periods ---

@@ -1,28 +1,29 @@
 # Active Context - Current Work & Decision State
 
-### 🔧 **Physics-Direct Calibration Accuracy Fixes — May 2026**
+### 🔧 **OE Drive Filter + HLC Default Target Temp Fix — May 6, 2026**
 
 #### **What changed**
-- `_calibrate_oe_analytical()` in `src/physics_calibration_direct.py` now uses a two-stage approach: (1) analytical weighted-median OE as initial guess, (2) scipy `minimize_scalar` refinement with HLC locked, minimizing MAE against HP-only stable periods. Drive filter raised from 2→3°C.
-- `_calibrate_solar_lag_xcorr()` rewritten: correlates PV with `d(residual)/dt` instead of raw residual level (removes slab-mass delay bias), max lag reduced from 36→12 steps (60 min), correlation threshold raised from 0.1→0.3, uses weighted median instead of mode.
-- Step 3 (thermal time constant) now tries `calibrate_transient_parameters()` with `filter_transient_periods()` as primary method (heating sequences, scipy L-BFGS-B). Falls back to `calculate_cooling_time_constant()` then persisted value.
-- `ThermalParameterConfig` in `src/thermal_config.py`: `outlet_effectiveness` unit corrected from "dimensionless" to "kW/K", `heat_loss_coefficient` from "1/hour" to "kW/K".
+- Removed `drive >= 3°C` gate from analytical OE — was discarding 68% of HP-only periods and biasing OE downward. Now uses `drive > 0` (outlet > indoor, HP running) matching scipy path behavior.
+- OE scipy refinement now uses `ThermalEquilibriumModel.predict_equilibrium_temperature()` instead of simplified formula, matching the scipy path's objective exactly.
+- `calibrate_hlc()` in `hlc_learner.py`: when `target_temp` column is unavailable, synthesises a constant column from `HLC_DEFAULT_TARGET_TEMP` (default 22.6°C) instead of skipping quality gates.
+- Added `HLC_DEFAULT_TARGET_TEMP` config parameter in `config.py`.
+- Updated test for new `target_temp` behavior (INFO instead of WARNING).
 
 #### **Why**
-- OE=0.72 instead of correct ~0.95: analytical formula `OE = HLC × (T_in-T_out)/(T_eff-T_in)` is numerically fragile with small denominator (~4°C drive), causing sensor noise to dominate. Scipy refinement is robust to per-sample noise.
-- solar_lag=180 min instead of correct ~40 min: slab thermal mass smooths the residual signal, pushing correlation peak to upper bound. Using d(residual)/dt removes this effect.
-- thermal_time_constant always fell back to persisted value because cooling curves (HP-off ≥2h) are rarely available. Transient calibration uses HP-ON sequences (abundant data).
-- OE and HLC are added in the equilibrium equation (kW/K + kW/K), so labeling OE as "dimensionless" was physically incorrect.
+- With HLC=0.119 (from poor regression, R²=-0.06, no target_temp quality gates), OE converged to 0.81 in both physics-direct and scipy paths. With correct HLC=0.133 (from `calculate_direct_heat_loss`), OE converges to 0.91-0.92 — both paths agree.
+- The previous OE=0.95 was the **default** that was never actually overwritten by calibration — `calibrate_hlc` produced a bad HLC, which made the OE optimization plateau at a lower value, but the old code never wrote the OE result back.
+- Offline comparison of both calibration paths confirms: Physics-direct OE=0.906, Scipy OE=0.919 (HP-only MAE=0.62°C, much better than previous 0.65°C).
 
 #### **Files changed**
-- `src/physics_calibration_direct.py`
-- `src/thermal_config.py`
+- `src/physics_calibration_direct.py` — drive filter, scipy refinement
+- `src/hlc_learner.py` — default target_temp synthesis
+- `src/config.py` — HLC_DEFAULT_TARGET_TEMP
+- `tests/unit/test_hlc_learner.py` — updated test
+- `test_calibration_compare.py` — new comparison script
 
 ---
 
-### ✅ **stable_periods.json path bug fix — May 2026**
-
-#### **What changed**
+### 🔧 **Physics-Direct Calibration Accuracy Fixes — May 2026**
 - `filter_stable_periods()` in `src/physics_calibration.py` now resolves the output path for `stable_periods.json` dynamically from `os.path.dirname(config.UNIFIED_STATE_FILE)` instead of the hardcoded `/opt/ml_heating/` string.
 - The directory for `stable_periods.json` is created if it does not exist (`os.makedirs(..., exist_ok=True)`).
 - If writing the file fails (e.g., permission or disk error), the exception is caught and a warning is logged, but calibration continues.

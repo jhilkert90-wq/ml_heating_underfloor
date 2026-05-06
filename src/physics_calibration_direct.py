@@ -137,10 +137,13 @@ def _refine_oe_scipy(
     """Refine outlet_effectiveness via 1-D scipy optimization.
 
     Locks HLC and optimizes OE only by minimizing MAE between the
-    temperature-based equilibrium prediction and actual indoor temperature
-    across HP-only stable periods.  This mirrors the scipy calibration
-    path's "Pass 1 OE-only" approach but starts from the physics-derived
-    analytical initial guess.
+    full temperature-based equilibrium prediction (via
+    ``ThermalEquilibriumModel.predict_equilibrium_temperature``) and
+    actual indoor temperature across HP-only stable periods.
+
+    Uses the complete model (including PV lag, external source weights)
+    to match the scipy calibration path's objective — this ensures OE
+    is calibrated consistently with how it is used at runtime.
 
     Parameters
     ----------
@@ -163,24 +166,34 @@ def _refine_oe_scipy(
     if len(hp_periods) < 10:
         return None
 
-    # Sub-sample for speed (every 3rd period)
-    sampled = hp_periods[::3] if len(hp_periods) > 100 else hp_periods
+    # Use all HP-only periods — subsampling can miss the true
+    # minimum when the MAE surface is shallow.
+    sampled = hp_periods
 
     def mae_objective(oe_candidate: float) -> float:
+        test_model = ThermalEquilibriumModel()
+        test_model.heat_loss_coefficient = hlc
+        test_model.outlet_effectiveness = oe_candidate
+
         total_error = 0.0
         count = 0
-        denom = oe_candidate + hlc
-        if denom <= 0:
-            return 1e9
         for p in sampled:
             t_in = p.get("indoor_temp")
-            t_out = p.get("outdoor_temp")
-            t_outlet = p.get("effective_temp", p.get("outlet_temp"))
-            if t_in is None or t_out is None or t_outlet is None:
+            if t_in is None or np.isnan(t_in):
                 continue
-            if np.isnan(t_in) or np.isnan(t_out) or np.isnan(t_outlet):
-                continue
-            predicted = (oe_candidate * t_outlet + hlc * t_out) / denom
+            # Use PV history if available for lag calculation
+            pv_input = p.get("pv_power_history", p.get("pv_power", 0))
+            predicted = test_model.predict_equilibrium_temperature(
+                outlet_temp=p.get("effective_temp", p.get("outlet_temp")),
+                outdoor_temp=p.get("outdoor_temp"),
+                current_indoor=t_in,
+                pv_power=pv_input,
+                fireplace_on=p.get("fireplace_on", 0),
+                tv_on=p.get("tv_on", 0),
+                thermal_power=None,  # Force temperature-based path
+                _suppress_logging=True,
+                cloud_cover_pct=0.0,
+            )
             total_error += abs(predicted - t_in)
             count += 1
         return total_error / count if count > 0 else 1e9
@@ -270,11 +283,13 @@ def _calibrate_oe_analytical(
         if np.isnan(t_in) or np.isnan(t_out) or np.isnan(t_outlet):
             continue
 
-        # Quality gate: outlet must be meaningfully above indoor.
-        # Raised from 2.0 to 3.0 — small drives make the algebraic
-        # inversion (denominator = drive) extremely noise-sensitive.
+        # Quality gate: outlet must be above indoor (HP is actively
+        # heating).  No minimum drive threshold — the scipy path uses all
+        # HP-only periods without a drive filter, and restricting to high
+        # drives biases OE downward.  The drive is used as a weight in the
+        # weighted median so noisy low-drive samples have less influence.
         drive = t_outlet - t_in
-        if drive < 3.0:
+        if drive <= 0:
             continue
 
         delta_ti = t_in - t_out

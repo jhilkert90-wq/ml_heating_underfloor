@@ -548,6 +548,12 @@ HLC_OUTDOOR_TEMP_MAX: float = float(os.getenv("HLC_OUTDOOR_TEMP_MAX", "15.0"))
 HLC_MIN_HEATING_DEMAND_K: float = float(
     os.getenv("HLC_MIN_HEATING_DEMAND_K", "1.0")
 )
+# Default indoor target temperature [°C] used when the target_temp sensor
+# is unavailable.  Keeps the indoor_far_from_target and low_heating_demand
+# quality gates active for HLC regression.
+HLC_DEFAULT_TARGET_TEMP: float = float(
+    os.getenv("HLC_DEFAULT_TARGET_TEMP", "22.6")
+)
 
 # --- PV-Triggered HLC Session Learner ---
 # Persists one HLC data record per PV-night session.  A session opens when
