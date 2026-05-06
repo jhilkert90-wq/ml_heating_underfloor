@@ -7,7 +7,7 @@
 - Added `import os` to the module-level imports in `src/physics_calibration.py`.
 
 #### **Why**
-- In some Home Assistant add-on environments the `/opt/ml_heating/` directory does not exist, causing a `FileNotFoundError` when calibration tried to write `stable_periods.json`. Using the same directory as `unified_thermal_state.json` (which is guaranteed to exist at runtime) is the correct and consistent approach.
+- In some Home Assistant add-on environments the `/opt/ml_heating/` directory does not exist, causing a `FileNotFoundError` when calibration tried to write `stable_periods.json`. Using the same directory as configured via `config.UNIFIED_STATE_FILE` is the correct and consistent approach. The directory is created if it does not yet exist, and write failures are caught and logged as warnings so calibration continues.
 
 #### **Files changed**
 - `src/physics_calibration.py`

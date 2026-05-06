@@ -1490,11 +1490,18 @@ def filter_stable_periods(df, temp_change_threshold=0.2, min_duration=20):
         "state filtering"
     )
 
-    _stable_periods_path = os.path.join(
-        os.path.dirname(config.UNIFIED_STATE_FILE), "stable_periods.json"
-    )
-    with open(_stable_periods_path, "w") as f:
-        json.dump(stable_periods, f, indent=2, default=str)
+    _stable_periods_dir = os.path.dirname(config.UNIFIED_STATE_FILE) or "."
+    _stable_periods_path = os.path.join(_stable_periods_dir, "stable_periods.json")
+    try:
+        os.makedirs(_stable_periods_dir, exist_ok=True)
+        with open(_stable_periods_path, "w") as f:
+            json.dump(stable_periods, f, indent=2, default=str)
+    except OSError as exc:
+        logging.warning(
+            "⚠️ Could not write stable_periods.json to %s: %s",
+            _stable_periods_path,
+            exc,
+        )
 
     return stable_periods
 
