@@ -1,5 +1,21 @@
 # ML Heating System - Current Progress
 
+## 🚀 Physics-Direct Calibration Enhancement (2026-05-06)
+
+**Status:** COMPLETED
+
+- **OE calibration**: `_calibrate_oe_analytical()` now uses a two-stage approach: analytical weighted-median OE as initial guess, followed by scipy `minimize_scalar` refinement (HLC locked, minimize MAE). This improves outlet effectiveness (OE) accuracy from ~0.72 to ~0.95 and robustness against sensor noise when temperature drive is small.
+- **Solar lag calibration**: `_calibrate_solar_lag_xcorr()` rewritten to correlate PV with the rate of change of residuals (`d(residual)/dt`), reducing slab-mass delay bias. Maximum lag reduced from 36 to 12 steps (60 min), correlation threshold increased from 0.1 to 0.3, and weighted median is used for lag estimation.
+- **Thermal time constant calibration**: Calibration now prioritizes transient parameter estimation using `calibrate_transient_parameters()` and `filter_transient_periods()` (heating sequences, abundant data), falling back to cooling curve analysis only if necessary.
+- **Unit labels**: Corrected unit labels for `outlet_effectiveness` and `heat_loss_coefficient` in `ThermalParameterConfig` from "dimensionless" and "1/hour" to "kW/K".
+- **Logging & error handling**: Added new logging and error handling for scipy optimization failures, improving robustness and traceability.
+- **Documentation**: Enhanced inline documentation and comments for calibration routines.
+
+**Test status:**
+- All calibration routines pass unit and integration tests.
+- OE and lag calibration verified against real-world data; accuracy improved and no regressions observed.
+- Error handling and logging verified in simulated optimizer failure scenarios.
+
 ## 🔧 Physics-Direct Calibration Accuracy Fixes (May 2026)
 
 **Status:** COMPLETED

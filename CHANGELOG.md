@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Scipy optimization failure logging**: Added detailed logging and error handling for scipy optimizer failures during OE and transient parameter calibration, improving robustness and traceability.
+- **Enhanced documentation**: Improved inline documentation and comments for calibration routines, clarifying algorithmic steps and parameter meanings.
+
+### Changed
+- **Solar lag calibration**: `_calibrate_solar_lag_xcorr()` now correlates PV with the rate of change of residuals (d(residual)/dt), reducing maximum lag from 36 to 12 steps and increasing correlation threshold from 0.1 to 0.3, addressing slab-mass delay bias and improving lag accuracy.
+- **OE calibration**: `_calibrate_oe_analytical()` now uses a two-stage approach: analytical weighted-median OE as initial guess, followed by scipy `minimize_scalar` refinement, increasing outlet effectiveness (OE) accuracy from ~0.72 to ~0.95.
+- **Thermal time constant calibration**: Calibration now prioritizes transient parameter estimation using `calibrate_transient_parameters()` and `filter_transient_periods()`, falling back to cooling curve analysis only if necessary.
+- **Unit labels**: Corrected unit labels for `outlet_effectiveness` and `heat_loss_coefficient` in `ThermalParameterConfig` from "dimensionless" and "1/hour" to "kW/K".
+
 ### Fixed
 - **OE calibration accuracy**: Added scipy 1-D refinement pass after analytical initial guess — analytical algebraic inversion was numerically fragile at small temperature drives (denominator ~4°C), producing OE=0.72 instead of correct ~0.95. Scipy refinement (HLC locked) now minimizes MAE against HP-only stable periods
 - **Solar lag calibration**: Fixed `_calibrate_solar_lag_xcorr()` producing 180 min (upper bound) instead of correct ~40 min. Three changes: (1) cross-correlate PV with d(residual)/dt instead of residual level to remove slab-mass smoothing, (2) reduce max lag from 180→60 min since slab delay is modeled separately, (3) raise correlation threshold from 0.1→0.3 and use weighted median instead of brittle mode

@@ -1,5 +1,29 @@
 # Active Context - Current Work & Decision State
 
+### 🚀 **Physics-Direct Calibration Enhancement — May 2026**
+
+#### **What changed**
+- **Outlet Effectiveness (OE) Calibration**: `_calibrate_oe_analytical()` in `src/physics_calibration_direct.py` now uses a two-stage approach: (1) analytical weighted-median OE as initial guess, (2) scipy `minimize_scalar` refinement with HLC locked, minimizing MAE against HP-only stable periods. This improves OE accuracy from ~0.72 to ~0.95 and robustness against sensor noise when temperature drive is small.
+- **Solar Lag Calibration**: `_calibrate_solar_lag_xcorr()` rewritten to correlate PV with the rate of change of residuals (`d(residual)/dt`) instead of residual level, reducing slab-mass delay bias. Maximum lag reduced from 36 to 12 steps (60 min), correlation threshold increased from 0.1 to 0.3, and weighted median is used for lag estimation.
+- **Thermal Time Constant Calibration**: Calibration now prioritizes transient parameter estimation using `calibrate_transient_parameters()` and `filter_transient_periods()` (heating sequences, abundant data), falling back to cooling curve analysis only if necessary.
+- **Unit Labels Correction**: `ThermalParameterConfig` in `src/thermal_config.py` now correctly labels `outlet_effectiveness` and `heat_loss_coefficient` as "kW/K" instead of "dimensionless" and "1/hour".
+- **Logging & Error Handling**: Added new logging and error handling for scipy optimization failures, improving traceability and robustness.
+- **Documentation Improvements**: Enhanced inline documentation and comments for calibration routines for clarity.
+
+#### **Why**
+- Analytical OE formula was numerically fragile with small temperature drives, causing sensor noise to dominate. Scipy refinement is robust to per-sample noise.
+- Previous solar lag calibration was biased by slab-mass smoothing, resulting in incorrect lag values. Using `d(residual)/dt` removes this effect.
+- Cooling curve-based time constant calibration was rarely possible; transient calibration uses more available heating data.
+- Correct unit labeling ensures physical consistency and clarity for users and developers.
+
+#### **Files changed**
+- `src/physics_calibration_direct.py`
+- `src/thermal_config.py`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### 🔧 **Physics-Direct Calibration Accuracy Fixes — May 2026**
 
 #### **What changed**
@@ -40,15 +64,7 @@
 - **Physics-Direct calibration path added**: `src/physics_calibration_direct.py` now implements a fully analytical, sequential calibration method that estimates all thermal model parameters from first principles (no scipy dependency). This path is selectable from the dashboard and exposes all parameters for user editing in `config.yaml`.
 - **Dashboard calibration selector**: Users can now choose between "Scipy Optimizer" and "Physics Direct" calibration methods when triggering model recalibration. The selection is persisted and triggers the appropriate calibration logic on restart.
 - **Config option & schema**: Added `CALIBRATION_METHOD` to `src/config.py` and `config.yaml`. Updated schema to include bounds for `cloud_factor_exponent` and `solar_decay_tau_hours`.
-- **Magic numbers refactored**: Calibration code now uses named constants for previously hardcoded values; improved comments for cloud exponent logic.
-- **Config default alignment**: Fixed 6 mismatches between `src/config.py` defaults and `ThermalParameterConfig.DEFAULTS` (PV, fireplace, TV weights, thermal time constant, slab tau, total conductance).
-- **State-file bounds validation**: Persisted calibration parameters are now validated against bounds before being accepted as fallback, preventing corrupted values from overriding config defaults.
-- **Expanded test coverage**: Updated and expanded unit tests for physics-direct calibration, including TV weight and solar lag xcorr edge cases; all tests pass.
-
-#### **Why**
-- Provides a robust, transparent calibration path for environments where scipy optimization is unavailable or undesirable.
-- Ensures all calibration parameters are user-editable and validated, preventing silent fallback to hardcoded values.
-- Improves reliability and maintainability by aligning config defaults and enforcing bounds.
+- **Magic numbers refactored**: Calibration code now uses named constants for previously hardcoded values; improved comments for cloud exponent
 
 #### **Files changed**
 - `src/physics_calibration_direct.py`
@@ -59,28 +75,3 @@
 - `src/unified_thermal_state.py`
 - `src/thermal_config.py`
 - `tests/unit/test_physics_calibration_direct.py`
-- `CHANGELOG.md`
-
----
-
-### ✅ **Calibration parameter fallback + config.yaml exposure — May 2026**
-
-#### **What changed**
-- `src/physics_calibration_direct.py` — `calibrate_thermal_model_physics()` resolves the active `ThermalStateManager` at the top of the function (before step 0) and loads `baseline_parameters` from the persisted state file. A `_state_fallback(key)` helper returns the persisted value when it's a valid float, otherwise falls back to `ThermalParameterConfig.get_default()`. All 13 step-level fallbacks now use `_state_fallback()` instead of `ThermalParameterConfig.get_default()`. Log messages now indicate whether "persisted" or "default" was used.
-- `src/unified_thermal_state.py` — `_get_default_state()` now includes `cloud_factor_exponent` and `solar_decay_tau_hours` in the `baseline_parameters` dict. `set_calibrated_baseline()` persists those two parameters if present in the input dict.
-- `src/thermal_config.py` — All calibration parameters now have bounds and are validated before being accepted from state file.
-- `src/config.py`, `.env_sample`, `ml_heating_underfloor/config.yaml` — All calibration parameters are now user-editable and documented.
-
-#### **Why**
-- Ensures robust fallback for all calibration parameters: calibrated value > persisted value > config.yaml value.
-- Prevents corrupted or out-of-bounds values from being loaded from state.
-- All parameters are now visible and editable by the user.
-
-#### **Files changed**
-- `src/physics_calibration_direct.py`
-- `src/unified_thermal_state.py`
-- `src/thermal_config.py`
-- `src/config.py`
-- `.env_sample`
-- `ml_heating_underfloor/config.yaml`
-- `CHANGELOG.md`
