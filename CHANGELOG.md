@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **OE calibration accuracy**: Added scipy 1-D refinement pass after analytical initial guess — analytical algebraic inversion was numerically fragile at small temperature drives (denominator ~4°C), producing OE=0.72 instead of correct ~0.95. Scipy refinement (HLC locked) now minimizes MAE against HP-only stable periods
+- **Solar lag calibration**: Fixed `_calibrate_solar_lag_xcorr()` producing 180 min (upper bound) instead of correct ~40 min. Three changes: (1) cross-correlate PV with d(residual)/dt instead of residual level to remove slab-mass smoothing, (2) reduce max lag from 180→60 min since slab delay is modeled separately, (3) raise correlation threshold from 0.1→0.3 and use weighted median instead of brittle mode
+- **Thermal time constant calibration**: Added transient calibration from heating sequences as primary method (was only trying cooling curves which require HP-off ≥2h, rarely available in well-controlled UFH). Falls back to cooling curves, then persisted value
+- **OE/HLC unit labels**: Corrected `outlet_effectiveness` and `heat_loss_coefficient` units in `ThermalParameterConfig` from "dimensionless"/"1/hour" to "kW/K" — both are thermal conductances added in the equilibrium equation
+- **OE drive filter**: Increased minimum temperature drive from 2°C to 3°C to reduce noise sensitivity in analytical OE estimation
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

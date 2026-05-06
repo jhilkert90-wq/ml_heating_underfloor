@@ -1,5 +1,23 @@
 # ML Heating System - Current Progress
 
+## 🔧 Physics-Direct Calibration Accuracy Fixes (May 2026)
+
+**Status:** COMPLETED
+
+- **OE calibration**: Added scipy 1-D refinement after analytical initial guess. Analytical formula `OE = HLC × ΔT_indoor / drive` is correct but numerically fragile when drive (effective_temp - indoor_temp) is small (~4°C). Scipy refinement (HLC locked, minimize MAE) produces physically correct OE ~0.95.
+- **Solar lag**: Fixed 180 min result. Root cause: correlating PV with residual level (smoothed by slab mass) instead of d(residual)/dt. Also reduced max lag from 180→60 min and raised correlation threshold from 0.1→0.3.
+- **Thermal time constant**: Added transient calibration (heating sequences, scipy L-BFGS-B) as primary method. Cooling curves (HP-off ≥2h) rarely available in well-controlled UFH. Transient method uses 1-hour heating windows with abundant data.
+- **Unit labels**: Fixed OE and HLC units in ThermalParameterConfig from "dimensionless"/"1/hour" to "kW/K".
+
+**Files changed:**
+- `src/physics_calibration_direct.py` — OE scipy refinement, solar lag d(residual)/dt, transient tau
+- `src/thermal_config.py` — unit label corrections
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ## ✅ Fixed stable_periods.json path bug (May 2026)
 
 **Status:** COMPLETED

@@ -1,11 +1,15 @@
 """
 Physics-Direct Calibration for the Thermal Equilibrium Model.
 
-This module provides a fully analytical, sequential calibration path that
-estimates every thermal parameter from first principles — no scipy optimizer,
-no MAE fitting.  Each parameter is derived from the underlying heat-balance
-physics and locked before the next one is estimated, breaking the
-inter-parameter degeneracy that can trap scipy-based joint optimization.
+This module provides a physics-first, sequential calibration path that
+estimates every thermal parameter from first principles.  Each parameter is
+derived from the underlying heat-balance physics and locked before the next
+one is estimated, breaking the inter-parameter degeneracy that can trap
+joint optimization.
+
+Where a closed-form analytical estimate is numerically fragile (e.g. OE
+with small temperature drives), a scipy refinement pass is used to produce
+the best physically correct result.
 
 The user can choose between this path and the existing scipy optimizer via the
 ``CALIBRATION_METHOD`` config variable (``"physics"`` or ``"scipy"``) or via
@@ -21,12 +25,12 @@ where OE (outlet effectiveness) and HLC (heat-loss coefficient) are both in
 kW/K.  Each step locks a parameter before estimating the next:
 
 1.  **HLC** — forced-through-origin OLS via ``calibrate_hlc()``.
-2.  **OE** — per-window algebra from HP-only stable periods.
-3.  **τ_room** — log-linear OLS on HP-off cooling curves.
+2.  **OE** — analytical initial guess + 1-D scipy refinement (HLC locked).
+3.  **τ_room** — transient calibration (primary) or cooling curves (fallback).
 4.  **pv_heat_weight** — residual energy balance on PV-on periods.
 5.  **fireplace_heat_weight** — residual energy balance on FP-on periods.
 6.  **tv_heat_weight** — residual energy balance on TV-on periods.
-7.  **solar_lag_minutes** — cross-correlation of PV and residual signal.
+7.  **solar_lag_minutes** — cross-correlation of PV vs d(residual)/dt.
 8.  **delta_t_floor** — P25 percentile via ``calibrate_delta_t_floor()``.
 9.  **slab_time_constant_hours** — 1-D grid search over [0.1, 4.0] h.
 10. **fp_decay_time_constant** — log-linear OLS via ``calibrate_fp_decay_tau()``.
@@ -48,6 +52,12 @@ from typing import Dict, List, Optional
 import numpy as np
 
 try:
+    from scipy.optimize import minimize_scalar
+except ImportError:
+    minimize_scalar = None
+    logging.warning("scipy not available — OE refinement will use analytical estimate only")
+
+try:
     from . import config
     from .thermal_equilibrium_model import ThermalEquilibriumModel
     from .thermal_config import ThermalParameterConfig
@@ -67,6 +77,8 @@ try:
         filter_pv_decay_periods,
         _filter_hp_only_periods,
         _apply_channel_params,
+        filter_transient_periods,
+        calibrate_transient_parameters,
     )
     from .hlc_learner import calibrate_hlc
 except ImportError:
@@ -89,6 +101,8 @@ except ImportError:
         filter_pv_decay_periods,
         _filter_hp_only_periods,
         _apply_channel_params,
+        filter_transient_periods,
+        calibrate_transient_parameters,
     )
     from hlc_learner import calibrate_hlc  # type: ignore
 
@@ -117,20 +131,107 @@ _MAX_AUX_HEAT_SOURCE_KW: float = 10.0
 _SAMPLES_PER_HOUR: int = 12
 
 
+def _refine_oe_scipy(
+    hp_periods, hlc: float, oe_initial: float,
+) -> Optional[float]:
+    """Refine outlet_effectiveness via 1-D scipy optimization.
+
+    Locks HLC and optimizes OE only by minimizing MAE between the
+    temperature-based equilibrium prediction and actual indoor temperature
+    across HP-only stable periods.  This mirrors the scipy calibration
+    path's "Pass 1 OE-only" approach but starts from the physics-derived
+    analytical initial guess.
+
+    Parameters
+    ----------
+    hp_periods:
+        HP-only period dicts from ``_filter_hp_only_periods()``.
+    hlc:
+        Heat-loss coefficient [kW/K], locked from Step 1.
+    oe_initial:
+        Analytical OE estimate used as initial guess.
+
+    Returns
+    -------
+    float or None
+        Refined OE [kW/K], or *None* if scipy unavailable or optimization fails.
+    """
+    if minimize_scalar is None:
+        logging.info("scipy not available — skipping OE refinement")
+        return None
+
+    if len(hp_periods) < 10:
+        return None
+
+    # Sub-sample for speed (every 3rd period)
+    sampled = hp_periods[::3] if len(hp_periods) > 100 else hp_periods
+
+    def mae_objective(oe_candidate: float) -> float:
+        total_error = 0.0
+        count = 0
+        denom = oe_candidate + hlc
+        if denom <= 0:
+            return 1e9
+        for p in sampled:
+            t_in = p.get("indoor_temp")
+            t_out = p.get("outdoor_temp")
+            t_outlet = p.get("effective_temp", p.get("outlet_temp"))
+            if t_in is None or t_out is None or t_outlet is None:
+                continue
+            if np.isnan(t_in) or np.isnan(t_out) or np.isnan(t_outlet):
+                continue
+            predicted = (oe_candidate * t_outlet + hlc * t_out) / denom
+            total_error += abs(predicted - t_in)
+            count += 1
+        return total_error / count if count > 0 else 1e9
+
+    bounds = ThermalParameterConfig.get_bounds("outlet_effectiveness")
+    try:
+        result = minimize_scalar(
+            mae_objective,
+            bounds=(bounds[0], bounds[1]),
+            method="bounded",
+            options={"xatol": 1e-4, "maxiter": 200},
+        )
+        if result.success or result.fun < 5.0:
+            refined = float(result.x)
+            logging.info(
+                "✅ Scipy-refined OE: %.4f kW/K (MAE=%.4f°C, "
+                "analytical initial=%.4f, delta=%.4f)",
+                refined, result.fun, oe_initial, refined - oe_initial,
+            )
+            return refined
+        else:
+            logging.warning(
+                "⚠️ OE scipy refinement did not converge: %s", result.message
+            )
+            return None
+    except Exception as exc:
+        logging.warning("⚠️ OE scipy refinement failed: %s", exc)
+        return None
+
+
 def _calibrate_oe_analytical(
     stable_periods, hlc: float
 ) -> Optional[float]:
     """Estimate outlet_effectiveness from HP-only stable periods.
 
-    Derivation from the equilibrium equation (no external sources)::
+    Uses a two-stage approach:
 
-        T_indoor = (OE × T_outlet + HLC × T_outdoor) / (OE + HLC)
-        → OE = HLC × (T_indoor − T_outdoor) / (T_outlet − T_indoor)
+    1. **Analytical initial guess** — per-window algebraic inversion of the
+       equilibrium equation (no external sources)::
 
-    Each qualifying window yields an independent OE estimate.  The
-    weighted median is returned, using ``drive = T_outlet − T_indoor``
-    as the weight so that windows with a larger temperature drive
-    (where the formula is most reliable) contribute more.
+           T_indoor = (OE × T_outlet + HLC × T_outdoor) / (OE + HLC)
+           → OE = HLC × (T_indoor − T_outdoor) / (T_outlet − T_indoor)
+
+       The weighted median across qualifying windows provides a
+       physics-anchored starting point.
+
+    2. **Scipy refinement** — 1-D bounded optimization of OE (HLC locked)
+       that minimizes MAE of the temperature-based equilibrium prediction
+       vs. actual indoor temperature.  This is robust to per-sample noise
+       that biases the algebraic inversion when the temperature drive
+       is small.
 
     Parameters
     ----------
@@ -144,7 +245,7 @@ def _calibrate_oe_analytical(
     float or None
         Estimated outlet_effectiveness [kW/K], or *None* if insufficient data.
     """
-    logging.info("=== STEP 2: ANALYTICAL OE ESTIMATION ===")
+    logging.info("=== STEP 2: OE ESTIMATION (analytical + scipy refinement) ===")
 
     if hlc <= 0:
         logging.warning("⚠️ OE calibration skipped — HLC ≤ 0")
@@ -169,9 +270,11 @@ def _calibrate_oe_analytical(
         if np.isnan(t_in) or np.isnan(t_out) or np.isnan(t_outlet):
             continue
 
-        # Quality gate: outlet must be meaningfully above indoor
+        # Quality gate: outlet must be meaningfully above indoor.
+        # Raised from 2.0 to 3.0 — small drives make the algebraic
+        # inversion (denominator = drive) extremely noise-sensitive.
         drive = t_outlet - t_in
-        if drive < 2.0:
+        if drive < 3.0:
             continue
 
         delta_ti = t_in - t_out
@@ -200,14 +303,30 @@ def _calibrate_oe_analytical(
     total_w = cum_w[-1]
     median_idx = np.searchsorted(cum_w, total_w / 2.0)
     median_idx = min(median_idx, len(sorted_oe) - 1)
-    oe_estimate = sorted_oe[median_idx]
+    oe_analytical = sorted_oe[median_idx]
 
     logging.info(
-        "✅ Analytical OE estimate: %.4f kW/K "
+        "📐 Analytical OE estimate: %.4f kW/K "
         "(from %d HP-only periods, weighted median)",
-        oe_estimate, len(oe_values),
+        oe_analytical, len(oe_values),
     )
-    return oe_estimate
+
+    # --- Stage 2: scipy refinement ---
+    oe_refined = _refine_oe_scipy(hp_periods, hlc, oe_analytical)
+
+    if oe_refined is not None:
+        # Cross-validate: warn if analytical and refined differ substantially
+        pct_diff = abs(oe_refined - oe_analytical) / max(oe_analytical, 0.01) * 100
+        if pct_diff > 30:
+            logging.warning(
+                "⚠️ OE analytical (%.4f) and scipy-refined (%.4f) differ by %.0f%% "
+                "— analytical estimate may be biased by noise or post-defrost periods",
+                oe_analytical, oe_refined, pct_diff,
+            )
+        return oe_refined
+
+    logging.info("Using analytical OE estimate (scipy refinement unavailable)")
+    return oe_analytical
 
 
 # ---------------------------------------------------------------------------
@@ -352,19 +471,15 @@ def _calibrate_solar_lag_xcorr(
 ) -> Optional[float]:
     """Estimate solar_lag_minutes from time-contiguous PV-active episodes.
 
-    The PV residual is the thermal contribution not explained by HP alone::
+    Cross-correlates PV power against the **rate of change** of the
+    HP-equilibrium residual (``d(residual)/dt``) within each contiguous
+    PV-active episode.  Using the rate of change rather than the residual
+    level removes the slab-mass smoothing effect that otherwise pushes
+    the correlation peak to artificially large lags.
 
-        residual_i = T_indoor_i - (OE × T_outlet_i + HLC × T_outdoor_i)
-                                  / (OE + HLC)
-
-    Cross-correlation between PV power and this residual is computed
-    **within each contiguous PV-active episode** (PV > threshold for at
-    least ``_MIN_PV_SAMPLES_FOR_LAG`` consecutive rows) so that lag shifts
-    compare temporally adjacent samples.  Using non-contiguous stable_periods
-    would corrupt the lag structure by comparing samples from different
-    days/weeks.
-
-    The modal best-lag across all qualifying episodes is returned.
+    The weighted median of per-episode best-lags (weighted by peak
+    correlation strength) is returned — more robust than the modal
+    selection used previously.
 
     Parameters
     ----------
@@ -408,14 +523,20 @@ def _calibrate_solar_lag_xcorr(
     hp_eq = (oe * t_outlet_arr + hlc * t_out_arr) / denom
     residual_arr = t_in_arr - hp_eq
 
-    max_lag_steps = 36   # 180 min in 5-min steps
+    # Use rate-of-change of residual: removes slab-mass delay that
+    # would otherwise bias the lag estimate to very large values.
+    d_residual = np.diff(residual_arr)
+
+    # Physical solar lag is 10-60 min; slab delay is modeled separately.
+    # Reduced from 36 (180 min) to 12 (60 min) to prevent slab-mass
+    # confusion.
+    max_lag_steps = 12   # 60 min in 5-min steps
     step_min = 5
-    # Each episode needs enough rows for the lag-0 correlation window plus
-    # the maximum lag shift without running out of samples.
     min_ep_len = _MIN_PV_SAMPLES_FOR_LAG + max_lag_steps
 
     pv_active = pv_arr > _MIN_PV_ACTIVE_FOR_LAG_W
     episode_lags: List[int] = []
+    episode_corrs: List[float] = []
 
     # Segment into contiguous PV-active runs and compute per-episode xcorr
     i = 0
@@ -433,28 +554,31 @@ def _calibrate_solar_lag_xcorr(
         if ep_end - ep_start < min_ep_len:
             continue
 
-        ep_pv = pv_arr[ep_start:ep_end]
-        ep_res = residual_arr[ep_start:ep_end]
+        # Use d(residual)/dt for the episode (one element shorter)
+        ep_pv = pv_arr[ep_start:ep_end - 1]  # align with diff
+        ep_dres = d_residual[ep_start:ep_end - 1]
 
         pv_std = float(ep_pv.std())
-        res_std = float(ep_res.std())
-        if pv_std < 1e-6 or res_std < 1e-6:
+        dres_std = float(ep_dres.std())
+        if pv_std < 1e-6 or dres_std < 1e-6:
             continue
 
         pv_norm = (ep_pv - ep_pv.mean()) / pv_std
-        res_norm = (ep_res - ep_res.mean()) / res_std
+        dres_norm = (ep_dres - ep_dres.mean()) / dres_std
 
         best_lag = 0
-        best_corr = float(np.corrcoef(pv_norm, res_norm)[0, 1])
+        best_corr = float(np.corrcoef(pv_norm, dres_norm)[0, 1])
         for lag in range(1, max_lag_steps + 1):
-            corr = float(np.corrcoef(pv_norm[lag:], res_norm[:-lag])[0, 1])
+            corr = float(np.corrcoef(pv_norm[lag:], dres_norm[:-lag])[0, 1])
             if corr > best_corr:
                 best_corr = corr
                 best_lag = lag
 
-        # Only include this episode if the correlation is meaningful
-        if best_corr >= 0.1:
+        # Raised threshold from 0.1 to 0.3 — reject noisy episodes
+        # that produce near-random correlation peaks at arbitrary lags.
+        if best_corr >= 0.3:
             episode_lags.append(best_lag)
+            episode_corrs.append(best_corr)
 
     if not episode_lags:
         logging.info(
@@ -463,19 +587,25 @@ def _calibrate_solar_lag_xcorr(
         )
         return None
 
-    # Use the modal best-lag across episodes (robust to individual noisy days)
-    unique, counts = np.unique(episode_lags, return_counts=True)
-    modal_lag_steps = int(unique[np.argmax(counts)])
-    modal_lag_min = float(modal_lag_steps * step_min)
+    # Weighted median by correlation strength (more robust than mode).
+    sorted_pairs = sorted(zip(episode_lags, episode_corrs), key=lambda x: x[0])
+    sorted_lags = [x[0] for x in sorted_pairs]
+    sorted_w = [x[1] for x in sorted_pairs]
+    cum_w = np.cumsum(sorted_w)
+    total_w = cum_w[-1]
+    median_idx = np.searchsorted(cum_w, total_w / 2.0)
+    median_idx = min(median_idx, len(sorted_lags) - 1)
+    best_lag_steps = sorted_lags[median_idx]
+    best_lag_min = float(best_lag_steps * step_min)
 
     logging.info(
-        "✅ Solar lag estimate: %.0f min (modal across %d PV episodes)",
-        modal_lag_min, len(episode_lags),
+        "✅ Solar lag estimate: %.0f min (weighted median across %d PV episodes)",
+        best_lag_min, len(episode_lags),
     )
 
     bounds = ThermalParameterConfig.get_bounds("solar_lag_minutes")
-    modal_lag_min = max(bounds[0], min(bounds[1], modal_lag_min))
-    return modal_lag_min
+    best_lag_min = max(bounds[0], min(bounds[1], best_lag_min))
+    return best_lag_min
 
 
 # ---------------------------------------------------------------------------
@@ -866,13 +996,42 @@ def calibrate_thermal_model_physics(
                         _fallback_source("outlet_effectiveness"))
         oe = _state_fallback("outlet_effectiveness")
 
-    # --- Step 3: τ_room (cooling time constant) ---
-    logging.info("Step 3: Thermal time constant from cooling curves...")
-    tau, tau_r2 = calculate_cooling_time_constant(df)
-    if tau is not None:
-        logging.info("✅ τ_room = %.2fh (R²=%.3f)", tau, tau_r2)
+    # --- Step 3: τ_room (thermal time constant) ---
+    # Priority: (1) transient calibration from heating sequences (most data),
+    #           (2) cooling curves (HP-off periods ≥ 2h, often unavailable),
+    #           (3) persisted/default fallback.
+    logging.info("Step 3: Thermal time constant calibration...")
+    tau = None
+    tau_r2 = None
+
+    # Primary: transient calibration (heating sequences, scipy L-BFGS-B)
+    logging.info("  3a: Trying transient calibration (multi-step heating sequences)...")
+    transient_seqs = filter_transient_periods(df)
+    if transient_seqs and len(transient_seqs) >= 12:
+        # Build a temporary model with current HLC/OE for tau optimization
+        _tau_model = ThermalEquilibriumModel()
+        _tau_model.heat_loss_coefficient = hlc
+        _tau_model.outlet_effectiveness = oe
+        tau_transient = calibrate_transient_parameters(_tau_model, transient_seqs)
+        if tau_transient is not None:
+            tau = tau_transient
+            logging.info("✅ τ_room = %.2fh (transient calibration, %d sequences)",
+                         tau, len(transient_seqs))
     else:
-        logging.warning("⚠️ Cooling tau failed — using %s value",
+        logging.info("  Insufficient transient sequences: %d (need ≥12)",
+                     len(transient_seqs) if transient_seqs else 0)
+
+    # Fallback: cooling curves (HP-off periods)
+    if tau is None:
+        logging.info("  3b: Trying cooling time constant (HP-off periods)...")
+        tau_cooling, tau_r2 = calculate_cooling_time_constant(df)
+        if tau_cooling is not None:
+            tau = tau_cooling
+            logging.info("✅ τ_room = %.2fh (cooling curves, R²=%.3f)", tau, tau_r2)
+
+    # Final fallback: persisted value
+    if tau is None:
+        logging.warning("⚠️ Both transient and cooling tau failed — using %s value",
                         _fallback_source("thermal_time_constant"))
         tau = _state_fallback("thermal_time_constant")
 
