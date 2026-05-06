@@ -1,6 +1,20 @@
 # ML Heating System - Current Progress
 
-## 🎯 CURRENT STATUS - May 2026 (Physics-Direct Calibration Path & Dashboard Selector)
+## 🎯 CURRENT STATUS - May 2026 (stable_periods.json path bug fix)
+
+### ✅ **Fixed hardcoded stable_periods.json path**
+
+**Status**: **COMPLETED**
+
+- `filter_stable_periods()` in `src/physics_calibration.py` now writes `stable_periods.json` to the same directory as `unified_thermal_state.json`, using `os.path.dirname(config.UNIFIED_STATE_FILE)`. Previously hardcoded to `/opt/ml_heating/` which did not exist in all HA add-on environments.
+
+**Files changed:**
+- `src/physics_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
 
 ### ✅ **Physics-Direct calibration path implemented and selectable from dashboard**
 

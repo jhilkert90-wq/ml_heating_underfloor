@@ -1,6 +1,18 @@
 # Active Context - Current Work & Decision State
 
-### ✅ **Physics-Direct Calibration Path & 3-Level Fallback — May 2026**
+### ✅ **stable_periods.json path bug fix — May 2026**
+
+#### **What changed**
+- `filter_stable_periods()` in `src/physics_calibration.py` now resolves the output path for `stable_periods.json` dynamically from `os.path.dirname(config.UNIFIED_STATE_FILE)` instead of the hardcoded `/opt/ml_heating/` string.
+- Added `import os` to the module-level imports in `src/physics_calibration.py`.
+
+#### **Why**
+- In some Home Assistant add-on environments the `/opt/ml_heating/` directory does not exist, causing a `FileNotFoundError` when calibration tried to write `stable_periods.json`. Using the same directory as `unified_thermal_state.json` (which is guaranteed to exist at runtime) is the correct and consistent approach.
+
+#### **Files changed**
+- `src/physics_calibration.py`
+
+---
 
 #### **What changed**
 - **Physics-Direct calibration path added**: `src/physics_calibration_direct.py` now implements a fully analytical, sequential calibration method that estimates all thermal model parameters from first principles (no scipy dependency). This path is selectable from the dashboard and exposes all parameters for user editing in `config.yaml`.
