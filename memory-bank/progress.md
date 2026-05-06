@@ -1,25 +1,5 @@
 # ML Heating System - Current Progress
 
-## 🔧 OE Drive Filter + HLC Default Target Temp Fix (May 6, 2026)
-
-**Status:** COMPLETED
-
-Root cause analysis of OE=0.81 (expected ~0.95):
-1. **OE drive filter removed**: The `drive >= 3°C` gate in analytical OE was discarding 68% of HP-only periods. The scipy path uses ALL HP-only periods without a drive filter. Removed — now uses `drive > 0` with drive-weighted median.
-2. **HLC quality gates fixed**: `calibrate_hlc()` was skipping `indoor_far_from_target` and `low_heating_demand` filters when `target_temp` column was missing, producing HLC=0.119 (R²=-0.06). Added `HLC_DEFAULT_TARGET_TEMP=22.6°C` as synthetic fallback.
-3. **OE scipy refinement**: Now uses `ThermalEquilibriumModel.predict_equilibrium_temperature()` for consistency with scipy path.
-4. **Validation**: Both paths agree — Physics-direct: HLC=0.133/OE=0.906, Scipy: HLC=0.133/OE=0.919. HP-only MAE 0.62°C (vs 0.65°C for previous params).
-
-**Files changed:**
-- `src/physics_calibration_direct.py` — OE drive filter removed, scipy refinement uses full model
-- `src/hlc_learner.py` — Default target_temp synthesis when sensor unavailable
-- `src/config.py` — Added `HLC_DEFAULT_TARGET_TEMP`
-- `tests/unit/test_hlc_learner.py` — Updated test for new behavior
-- `test_calibration_compare.py` — New offline comparison script
-- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
-
----
-
 ## 🔧 Physics-Direct Calibration Accuracy Fixes (May 2026)
 
 **Status:** COMPLETED
