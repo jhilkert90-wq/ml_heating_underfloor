@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.28] - 2026-05-06
+
+### Fixed
+- `stable_periods.json` is now saved to the same directory as `unified_thermal_state.json` (derived from `config.UNIFIED_STATE_FILE`) instead of the hardcoded `/opt/ml_heating/` path, fixing a `FileNotFoundError` when running in Home Assistant add-on environments.
+
 ## [0.2.27] - 2026-05-05
 
 ### Added
