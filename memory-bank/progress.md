@@ -1,5 +1,14 @@
 # ML Heating System - Current Progress
 
+## ✅ Fixed stable_periods.json path bug (May 2026)
+
+**Status:** COMPLETED
+
+- The output path for `stable_periods.json` (written by `filter_stable_periods()` in `src/physics_calibration.py`) is now dynamically resolved to the same directory as `unified_thermal_state.json` (using `os.path.dirname(config.UNIFIED_STATE_FILE)`), instead of the previously hardcoded `/opt/ml_heating/` path.
+- The target directory is created if missing, and write errors are caught and logged as warnings so calibration does not fail.
+- Fix verified in Home Assistant add-on environments where `/opt/ml_heating/` does not exist.
+- No regression in test suite; calibration and state persistence both function as expected.
+
 ## 🎯 CURRENT STATUS - May 2026 (stable_periods.json path bug fix)
 
 ### ✅ **Fixed hardcoded stable_periods.json path**
