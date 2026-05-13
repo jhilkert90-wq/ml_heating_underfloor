@@ -8,8 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Cooling ML calibration/model import crash**: `src/cooling_ml_calibration.py` and `src/cooling_ml_model.py` used bare `import config` which fails when running as a package (`src.cooling_ml_*`). Replaced with standard `try: from . import config / except ImportError: import config` pattern. This was the root cause of `calibrate_cooling_ml: missing dependency — No module named 'config'` at startup.
-- **Missing runtime dependencies**: Added `joblib` and uncommented `lightgbm` in `requirements.txt` — both are required by the cooling ML pipeline but were missing/disabled.
 - **HP false-active detection from residual slab heat**: `_is_heat_pump_active()` outlet/inlet temperature fallback now suppressed when both `thermal_power` and `delta_t` are near zero (< 0.1). Prevents HP from co-learning with PV via mixed-source attribution when HP is off but floor slab retains residual warmth, which contaminated `outlet_effectiveness` and `heat_loss_coefficient` parameters.
 
 ### Added

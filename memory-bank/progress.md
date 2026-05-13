@@ -1,25 +1,5 @@
 # ML Heating System - Current Progress
 
-## Fix Cooling ML Calibration Import Crash & Add Tests (2026-05-14)
-
-**Status:** COMPLETED
-
-- **Bug**: `src/cooling_ml_calibration.py` (line 63) and `src/cooling_ml_model.py` (line 253) used bare `import config` which fails at runtime when loaded as `src.*` package. Production log showed `calibrate_cooling_ml: missing dependency — No module named 'config'`.
-- **Fix**: Replaced bare `import config` with standard `try: from . import config / except ImportError: import config` pattern in both files.
-- **Dependencies**: Added `joblib` and uncommented `lightgbm` in `requirements.txt`.
-- **27 new tests**: Created `tests/unit/test_cooling_ml_calibration.py` (23 tests covering import resolution, early exits, label computation, end-to-end calibration, feature column guard, retrain trigger chain, JSON default serialization). Extended `tests/unit/test_cooling_ml.py` with 4 import regression tests.
-- **Full suite**: 1195 passed, 23 pre-existing failures (dashboard/hypothesis/HA modules), 0 regressions from this change.
-
-**Files changed:**
-- `src/cooling_ml_calibration.py` — import config fix
-- `src/cooling_ml_model.py` — import config fix
-- `requirements.txt` — added `joblib`, uncommented `lightgbm`
-- `tests/unit/test_cooling_ml_calibration.py` — 23 new tests (NEW)
-- `tests/unit/test_cooling_ml.py` — 4 new import regression tests
-- `CHANGELOG.md`
-
----
-
 ## Fix HP False-Active from Residual Slab Heat (2026-05-13)
 
 **Status:** COMPLETED
