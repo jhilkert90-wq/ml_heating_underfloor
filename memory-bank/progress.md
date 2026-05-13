@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ML Heating Underfloor v0.2.30 Release Bump (2026-05-13)
+
+**Status:** COMPLETED
+
+- **Change:** Version updated in `config.yaml` from `0.2.29` to `0.2.30`.
+- **Purpose:** Release bump to reflect recent bug fixes and ML pre-cooling enhancements. No functional changes in this commit.
+- **Test status:** No new tests required; all prior tests (1175+) passing, including recent bugfix and ML cooling suites.
+
 ## Fix HP False-Active from Residual Slab Heat (2026-05-13)
 
 **Status:** COMPLETED

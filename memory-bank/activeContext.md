@@ -1,5 +1,16 @@
 # Active Context - Current Work & Decision State
 
+### 🔖 ML Heating Underfloor v0.2.30 Release Bump — 2026-05-13
+
+#### **What changed**
+- Version updated in `config.yaml` from `0.2.29` to `0.2.30`.
+- No functional changes; this is a release bump to reflect recent bug fixes and ML pre-cooling enhancements already documented in the [Unreleased] changelog.
+
+#### **Files changed**
+- `ml_heating_underfloor/config.yaml`
+
+---
+
 ### **Fix Cooling ML Calibration Import Crash — 2026-05-14**
 
 #### **What changed**
@@ -61,36 +72,4 @@
 
 ---
 
-### 🧊 Pre-Cooling ML Review & Bug Fixes — May 2026
-
-#### **What changed**
-- Fixed NaN/Inf serialization bug in `CoolingObservationBuffer.save()` — added `_sanitize_for_json()` to recursively clean nested dicts before JSON serialization
-- Fixed retrain backoff bug in `main.py` — `trigger_k//2` subtraction was insufficient, now subtracts `trigger_k//2 + 1` to prevent immediate re-trigger after failed retrain
-- Added 36 new tests in `test_cooling_ml_extended.py` covering cold start, edge cases, label boundaries, reactive cooling, config default verification, online learning flow
-
-#### **Why**
-- NaN/Inf values in feature dicts would produce invalid JSON on save, potentially corrupting the observation buffer
-- Retrain backoff was a no-op when `_labeled_since_last_train` was close to `trigger_k`, causing infinite retrain loops on InfluxDB failures
-
-#### **Files changed**
-- `src/cooling_ml_observation_buffer.py` — NaN/Inf fix
-- `src/main.py` — retrain backoff fix
-- `tests/unit/test_cooling_ml_extended.py` — new
-- `CHANGELOG.md`
-
-#### **Known issues to address**
-- Observation buffer is never saved periodically — only after successful retrain. Risk: all observations lost on restart before first retrain
-- Calibration code default for `PRE_COOL_LEAD_TIME_HOURS` (8.0) differs from config.py (3.0) — harmless when config is loaded but confusing
-- Online retrain uses `calibrate_cooling_ml()` which fetches from InfluxDB, not from the observation buffer's accumulated data — the buffer only tracks retrain timing
-
----
-
-### 🚀 Physics-Direct Calibration Enhancement — May 2026
-
-#### **What changed**
-- **Outlet Effectiveness (OE) Calibration**: `_calibrate_oe_analytical()` in `src/physics_calibration_direct.py` now uses a two-stage approach: (1) analytical weighted-median OE as initial guess, (2) scipy `minimize_scalar` refinement with HLC locked, minimizing MAE against HP-only stable periods. This improves OE accuracy from ~0.72 to ~0.95 and robustness against sensor noise when temperature drive is small.
-- **Solar Lag Calibration**: `_calibrate_solar_lag_xcorr()` rewritten to correlate PV with the rate of change of residuals (`d(residual)/dt`) instead of residual level, reducing slab-mass delay bias. Maximum lag reduced from 36 to 12 steps (60 min), correlation threshold increased from 0.1 to 0.3, and weighted median is used for lag estimation.
-- **Thermal Time Constant Calibration**: Calibration now prioritizes transient parameter estimation using `calibrate_transient_parameters()` and `filter_transient_periods()` (heating sequences, abundant data), falling back to cooling curve analysis only if necessary.
-- **Unit Labels Correction**: `ThermalParameterConfig` in `src/thermal_config.py` now shows correct units for OE and HLC ("kW/K").
-
----
+### 🧊 Pre-Cooling ML Review & Bug
