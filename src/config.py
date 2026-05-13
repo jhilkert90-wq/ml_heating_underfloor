@@ -687,6 +687,51 @@ PRE_COOL_MIN_OUTDOOR_FORECAST_C: float = float(
     os.getenv("PRE_COOL_MIN_OUTDOOR_FORECAST_C", "22.0")
 )
 
+# --- ML-Based Pre-Cooling Model (LightGBM Overheating Classifier) ---
+# Active pre-cooling strategy selector.
+# "trajectory" = physics simulation (BOTH: default, no model file required).
+# "lgbm_model" = trained LightGBM classifier (MODEL-BASED: requires calibration).
+# Tooltip: BOTH — controls which method is active vs. shadow.
+PRE_COOL_MODEL_TYPE: str = os.getenv("PRE_COOL_MODEL_TYPE", "trajectory")
+
+_UNIFIED_STATE_DIR: str = os.path.dirname(
+    os.getenv("UNIFIED_STATE_FILE", "/opt/ml_heating/unified_thermal_state.json")
+)
+# Path to trained LightGBM classifier (joblib). Tooltip: MODEL-BASED only.
+COOLING_ML_MODEL_PATH: str = os.getenv(
+    "COOLING_ML_MODEL_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "cooling_ml_model.joblib"),
+)
+# Path to model metadata JSON (feature list, threshold, AUC). Tooltip: MODEL-BASED only.
+COOLING_ML_METADATA_PATH: str = os.getenv(
+    "COOLING_ML_METADATA_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "cooling_ml_metadata.json"),
+)
+# Path to observation buffer JSON for sliding-window online learning.
+# Tooltip: MODEL-BASED only.
+COOLING_ML_OBSERVATION_BUFFER_PATH: str = os.getenv(
+    "COOLING_ML_OBSERVATION_BUFFER_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "cooling_ml_obs_buffer.json"),
+)
+# Minimum labeled observations required before first train / retrain.
+# Tooltip: MODEL-BASED only. Default 200.
+COOLING_ML_MIN_TRAINING_SAMPLES: int = int(
+    os.getenv("COOLING_ML_MIN_TRAINING_SAMPLES", "200")
+)
+# Number of new labeled observations that triggers an automatic retrain.
+# Tooltip: MODEL-BASED only. Default 50.
+COOLING_ML_RETRAIN_TRIGGER_K: int = int(
+    os.getenv("COOLING_ML_RETRAIN_TRIGGER_K", "50")
+)
+# Rolling buffer size: keep the last N labeled observations for retraining.
+# Tooltip: MODEL-BASED only. Default 500.
+COOLING_ML_BUFFER_MAX_N: int = int(os.getenv("COOLING_ML_BUFFER_MAX_N", "500"))
+# Fraction of buffer held out for threshold optimisation during each retrain.
+# Tooltip: MODEL-BASED only. Default 0.25.
+COOLING_ML_RETRAIN_VAL_FRACTION: float = float(
+    os.getenv("COOLING_ML_RETRAIN_VAL_FRACTION", "0.25")
+)
+
 # Thermal Model Parameters
 PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.0020704649305198215"))
 FIREPLACE_HEAT_WEIGHT: float = float(os.getenv("FIREPLACE_HEAT_WEIGHT", "0.387"))

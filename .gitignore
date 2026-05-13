@@ -8,3 +8,7 @@ __pycache__/
 coverage.json
 coverage.xml
 htmlcov/
+.data/sensordaten_2025-06-19_ab.csv
+.data/PV-Daten_2025-06-19_ab.csv
+Logs/unified_thermal_state.json
+tmpib_fd2s7.tmp

@@ -1,6 +1,47 @@
 # Active Context - Current Work & Decision State
 
-### 🚀 **Physics-Direct Calibration Enhancement — May 2026**
+### **Fix HP False-Active from Residual Slab Heat — 2026-05-13**
+
+#### **What changed**
+- Fixed `_is_heat_pump_active()` in `src/heat_source_channels.py`: added idle-band guard so that when both `thermal_power` and `delta_t` are near zero (< 0.1), the outlet/inlet temperature fallback is suppressed. This prevents residual slab thermal mass from falsely marking HP as active.
+- Added 8 regression tests covering the bug scenario (HP off + warm outlet + PV active) in both heating and cooling modes.
+
+#### **Why**
+- On sunny days, the floor slab retains heat from previous HP operation or PV solar gain. The outlet temp stays above indoor + 1.0°C even with HP off (thermal_power=0). The fallback `outlet > indoor + 1.0 and outlet > inlet + 0.5` returned True → HP appeared in `active_contributions` → mixed-source attribution split learning errors between HP and PV → HP parameters (`outlet_effectiveness`, `heat_loss_coefficient`) were contaminated by PV-induced temperature changes.
+
+#### **Files changed**
+- `src/heat_source_channels.py` — idle-band guard in `_is_heat_pump_active()`
+- `tests/unit/test_cooling_bugfixes.py` — 5 new unit tests
+- `tests/unit/test_heat_source_channels.py` — 3 new routing integration tests
+- `CHANGELOG.md`
+
+---
+
+### � **Pre-Cooling ML Review & Bug Fixes — May 2026**
+
+#### **What changed**
+- Fixed NaN/Inf serialization bug in `CoolingObservationBuffer.save()` — added `_sanitize_for_json()` to recursively clean nested dicts before JSON serialization
+- Fixed retrain backoff bug in `main.py` — `trigger_k//2` subtraction was insufficient, now subtracts `trigger_k//2 + 1` to prevent immediate re-trigger after failed retrain
+- Added 36 new tests in `test_cooling_ml_extended.py` covering cold start, edge cases, label boundaries, reactive cooling, config defaults, online learning flow
+
+#### **Why**
+- NaN/Inf values in feature dicts would produce invalid JSON on save, potentially corrupting the observation buffer
+- Retrain backoff was a no-op when `_labeled_since_last_train` was close to `trigger_k`, causing infinite retrain loops on InfluxDB failures
+
+#### **Files changed**
+- `src/cooling_ml_observation_buffer.py` — NaN/Inf fix
+- `src/main.py` — retrain backoff fix
+- `tests/unit/test_cooling_ml_extended.py` — new
+- `CHANGELOG.md`
+
+#### **Known issues to address**
+- Observation buffer is never saved periodically — only after successful retrain. Risk: all observations lost on restart before first retrain
+- Calibration code default for `PRE_COOL_LEAD_TIME_HOURS` (8.0) differs from config.py (3.0) — harmless when config is loaded but confusing
+- Online retrain uses `calibrate_cooling_ml()` which fetches from InfluxDB, not from the observation buffer's accumulated data — the buffer only tracks retrain timing
+
+---
+
+### �🚀 **Physics-Direct Calibration Enhancement — May 2026**
 
 #### **What changed**
 - **Outlet Effectiveness (OE) Calibration**: `_calibrate_oe_analytical()` in `src/physics_calibration_direct.py` now uses a two-stage approach: (1) analytical weighted-median OE as initial guess, (2) scipy `minimize_scalar` refinement with HLC locked, minimizing MAE against HP-only stable periods. This improves OE accuracy from ~0.72 to ~0.95 and robustness against sensor noise when temperature drive is small.

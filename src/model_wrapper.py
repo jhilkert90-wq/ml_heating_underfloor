@@ -981,10 +981,10 @@ class EnhancedModelWrapper:
         else:
             # HEATING SAFETY: If significant heating is required
             # (target > current by more than 0.5°C), enforce a minimum
-            # floor of 25°C to prevent the model from suggesting
+            # floor of 23°C (changed from 25°C) to prevent the model from suggesting
             # cooling-range temperatures just because of high PV.
             if target_indoor - current_indoor > 0.5:
-                outlet_min = max(outlet_min, 25.0)
+                outlet_min = max(outlet_min, 23.0)
 
         logging.debug(
             f"🔧 Using natural bounds: outlet_min={outlet_min:.1f}°C, "

@@ -1,6 +1,44 @@
 # ML Heating System - Current Progress
 
-## 🔧 Physics-Direct Calibration Accuracy Fixes (May 2026)
+## Fix HP False-Active from Residual Slab Heat (2026-05-13)
+
+**Status:** COMPLETED
+
+- **Bug**: `_is_heat_pump_active()` outlet/inlet fallback triggered false positives when HP was off but slab retained heat (outlet > indoor + 1.0). HP falsely appeared in `active_contributions`, co-learned with PV, contaminating `outlet_effectiveness` and `heat_loss_coefficient`.
+- **Fix**: Added idle-band guard (|thermal_power| < 0.1 AND |delta_t| < 0.1 → return False) before outlet/inlet fallback. Preserves fallback for genuinely missing sensor data and low-power detection.
+- **8 new tests**: 5 unit tests in `test_cooling_bugfixes.py` (heating/cooling residual slab, low-power fallback preservation), 3 routing tests in `test_heat_source_channels.py` (HP excluded from contributions, PV-only learning, estimate_heat_contribution gate)
+- **Full suite**: 1175 passed, 0 regressions (16 pre-existing failures from missing streamlit/hypothesis modules)
+
+**Files changed:**
+- `src/heat_source_channels.py` — `_is_heat_pump_active()` idle-band guard
+- `tests/unit/test_cooling_bugfixes.py` — 5 new tests
+- `tests/unit/test_heat_source_channels.py` — 3 new tests
+- `CHANGELOG.md`
+
+---
+
+## � Pre-Cooling ML Review & Bug Fixes (May 2026)
+
+**Status:** COMPLETED
+
+- **CHANGELOG updated**: Added all unreleased changes since v0.2.0 covering pre-cooling ML model, overheating predictor, observation buffer, calibration pipeline, and all cooling fixes
+- **Bug fix: NaN/Inf in observation buffer**: `_json_default` handler didn't sanitize NaN/Inf in nested feature dicts. Added `_sanitize_for_json()` to recursively clean dicts before JSON serialization
+- **Bug fix: Retrain backoff insufficient**: Failed retrain back-off subtracted `trigger_k//2` which could equal `trigger_k`, causing immediate re-trigger. Fixed to subtract `trigger_k//2 + 1`
+- **36 new tests added**: Cold start (no files), NaN/Inf handling, label boundary conditions, reactive cooling, config default verification, online learning flow, feature extraction edge cases, OverheatingPredictor edge cases
+- **Known issues documented**: Observation buffer never saved periodically (only on successful retrain); calibration `PRE_COOL_LEAD_TIME_HOURS` fallback default (8.0) mismatches config.py default (3.0)
+- **Cold start verified**: All components handle missing files gracefully — model returns no-risk, buffer starts empty, calibration fails gracefully without InfluxDB data
+
+**Files changed:**
+- `src/cooling_ml_observation_buffer.py` — NaN/Inf sanitization fix
+- `src/main.py` — retrain backoff fix
+- `tests/unit/test_cooling_ml_extended.py` — 36 new tests
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
+## �🔧 Physics-Direct Calibration Accuracy Fixes (May 2026)
 
 **Status:** COMPLETED
 

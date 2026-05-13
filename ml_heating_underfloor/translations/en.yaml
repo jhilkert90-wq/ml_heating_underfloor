@@ -134,25 +134,42 @@ configuration:
   # === Pre-Cooling Configuration ===
   pre_cool_enabled:
     name: "Pre-Cooling: Enable"
-    description: "Enable forecast-driven pre-cooling. When enabled, the system predicts future overheating using PV and outdoor temperature forecasts and starts cooling before the room overheats. Default: true."
+    description: "[BOTH] Enable forecast-driven pre-cooling. When enabled, the system predicts future overheating using PV and outdoor temperature forecasts (trajectory) or the trained LightGBM classifier (lgbm_model) and starts cooling before the room overheats. Default: true."
   pre_cool_trigger_margin_k:
     name: "Pre-Cooling: Trigger Margin (K)"
-    description: "How many K above the cooling target the predicted peak must exceed to count as overheating risk. Default: 0.5 K."
+    description: "[TRAJECTORY] How many K above the cooling target the predicted peak must exceed to count as overheating risk in the trajectory predictor. [MODEL-BASED] Used only as a display proxy for estimated peak temperature. Default: 0.5 K."
   pre_cool_horizon_hours:
     name: "Pre-Cooling: Forecast Horizon (hours)"
-    description: "How many hours ahead to simulate the passive indoor trajectory for overheating detection. Default: 12."
+    description: "[BOTH] How many hours ahead to simulate the passive indoor trajectory (trajectory) or generate hindcast forecast features during ML model training (lgbm_model). Default: 12."
   pre_cool_lead_time_hours:
     name: "Pre-Cooling: Lead Time (hours)"
-    description: "Start pre-cooling when the predicted overheating peak is within this many hours. Accounts for underfloor thermal inertia. Default: 3.0."
+    description: "[BOTH] [TRAJECTORY] Start pre-cooling when the predicted overheating peak is within this many hours — accounts for underfloor thermal inertia. [MODEL-BASED] Defines the label window used when training the ML model: label=1 means overheating is expected within this many hours. Default: 8.0 h."
   pre_cool_target_offset_k:
     name: "Pre-Cooling: Target Offset (K)"
-    description: "How much to shift the binary-search target temperature down (K) when pre-cooling is active. This makes the HP start running before the room reaches the cooling target. Default: 0.5 K."
+    description: "[BOTH] How much to shift the binary-search target temperature down (K) when pre-cooling is active, regardless of strategy. This makes the HP start running before the room reaches the cooling setpoint. Default: 0.5 K."
   pre_cool_min_pv_forecast_w:
     name: "Pre-Cooling: Minimum PV Forecast (W)"
-    description: "Minimum total PV production forecast (W) over the horizon to consider pre-cooling worthwhile. Combined with outdoor temperature as an AND gate. Default: 1000 W."
+    description: "[TRAJECTORY] Minimum total PV production forecast (W) over the horizon to consider pre-cooling worthwhile. Combined with outdoor temperature as an AND gate. Not used by the lgbm_model strategy. Default: 1000 W."
   pre_cool_min_outdoor_forecast_c:
     name: "Pre-Cooling: Minimum Outdoor Forecast (°C)"
-    description: "Minimum peak outdoor temperature forecast (°C) to consider overheating likely. Combined with PV forecast as an AND gate. Default: 22°C."
+    description: "[TRAJECTORY] Minimum peak outdoor temperature forecast (°C) to consider overheating likely. Combined with PV forecast as an AND gate. Not used by the lgbm_model strategy. Default: 22°C."
+
+  # === ML-Based Pre-Cooling Model (LightGBM Overheating Classifier) ===
+  pre_cool_model_type:
+    name: "Pre-Cooling: Model Type"
+    description: "Active pre-cooling strategy. 'trajectory' = physics-simulation (default, no model file required). 'lgbm_model' = trained LightGBM classifier. The inactive strategy runs in shadow mode and logs its predictions for comparison. Requires restart. [BOTH]"
+  cooling_ml_min_training_samples:
+    name: "ML Cooling: Minimum Training Samples"
+    description: "Minimum number of labeled cooling observations in the buffer before the first train or retrain is attempted. Prevents premature fitting on insufficient data. Default: 200. [MODEL-BASED only]"
+  cooling_ml_retrain_trigger_k:
+    name: "ML Cooling: Retrain Trigger (new samples)"
+    description: "Number of newly labeled observations added since the last retrain that triggers an automatic sliding-window retrain. Default: 50. [MODEL-BASED only]"
+  cooling_ml_buffer_max_n:
+    name: "ML Cooling: Observation Buffer Size"
+    description: "Maximum number of labeled cooling observations kept in the rolling buffer. Oldest entries are evicted when the buffer exceeds this limit. Default: 500. [MODEL-BASED only]"
+  cooling_ml_retrain_val_fraction:
+    name: "ML Cooling: Validation Fraction"
+    description: "Fraction of the buffer held out as a validation split for threshold optimisation during each retrain. Default: 0.25. [MODEL-BASED only]"
 
   # === InfluxDB Configuration ===
   influx_url:

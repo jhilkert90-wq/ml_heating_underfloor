@@ -881,3 +881,78 @@ def test_pv_routing_current_above_smoothed_below(mixed_source_attribution_enable
     assert "pv" in learned, (
         f"PV current=80W > 50W threshold, PV should learn. Got: {learned}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Residual slab heat: HP off + PV active must not co-learn
+# ---------------------------------------------------------------------------
+
+def test_hp_off_residual_slab_pv_active_only_pv_learns(
+    mixed_source_attribution_enabled,
+):
+    """When HP is off (thermal_power≈0, delta_t≈0) but outlet is warm from
+    residual slab heat, and PV is active, only PV should learn — HP must
+    be excluded from active_contributions."""
+    orch = HeatSourceChannelOrchestrator()
+    ctx = make_context(pv_power=2000, pv_power_current=3000)
+    # Remove explicit flag so detection falls through to sensor-based logic
+    ctx.pop("heat_pump_active", None)
+    # Simulate HP off with residual slab warmth
+    ctx["thermal_power"] = 0.0
+    ctx["delta_t"] = 0.0
+    ctx["outlet_temp"] = 25.8
+    ctx["current_indoor"] = 22.4
+    ctx["inlet_temp"] = 25.0
+
+    min_records = _get_min_records_for_learning()
+    for ch in orch.channels.values():
+        ch.history = [{"error": 0.05, "context": ctx}] * min_records
+
+    events = orch.route_learning(0.05, ctx)
+    learned = {e["channel"] for e in events}
+    assert "pv" in learned, (
+        f"PV is active (3000W), should learn. Got: {learned}"
+    )
+    assert "heat_pump" not in learned, (
+        f"HP is off (thermal_power=0), must NOT learn. Got: {learned}"
+    )
+
+
+def test_hp_off_residual_slab_excluded_from_contributions(
+    mixed_source_attribution_enabled,
+):
+    """_get_active_contributions must not include HP when thermal_power and
+    delta_t are both near zero, even if outlet > indoor + 1."""
+    orch = HeatSourceChannelOrchestrator()
+    ctx = make_context(pv_power=2000, pv_power_current=3000)
+    ctx.pop("heat_pump_active", None)
+    ctx["thermal_power"] = 0.078
+    ctx["delta_t"] = 0.08
+    ctx["outlet_temp"] = 24.4
+    ctx["current_indoor"] = 22.38
+    ctx["inlet_temp"] = 24.9
+
+    contributions = orch._get_active_contributions(ctx)
+    assert "heat_pump" not in contributions, (
+        f"HP is idle (thermal_power=0.078), must not appear in "
+        f"active_contributions. Got: {contributions}"
+    )
+    assert "pv" in contributions, (
+        f"PV is active (3000W), must appear in active_contributions. "
+        f"Got: {contributions}"
+    )
+
+
+def test_estimate_heat_contribution_zero_when_hp_off_residual_slab():
+    """HeatPumpChannel.estimate_heat_contribution must return 0.0 when HP is
+    off despite warm outlet from slab thermal mass."""
+    hp = HeatPumpChannel()
+    ctx = {
+        "thermal_power": 0.0,
+        "delta_t": 0.0,
+        "outlet_temp": 25.8,
+        "current_indoor": 22.4,
+        "inlet_temp": 25.0,
+        "climate_mode": "heating",
+    }
+    assert hp.estimate_heat_contribution(ctx) == 0.0

@@ -130,12 +130,21 @@ def _is_heat_pump_active(context: Dict) -> bool:
     indoor = _to_float(context.get("current_indoor", 0.0))
     inlet = _to_float(context.get("inlet_temp", indoor))
 
+    # When both thermal_power and delta_t are near zero the HP is
+    # definitively idle.  Skip the outlet/inlet temperature fallback in
+    # this case — residual slab thermal mass can keep outlet warm (or
+    # cool) long after the HP turns off, causing false-positive activity
+    # detection and parameter contamination via mixed-source attribution.
+    _HP_IDLE_BAND = 0.3  # kW / °C — below this, HP is considered idle
+
     if climate_mode == "cooling":
         # Cooling: thermal power is negative, delta_t is negative
         if thermal_power <= getattr(config, "COOLING_MIN_THERMAL_POWER_KW", -0.5):
             return True
         if delta_t < -0.5:
             return True
+        if abs(thermal_power) < _HP_IDLE_BAND and abs(delta_t) < _HP_IDLE_BAND:
+            return False
         return outlet < indoor - 1.0 and outlet < inlet - 0.5
     else:
         # Heating (default)
@@ -143,6 +152,8 @@ def _is_heat_pump_active(context: Dict) -> bool:
             return True
         if delta_t > 0.5:
             return True
+        if abs(thermal_power) < _HP_IDLE_BAND and abs(delta_t) < _HP_IDLE_BAND:
+            return False
         return outlet > indoor + 1.0 and outlet > inlet + 0.5
 
 

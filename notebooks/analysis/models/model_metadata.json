@@ -1,0 +1,69 @@
+{
+  "created_at": "2026-05-10T17:42:29.828763Z",
+  "overheat_threshold_c": 23.1,
+  "label_horizon_h": 8,
+  "train_date_range": [
+    "2025-07-08",
+    "2025-08-21"
+  ],
+  "test_date_range": [
+    "2025-08-21",
+    "2025-09-20"
+  ],
+  "feature_cols": [
+    "indoor_temp",
+    "indoor_margin",
+    "indoor_trend_30m",
+    "indoor_trend_1h",
+    "AT",
+    "at_delta_indoor",
+    "AT_roh_4h",
+    "PV_Generate",
+    "pv_roll_1h",
+    "pv_roll_2h",
+    "thermal_power_kw",
+    "delta_t",
+    "outlet_indoor_diff",
+    "VLT",
+    "RLT",
+    "hour_sin",
+    "hour_cos",
+    "doy_sin",
+    "doy_cos"
+  ],
+  "best_model": "lgbm",
+  "rf": {
+    "roc_auc": 0.82734,
+    "avg_precision": 0.78562,
+    "threshold": 0.41363,
+    "path": "c:\\Users\\Julia\\Documents\\Johannes\\Pi 4\\GitHub\\ml_heating_underfloor-main\\notebooks\\analysis\\models\\overheating_predictor_rf.joblib"
+  },
+  "lgbm": {
+    "model_type": "LightGBM",
+    "roc_auc": 0.83613,
+    "avg_precision": 0.79652,
+    "threshold": 0.00411,
+    "path": "c:\\Users\\Julia\\Documents\\Johannes\\Pi 4\\GitHub\\ml_heating_underfloor-main\\notebooks\\analysis\\models\\overheating_predictor_lgbm.joblib"
+  },
+  "feature_mapping_for_live_system": {
+    "indoor_temp": "computed from sensor.rt_mittelwert (median of room sensors)",
+    "indoor_margin": "indoor_temp - OVERHEAT_THRESHOLD_C",
+    "indoor_trend_30m": "indoor_temp - features['indoor_temp_lag_30m']",
+    "indoor_trend_1h": "features['indoor_temp_delta_60m']",
+    "AT": "features['outdoor_temp']",
+    "at_delta_indoor": "features['temp_diff_indoor_outdoor']",
+    "AT_roh_4h": "features['temp_forecast_4h']  (hourly weather API)",
+    "PV_Generate": "features['pv_now']",
+    "pv_roll_1h": "rolling mean of pv_power_history over last 1 h",
+    "pv_roll_2h": "rolling mean of pv_power_history over last 2 h",
+    "thermal_power_kw": "features['thermal_power_kw']  = (Vol/60)*c_p*(VLT-RLT)/1000; NEGATIVE when cooling, ~0 when idle",
+    "delta_t": "features['delta_t']  = VLT - RLT; negative during passive cooling (RLT > VLT)",
+    "outlet_indoor_diff": "features['outlet_indoor_diff']  = VLT - indoor_temp",
+    "VLT": "features['outlet_temp']  (Vorlauftemperatur / supply)",
+    "RLT": "features['inlet_temp']   (R\u00fccklauftemperatur / return)",
+    "hour_sin": "sin(2*pi*hour/24)  \u2014 computed from current timestamp",
+    "hour_cos": "cos(2*pi*hour/24)",
+    "doy_sin": "sin(2*pi*doy/365)  \u2014 computed from current timestamp",
+    "doy_cos": "cos(2*pi*doy/365)"
+  }
+}

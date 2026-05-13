@@ -121,6 +121,77 @@ class TestIsHeatPumpActiveCooling:
         }
         assert _is_heat_pump_active(ctx) is True
 
+    # ── Residual slab heat false-positive regression tests ───────────
+
+    def test_heating_hp_off_residual_slab_heat_returns_false(self):
+        """HP off (thermal_power≈0, delta_t≈0) with warm outlet from residual
+        slab heat must NOT be detected as active — prevents PV parameter
+        contamination via mixed-source attribution."""
+        ctx = {
+            "thermal_power": 0.0,
+            "delta_t": 0.0,
+            "outlet_temp": 25.8,
+            "current_indoor": 22.4,
+            "inlet_temp": 25.0,
+            "climate_mode": "heating",
+        }
+        assert _is_heat_pump_active(ctx) is False
+
+    def test_heating_hp_off_near_zero_thermal_power_returns_false(self):
+        """HP with near-zero thermal_power (< 0.1 kW) and near-zero delta_t
+        is idle despite outlet > indoor + 1.0 from slab thermal mass."""
+        ctx = {
+            "thermal_power": 0.078,
+            "delta_t": 0.08,
+            "outlet_temp": 24.4,
+            "current_indoor": 22.38,
+            "inlet_temp": 24.9,
+            "climate_mode": "heating",
+        }
+        assert _is_heat_pump_active(ctx) is False
+
+    def test_heating_hp_low_power_still_uses_outlet_fallback(self):
+        """When thermal_power is below threshold but NOT near zero (e.g. 0.3),
+        the outlet/inlet fallback should still work — HP may be running at
+        low power that the primary threshold misses."""
+        ctx = {
+            "thermal_power": 0.3,
+            "delta_t": 0.3,
+            "outlet_temp": 35.0,
+            "current_indoor": 21.0,
+            "inlet_temp": 30.0,
+            "climate_mode": "heating",
+        }
+        # outlet (35) > indoor + 1 (22) AND outlet (35) > inlet + 0.5 (30.5)
+        assert _is_heat_pump_active(ctx) is True
+
+    def test_cooling_hp_off_residual_slab_returns_false(self):
+        """Cooling mode: HP off with cool outlet from residual slab
+        must not be detected as active."""
+        ctx = {
+            "thermal_power": -0.05,
+            "delta_t": -0.03,
+            "outlet_temp": 19.5,
+            "current_indoor": 23.0,
+            "inlet_temp": 20.0,
+            "climate_mode": "cooling",
+        }
+        assert _is_heat_pump_active(ctx) is False
+
+    def test_cooling_hp_low_power_still_uses_outlet_fallback(self):
+        """Cooling mode: thermal_power below threshold but meaningful (0.3)
+        should still allow outlet/inlet fallback."""
+        ctx = {
+            "thermal_power": -0.3,
+            "delta_t": -0.3,
+            "outlet_temp": 18.5,
+            "current_indoor": 23.0,
+            "inlet_temp": 21.0,
+            "climate_mode": "cooling",
+        }
+        # outlet (18.5) < indoor - 1 (22) AND outlet (18.5) < inlet - 0.5 (20.5)
+        assert _is_heat_pump_active(ctx) is True
+
 
 # ── Bug 1b: Slab model pump_on for cooling ───────────────────────────
 
