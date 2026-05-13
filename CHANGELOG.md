@@ -7,30 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **HP false-active detection from residual slab heat**: `_is_heat_pump_active()` outlet/inlet temperature fallback now suppressed when both `thermal_power` and `delta_t` are near zero (< 0.1). Prevents HP from co-learning with PV via mixed-source attribution when HP is off but floor slab retains residual warmth, which contaminated `outlet_effectiveness` and `heat_loss_coefficient` parameters.
-
-### Added
-- **Predictive Pre-Cooling with ML Model**: LightGBM-based overheating classifier (`CoolingMLModel`) as drop-in alternative to trajectory-based `OverheatingPredictor`, selectable via `PRE_COOL_MODEL_TYPE` config
-- **Online Learning Observation Buffer**: `CoolingObservationBuffer` with sliding-window labeled-observation store, automatic label resolution after horizon steps, and auto-retrain trigger
-- **ML Cooling Calibration Pipeline**: `calibrate_cooling_ml` one-shot training from InfluxDB historical data with hindcast substitution for forecast features, LightGBM with class weighting, and F1-optimized threshold tuning
-- **Overheating Predictor**: Physics-based trajectory simulation for passive (HP OFF) overheating risk forecasting with PV and outdoor temperature forecasts
-- **Shadow Mode for Pre-Cooling**: Active/shadow dual-strategy logging — trajectory and LGBM models run simultaneously, inactive strategy logs as shadow
-- **Epsilon Sensitivity Analysis Script**: Automated sensitivity analysis for cooling mode parameters
-- **Offline Calibration Comparison Scripts**: Tools for comparing physics-direct calibration approaches
-- **Pre-cooling configuration parameters**: `PRE_COOL_ENABLED`, `PRE_COOL_MODEL_TYPE`, `PRE_COOL_TRIGGER_MARGIN_K`, `PRE_COOL_HORIZON_HOURS`, `PRE_COOL_LEAD_TIME_HOURS`, `PRE_COOL_TARGET_OFFSET_K`, `PRE_COOL_MIN_PV_FORECAST_W`, `PRE_COOL_MIN_OUTDOOR_FORECAST_C`, and `COOLING_ML_*` parameters
-
-### Changed
-- **Physics-Direct Calibration Accuracy**: Enhanced calibration with 7 algorithmic and quality fixes, 3-level parameter fallback (#43)
-- **Stable Periods Path**: Write `stable_periods.json` to `UNIFIED_STATE_FILE` directory instead of hardcoded path (#44)
-
-### Fixed
-- **NaN/Inf serialization in observation buffer**: `CoolingObservationBuffer.save()` now recursively sanitizes NaN/Inf values in feature dicts to `null` before JSON serialization, preventing data corruption
-- **Retrain backoff loop**: Failed cooling ML retrain no longer immediately re-triggers — back-off now subtracts `trigger_k//2 + 1` instead of `trigger_k//2`
-- **HP Channel Learning Blocked by PV**: Fixed PV blocking heat pump channel learning; trajectory steps override; recovery gate deadlock (#41)
-- **Cooling Mode Bug Fixes**: Review-round fixes including HP idle guard clamping outlet to inlet when gap < `MIN_COOLING_DELTA_K` (#39)
-- **CI/CD**: Resolved Node.js 20 deprecation and Copilot API token rejection in workflows (#42); fixed duplicate `env` key and upgraded actions to Node.js 24 (#40)
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
