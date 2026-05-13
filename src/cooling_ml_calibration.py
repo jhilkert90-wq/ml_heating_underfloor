@@ -60,7 +60,10 @@ def calibrate_cooling_ml(
     bool: True on success, False on failure.
     """
     try:
+        from . import config
+    except ImportError:
         import config  # type: ignore
+    try:
         import numpy as np
         import pandas as pd
     except ImportError as exc:

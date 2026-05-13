@@ -1,5 +1,26 @@
 # Active Context - Current Work & Decision State
 
+### **Fix Cooling ML Calibration Import Crash — 2026-05-14**
+
+#### **What changed**
+- Fixed `import config` → `try: from . import config / except ImportError: import config` in `src/cooling_ml_calibration.py` (line 63) and `src/cooling_ml_model.py` (line 253)
+- Added `joblib` and uncommented `lightgbm` in `requirements.txt`
+- Created `tests/unit/test_cooling_ml_calibration.py` with 23 tests covering all calibration pipeline paths
+- Extended `tests/unit/test_cooling_ml.py` with 4 import regression tests
+
+#### **Why**
+- Production log showed `calibrate_cooling_ml: missing dependency — No module named 'config'` at container startup. The bare `import config` worked only when the module was executed directly (not as a package), which is never the case in the add-on container.
+
+#### **Files changed**
+- `src/cooling_ml_calibration.py` — import fix
+- `src/cooling_ml_model.py` — import fix
+- `requirements.txt` — dependency fixes
+- `tests/unit/test_cooling_ml_calibration.py` — 23 new tests (NEW)
+- `tests/unit/test_cooling_ml.py` — 4 new tests
+- `CHANGELOG.md`
+
+---
+
 ### **Fix HP False-Active from Residual Slab Heat — 2026-05-13**
 
 #### **What changed**

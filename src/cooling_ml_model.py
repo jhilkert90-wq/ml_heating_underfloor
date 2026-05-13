@@ -250,7 +250,10 @@ class CoolingMLModel:
         should_cool_now, reason, trajectory, trigger_threshold,
         peak_outdoor, total_pv_forecast, lgbm_proba (extra).
         """
-        import config  # type: ignore  # runtime import to avoid circular deps
+        try:
+            from . import config
+        except ImportError:
+            import config  # type: ignore
 
         no_risk = self._no_risk_result(target_cooling, features, config)
 

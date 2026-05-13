@@ -591,3 +591,62 @@ class TestEvictionCounterInvariant:
         buf.reset_retrain_counter()
         assert buf._labeled_since_last_train == 0
         assert buf.should_retrain() is False
+
+
+# ===========================================================================
+# Import regression tests (fix for 'No module named config' production bug)
+# ===========================================================================
+
+class TestImportConfigRegression:
+    """Regression tests for the fixed bare `import config` bug.
+
+    The production log showed:
+      calibrate_cooling_ml: missing dependency — No module named 'config'
+    because both cooling_ml_calibration.py and cooling_ml_model.py used
+    `import config` instead of `from . import config`.
+    """
+
+    def test_calibration_importable_from_package(self):
+        """calibrate_cooling_ml can be imported via src.cooling_ml_calibration."""
+        from src.cooling_ml_calibration import calibrate_cooling_ml
+        assert callable(calibrate_cooling_ml)
+
+    def test_model_importable_from_package(self):
+        """CoolingMLModel can be imported via src.cooling_ml_model."""
+        from src.cooling_ml_model import CoolingMLModel
+        assert CoolingMLModel is not None
+
+    def test_predict_does_not_raise_import_error(self):
+        """predict_overheating_risk resolves config without ImportError."""
+        from src.cooling_ml_model import CoolingMLModel
+        model = CoolingMLModel("/no/model.joblib", "/no/meta.json")
+        result = model.predict_overheating_risk(
+            current_indoor=22.0,
+            target_cooling=23.0,
+            features={"outdoor_temp": 30.0, "pv_now": 1000.0},
+            climate_mode="cooling",
+        )
+        assert result["risk"] is False
+        assert "not loaded" in result["reason"]
+
+    def test_calibration_config_resolves_inside_function(self):
+        """Config attributes are accessible inside calibrate_cooling_ml."""
+        import types
+        fake_cfg = types.SimpleNamespace(
+            CYCLE_INTERVAL_MINUTES=10,
+            PRE_COOL_HORIZON_HOURS=12,
+            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            COOLING_CLAMP_MAX_ABS=24.0,
+            PRE_COOL_MIN_OUTDOOR_FORECAST_C=22.0,
+            COOLING_ML_MIN_TRAINING_SAMPLES=200,
+            COOLING_ML_RETRAIN_VAL_FRACTION=0.25,
+            COOLING_ML_MODEL_PATH="/tmp/test_model.joblib",
+            COOLING_ML_METADATA_PATH="/tmp/test_meta.json",
+        )
+        fake_fetch_mod = MagicMock()
+        fake_fetch_mod.fetch_historical_data_for_calibration = MagicMock(return_value=None)
+        with patch.dict("sys.modules", {"config": fake_cfg, "physics_calibration": fake_fetch_mod}):
+            from src.cooling_ml_calibration import calibrate_cooling_ml
+            # Should return False (no data) but NOT raise ImportError
+            result = calibrate_cooling_ml()
+        assert result is False

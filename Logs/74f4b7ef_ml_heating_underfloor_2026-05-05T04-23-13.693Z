@@ -1,134 +1,224 @@
-2026-05-06 06:10:07,632 - INFO - 🔬 Physics-direct calibrate flag detected — running analytics calibration
-2026-05-06 06:10:07,639 - INFO - === THERMAL EQUILIBRIUM MODEL CALIBRATION (PHYSICS-DIRECT) ===
-2026-05-06 06:10:07,640 - INFO - Creating backup of existing thermal calibration...
-2026-05-06 06:10:07,783 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
-2026-05-06 06:10:07,784 - INFO - ✅ Loaded unified thermal state from /config/ml_heating/unified_thermal_state.json
-2026-05-06 06:10:07,786 - INFO - 🔄 Created thermal state backup: pre_calibration_20260506_061007.json
-2026-05-06 06:10:07,786 - INFO - ✅ Backup created: /config/ml_heating/pre_calibration_20260506_061007.json
-2026-05-06 06:10:07,787 - INFO - Fetching historical data...
-2026-05-06 06:10:07,787 - INFO - === FETCHING 1800 HOURS OF HISTORICAL DATA ===
-2026-05-06 06:10:10,746 - INFO - ✅ Fetched 21482 samples (1790.2 hours) from InfluxDB
-2026-05-06 06:10:10,750 - INFO - InfluxDB per-entity coverage gaps detected for 1 entities (requested 1800h):
-2026-05-06 06:10:10,750 - INFO -   defrost_wp: missing first 364.2h (data starts 2026-03-07 08:25:00+00:00)
-2026-05-06 06:10:10,753 - INFO - Fetching 1800 hours of history from HA for 13 entities …
-127.0.0.1 - - [06/May/2026 06:10:11] "GET /health HTTP/1.1" 200 -
-2026-05-06 06:10:12,691 - INFO - Received history arrays for 12 entities
-2026-05-06 06:10:13,761 - INFO - HA history DataFrame: 2906 rows × 14 cols (1800 hours)
-2026-05-06 06:10:13,787 - INFO -   ✅ Supplemented 'defrost_wp' with 0 HA values (364.2h gap)
-2026-05-06 06:10:13,792 - WARNING - ⚠️  Quality-gate column 'defrost_wp' ('defrost') was bfill-filled for 355.7h at the dataset start — the 'defrost' rejection filter may be inactive for this period.
-2026-05-06 06:10:13,792 - INFO - ✅ All required columns present
-2026-05-06 06:10:13,793 - INFO - ✅ Retrieved 21482 samples (1790.2 hours)
-2026-05-06 06:10:13,793 - INFO - Filtering for stable thermal equilibrium periods...
-2026-05-06 06:10:13,793 - INFO - === FILTERING FOR STABLE PERIODS WITH BLOCKING STATE DETECTION ===
-2026-05-06 06:10:13,796 - INFO - Looking for periods with <0.2°C change over 20 min
-2026-05-06 06:10:13,796 - INFO - Using 15min grace periods after blocking states
-127.0.0.1 - - [06/May/2026 06:10:41] "GET /health HTTP/1.1" 200 -
-2026-05-06 06:10:45,524 - INFO - === BLOCKING STATE FILTERING RESULTS ===
-2026-05-06 06:10:45,524 - INFO - Total periods checked: 21471
-2026-05-06 06:10:45,525 - INFO - Stable periods found: 19700
-2026-05-06 06:10:45,525 - INFO - Filter exclusions:
-2026-05-06 06:10:45,525 - INFO -   Missing data: 0
-2026-05-06 06:10:45,525 - INFO -   Temperature unstable: 58
-2026-05-06 06:10:45,525 - INFO -   Blocking states active: 1405
-2026-05-06 06:10:45,525 - INFO -   Grace period recovery: 144
-2026-05-06 06:10:45,525 - INFO -   Fireplace state changes: 58
-2026-05-06 06:10:45,525 - INFO -   Outlet temperature unstable: 106
-2026-05-06 06:10:45,525 - INFO -   Low flow rate: 0
-2026-05-06 06:10:45,525 - INFO - Data retention rate: 91.8%
-2026-05-06 06:10:45,525 - INFO - ✅ Found 19700 stable periods with blocking state filtering
-2026-05-06 06:10:46,898 - INFO - ✅ Found 19700 stable periods for calibration
-2026-05-06 06:10:46,898 - INFO - Step 1: HLC calibration via calibrate_hlc()...
-2026-05-06 06:10:46,898 - INFO - 🔬 HLC calibration: fetching 2000 hours of historical data...
-2026-05-06 06:10:46,898 - INFO - === FETCHING 2000 HOURS OF HISTORICAL DATA ===
-2026-05-06 06:10:49,317 - INFO - ✅ Fetched 23882 samples (1990.2 hours) from InfluxDB
-2026-05-06 06:10:49,321 - INFO - InfluxDB per-entity coverage gaps detected for 1 entities (requested 2000h):
-2026-05-06 06:10:49,322 - INFO -   defrost_wp: missing first 564.2h (data starts 2026-03-07 08:25:00+00:00)
-2026-05-06 06:10:49,322 - INFO - Fetching 2000 hours of history from HA for 13 entities …
-2026-05-06 06:10:50,945 - INFO - Received history arrays for 12 entities
-2026-05-06 06:10:52,044 - INFO - HA history DataFrame: 2906 rows × 14 cols (2000 hours)
-2026-05-06 06:10:52,070 - INFO -   ✅ Supplemented 'defrost_wp' with 0 HA values (564.2h gap)
-2026-05-06 06:10:52,076 - WARNING - ⚠️  Quality-gate column 'defrost_wp' ('defrost') was bfill-filled for 555.7h at the dataset start — the 'defrost' rejection filter may be inactive for this period.
-2026-05-06 06:10:52,076 - INFO - ✅ All required columns present
-2026-05-06 06:10:52,077 - WARNING - ⚠️ HLC calibration: target_temp column not available — indoor_far_from_target and low_heating_demand filters disabled. Calibration quality may be reduced.
-2026-05-06 06:10:54,806 - INFO - 🔬 HLC calibration: 435 valid periods from 1990 windows (rejected: {'tv_active': 127, 'dhw_active': 8, 'pv_too_high': 269, 'thermal_power_too_low': 1027, 'fireplace_active': 36, 'indoor_trend_too_high': 13, 'time_gap_in_window': 4, 'defrost_active': 68, 'outdoor_temp_range': 3})
-2026-05-06 06:10:54,808 - INFO - ✅ HLC calibration result: HLC = 0.11864 kW/K (R² = -0.062, FTO-R² = 0.893, r = 0.170, n = 435, range: 2026-02-11 20:20:00+00:00 — 2026-05-06 04:10:46.752229+00:00)
-2026-05-06 06:10:54,808 - INFO - 🎯 Set calibrated baseline parameters (cycles: 435)
-2026-05-06 06:10:54,897 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
-2026-05-06 06:10:54,898 - INFO - ✅ HLC calibration: saved to unified thermal state
-2026-05-06 06:10:54,899 - INFO - ✅ HLC = 0.11864 kW/K (R²=-0.062, n=435)
-2026-05-06 06:10:54,900 - INFO - Step 2: Analytical OE estimation...
-2026-05-06 06:10:54,900 - INFO - === STEP 2: ANALYTICAL OE ESTIMATION ===
-2026-05-06 06:10:54,924 - INFO -   Defrost-recovery filter excluded 292 HP-only periods (grace=45 min)
-2026-05-06 06:10:54,953 - INFO - ✅ Analytical OE estimate: 0.7168 kW/K (from 3792 HP-only periods, weighted median)
-2026-05-06 06:10:54,954 - INFO - Step 3: Thermal time constant from cooling curves...
-2026-05-06 06:10:54,954 - INFO - === CALCULATING COOLING TIME CONSTANT ===
-2026-05-06 06:10:54,963 - INFO - Using thermal-power based HP-off detection (power < 0.50 kW)
-2026-05-06 06:10:55,097 - INFO - No valid cooling periods found
-2026-05-06 06:10:55,098 - WARNING - ⚠️ Cooling tau failed — using persisted value
-2026-05-06 06:10:55,098 - INFO - Step 4: PV heat weight (residual method)...
-2026-05-06 06:10:55,116 - INFO - PV filter: excluded 853/6972 periods where indoor ≤ HP equilibrium (blinds likely closed)
-2026-05-06 06:10:55,117 - INFO - === STEP: RESIDUAL PV WEIGHT ESTIMATION ===
-2026-05-06 06:10:55,149 - DEBUG -   PV residual: removed 487/4831 outliers (IQR fence [-0.00079, 0.00184])
-2026-05-06 06:10:55,150 - INFO - ✅ PV weight estimate: 0.00032 (P50 of 4344 samples)
-2026-05-06 06:10:55,150 - INFO - Step 5: Fireplace heat weight (residual method)...
-2026-05-06 06:10:55,157 - INFO - === STEP: RESIDUAL FP WEIGHT ESTIMATION ===
-2026-05-06 06:10:55,158 - DEBUG -   FP residual: removed 2/124 outliers (IQR fence [-0.24210, 1.15921])
-2026-05-06 06:10:55,158 - INFO - ✅ FP weight estimate: 0.38127 (P50 of 122 samples)
-2026-05-06 06:10:55,158 - INFO - Step 6: TV heat weight (residual method)...
-2026-05-06 06:10:55,166 - INFO - === STEP: RESIDUAL TV WEIGHT ESTIMATION ===
-2026-05-06 06:10:55,171 - DEBUG -   TV residual: removed 18/493 outliers (IQR fence [-0.34542, 1.38713])
-2026-05-06 06:10:55,171 - INFO - ✅ TV weight estimate: 0.53053 (P60 of 475 samples)
-2026-05-06 06:10:55,171 - INFO - Step 7: Solar lag via cross-correlation...
-2026-05-06 06:10:55,171 - INFO - === STEP 7: SOLAR LAG CROSS-CORRELATION ===
-2026-05-06 06:10:55,338 - INFO - ✅ Solar lag estimate: 180 min (modal across 62 PV episodes)
-2026-05-06 06:10:55,339 - INFO - Step 8: delta_t_floor (P25 of outlet-inlet)...
-2026-05-06 06:10:55,339 - INFO - === CALIBRATING DELTA_T_FLOOR ===
-2026-05-06 06:10:55,359 - INFO - Calibrated delta_t_floor = 2.04°C (P25 of 7099 samples)
-2026-05-06 06:10:55,359 - INFO - Step 9: Slab time constant (1-D grid search)...
-2026-05-06 06:10:55,359 - INFO - === STEP 9: SLAB TIME CONSTANT GRID SEARCH ===
-2026-05-06 06:10:55,521 - INFO - ✅ Slab time constant (grid search): 4.00h (MSE=0.0375°C², 13 startup events)
-2026-05-06 06:10:55,522 - INFO - Step 10: FP decay time constant (log-linear OLS)...
-2026-05-06 06:10:55,522 - INFO - === FILTERING FOR FIREPLACE DECAY PERIODS ===
-2026-05-06 06:10:56,145 - INFO - Found 4 fireplace decay periods
-2026-05-06 06:10:56,145 - WARNING - Insufficient FP decay periods: 4 (need ≥5)
-2026-05-06 06:10:56,146 - WARNING - ⚠️ FP decay tau calibration failed — using persisted value
-2026-05-06 06:10:56,146 - INFO - Step 11: Room spread delay (cross-correlation)...
-2026-05-06 06:10:56,146 - INFO - === FILTERING FOR FIREPLACE SPREAD PERIODS ===
-2026-05-06 06:10:56,146 - INFO - Living room temp not available — skipping spread calibration
-2026-05-06 06:10:56,146 - WARNING - Insufficient FP spread periods: 0 (need ≥5)
-2026-05-06 06:10:56,146 - WARNING - ⚠️ Room spread delay calibration failed — using persisted value
-2026-05-06 06:10:56,146 - INFO - Step 12: Cloud factor exponent skipped (CLOUD_COVER_CORRECTION_ENABLED=false)
-2026-05-06 06:10:56,146 - INFO - Step 13: Solar decay tau (log-linear OLS)...
-2026-05-06 06:10:57,820 - INFO - Found 25 PV decay periods
-2026-05-06 06:10:57,821 - WARNING - ⚠️ Solar decay tau calibration failed — using persisted value
-2026-05-06 06:10:57,821 - INFO - Building thermal model with physics-direct parameters...
-2026-05-06 06:10:57,822 - INFO - 🎯 Loading CALIBRATED thermal parameters (baseline + learning adjustments):
-2026-05-06 06:10:57,822 - INFO -    heat_loss_coefficient: 0.1186 + 0.00000 = 0.1186
-2026-05-06 06:10:57,822 - INFO -    outlet_effectiveness: 0.953 + 0.000 = 0.953
-2026-05-06 06:10:57,822 - INFO -    pv_heat_weight: 0.0021
-2026-05-06 06:10:57,822 - DEBUG - Schema validation not available
-2026-05-06 06:10:57,822 - INFO -    - Restored learning confidence: 5.000
-2026-05-06 06:10:57,822 - INFO -    - Restored prediction history: 200 records
-2026-05-06 06:10:57,823 - INFO -    - Restored parameter history: 500 records
-2026-05-06 06:10:57,823 - INFO - 🔥 Applied fp_decay_time_constant = 3.91h
-2026-05-06 06:10:57,823 - INFO - 🔥 Applied room_spread_delay_minutes = 18min
-2026-05-06 06:10:57,823 - INFO - 🔧 Applied delta_t_floor = 2.04°C
-2026-05-06 06:10:57,823 - INFO - 
-=== PHYSICS-DIRECT CALIBRATED PARAMETERS ===
-2026-05-06 06:10:57,823 - INFO -   heat_loss_coefficient:  0.11864 kW/K
-2026-05-06 06:10:57,823 - INFO -   outlet_effectiveness:   0.7168 kW/K
-2026-05-06 06:10:57,823 - INFO -   thermal_time_constant:  4.39 h
-2026-05-06 06:10:57,823 - INFO -   pv_heat_weight:         0.000321 kW/W
-2026-05-06 06:10:57,824 - INFO -   fireplace_heat_weight:  0.381 kW
-2026-05-06 06:10:57,824 - INFO -   tv_heat_weight:         0.531 kW
-2026-05-06 06:10:57,824 - INFO -   solar_lag_minutes:      180.0 min
-2026-05-06 06:10:57,824 - INFO -   delta_t_floor:          2.04 °C
-2026-05-06 06:10:57,824 - INFO -   slab_time_constant:     4.00 h
-2026-05-06 06:10:57,824 - INFO -   fp_decay_time_constant: 3.91 h
-2026-05-06 06:10:57,824 - INFO -   room_spread_delay:      18 min
-2026-05-06 06:10:57,824 - INFO -   cloud_factor_exponent:  1.000
-2026-05-06 06:10:57,824 - INFO -   solar_decay_tau_hours:  1.00 h
-2026-05-06 06:10:57,824 - INFO - Saving physics-direct calibrated parameters to thermal state...
-2026-05-06 06:10:57,824 - INFO - 🎯 Set calibrated baseline parameters (cycles: 19700)
-2026-05-06 06:10:57,911 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
-2026-05-06 06:10:57,999 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
+[INFO] Starting ML Heating Control Add-on...
+[INFO] Running in Home Assistant addon environment with bashio support
+[INFO] Initializing configuration...
+[INFO] ML Heating Add-on Configuration Adapter Starting...
+[INFO] Initializing ML Heating Add-on environment...
+[INFO] Add-on configuration loaded successfully
+[INFO] Configuration validation passed
+[INFO] Created directory: /data/models
+[INFO] Created directory: /data/backups
+[INFO] Created directory: /data/logs
+[INFO] Created directory: /data/config
+[INFO] Created directory: /config/ml_heating
+[INFO] Configuration backup saved to /data/config/addon_config_backup.json
+[INFO] Environment file written to /data/config/env_vars
+[INFO] Set 165 environment variables
+[INFO] Add-on environment initialized successfully
+[INFO] Configuration adapter completed successfully
+[INFO] Add-on configuration loaded successfully
+[INFO] === Configuration Summary ===
+[INFO] Target Indoor Temp Entity: input_number.soll_rt
+[INFO] Indoor Temp Entity: sensor.rt_mittelwert
+[INFO] Outdoor Temp Entity: sensor.nibe_bt1_outdoor_temperature
+[INFO] Learning Rate: 0.01
+[INFO] Cycle Interval: 10 minutes
+[INFO] =============================
+[INFO] Sourced environment variables from /data/config/env_vars
+[INFO] Starting ML heating system...
+[INFO] Starting health check server on port 3002...
+[INFO] Starting Streamlit dashboard on port 3001 (ingress)...
+[INFO] Starting ML backend...
+Health check server starting on port 3002...
+2026-05-13 23:39:19.811 Uvicorn server started on 0.0.0.0:3001
+  You can now view your Streamlit app in your browser.
+  Local URL: http://localhost:3001
+  Network URL: http://172.30.33.2:3001
+  External URL: http://92.209.174.223:3001
+2026-05-13 23:39:20,077 - INFO - 🤖 Cooling ML calibrate flag detected — running LGBM training
+2026-05-13 23:39:20,083 - ERROR - calibrate_cooling_ml: missing dependency — No module named 'config'
+2026-05-13 23:39:20,083 - ERROR - ❌ Cooling ML calibration failed — check logs
+2026-05-13 23:39:20,108 - INFO - ✅ InfluxDB write permission verified for bucket 'ml_heating_features'
+2026-05-13 23:39:20,108 - INFO - 💧 Hydrating sensor buffer from InfluxDB...
+2026-05-13 23:39:20,445 - INFO - ✅ Sensor buffer hydrated successfully
+2026-05-13 23:39:20,445 - INFO - 🎯 ACTIVE MODE: ML actively controls heating system
+2026-05-13 23:39:20,445 - INFO - 🔧 Creating new Model Wrapper instance (singleton)
+2026-05-13 23:39:20,675 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
+2026-05-13 23:39:20,677 - INFO - ✅ Loaded unified thermal state from /config/ml_heating/unified_thermal_state.json
+2026-05-13 23:39:20,735 - DEBUG - 💾 Saved cooling thermal state to /config/ml_heating/unified_thermal_state_cooling.json
+2026-05-13 23:39:20,735 - INFO - ✅ Loaded cooling thermal state from /config/ml_heating/unified_thermal_state_cooling.json
+2026-05-13 23:39:20,736 - INFO - 🎯 Loading CALIBRATED thermal parameters (baseline + learning adjustments):
+2026-05-13 23:39:20,736 - INFO -    heat_loss_coefficient: 0.1206 + 0.00000 = 0.1206
+2026-05-13 23:39:20,736 - INFO -    outlet_effectiveness: 0.826 + 0.000 = 0.826
+2026-05-13 23:39:20,736 - INFO -    pv_heat_weight: 0.0003
+2026-05-13 23:39:20,737 - DEBUG - Schema validation not available
+2026-05-13 23:39:20,737 - INFO -    - Restored learning confidence: 5.000
+2026-05-13 23:39:20,737 - INFO -    - Restored prediction history: 200 records
+2026-05-13 23:39:20,737 - INFO -    - Restored parameter history: 500 records
+2026-05-13 23:39:20,758 - INFO - 🔥 Restored heat-source channel state from unified thermal state
+2026-05-13 23:39:20,758 - INFO - ⚙️ Loading DEFAULT config parameters (no calibration found)
+2026-05-13 23:39:20,763 - INFO - 🔥 Restored heat-source channel state from unified thermal state
+2026-05-13 23:39:20,764 - DEBUG - 📊 Loaded 200 predictions from unified thermal state
+2026-05-13 23:39:20,764 - INFO - 🔢 PredictionMetrics initialized with 200 existing predictions
+2026-05-13 23:39:20,764 - DEBUG - 📊 Loaded 75 predictions from unified thermal state
+2026-05-13 23:39:20,764 - INFO - 🔢 PredictionMetrics initialized with 75 existing predictions
+2026-05-13 23:39:20,783 - INFO - 🎯 Model Wrapper initialized with ThermalEquilibriumModel
+2026-05-13 23:39:20,783 - INFO -    - Thermal time constant: 4.8h
+2026-05-13 23:39:20,783 - INFO -    - Heat loss coefficient: 0.1204
+2026-05-13 23:39:20,783 - INFO -    - Outlet effectiveness: 0.8282
+2026-05-13 23:39:20,783 - INFO -    - Learning confidence: 5.00
+2026-05-13 23:39:20,783 - INFO -    - Current cycle: 5037
+2026-05-13 23:39:20,787 - DEBUG - Setting HA state for sensor.ml_model_mae: {'state': '0.0218', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_model_mae', 'friendly_name': 'ML Model MAE', 'unit_of_measurement': '°C', 'icon': 'mdi:chart-line', 'last_updated': '2026-05-13T21:39:20.787711+00:00'}}
+2026-05-13 23:39:20,805 - DEBUG - Setting HA state for sensor.ml_model_rmse: {'state': '0.0319', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_model_rmse', 'friendly_name': 'ML Model RMSE', 'unit_of_measurement': '°C', 'icon': 'mdi:chart-line', 'last_updated': '2026-05-13T21:39:20.787711+00:00'}}
+2026-05-13 23:39:20,821 - DEBUG - Setting HA state for sensor.ml_heating_learning: {'state': '5.000', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_learning', 'friendly_name': 'ML Adaptive Learning Metrics', 'unit_of_measurement': 'metrics', 'icon': 'mdi:brain', 'thermal_time_constant': 4.834597441637773, 'heat_loss_coefficient': 0.12036594468875261, 'outlet_effectiveness': 0.8281620186398034, 'pv_heat_weight': 0.00015217313536863917, 'fireplace_heat_weight': 0.17156709601311348, 'tv_heat_weight': 0.44733899208522154, 'solar_lag_minutes': 39.25195011540674, 'slab_time_constant_hours': 4.0004281106224955, 'heat_source_channels_enabled': True, 'total_conductance': 0.3, 'equilibrium_ratio': 0.5, 'cycle_count': 5037, 'parameter_updates': 500, 'model_health': 'excellent', 'learning_progress': 1.0, 'is_improving': True, 'improvement_percentage': 15.346911974806037, 'total_predictions': 200, 'learning_confidence': 5.0, 'last_updated': '2026-05-13T21:39:20.821460+00:00', 'delta_t_floor': 2.2311629660155536, 'cloud_factor_exponent': 1.0, 'solar_decay_tau_hours': 1.057203813897931, 'fp_heat_output_kw': 0.17156709601311348, 'fp_decay_time_constant': 3.9144707244638868, 'room_spread_delay_minutes': 18.0, 'ch_heat_pump_history_count': 200, 'ch_heat_pump_last_error': -2.03626334283058e-06, 'ch_pv_history_count': 200, 'ch_pv_last_error': -0.02211091545487065, 'ch_fireplace_history_count': 0, 'ch_fireplace_last_error': 0.0, 'ch_tv_history_count': 0, 'ch_tv_last_error': 0.0}}
+2026-05-13 23:39:20,837 - DEBUG - Setting HA state for sensor.ml_model_mae: {'state': '0.0218', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_model_mae', 'friendly_name': 'ML Model MAE', 'unit_of_measurement': '°C', 'icon': 'mdi:chart-line', 'mae_1h': 0.01635263644511061, 'mae_6h': 0.01781695626640604, 'mae_24h': 0.02183397099976274, 'trend_direction': 'improving', 'prediction_count': 200, 'last_updated': '2026-05-13T21:39:20.821460+00:00'}}
+2026-05-13 23:39:20,854 - DEBUG - Setting HA state for sensor.ml_model_rmse: {'state': '0.0319', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_model_rmse', 'friendly_name': 'ML Model RMSE', 'unit_of_measurement': '°C', 'icon': 'mdi:chart-line', 'recent_max_error': 0.058043087645618385, 'std_error': 0.0233, 'mean_bias': 0.0, 'prediction_count': 200, 'last_updated': '2026-05-13T21:39:20.821460+00:00'}}
+2026-05-13 23:39:20,873 - DEBUG - Setting HA state for sensor.ml_prediction_accuracy: {'state': '100.0', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_prediction_accuracy', 'friendly_name': 'ML Prediction Accuracy', 'unit_of_measurement': '%', 'icon': 'mdi:target', 'perfect_accuracy_pct': 0.0, 'tolerable_accuracy_pct': 100.0, 'poor_accuracy_pct': 0.0, 'prediction_count_24h': 0, 'excellent_all_time_pct': 99.0, 'good_all_time_pct': 100.0, 'last_updated': '2026-05-13T21:39:20.821460+00:00'}}
+2026-05-13 23:39:20,890 - DEBUG - Logged refactored sensor metrics to HA
+2026-05-13 23:39:20,891 - DEBUG - Logging feature importance
+2026-05-13 23:39:20,891 - DEBUG - Setting HA state for sensor.ml_feature_importance: {'state': '5', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_feature_importance', 'friendly_name': 'ML Feature Importance', 'unit_of_measurement': '%', 'icon': 'mdi:format-list-numbered', 'top_features': {'target_temp': 52.83, 'tv_power': 28.54, 'fireplace': 10.94, 'outdoor_temp': 7.68, 'pv_power': 0.01}, 'last_updated': '2026-05-13T21:39:20.891006+00:00'}}
+2026-05-13 23:39:20,906 - INFO - ✅ Exported metrics to Home Assistant sensors successfully
+2026-05-13 23:39:20,906 - INFO - ✅ Initial metrics exported to HA successfully.
+2026-05-13 23:39:20,916 - WARNING - Cooling ML init failed (non-fatal): joblib is required for CoolingMLModel
+2026-05-13 23:39:20,916 - DEBUG - 🔄 CYCLE 1 START: 23:39:20 (first cycle)
+2026-05-13 23:39:20,916 - DEBUG - ♻️ Reusing existing Model Wrapper instance
+2026-05-13 23:39:20,916 - INFO - Successfully loaded operational state from /config/ml_heating/unified_thermal_state.json
+2026-05-13 23:39:20,949 - INFO - ✅ All configured sensor entity IDs verified in HA.
+2026-05-13 23:39:20,949 - DEBUG - Setting HA state for sensor.ml_heating_cop_realtime: {'state': '6.58', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_cop_realtime', 'friendly_name': 'ML Heating COP (Realtime)', 'unit_of_measurement': 'COP', 'icon': 'mdi:heat-pump', 'device_class': 'power_factor'}}
+2026-05-13 23:39:20,969 - DEBUG - Setting HA state for sensor.ml_heating_thermal_power: {'state': '2.442', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_thermal_power', 'friendly_name': 'ML Heating Thermal Power', 'unit_of_measurement': 'kW', 'icon': 'mdi:flash', 'device_class': 'power'}}
+2026-05-13 23:39:21,000 - DEBUG - Wrote thermodynamic metrics to InfluxDB
+2026-05-13 23:39:21,000 - DEBUG - Thermodynamic sensors updated: COP=6.58, Power=2.442kW
+2026-05-13 23:39:21,000 - DEBUG - ♻️ Reusing existing Model Wrapper instance
+2026-05-13 23:39:21,000 - DEBUG - 🎯 ACTIVE MODE LEARNING (trajectory): Verifying ML prediction accuracy for 26.1°C outlet setting
+2026-05-13 23:39:21,003 - DEBUG - Defaulting channel learning to heat_pump: pv_power_current=0.000, pv_power=0.000, thermal_power=2.442, delta_t=2.500, heat_pump_active=True
+2026-05-13 23:39:21,004 - DEBUG - ♨️ HeatPumpChannel self-learned (heating): avg_error=-0.012, tau=4.83h, hlc=0.120, outlet_effectiveness=0.828, slab_tau=4.00h, delta_t_floor=2.23
+2026-05-13 23:39:21,004 - INFO - ♨️ heat_pump parameter update: attributed_error=-0.019574 | delta_t_floor: 2.231163→2.234905 (Δ+0.003742) | heat_loss_coefficient: 0.120366→0.120378 (Δ+0.000012) | outlet_effectiveness: 0.828162→0.828046 (Δ-0.000116) | slab_time_constant_hours: 4.000428→4.000405 (Δ-0.000023) | thermal_time_constant: 4.834597→4.834655 (Δ+0.000058)
+2026-05-13 23:39:21,004 - INFO - Channel routing → [♨️ heat_pump*] | error=-0.0196 | pv_current=0W pv_smoothed=0W | params_changed=heat_pump
+2026-05-13 23:39:21,201 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
+2026-05-13 23:39:21,202 - DEBUG - Skipping legacy global adaptation: channel mode owns recent-window learning
+2026-05-13 23:39:21,395 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
+2026-05-13 23:39:21,397 - DEBUG - Prediction feedback: error=-0.020°C, confidence=5.000
+2026-05-13 23:39:21,590 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
+2026-05-13 23:39:21,592 - DEBUG - 💾 Saved 200 predictions to unified thermal state
+2026-05-13 23:39:21,592 - DEBUG - Added prediction: pred=22.63, actual=22.61, error=-0.020
+2026-05-13 23:39:21,842 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
+2026-05-13 23:39:21,846 - DEBUG - Setting HA state for sensor.ml_model_mae: {'state': '0.0218', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_model_mae', 'friendly_name': 'ML Model MAE', 'unit_of_measurement': '°C', 'icon': 'mdi:chart-line', 'last_updated': '2026-05-13T21:39:21.846491+00:00'}}
+2026-05-13 23:39:21,860 - DEBUG - Setting HA state for sensor.ml_model_rmse: {'state': '0.0319', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_model_rmse', 'friendly_name': 'ML Model RMSE', 'unit_of_measurement': '°C', 'icon': 'mdi:chart-line', 'last_updated': '2026-05-13T21:39:21.846491+00:00'}}
+2026-05-13 23:39:21,876 - DEBUG - Setting HA state for sensor.ml_heating_learning: {'state': '5.000', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_learning', 'friendly_name': 'ML Adaptive Learning Metrics', 'unit_of_measurement': 'metrics', 'icon': 'mdi:brain', 'thermal_time_constant': 4.834655400973232, 'heat_loss_coefficient': 0.12037753655584443, 'outlet_effectiveness': 0.8280460999688853, 'pv_heat_weight': 0.00015217313536863917, 'fireplace_heat_weight': 0.17156709601311348, 'tv_heat_weight': 0.44733899208522154, 'solar_lag_minutes': 39.25195011540674, 'slab_time_constant_hours': 4.0004049268883115, 'heat_source_channels_enabled': True, 'total_conductance': 0.3, 'equilibrium_ratio': 0.5, 'cycle_count': 5038, 'parameter_updates': 501, 'model_health': 'excellent', 'learning_progress': 1.0, 'is_improving': True, 'improvement_percentage': 14.551112112958783, 'total_predictions': 200, 'learning_confidence': 5.0, 'last_updated': '2026-05-13T21:39:21.875931+00:00', 'delta_t_floor': 2.2349046696887314, 'cloud_factor_exponent': 1.0, 'solar_decay_tau_hours': 1.057203813897931, 'fp_heat_output_kw': 0.17156709601311348, 'fp_decay_time_constant': 3.9144707244638868, 'room_spread_delay_minutes': 18.0, 'ch_heat_pump_history_count': 200, 'ch_heat_pump_last_error': -0.01957428438854336, 'ch_pv_history_count': 200, 'ch_pv_last_error': -0.02211091545487065, 'ch_fireplace_history_count': 0, 'ch_fireplace_last_error': 0.0, 'ch_tv_history_count': 0, 'ch_tv_last_error': 0.0}}
+2026-05-13 23:39:21,891 - DEBUG - Setting HA state for sensor.ml_model_mae: {'state': '0.0218', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_model_mae', 'friendly_name': 'ML Model MAE', 'unit_of_measurement': '°C', 'icon': 'mdi:chart-line', 'mae_1h': 0.01406354887202473, 'mae_6h': 0.017871058985133685, 'mae_24h': 0.021811932407030898, 'trend_direction': 'improving', 'prediction_count': 200, 'last_updated': '2026-05-13T21:39:21.875931+00:00'}}
+2026-05-13 23:39:21,908 - DEBUG - Setting HA state for sensor.ml_model_rmse: {'state': '0.0319', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_model_rmse', 'friendly_name': 'ML Model RMSE', 'unit_of_measurement': '°C', 'icon': 'mdi:chart-line', 'recent_max_error': 0.0288638789505562, 'std_error': 0.0233, 'mean_bias': 0.0, 'prediction_count': 200, 'last_updated': '2026-05-13T21:39:21.875931+00:00'}}
+2026-05-13 23:39:21,922 - DEBUG - Setting HA state for sensor.ml_prediction_accuracy: {'state': '100.0', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_prediction_accuracy', 'friendly_name': 'ML Prediction Accuracy', 'unit_of_measurement': '%', 'icon': 'mdi:target', 'perfect_accuracy_pct': 0.0, 'tolerable_accuracy_pct': 100.0, 'poor_accuracy_pct': 0.0, 'prediction_count_24h': 0, 'excellent_all_time_pct': 99.0, 'good_all_time_pct': 100.0, 'last_updated': '2026-05-13T21:39:21.875931+00:00'}}
+2026-05-13 23:39:21,937 - DEBUG - Logged refactored sensor metrics to HA
+2026-05-13 23:39:21,937 - DEBUG - Logging feature importance
+2026-05-13 23:39:21,937 - DEBUG - Setting HA state for sensor.ml_feature_importance: {'state': '5', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_feature_importance', 'friendly_name': 'ML Feature Importance', 'unit_of_measurement': '%', 'icon': 'mdi:format-list-numbered', 'top_features': {'target_temp': 52.83, 'tv_power': 28.54, 'fireplace': 10.95, 'outdoor_temp': 7.68, 'pv_power': 0.01}, 'last_updated': '2026-05-13T21:39:21.937568+00:00'}}
+2026-05-13 23:39:21,952 - INFO - ✅ Exported metrics to Home Assistant sensors successfully
+2026-05-13 23:39:21,952 - INFO - ✅ Learning cycle 5038: error=0.020°C, confidence=5.000, total_predictions=200
+2026-05-13 23:39:21,952 - DEBUG - ✅ Online learning: applied_temp=26.1°C, actual_change=-0.010°C, cycle=5038
+2026-05-13 23:39:21,952 - DEBUG - 🔥 Heating mode active (state: heat)
+2026-05-13 23:39:21,952 - DEBUG - ♻️ Reusing existing Model Wrapper instance
+2026-05-13 23:39:21,981 - DEBUG - Fireplace is OFF. Using main indoor temp for prediction.
+2026-05-13 23:39:22,109 - DEBUG - PV forecast parsed successfully: [0.0, 0.0, 0.0, 0.0, 0.0, 210.8]W
+2026-05-13 23:39:22,110 - DEBUG - Solar correction: enabled=True, percent=100.0%, factor=1.000
+2026-05-13 23:39:22,146 - DEBUG - Delta calibration applied: offset=-0.30°C
+2026-05-13 23:39:22,146 - DEBUG - Raw forecasts: [6.5, 6.3, 6.3, 5.3, 4.7, 4.4]
+2026-05-13 23:39:22,146 - DEBUG - Calibrated forecasts: [6.2, 6.0, 6.0, 5.0, 4.4, 4.1]
+2026-05-13 23:39:22,149 - DEBUG - ♻️ Reusing existing Model Wrapper instance
+2026-05-13 23:39:22,154 - INFO - DEBUG: Wrapper params: U=0.12037753655584443, eff=0.8280460999688853, tau=4.834655400973232
+2026-05-13 23:39:22,155 - DEBUG - PV scalar: no forecast sun (1h=0W ≤ 50W), snapping to pv_now=0W (rolling window reset)
+2026-05-13 23:39:22,155 - DEBUG - 🔧 Using natural bounds: outlet_min=21.0°C, outlet_max=35.0°C
+2026-05-13 23:39:22,155 - INFO - 🌡️ Using cycle-aligned forecast (10min): outdoor=6.2°C (vs current 6.2°C), PV=0W (vs current 0W)
+2026-05-13 23:39:22,155 - DEBUG - DEBUG: No PV history found, using scalar avg_pv: 0.0
+2026-05-13 23:39:22,155 - DEBUG - 🎯 Binary search start: target=22.6°C, current=22.6°C, range=21.0-35.0°C
+2026-05-13 23:39:22,156 - DEBUG - 🔍 Binary search features: inlet_temp=24.599999999999998, delta_t_floor=2.50, indoor_temp_delta_60m=-0.0390, horizon=6.0h, outlet_mid=28.0°C
+2026-05-13 23:39:22,157 - DEBUG - ✅ Binary search trajectory OK (iter 1): outlet=28.0°C → predicted=23.40°C (steps=36, start=22.66→end=23.40)
+2026-05-13 23:39:22,157 - DEBUG -    Iteration 1: outlet=28.0°C → predicted=23.40°C, error=0.803°C (range: 21.0-35.0°C)
+2026-05-13 23:39:22,157 - DEBUG -      → Maintenance: Predicted too high, lowering maximum to 28.0°C
+2026-05-13 23:39:22,159 - DEBUG -    Iteration 2: outlet=24.5°C → predicted=21.85°C, error=-0.746°C (range: 21.0-28.0°C)
+2026-05-13 23:39:22,159 - DEBUG -      → Maintenance: Predicted too low, raising minimum to 24.5°C
+2026-05-13 23:39:22,160 - DEBUG -    Iteration 3: outlet=26.2°C → predicted=22.62°C, error=0.023°C (range: 24.5-28.0°C)
+2026-05-13 23:39:22,160 - DEBUG -      → Maintenance: Predicted too high, lowering maximum to 26.2°C
+2026-05-13 23:39:22,162 - DEBUG -    Iteration 4: outlet=25.4°C → predicted=22.23°C, error=-0.367°C (range: 24.5-26.2°C)
+2026-05-13 23:39:22,162 - DEBUG -      → Maintenance: Predicted too low, raising minimum to 25.4°C
+2026-05-13 23:39:22,163 - DEBUG -    Iteration 5: outlet=25.8°C → predicted=22.43°C, error=-0.172°C (range: 25.4-26.2°C)
+2026-05-13 23:39:22,163 - DEBUG -      → Maintenance: Predicted too low, raising minimum to 25.8°C
+2026-05-13 23:39:22,165 - DEBUG -    Iteration 6: outlet=26.0°C → predicted=22.53°C, error=-0.074°C (range: 25.8-26.2°C)
+2026-05-13 23:39:22,165 - DEBUG -      → Maintenance: Predicted too low, raising minimum to 26.0°C
+2026-05-13 23:39:22,166 - DEBUG -    Iteration 7: outlet=26.1°C → predicted=22.57°C, error=-0.026°C (range: 26.0-26.2°C)
+2026-05-13 23:39:22,166 - DEBUG -      → Maintenance: Predicted too low, raising minimum to 26.1°C
+2026-05-13 23:39:22,167 - DEBUG -    Iteration 8: outlet=26.2°C → predicted=22.60°C, error=-0.001°C (range: 26.1-26.2°C)
+2026-05-13 23:39:22,167 - INFO - ✅ Binary search converged after 8 iterations: 26.2°C → 22.60°C (target: 22.6°C, error: -0.001°C)
+2026-05-13 23:39:22,167 - DEBUG - 🔬 Equilibrium physics: outlet=26.2°C, outdoor=6.2°C, heat_loss_coeff=0.120, outlet_eff=0.828, equilibrium=23.66°C
+2026-05-13 23:39:22,168 - DEBUG - 🔍 Multi-horizon predictions for target 22.6°C:
+2026-05-13 23:39:22,169 - DEBUG -         current: 24.9°C → 22.6°C (error: -0.04°C, outdoor: 6.2°C, PV: 0W) 
+2026-05-13 23:39:22,169 - DEBUG -    cycle(10min): 24.9°C → 22.6°C (error: -0.04°C, outdoor: 6.2°C, PV: 0W) ← NEW: Cycle-aligned
+2026-05-13 23:39:22,169 - DEBUG -              1h: 24.9°C → 22.6°C (error: -0.04°C, outdoor: 6.2°C, PV: 0W) 
+2026-05-13 23:39:22,169 - DEBUG -              2h: 24.9°C → 22.5°C (error: -0.07°C, outdoor: 6.0°C, PV: 0W) 
+2026-05-13 23:39:22,169 - DEBUG -              3h: 24.9°C → 22.5°C (error: -0.07°C, outdoor: 6.0°C, PV: 0W) 
+2026-05-13 23:39:22,169 - DEBUG -              4h: 25.2°C → 22.6°C (error: -0.00°C, outdoor: 5.0°C, PV: 0W) 
+2026-05-13 23:39:22,169 - DEBUG -             avg: 25.2°C → 22.6°C (error: +0.04°C, outdoor: 5.3°C, PV: 35W) 
+2026-05-13 23:39:22,170 - DEBUG - Slab: inlet=24.6°C, outlet=26.2°C, Δ=+1.6°C, τ=4.00h
+2026-05-13 23:39:22,171 - DEBUG - 🔍 Trajectory prediction using forecast arrays: outdoor=[6.203225806451609, 6.2, 6.0, 6.0, 5.0, 4.4, 4.1], PV=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 210.8]
+2026-05-13 23:39:22,171 - DEBUG - 🔍 Trajectory DEBUG: outlet=26.2°C → 0.2h_prediction=22.63°C (vs target 22.6°C, error: +0.034°C), reaches_target_at=0.16666666666666666h, cycle_time=0.2h
+2026-05-13 23:39:22,171 - DEBUG - 🔍 Trajectory predictions for target 22.6°C:
+2026-05-13 23:39:22,171 - DEBUG -     0.2h: 22.63°C → target 22.60°C (error: +0.03°C)
+2026-05-13 23:39:22,171 - DEBUG -     0.3h: 22.64°C → target 22.60°C (error: +0.04°C)
+2026-05-13 23:39:22,171 - DEBUG -     0.5h: 22.64°C → target 22.60°C (error: +0.04°C)
+2026-05-13 23:39:22,171 - DEBUG -     0.7h: 22.65°C → target 22.60°C (error: +0.05°C)
+2026-05-13 23:39:22,171 - DEBUG -     0.8h: 22.65°C → target 22.60°C (error: +0.05°C)
+2026-05-13 23:39:22,171 - DEBUG -     1.0h: 22.65°C → target 22.60°C (error: +0.05°C)
+2026-05-13 23:39:22,171 - DEBUG -     1.2h: 22.66°C → target 22.60°C (error: +0.06°C)
+2026-05-13 23:39:22,171 - DEBUG -     1.3h: 22.66°C → target 22.60°C (error: +0.06°C)
+2026-05-13 23:39:22,171 - DEBUG -     1.5h: 22.66°C → target 22.60°C (error: +0.06°C)
+2026-05-13 23:39:22,171 - DEBUG -     1.7h: 22.66°C → target 22.60°C (error: +0.06°C)
+2026-05-13 23:39:22,171 - DEBUG -     1.8h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,171 - DEBUG -     2.0h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,171 - DEBUG -     2.2h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     2.3h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     2.5h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     2.7h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     2.8h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     3.0h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     3.2h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     3.3h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     3.5h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     3.7h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     3.8h: 22.67°C → target 22.60°C (error: +0.07°C)
+2026-05-13 23:39:22,172 - DEBUG -     4.0h: 22.66°C → target 22.60°C (error: +0.06°C)
+2026-05-13 23:39:22,172 - DEBUG -     4.2h: 22.66°C → target 22.60°C (error: +0.06°C)
+2026-05-13 23:39:22,172 - DEBUG -     4.3h: 22.66°C → target 22.60°C (error: +0.06°C)
+2026-05-13 23:39:22,172 - DEBUG -     4.5h: 22.65°C → target 22.60°C (error: +0.05°C)
+2026-05-13 23:39:22,172 - DEBUG -     4.7h: 22.65°C → target 22.60°C (error: +0.05°C)
+2026-05-13 23:39:22,172 - DEBUG -     4.8h: 22.64°C → target 22.60°C (error: +0.04°C)
+2026-05-13 23:39:22,172 - DEBUG -     5.0h: 22.63°C → target 22.60°C (error: +0.03°C)
+2026-05-13 23:39:22,172 - DEBUG -     5.2h: 22.63°C → target 22.60°C (error: +0.03°C)
+2026-05-13 23:39:22,172 - DEBUG -     5.3h: 22.62°C → target 22.60°C (error: +0.02°C)
+2026-05-13 23:39:22,172 - DEBUG -     5.5h: 22.62°C → target 22.60°C (error: +0.02°C)
+2026-05-13 23:39:22,172 - DEBUG -     5.7h: 22.61°C → target 22.60°C (error: +0.01°C)
+2026-05-13 23:39:22,172 - DEBUG -     5.8h: 22.60°C → target 22.60°C (error: +0.00°C)
+2026-05-13 23:39:22,172 - DEBUG -     6.0h: 22.60°C → target 22.60°C (error: -0.00°C)
+2026-05-13 23:39:22,172 - INFO - ✅ Target will be reached in 0.2h (within 0.2h cycle + tolerance) and no boundary violations - no correction needed
+2026-05-13 23:39:22,172 - DEBUG - 🧠 Smart rounding is using cycle-aligned forecast: PV=0W (caller sent PV=0W)
+2026-05-13 23:39:22,172 - INFO - 🎯 Prediction: Current 22.61°C → Target 22.6°C | Calculated outlet: 26.2°C (before smart rounding) (confidence: 5.000)
+2026-05-13 23:39:22,172 - DEBUG - Model Wrapper: temp=26.2°C, error=0.010°C, confidence=5.000
+2026-05-13 23:39:22,173 - DEBUG - EMA smoothing: 26.20°C → 26.1°C (last=26.1, α=0.50)
+2026-05-13 23:39:22,173 - DEBUG - ♻️ Reusing existing Model Wrapper instance
+2026-05-13 23:39:22,173 - INFO - 🌡️ Using cycle-aligned forecast (10min): outdoor=6.2°C (vs current 6.2°C), PV=0W (vs current 0W)
+2026-05-13 23:39:22,173 - DEBUG - 🧠 Smart rounding is using cycle-aligned forecast: PV=0W (caller sent PV=0W)
+2026-05-13 23:39:22,174 - DEBUG - 🧠 Smart rounding is using cycle-aligned forecast: PV=0W (caller sent PV=0W)
+2026-05-13 23:39:22,174 - DEBUG - Smart rounding: 26.10°C → 26°C (chose floor: floor→22.64°C [err=0.036], ceiling→22.66°C [err=0.065], target=22.6°C)
+2026-05-13 23:39:22,174 - DEBUG - Setting target outlet temp
+2026-05-13 23:39:22,174 - DEBUG - Setting HA state for sensor.ml_vorlauftemperatur: {'state': '26.1', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_target_outlet_temp', 'friendly_name': 'ML Target Outlet Temp', 'unit_of_measurement': '°C', 'device_class': 'temperature', 'icon': 'mdi:thermometer-water'}}
+2026-05-13 23:39:22,186 - DEBUG - Logging thermal model metrics
+2026-05-13 23:39:22,186 - DEBUG - Setting HA state for sensor.ml_heating_state: {'state': '0', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_state', 'friendly_name': 'ML Heating State', 'unit_of_measurement': 'state', 'icon': 'mdi:information-outline', 'state_description': 'OK - Prediction done', 'confidence': 5.0, 'suggested_temp': 26.2, 'final_temp': 26.1, 'predicted_indoor': 22.66, 'last_prediction_time': '2026-05-13T21:39:22.186811+00:00', 'temperature_error': 0.01, 'pre_cool_active': False, 'pre_cool_peak_temp': None, 'pre_cool_peak_hour': None}}
+2026-05-13 23:39:22,201 - DEBUG - ✅ ACTIVE MODE: ML controlling heating via input_boolean.ml_heating
+2026-05-13 23:39:22,201 - DEBUG - 🧠 Smart rounding is using cycle-aligned forecast: PV=0W (caller sent PV=0W)
+2026-05-13 23:39:22,202 - DEBUG - Target: 22.6°C | Suggested: 26.2°C | Applied: 26.1°C | Actual Indoor: 22.61°C | Predicted Indoor: 22.64°C | Confidence: 5.000
+2026-05-13 23:39:22,202 - INFO - Target: 22.6°C | Suggested: 26.2°C | Applied: 26.1°C | Actual Indoor: 22.61°C | Predicted Indoor: 22.64°C | Confidence: 5.000
+2026-05-13 23:39:22,394 - DEBUG - 💾 Saved unified thermal state to /config/ml_heating/unified_thermal_state.json
+2026-05-13 23:39:22,398 - DEBUG - Operational state saved to /config/ml_heating/unified_thermal_state.json; updated keys: ['last_run_features', 'last_indoor_temp', 'last_avg_other_rooms_temp', 'last_fireplace_on', 'last_final_temp', 'last_climate_mode', 'last_target_indoor_temp', 'last_predicted_indoor', 'last_is_blocking', 'last_blocking_reasons', 'setpoint_hold_cycles_remaining']
+2026-05-13 23:39:22,398 - DEBUG - Setting HA state for sensor.ml_heating_features: {'state': '22.54', 'attributes': {'state_class': 'measurement', 'unique_id': 'ml_heating_features', 'friendly_name': 'ML Heating Features', 'unit_of_measurement': '°C', 'device_class': 'temperature', 'icon': 'mdi:feature-search-outline', 'living_room_temp': 22.54, 'outlet_temp': 27.099999999999998, 'indoor_temp_lag_30m': 22.628999999999998, 'target_temp': 22.6, 'outdoor_temp': 6.203225806451609, 'dhw_heating': 0.0, 'dhw_disinfection': 0.0, 'dhw_boost_heater': 0.0, 'defrosting': 0.0, 'pv_now': 0.0, 'pv_now_electrical': 0.0, 'solar_correction_percent': 100.0, 'solar_correction_factor': 1.0, 'solar_correction_enabled': 1.0, 'fireplace_on': 0.0, 'tv_on': 0.0, 'temp_forecast_1h': 6.2, 'temp_forecast_2h': 6.0, 'temp_forecast_3h': 6.0, 'temp_forecast_4h': 5.0, 'temp_forecast_5h': 4.4, 'temp_forecast_6h': 4.1, 'pv_forecast_1h': 0.0, 'pv_forecast_2h': 0.0, 'pv_forecast_3h': 0.0, 'pv_forecast_4h': 0.0, 'pv_forecast_5h': 0.0, 'pv_forecast_6h': 210.8, 'cloud_cover_forecast_1h': 0.0, 'cloud_cover_forecast_2h': 0.0, 'cloud_cover_forecast_3h': 0.0, 'cloud_cover_forecast_4h': 0.0, 'cloud_cover_forecast_5h': 0.0, 'cloud_cover_forecast_6h': 0.0, 'temp_diff_indoor_outdoor': 16.41677419354839, 'indoor_temp_gradient': -0.9300000000000068, 'outlet_indoor_diff': 4.479999999999997, 'indoor_temp_lag_10m': 22.619999999999997, 'indoor_temp_lag_60m': 22.659, 'outlet_temp_lag_30m': 27.04, 'outlet_temp_change': -3.552713678800501e-15, 'indoor_temp_delta_10m': 3.552713678800501e-15, 'indoor_temp_delta_30m': -0.008999999999996788, 'indoor_temp_delta_60m': -0.038999999999997925, 'hour_sin': -0.25881904510252157, 'hour_cos': 0.9659258262890681, 'month_sin': 0.8660254037844387, 'month_cos': -0.4999999999999998, 'outlet_effectiveness_ratio': 0.004464285714285622, 'inlet_temp': 24.599999999999998, 'flow_rate': 14.0, 'power_consumption': 371.0, 'delta_t': 2.5, 'thermal_power_kw': 2.4418333333333333, 'cop_realtime': 6.581761006289308, 'temp_trend_forecast': -0.3505376344086016, 'heating_demand_forecast': 1.85, 'combined_forecast_thermal_load': 1.6392, 'pv_power_history': [39.0, 25.0, 11.0, 10.0, 10.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'last_updated': '2026-05-13T21:39:22.398732+00:00'}}
+2026-05-13 23:39:22,509 - DEBUG - Published 59 features to sensor.ml_heating_features
+2026-05-13 23:39:22,509 - DEBUG - ✅ CYCLE 1 END: 23:39:22 (duration: 1.6s)
+2026-05-13 23:39:22,509 - DEBUG - 💤 POLLING START: Waiting 30min until next cycle...
+2026-05-13 23:39:22,538 - DEBUG - Active sampling: buffered 6 readings
+127.0.0.1 - - [13/May/2026 23:39:23] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [13/May/2026 23:39:53] "GET /health HTTP/1.1" 200 -
