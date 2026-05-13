@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Extended Unit Tests for ML Pre-Cooling**: Comprehensive unit tests for ML pre-cooling modules, including cold start scenarios, observation buffer edge cases (NaN/Inf handling, label resolution), CoolingMLModel inference edge cases, OverheatingPredictor missing forecast/reactive logic, calibration label logic, online learning retrain flow, and configuration default consistency checks.
+- **Baseline Model State JSON**: Added baseline `model_metadata.json` for ML cooling model calibration state and parameters.
+
 ### Fixed
 - **HP false-active detection from residual slab heat**: `_is_heat_pump_active()` outlet/inlet temperature fallback now suppressed when both `thermal_power` and `delta_t` are near zero (< 0.1). Prevents HP from co-learning with PV via mixed-source attribution when HP is off but floor slab retains residual warmth, which contaminated `outlet_effectiveness` and `heat_loss_coefficient` parameters.
 

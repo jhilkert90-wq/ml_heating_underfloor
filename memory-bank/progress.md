@@ -1,5 +1,23 @@
 # ML Heating System - Current Progress
 
+## 🧪 Extended Unit Tests for ML Pre-Cooling (2026-05-13)
+
+**Status:** COMPLETED
+
+- **Added 36+ new unit tests** for ML pre-cooling modules:
+  - Cold start (no model/metadata/buffer files)
+  - CoolingObservationBuffer: NaN/Inf handling, label resolution, buffer overflow
+  - CoolingMLModel: inference edge cases, empty/malformed features, prediction exceptions
+  - OverheatingPredictor: missing forecast keys, reactive cooling logic
+  - Calibration/online learning: label logic, retrain triggers, config default checks
+- **Baseline model state**: Added `model_metadata.json` for ML cooling calibration
+- **All tests pass**: Ensures robust cold start, edge case, and online learning behavior for ML-based pre-cooling
+
+**Files changed:**
+- `tests/unit/test_cooling_ml_extended.py` (new)
+- `notebooks/analysis/models/model_metadata.json` (new)
+- Minor fixes in ML cooling modules for testability
+
 ## Fix HP False-Active from Residual Slab Heat (2026-05-13)
 
 **Status:** COMPLETED
