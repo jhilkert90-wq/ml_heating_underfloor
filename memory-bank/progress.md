@@ -1,5 +1,28 @@
 # ML Heating System - Current Progress
 
+## 🛡️ PV Key Ownership Codified & Pre-cooling Path Regressions (2026-05-14)
+
+**Status:** COMPLETED
+
+- **Documentation:**
+  - Added canonical AI MODEL NOTICE section to `memory-bank/systemPatterns.md` with two-family PV key table, per-module usage map, four explicit rules, and citations.
+  - Added warning block to `docs/ML_COOLING_MODEL_GUIDE.md` above Feature Engineering, instructing all contributors and AI models to use the correct PV key family.
+- **Regression tests:**
+  - Added `TestPVKeyContract` class (5 tests) to `tests/unit/test_overheating_predictor.py` to lock `OverheatingPredictor` to thermal keys and `HLCCycle` to electrical key.
+  - Hardened assertions to check trajectory call kwargs directly, preventing silent regressions.
+- **Refactor:**
+  - Moved `hlc_learner` imports to module level in `test_overheating_predictor.py`.
+- **Purpose:**
+  - Prevents accidental misuse of PV feature keys in ML cooling/pre-cooling paths, which previously caused silent over-estimation of solar gain.
+
+**Test status:**
+- All new and existing regression tests pass: `pytest tests/unit/test_overheating_predictor.py -q --tb=short` → **33 passed**.
+
+**Files changed:**
+- `memory-bank/systemPatterns.md`, `docs/ML_COOLING_MODEL_GUIDE.md`, `tests/unit/test_overheating_predictor.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ## ✅ Reviewer Follow-up: PV Contract Test Assertions Hardened (2026-05-14)
 
 **Status:** COMPLETED
