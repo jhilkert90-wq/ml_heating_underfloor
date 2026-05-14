@@ -76,6 +76,36 @@ def calibrate_cooling_ml(
     logger.info("=== COOLING ML CALIBRATION START ===")
 
     # ── 0. Parameters ──────────────────────────────────────────────────
+    # Resolve lookback_hours from COOLING_ML_CALIBRATION_START_DATE when set,
+    # so the caller does not need to be changed.  The explicit lookback_hours
+    # argument (default 2160 h = 90 days) is used as the fallback.
+    _start_date_str = getattr(config, "COOLING_ML_CALIBRATION_START_DATE", "")
+    if _start_date_str and _start_date_str.strip():
+        _parse_fn = getattr(config, "_parse_cooling_start_date", None)
+        _start_dt = _parse_fn(_start_date_str) if callable(_parse_fn) else None
+        if _start_dt is not None:
+            from datetime import timezone as _dt_tz
+            _now_utc = datetime.now(_dt_tz.utc)
+            _computed_h = int((_now_utc - _start_dt).total_seconds() / 3600)
+            if _computed_h > 0:
+                lookback_hours = _computed_h
+                logger.info(
+                    "Resolved lookback_hours=%d from start date '%s'",
+                    lookback_hours, _start_date_str,
+                )
+            else:
+                logger.warning(
+                    "COOLING_ML_CALIBRATION_START_DATE '%s' is in the future; "
+                    "using default lookback_hours=%d",
+                    _start_date_str, lookback_hours,
+                )
+        else:
+            logger.warning(
+                "COOLING_ML_CALIBRATION_START_DATE '%s' is not a valid DD.MM.YYYY date; "
+                "using default lookback_hours=%d",
+                _start_date_str, lookback_hours,
+            )
+
     steps_per_hour = round(60 / float(getattr(config, "CYCLE_INTERVAL_MINUTES", 10)))
     horizon_h = int(getattr(config, "PRE_COOL_HORIZON_HOURS", 12))
 

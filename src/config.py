@@ -754,6 +754,28 @@ COOLING_ML_PV_FORECAST_HOURS: str = os.getenv(
     "COOLING_ML_PV_FORECAST_HOURS", _COOLING_ML_DEFAULT_FORECAST_HOURS
 )
 
+# Earliest date for cooling ML training data.  Format: DD.MM.YYYY (e.g. 01.06.2024).
+# When set, calibrate_cooling_ml() computes lookback_hours as (now − start_date).
+# Leave empty to use the default 2160 h (90-day) lookback.
+# Tooltip: MODEL-BASED only.
+COOLING_ML_CALIBRATION_START_DATE: str = os.getenv(
+    "COOLING_ML_CALIBRATION_START_DATE", ""
+)
+
+
+def _parse_cooling_start_date(date_str: str):
+    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None."""
+    from datetime import datetime, timezone  # local import avoids circular issues
+    s = (date_str or "").strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s, "%d.%m.%Y")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
 # Thermal Model Parameters
 PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.0020704649305198215"))
 FIREPLACE_HEAT_WEIGHT: float = float(os.getenv("FIREPLACE_HEAT_WEIGHT", "0.387"))

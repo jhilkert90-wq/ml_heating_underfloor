@@ -1,6 +1,25 @@
 # ML Heating System - Current Progress
 
-## ✨ Feature: Cooling ML full-horizon AT + PV forecast features (2026-05-14)
+## ✨ Feature: Cooling ML configurable calibration start date (2026-05-14)
+
+**Status:** COMPLETED
+
+- `calibrate_cooling_ml()` now reads `COOLING_ML_CALIBRATION_START_DATE` (format `DD.MM.YYYY`) from config/env and converts it to `lookback_hours` at runtime. Falls back to 2160 h (90 days) when empty or invalid; warns on bad input.
+- `_parse_cooling_start_date()` helper added to `src/config.py`.
+- New HA add-on option + schema + tooltip added to `config.yaml` and `translations/en.yaml`.
+- 6 new unit tests in `TestCoolingStartDate`.
+
+**Files changed:**
+- `src/config.py`
+- `src/cooling_ml_calibration.py`
+- `ml_heating_underfloor/config.yaml`
+- `ml_heating_underfloor/translations/en.yaml`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
 
 **Status:** COMPLETED
 

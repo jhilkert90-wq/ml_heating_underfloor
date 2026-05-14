@@ -756,3 +756,120 @@ class TestForecastHourSelection:
         assert "AT_roh_8h" in cols
         for h in [1, 2, 3, 5, 6, 7, 9, 10, 11, 12]:
             assert f"AT_roh_{h}h" not in cols
+
+
+# ===========================================================================
+# Cooling Calibration Start Date
+# ===========================================================================
+
+class TestCoolingStartDate:
+    """Verify COOLING_ML_CALIBRATION_START_DATE resolution in calibrate_cooling_ml."""
+
+    def test_valid_start_date_overrides_lookback(self):
+        """A valid DD.MM.YYYY date resolves to a lookback_hours larger than the default."""
+        import src.config as real_config
+        from datetime import datetime, timezone
+
+        # Use a fixed historical date far in the past so lookback > default 2160 h.
+        start_date_str = "01.01.2020"
+        start_dt = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        expected_hours = int((now_utc - start_dt).total_seconds() / 3600)
+
+        captured_lookback = []
+
+        def _fake_fetch(lookback_hours):
+            captured_lookback.append(lookback_hours)
+            return None  # trigger early exit after data fetch
+
+        with patch.object(real_config, "COOLING_ML_CALIBRATION_START_DATE", start_date_str):
+            with patch.dict("sys.modules", {
+                "physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+                "src.physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+            }):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                calibrate_cooling_ml()
+
+        assert len(captured_lookback) == 1
+        # Allow a small tolerance (up to 2 h) for test execution time.
+        assert abs(captured_lookback[0] - expected_hours) <= 2
+
+    def test_empty_start_date_uses_default_lookback(self):
+        """Empty COOLING_ML_CALIBRATION_START_DATE leaves lookback_hours at default 2160."""
+        import src.config as real_config
+
+        captured_lookback = []
+
+        def _fake_fetch(lookback_hours):
+            captured_lookback.append(lookback_hours)
+            return None
+
+        with patch.object(real_config, "COOLING_ML_CALIBRATION_START_DATE", ""):
+            with patch.dict("sys.modules", {
+                "physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+                "src.physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+            }):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                calibrate_cooling_ml()
+
+        assert len(captured_lookback) == 1
+        assert captured_lookback[0] == 2160
+
+    def test_invalid_start_date_uses_default_lookback_and_warns(self, caplog):
+        """An invalid date string falls back to 2160 h and logs a warning."""
+        import logging
+        import src.config as real_config
+
+        captured_lookback = []
+
+        def _fake_fetch(lookback_hours):
+            captured_lookback.append(lookback_hours)
+            return None
+
+        with patch.object(real_config, "COOLING_ML_CALIBRATION_START_DATE", "not-a-date"):
+            with patch.dict("sys.modules", {
+                "physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+                "src.physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+            }), caplog.at_level(logging.WARNING):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                calibrate_cooling_ml()
+
+        assert len(captured_lookback) == 1
+        assert captured_lookback[0] == 2160
+        assert any("not a valid" in r.message.lower() or "not_a_date" in r.message.lower()
+                   or "not-a-date" in r.message for r in caplog.records)
+
+    def test_parse_cooling_start_date_valid(self):
+        """_parse_cooling_start_date returns aware UTC datetime for valid input."""
+        from datetime import timezone
+        import src.config as real_config
+        result = real_config._parse_cooling_start_date("01.06.2024")
+        assert result is not None
+        assert result.tzinfo == timezone.utc
+        assert result.day == 1
+        assert result.month == 6
+        assert result.year == 2024
+
+    def test_parse_cooling_start_date_empty(self):
+        """_parse_cooling_start_date returns None for empty string."""
+        import src.config as real_config
+        assert real_config._parse_cooling_start_date("") is None
+        assert real_config._parse_cooling_start_date("   ") is None
+
+    def test_parse_cooling_start_date_invalid(self):
+        """_parse_cooling_start_date returns None for non-date strings."""
+        import src.config as real_config
+        assert real_config._parse_cooling_start_date("2024-06-01") is None
+        assert real_config._parse_cooling_start_date("not-a-date") is None

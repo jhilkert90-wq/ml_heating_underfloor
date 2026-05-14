@@ -170,6 +170,9 @@ configuration:
   cooling_ml_retrain_val_fraction:
     name: "ML Cooling: Validation Fraction"
     description: "Fraction of the buffer held out as a validation split for threshold optimisation during each retrain. Default: 0.25. [MODEL-BASED only]"
+  cooling_ml_calibration_start_date:
+    name: "ML Cooling: Calibration Start Date"
+    description: "Earliest date for cooling ML training data. Format: DD.MM.YYYY (e.g. 01.06.2024). The system fetches all historical data from this date up to now. Leave empty to use the default 90-day (2160 h) lookback. [MODEL-BASED only]"
 
   # === InfluxDB Configuration ===
   influx_url:

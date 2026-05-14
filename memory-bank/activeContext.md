@@ -1,6 +1,28 @@
 # Active Context - Current Work & Decision State
 
-### ✨ Feature: Cooling ML full-horizon AT + PV forecast features — 2026-05-14
+### ✨ Feature: Cooling ML configurable calibration start date — 2026-05-14
+
+#### **What changed**
+- `src/cooling_ml_calibration.py`: `calibrate_cooling_ml()` reads `COOLING_ML_CALIBRATION_START_DATE` at the top of step 0. If non-empty and valid `DD.MM.YYYY`, computes `lookback_hours = int((now_utc - start_dt).total_seconds() / 3600)`. Falls back to default 2160 h with a warning on invalid input or future date.
+- `src/config.py`: adds `COOLING_ML_CALIBRATION_START_DATE: str` (default `""`) and `_parse_cooling_start_date(s) → Optional[datetime]`.
+- `ml_heating_underfloor/config.yaml`: adds `cooling_ml_calibration_start_date: ""` in options and `cooling_ml_calibration_start_date: "str?"` in schema.
+- `ml_heating_underfloor/translations/en.yaml`: adds tooltip for `cooling_ml_calibration_start_date`.
+- `tests/unit/test_cooling_ml_calibration.py`: adds `TestCoolingStartDate` with 6 tests.
+
+#### **Why**
+- The previous 2160 h relative lookback made it impossible to pin training to a specific summer/cooling season start. A user who wants the model trained only on data since, say, 1 June 2024 had no option. The start-date field is cooling-ML-only — physics calibration `training_lookback_hours` is unchanged.
+
+#### **Files changed**
+- `src/config.py`
+- `src/cooling_ml_calibration.py`
+- `ml_heating_underfloor/config.yaml`
+- `ml_heating_underfloor/translations/en.yaml`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
 
 #### **What changed**
 - `src/cooling_ml_calibration.py` Step 6 now builds the feature set from all 12 AT hindcast hours (`AT_roh_1h`–`AT_roh_12h`) and all 12 PV hindcast hours (`pv_forecast_1h`–`pv_forecast_12h`) instead of only `AT_roh_4h`.  Controlled by `COOLING_ML_AT_FORECAST_HOURS` and `COOLING_ML_PV_FORECAST_HOURS` env vars.
