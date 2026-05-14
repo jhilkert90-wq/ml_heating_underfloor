@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reviewer-follow-up regression hardening**: Strengthened 2 `TestPVKeyContract` tests to assert `predict_thermal_trajectory()` call kwargs (`pv_power`, `pv_forecasts`) directly, preventing false positives from mocked trajectory outputs.
 
 ### Fixed
+- **Merge conflict resolution (latest sync)**: Resolved newly introduced conflicts while merging latest `origin/main` into the PR branch, reconciling `memory-bank/activeContext.md` and `memory-bank/progress.md` and preserving entries from both branches.
 - **[HIGH] Cooling observation buffer durability gap before label maturity**: Pre-cooling loop now persists the observation buffer after every `push_pending()`/`resolve_labels()` cycle, so pending samples and evolving label state survive restarts even before labels mature.
 - **[HIGH] Remaining PV roll scale drift in cooling ML inference**: Added raw `pv_power_history_electrical` to physics features and updated cooling ML `pv_roll_*` extraction to prefer the raw electrical history used during training.
 - **Merge conflict resolution for PR branch**: Resolved conflicts against `origin/main` in `CHANGELOG.md`, `memory-bank/activeContext.md`, and `memory-bank/progress.md` by preserving entries from both branches and removing conflict markers.

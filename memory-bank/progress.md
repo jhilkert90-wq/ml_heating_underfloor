@@ -1,5 +1,22 @@
 # ML Heating System - Current Progress
 
+## Resolve PR Merge Conflicts (2026-05-14, latest sync)
+
+**Status:** COMPLETED
+
+- Merged latest `origin/main` into the PR branch to clear newly reported merge conflicts.
+- Resolved content conflicts in `memory-bank/activeContext.md` and `memory-bank/progress.md` by preserving both branch entries.
+- Kept incoming updates from `origin/main` for `.github/workflows/build.yaml` and `CHANGELOG.md`.
+- Validation note: targeted tests could not be executed in this runner because `pytest` is unavailable (`No module named pytest`).
+
+**Files changed:**
+- `.github/workflows/build.yaml`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 ## Address Reviewer Thread Follow-ups (2026-05-14)
 
 **Status:** COMPLETED

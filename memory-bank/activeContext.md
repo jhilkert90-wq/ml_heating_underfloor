@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### 🔀 Resolve PR Merge Conflicts (Latest Sync) — 2026-05-14
+
+#### **What changed**
+- Merged latest `origin/main` into the branch after new merge-conflict reports on the PR.
+- Resolved conflict markers in `memory-bank/activeContext.md` and `memory-bank/progress.md` by preserving content from both branches.
+- Accepted incoming base-branch updates for `.github/workflows/build.yaml` and `CHANGELOG.md`.
+
+#### **Why**
+- The PR was reported as conflicted again and required a fresh sync with `origin/main` before it could merge cleanly.
+
+#### **Files changed**
+- `.github/workflows/build.yaml`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 ### 🧩 Address Reviewer Thread Follow-ups — 2026-05-14
 
 #### **What changed**
