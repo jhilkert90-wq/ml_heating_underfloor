@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.34] - 2026-05-14
+
+### Fixed
+- Build workflow now triggers automatically on every push to `main` (in addition to manual `workflow_dispatch`), preventing Docker images from being missing after PR merges. A `paths-ignore` filter skips rebuilds for documentation-only commits.
+
 ## [0.2.33] - 2026-05-14
 
 ### Fixed
