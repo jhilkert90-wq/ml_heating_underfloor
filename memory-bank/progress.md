@@ -1,5 +1,24 @@
 # ML Heating System - Current Progress
 
+## 📚 PV Feature Key Contract — Documentation & Regression Tests (2026-05-14)
+
+**Status:** COMPLETED
+
+- **Documentation**: Added canonical `⚠️ AI MODEL NOTICE — PV Feature Key Contract` section at the top of `memory-bank/systemPatterns.md`. Contains a two-family key table, per-module usage map, four explicit rules, and source-code citations.
+- **Cooling guide warning**: Added matching warning block to `docs/ML_COOLING_MODEL_GUIDE.md` above the Feature Engineering section.
+- **5 regression tests** in `tests/unit/test_overheating_predictor.py` (`TestPVKeyContract`): lock in that `OverheatingPredictor` uses thermal keys (`pv_now`, `pv_forecast_{h}h`) and that `HLCCycle._build_cycle()` uses the electrical key (`pv_now_electrical`).
+- **Purpose**: Prevent future AI/human contributors from accidentally using the wrong PV key family and causing silent over-estimation of solar gain in thermal trajectory predictions.
+
+**Files changed:**
+- `memory-bank/systemPatterns.md` — canonical PV key contract
+- `docs/ML_COOLING_MODEL_GUIDE.md` — warning block
+- `tests/unit/test_overheating_predictor.py` — 5 regression tests
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ## ML Heating Underfloor v0.2.30 Release Bump (2026-05-13)
 
 **Status:** COMPLETED

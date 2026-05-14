@@ -75,6 +75,30 @@ The trajectory strategy will now run in shadow mode, and its signal is logged al
 
 ---
 
+## ⚠️ PV Feature Key Contract — Read Before Modifying
+
+> **AI models and contributors: always use the correct PV key family.
+> Using the wrong one has previously caused silent over-estimation of solar gain.**
+
+The features dict produced by `build_physics_features()` contains **two** PV key families:
+
+| Family | Key pattern | Meaning |
+|--------|-------------|---------|
+| **Thermal** | `pv_now`, `pv_forecast_{h}h` | Panel output × `solar_correction_factor` — fraction that heats the building |
+| **Electrical (raw)** | `pv_now_electrical`, `pv_forecast_electrical_{h}h` | Actual panel output in watts, uncorrected |
+
+**This module (`overheating_predictor`, ML cooling calibration/model) MUST use the thermal
+family** (`pv_now` / `pv_forecast_{h}h`).  The thermal trajectory simulation models heat
+gain inside the building, not electrical panel output.
+
+The electrical keys are reserved for electrical-availability decisions (HLC session
+open/close, PV trajectory horizon scaling, PV surplus cheap override) which compare
+against thresholds defined in raw watts.
+
+See `memory-bank/systemPatterns.md` → *"PV Feature Key Contract"* for the full usage map.
+
+---
+
 ## Feature Engineering
 
 The classifier uses 19 features, stored in `cooling_ml_metadata.json → feature_cols`.
