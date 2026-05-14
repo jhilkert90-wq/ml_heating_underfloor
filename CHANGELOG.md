@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Switch Docker base image from `python:3.11-alpine3.18` to `python:3.11-slim` to fix aarch64 build: Alpine uses musl libc which has no pre-built scikit-learn wheels for aarch64, causing source compilation to fail with a GCC error on the native ARM runner.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
