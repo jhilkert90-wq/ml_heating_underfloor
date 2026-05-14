@@ -1,5 +1,15 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.35] - 2026-05-14
+
+### Added
+- **Cooling ML: Configurable calibration start date** — `calibrate_cooling_ml()` now reads `COOLING_ML_CALIBRATION_START_DATE` (format `DD.MM.YYYY`) from config/env and converts it to `lookback_hours` automatically, allowing the training window to be pinned to a specific seasonal start date instead of a fixed relative offset. Falls back to the default 2160 h (90 days) when the field is empty or invalid; logs a warning on bad input. The computed lookback uses ceiling arithmetic so the full start date is always included in the training window.
+- New config var `COOLING_ML_CALIBRATION_START_DATE` (default `""`) and helper `_parse_cooling_start_date() → Optional[datetime]` in `src/config.py`.
+- New HA add-on option `cooling_ml_calibration_start_date` in `ml_heating_underfloor/config.yaml` (schema type `str?`) with UI tooltip in `ml_heating_underfloor/translations/en.yaml`. The option is now fully wired into `config_adapter.py::convert_addon_to_env()` so it takes effect at runtime.
+- 6 new unit tests in `TestCoolingStartDate` covering valid date, empty fallback, invalid string warning, and `_parse_cooling_start_date` edge cases.
+- **Cooling ML: Full forecast horizon features (⚠ model signature change)** — `cooling_ml_calibration.py` now includes all 12 outdoor-temperature hindcast columns (`AT_roh_1h`–`AT_roh_12h`) and all 12 PV-power hindcast columns (`pv_forecast_1h`–`pv_forecast_12h`) in the training feature set by default. This changes the default model signature; any previously saved model trained with fewer features must be retrained after upgrading. The exact feature list is saved to the model metadata JSON so inference stays consistent.
+- New config vars `COOLING_ML_AT_FORECAST_HOURS` and `COOLING_ML_PV_FORECAST_HOURS` (comma-separated hour lists, default `"1,2,3,4,5,6,7,8,9,10,11,12"`) to control which forecast horizons are included; the legacy `COOLING_ML_FORECAST_HOURS` env var remains as a backward-compatible alias for `COOLING_ML_AT_FORECAST_HOURS`. Invalid values now log a warning and fall back to the full 12-hour list.
+
 ## [0.2.34] - 2026-05-14
 
 ### Fixed
