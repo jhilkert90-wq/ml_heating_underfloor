@@ -52,7 +52,7 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     
     # Verify column count: dynamic forecast keys scale with TRAJECTORY_STEPS (default 4).
     # Previously 58 columns assumed 6 forecast slots; with TRAJECTORY_STEPS=4 → 52 columns.
-    # +1 for pv_now_electrical and +1 for pv_power_history_electrical.
+    # +1 only for the newly added pv_power_history_electrical column.
     expected_cols = 58 - 3 * (6 - config.TRAJECTORY_STEPS) + 2  # 3 groups: temp, pv, cloud_cover
     assert len(features_df.columns) == expected_cols
     
