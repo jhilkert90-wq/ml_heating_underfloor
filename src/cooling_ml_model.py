@@ -118,7 +118,14 @@ def _extract_feature(
         # AT - indoor = -(indoor - AT) = -temp_diff_indoor_outdoor
         return -float(physics.get("temp_diff_indoor_outdoor") or 0.0)
     if col == "PV_Generate":
-        return float(physics.get("pv_now") or 0.0)
+        # Prefer raw electrical watts (matches training data scale).
+        # Fall back to thermally-corrected pv_now when the electrical key
+        # is absent (e.g. PV_TRAJ_FORECAST_MODE_ENABLED=False).
+        # Explicit None check so that a valid 0.0 (no PV generation) is kept.
+        val = physics.get("pv_now_electrical")
+        if val is None:
+            val = physics.get("pv_now", 0.0)
+        return float(val)
     if col == "pv_roll_1h":
         return _pv_roll(physics, 1, steps_per_hour)
     if col == "pv_roll_2h":
@@ -152,7 +159,18 @@ def _extract_feature(
     m = re.fullmatch(r"pv_forecast_(\d+)h", col)
     if m:
         h = m.group(1)
-        return float(physics.get(f"pv_forecast_{h}h") or physics.get("pv_now") or 0.0)
+        # Prefer raw electrical watts (matches training data scale).
+        # Fall back to thermally-corrected value when the electrical key
+        # is absent (e.g. PV_TRAJ_FORECAST_MODE_ENABLED=False).
+        # Explicit None checks so that a valid 0.0 (nighttime) is kept.
+        val = physics.get(f"pv_forecast_electrical_{h}h")
+        if val is None:
+            val = physics.get(f"pv_forecast_{h}h")
+        if val is None:
+            val = physics.get("pv_now_electrical")
+        if val is None:
+            val = physics.get("pv_now", 0.0)
+        return float(val)
 
     logger.warning("CoolingMLModel: unknown feature column '%s', filling 0.0", col)
     return 0.0

@@ -1,5 +1,25 @@
 # ML Heating System - Current Progress
 
+## Fix Pre-Cooling Calibration Bugs (2026-05-14)
+
+**Status:** COMPLETED
+
+- **Bug 1 (CRITICAL)**: Added `scikit-learn>=1.0.0` to `requirements.txt`; missing package caused silent AUC failure.
+- **Bug 2 (HIGH)**: Fixed wrong PV/forecast keys (`pv_now_electrical` → `pv_now`, `pv_forecast_electrical_{h}h` → `pv_forecast_{h}h`, `outdoor_forecast_{h}h` → `temp_forecast_{h}h`) in `test_pre_cooling_integration.py::_make_features()`.
+- **Bug 3 (MEDIUM)**: `cooling_ml_model._extract_feature()` now prefers raw electrical PV values (`pv_now_electrical`, `pv_forecast_electrical_{h}h`) over thermally-corrected values to match training data scale.
+- **Bug 4 (LOW)**: Fixed `PRE_COOL_LEAD_TIME_HOURS` fallback from `8.0` → `3.0` in `cooling_ml_calibration.py`.
+- **Bug 5 (LOW)**: Observation buffer in `main.py` now saved after each cycle that resolves new labels, preventing data loss on restart.
+
+**Files changed:**
+- `requirements.txt`
+- `src/cooling_ml_calibration.py`
+- `src/cooling_ml_model.py`
+- `src/main.py`
+- `tests/unit/test_pre_cooling_integration.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ## ML Heating Underfloor v0.2.30 Release Bump (2026-05-13)
 
 **Status:** COMPLETED
