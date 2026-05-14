@@ -88,9 +88,12 @@ jobs:
               rest_lines.pop(0)
 
           new_addon_lines = [
-              title, "",
-              f"## [{new_version}] - {today}", "",
-              *unreleased_body.splitlines(), "",
+              title,
+              "",
+              f"## [{new_version}] - {today}",
+              "",
+              *unreleased_body.splitlines(),
+              "",
           ]
           if rest_lines:
               new_addon_lines.extend(rest_lines)

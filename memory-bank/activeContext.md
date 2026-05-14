@@ -178,3 +178,13 @@ Five bugs in the pre-cooling calibration pipeline were identified and fixed:
 
 #### **Why**
 - AI models previously used `pv_now_electrical` / `pv_forecast_electrical_*` in places that should use the thermally-corrected `pv_now` / `pv_forecast_{h}h` keys, causing silent over-estimation of solar gain in the thermal trajectory simulation. The documentation and tests make the contract explicit and machine-checkable.
+
+#### **Files changed**
+- `memory-bank/systemPatterns.md`
+- `docs/ML_COOLING_MODEL_GUIDE.md`
+- `tests/unit/test_overheating_predictor.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
