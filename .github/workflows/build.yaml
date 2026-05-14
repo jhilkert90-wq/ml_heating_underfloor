@@ -88,9 +88,12 @@ jobs:
               rest_lines.pop(0)
 
           new_addon_lines = [
-              title, "",
-              f"## [{new_version}] - {today}", "",
-              *unreleased_body.splitlines(), "",
+              title,
+              "",
+              f"## [{new_version}] - {today}",
+              "",
+              *unreleased_body.splitlines(),
+              "",
           ]
           if rest_lines:
               new_addon_lines.extend(rest_lines)
@@ -127,18 +130,18 @@ jobs:
         include:
           - arch: aarch64
             platform: linux/arm64
-            runner: ubuntu-24.04-arm   # ← Nativer ARM-Runner, kein QEMU!
+            runner: ubuntu-24.04-arm   # Native ARM runner, no QEMU
           - arch: amd64
             platform: linux/amd64
             runner: ubuntu-latest
 
-    runs-on: ${{ matrix.runner }}     # ← Runner kommt aus der Matrix
+    runs-on: ${{ matrix.runner }}     # Runner selected from matrix
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main                   # ← Stellt sicher: gepushter Bump-Commit wird geholt
+          ref: main                   # Ensure latest pushed bump commit is fetched
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -149,7 +152,7 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        # Kein QEMU mehr nötig – jeder Job läuft nativ auf seiner Architektur
+        # No QEMU needed; each job runs natively on its architecture
 
       - name: Extract version
         id: version
@@ -180,5 +183,5 @@ jobs:
             BUILD_REF=${{ github.sha }}
             BUILD_REPOSITORY=${{ github.repository }}
             BUILD_VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=gha,scope=${{ matrix.arch }}   # ← Getrennter Cache pro Arch
+          cache-from: type=gha,scope=${{ matrix.arch }}   # Separate cache per architecture
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}

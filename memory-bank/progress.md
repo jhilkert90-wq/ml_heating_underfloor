@@ -1,5 +1,49 @@
 # ML Heating System - Current Progress
 
+## Resolve PR Merge Conflicts (2026-05-14, latest sync)
+
+**Status:** COMPLETED
+
+- Merged latest `origin/main` into the PR branch to clear newly reported merge conflicts.
+- Resolved content conflicts in `memory-bank/activeContext.md` and `memory-bank/progress.md` by preserving both branch entries.
+- Kept incoming updates from `origin/main` for `.github/workflows/build.yaml` and `CHANGELOG.md`.
+- Applied review cleanup after merge: translated inline German comments in `.github/workflows/build.yaml` to English and fixed a truncated sentence in `memory-bank/activeContext.md`.
+- Completed follow-up cleanup from automated review: restored the missing `Files changed` block in the PV contract context entry, removed an extra trailing separator in `memory-bank/activeContext.md`, and expanded compact list formatting in `.github/workflows/build.yaml`.
+- Validation note: targeted tests could not be executed in this runner because `pytest` is unavailable (`No module named pytest`).
+
+**Files changed:**
+- `.github/workflows/build.yaml`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
+## Address Reviewer Thread Follow-ups (2026-05-14)
+
+**Status:** COMPLETED
+
+- Implemented reviewer-requested persistence hardening in `src/main.py`: observation buffer is now saved every pre-cooling cycle after `push_pending()` + `resolve_labels()`, preserving pending entries and per-step label state across restarts.
+- Implemented reviewer-requested PV scale alignment fix for rolling features:
+  - Added raw `pv_power_history_electrical` to physics features in `src/physics_features.py`.
+  - Updated cooling ML rolling PV extraction in `src/cooling_ml_model.py` to prefer raw electrical history and only fall back to thermal-corrected history.
+- Added regression coverage:
+  - `tests/unit/test_cooling_ml.py`: verifies `pv_roll_1h` prefers raw electrical history.
+  - `tests/unit/test_physics_features.py`: verifies raw PV history feature is emitted.
+- Validation note: targeted tests could not be executed in this runner because `pytest` is unavailable (`No module named pytest`).
+
+**Files changed:**
+- `src/main.py`
+- `src/physics_features.py`
+- `src/cooling_ml_model.py`
+- `tests/unit/test_cooling_ml.py`
+- `tests/unit/test_physics_features.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ## 🚀 CI Workflow Modernization & Architecture Improvements (2026-05-14)
 
 **Status:** COMPLETED
@@ -20,6 +64,40 @@
 
 **Files changed:**
 - `.github/workflows/build.yaml`
+
+---
+
+## Resolve PR Merge Conflicts (2026-05-14)
+
+**Status:** COMPLETED
+
+- Merged `origin/main` into the PR branch to clear merge conflicts.
+- Resolved conflicts in `CHANGELOG.md`, `memory-bank/activeContext.md`, and `memory-bank/progress.md`.
+- Kept both branches' documentation/context entries and removed all conflict markers.
+- Validation note: test execution could not run in this environment because `pytest` is not installed (`No module named pytest`).
+
+**Files changed:**
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
+## Review Cooling Calibration Workflow Follow-up (2026-05-14)
+
+**Status:** COMPLETED
+
+- Reviewed the recently landed pre-cooling calibration fixes for remaining workflow gaps.
+- Added an explicit PV contract assertion in `tests/unit/test_pre_cooling_integration.py` to verify `OverheatingPredictor` forwards corrected `pv_now` / `pv_forecast_*` values into `predict_thermal_trajectory()`.
+- Updated stale cooling ML test fixtures and fake configs from `PRE_COOL_LEAD_TIME_HOURS=8.0` to `3.0` to match runtime/config defaults.
+- Validation: `python -m pytest tests/unit/test_pre_cooling_integration.py tests/unit/test_cooling_ml.py tests/unit/test_cooling_ml_calibration.py -q --tb=short` → **75 passed**.
+
+**Files changed:**
+- `tests/unit/test_pre_cooling_integration.py`
+- `tests/unit/test_cooling_ml.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+
+---
 
 ## 🛡️ PV Key Ownership Codified & Pre-cooling Path Regressions (2026-05-14)
 
@@ -60,6 +138,23 @@
 - `CHANGELOG.md`
 - `memory-bank/progress.md`
 - `memory-bank/activeContext.md`
+
+## Fix Pre-Cooling Calibration Bugs (2026-05-14)
+
+**Status:** COMPLETED
+
+- **Bug 1 (CRITICAL)**: Added `scikit-learn>=1.0.0` to `requirements.txt`; missing package caused silent AUC failure.
+- **Bug 2 (HIGH)**: Fixed wrong PV/forecast keys (`pv_now_electrical` → `pv_now`, `pv_forecast_electrical_{h}h` → `pv_forecast_{h}h`, `outdoor_forecast_{h}h` → `temp_forecast_{h}h`) in `test_pre_cooling_integration.py::_make_features()`.
+- **Bug 3 (MEDIUM)**: `cooling_ml_model._extract_feature()` now prefers raw electrical PV values (`pv_now_electrical`, `pv_forecast_electrical_{h}h`) over thermally-corrected values to match training data scale.
+- **Bug 4 (LOW)**: Fixed `PRE_COOL_LEAD_TIME_HOURS` fallback from `8.0` → `3.0` in `cooling_ml_calibration.py`.
+- **Bug 5 (LOW)**: Observation buffer in `main.py` now saved after each cycle that resolves new labels, preventing data loss on restart.
+
+**Files changed:**
+- `requirements.txt`
+- `src/cooling_ml_calibration.py`
+- `src/cooling_ml_model.py`
+- `src/main.py`
+- `tests/unit/test_pre_cooling_integration.py`
 
 ---
 

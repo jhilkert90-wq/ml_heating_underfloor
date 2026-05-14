@@ -288,6 +288,16 @@ class TestCoolingMLModel:
         val = _extract_feature("pv_roll_1h", physics, 22.0, 23.0, 6)
         assert val == pytest.approx(2000.0)
 
+    def test_pv_roll_prefers_raw_electrical_history(self):
+        """pv_roll features should use raw electrical history when available."""
+        from src.cooling_ml_model import _extract_feature
+        physics = {
+            "pv_power_history": [1000.0] * 12,              # thermal-corrected
+            "pv_power_history_electrical": [2500.0] * 12,   # raw electrical
+        }
+        val = _extract_feature("pv_roll_1h", physics, 22.0, 23.0, 6)
+        assert val == pytest.approx(2500.0)
+
     def test_unknown_feature_fills_zero(self):
         """Completely unknown feature columns fill with 0.0 without crashing."""
         from src.cooling_ml_model import _extract_feature
@@ -314,7 +324,7 @@ class TestCoolingMLModel:
             fake_config = types.SimpleNamespace(
                 PRE_COOL_TRIGGER_MARGIN_K=0.5,
                 PRE_COOL_HORIZON_HOURS=12,
-                PRE_COOL_LEAD_TIME_HOURS=8.0,
+                PRE_COOL_LEAD_TIME_HOURS=3.0,
             )
             with patch.dict("sys.modules", {"config": fake_config}):
                 result = model.predict_overheating_risk(22.0, 23.0, physics)
@@ -330,7 +340,7 @@ class TestCoolingMLModel:
         fake_config = types.SimpleNamespace(
             PRE_COOL_TRIGGER_MARGIN_K=0.5,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
         )
         with patch.dict("sys.modules", {"config": fake_config}):
             result = model.predict_overheating_risk(22.0, 23.0, _make_physics())
@@ -345,7 +355,7 @@ class TestCoolingMLModel:
         fake_config = types.SimpleNamespace(
             PRE_COOL_TRIGGER_MARGIN_K=0.5,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
         )
         with patch.dict("sys.modules", {"config": fake_config}):
             result = model.predict_overheating_risk(22.0, 23.0, _make_physics())
@@ -359,7 +369,7 @@ class TestCoolingMLModel:
         fake_config = types.SimpleNamespace(
             PRE_COOL_TRIGGER_MARGIN_K=0.5,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
         )
         with patch.dict("sys.modules", {"config": fake_config}):
             result = model.predict_overheating_risk(22.0, 23.0, _make_physics(), climate_mode="heating")
@@ -376,7 +386,7 @@ class TestCoolingMLModel:
         fake_config = types.SimpleNamespace(
             PRE_COOL_TRIGGER_MARGIN_K=0.5,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
         )
 
         feature_cols = ["indoor_temp", "at_delta_indoor", "AT"]
@@ -512,7 +522,7 @@ class TestCalibrateCoolingMlParams:
         fake_config = types.SimpleNamespace(
             CYCLE_INTERVAL_MINUTES=10,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
             COOLING_CLAMP_MAX_ABS=24.0,
             PRE_COOL_MIN_OUTDOOR_FORECAST_C=22.0,
             COOLING_ML_MIN_TRAINING_SAMPLES=200,
@@ -635,7 +645,7 @@ class TestImportConfigRegression:
         fake_cfg = types.SimpleNamespace(
             CYCLE_INTERVAL_MINUTES=10,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
             COOLING_CLAMP_MAX_ABS=24.0,
             PRE_COOL_MIN_OUTDOOR_FORECAST_C=22.0,
             COOLING_ML_MIN_TRAINING_SAMPLES=200,

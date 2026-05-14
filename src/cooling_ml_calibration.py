@@ -80,7 +80,7 @@ def calibrate_cooling_ml(
     # horizon.  This means label=1 ↔ "overheating within lead_time hours",
     # so that a positive model prediction directly justifies acting NOW
     # (same semantics as the trajectory predictor's lead_time gate).
-    lead_time_h = float(getattr(config, "PRE_COOL_LEAD_TIME_HOURS", 8.0))
+    lead_time_h = float(getattr(config, "PRE_COOL_LEAD_TIME_HOURS", 3.0))
     label_horizon_h = int(round(lead_time_h))
     label_horizon_steps = label_horizon_h * steps_per_hour
     # The full horizon is still used to generate hindcast forecast features.

@@ -83,11 +83,11 @@ class TestPreCoolDecisionFlow:
         features = {
             "inlet_temp": 23.0,
             "outdoor_temp": outdoor,
-            "pv_now_electrical": pv,
+            "pv_now": pv,
         }
         for h in range(1, 13):
-            features[f"pv_forecast_electrical_{h}h"] = pv
-            features[f"outdoor_forecast_{h}h"] = outdoor
+            features[f"pv_forecast_{h}h"] = pv
+            features[f"temp_forecast_{h}h"] = outdoor
         return features
 
     def _make_model(self, peak_temp=25.0, peak_hour=2.0):
@@ -116,6 +116,10 @@ class TestPreCoolDecisionFlow:
 
         assert result["risk"] is True
         assert result["should_cool_now"] is True
+        model.predict_thermal_trajectory.assert_called_once()
+        kwargs = model.predict_thermal_trajectory.call_args.kwargs
+        assert kwargs["pv_power"] == pytest.approx(6000.0)
+        assert kwargs["pv_forecasts"] == pytest.approx([6000.0] * 13)
 
     def test_cloudy_cool_day_no_pre_cool(self):
         """Cool cloudy day → no overheating risk."""
@@ -140,7 +144,7 @@ class TestPreCoolDecisionFlow:
         features = self._make_features(outdoor=20.0, pv=0.0)
         # Remove PV forecasts
         for h in range(1, 13):
-            features[f"pv_forecast_electrical_{h}h"] = 0.0
+            features[f"pv_forecast_{h}h"] = 0.0
 
         model = self._make_model(peak_temp=24.0, peak_hour=3.0)
 

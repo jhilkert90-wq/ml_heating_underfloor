@@ -44,7 +44,7 @@ def _fake_config(**overrides):
     defaults = dict(
         CYCLE_INTERVAL_MINUTES=10,
         PRE_COOL_HORIZON_HOURS=12,
-        PRE_COOL_LEAD_TIME_HOURS=8.0,
+        PRE_COOL_LEAD_TIME_HOURS=3.0,
         COOLING_CLAMP_MAX_ABS=24.0,
         PRE_COOL_MIN_OUTDOOR_FORECAST_C=22.0,
         SPECIFIC_HEAT_CAPACITY=4.186,

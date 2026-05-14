@@ -41,6 +41,7 @@ def mock_influx_service():
     service = MagicMock()
     service.fetch_outlet_history.return_value = [35.0, 36.0, 37.0, 38.0, 39.0, 40.0]
     service.fetch_indoor_history.return_value = [19.0, 19.2, 19.4, 19.6, 19.8, 20.0]
+    service.fetch_pv_history.return_value = [100.0, 200.0, 300.0, 400.0, 500.0, 600.0]
     return service
 
 
@@ -51,12 +52,16 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     
     # Verify column count: dynamic forecast keys scale with TRAJECTORY_STEPS (default 4).
     # Previously 58 columns assumed 6 forecast slots; with TRAJECTORY_STEPS=4 → 52 columns.
-    # +1 for pv_now_electrical (raw uncorrected PV power, added to support electrical decisions)
-    expected_cols = 58 - 3 * (6 - config.TRAJECTORY_STEPS) + 1  # 3 groups: temp, pv, cloud_cover
+    # Base includes prior +1 for pv_now_electrical.
+    expected_cols_without_raw_history = 58 - 3 * (6 - config.TRAJECTORY_STEPS) + 1
+    # Add +1 for the newly added pv_power_history_electrical column.
+    expected_cols = expected_cols_without_raw_history + 1  # 3 groups: temp, pv, cloud_cover
     assert len(features_df.columns) == expected_cols
     
     # Verify original features
     assert features_df['indoor_temp_lag_30m'][0] == 19.6
+    assert features_df['pv_power_history_electrical'][0] == [100.0, 200.0, 300.0, 400.0, 500.0, 600.0]
+    assert features_df['pv_power_history_electrical'][0] != features_df['pv_power_history'][0]
     
     # Verify new thermodynamic features
     assert features_df['inlet_temp'][0] == 35.0
