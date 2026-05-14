@@ -2,6 +2,13 @@ name: Build and Push Docker Image
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - "memory-bank/**"
+      - "docs/**"
 
 env:
   REGISTRY: ghcr.io
