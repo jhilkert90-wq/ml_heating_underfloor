@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CI: GitHub Actions workflow versions and architecture**: Updated `.github/workflows/build.yaml` to use newer versions of GitHub Actions (`actions/checkout@v4`, `docker/login-action@v3`, `docker/setup-buildx-action@v3`, `docker/build-push-action@v6`) and improved architecture handling. Native runners are now used per architecture (no QEMU required), and build cache is separated per arch for improved reliability and performance.
+
 ### Added
 - **PV Feature Key Contract documentation**: Added a canonical, highly-visible `⚠️ AI MODEL NOTICE — PV Feature Key Contract` section at the top of `memory-bank/systemPatterns.md` that maps every consumer of `pv_now_electrical` / `pv_forecast_electrical_*` (electrical, raw) vs `pv_now` / `pv_forecast_{h}h` (thermal, corrected). Includes a table, explicit rules, anti-patterns, and source-code citations.
 - **ML Cooling Guide PV warning**: Added a `⚠️ PV Feature Key Contract` warning block to `docs/ML_COOLING_MODEL_GUIDE.md` clarifying that `OverheatingPredictor` and ML cooling paths must use thermal keys.
