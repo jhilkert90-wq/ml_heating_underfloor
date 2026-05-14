@@ -1746,7 +1746,12 @@ def main():
                             cooling_target=target_indoor_temp,
                             timestamp=_dt.datetime.utcnow().isoformat() + "Z",
                         )
-                        _cooling_obs_buffer.resolve_labels(prediction_indoor_temp)
+                        _newly_labeled = _cooling_obs_buffer.resolve_labels(prediction_indoor_temp)
+                        if _newly_labeled > 0:
+                            logging.debug(
+                                "Cooling obs buffer: resolved %d new labels this cycle",
+                                _newly_labeled,
+                            )
                         # Persist after each push/resolve cycle so pending entries
                         # (and their evolving label state) survive restarts.
                         try:
