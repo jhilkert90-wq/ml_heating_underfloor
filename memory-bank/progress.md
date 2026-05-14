@@ -7,6 +7,7 @@
 - Merged latest `origin/main` into the PR branch to clear newly reported merge conflicts.
 - Resolved content conflicts in `memory-bank/activeContext.md` and `memory-bank/progress.md` by preserving both branch entries.
 - Kept incoming updates from `origin/main` for `.github/workflows/build.yaml` and `CHANGELOG.md`.
+- Applied review cleanup after merge: translated inline German comments in `.github/workflows/build.yaml` to English and fixed a truncated sentence in `memory-bank/activeContext.md`.
 - Validation note: targeted tests could not be executed in this runner because `pytest` is unavailable (`No module named pytest`).
 
 **Files changed:**

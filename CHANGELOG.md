@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Merge conflict resolution (latest sync)**: Resolved newly introduced conflicts while merging latest `origin/main` into the PR branch, reconciling `memory-bank/activeContext.md` and `memory-bank/progress.md` and preserving entries from both branches.
+- **Post-merge cleanup**: Repaired a truncated sentence in `memory-bank/activeContext.md` and normalized non-English inline comments in `.github/workflows/build.yaml` to English for consistency.
 - **[HIGH] Cooling observation buffer durability gap before label maturity**: Pre-cooling loop now persists the observation buffer after every `push_pending()`/`resolve_labels()` cycle, so pending samples and evolving label state survive restarts even before labels mature.
 - **[HIGH] Remaining PV roll scale drift in cooling ML inference**: Added raw `pv_power_history_electrical` to physics features and updated cooling ML `pv_roll_*` extraction to prefer the raw electrical history used during training.
 - **Merge conflict resolution for PR branch**: Resolved conflicts against `origin/main` in `CHANGELOG.md`, `memory-bank/activeContext.md`, and `memory-bank/progress.md` by preserving entries from both branches and removing conflict markers.

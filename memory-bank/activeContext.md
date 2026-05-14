@@ -6,6 +6,7 @@
 - Merged latest `origin/main` into the branch after new merge-conflict reports on the PR.
 - Resolved conflict markers in `memory-bank/activeContext.md` and `memory-bank/progress.md` by preserving content from both branches.
 - Accepted incoming base-branch updates for `.github/workflows/build.yaml` and `CHANGELOG.md`.
+- Per review follow-up, translated inline workflow comments in `.github/workflows/build.yaml` to English and fixed a truncated sentence in the PV contract context section below.
 
 #### **Why**
 - The PR was reported as conflicted again and required a fresh sync with `origin/main` before it could merge cleanly.
@@ -176,4 +177,4 @@ Five bugs in the pre-cooling calibration pipeline were identified and fixed:
 - Added **5 regression tests** (`TestPVKeyContract`) to `tests/unit/test_overheating_predictor.py` that lock in the correct key usage for `OverheatingPredictor` and `HLCCycle._build_cycle`.
 
 #### **Why**
-- AI models previously used `pv_now_electrical` / `pv_forecast_electrical_*` in places that should use the thermally-corrected `pv_now` / `pv_forecast_{h}h` keys, causing silent over-estimation of solar gain in the thermal trajectory simulation. The documentation and tests make the contract explicit and machin
+- AI models previously used `pv_now_electrical` / `pv_forecast_electrical_*` in places that should use the thermally-corrected `pv_now` / `pv_forecast_{h}h` keys, causing silent over-estimation of solar gain in the thermal trajectory simulation. The documentation and tests make the contract explicit and machine-checkable.
