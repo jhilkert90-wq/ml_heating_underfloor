@@ -15,6 +15,9 @@ Pipeline
 4. Compute derived features: thermal_power_kw, delta_t, rolling PV, etc.
 5. Hindcast substitution: shift actual AT / PV forward N hours to stand in
    for forecasts (``AT_roh_4h = outdoor_temp shifted back 4 h``).
+   All 12 AT forecast hours and all 12 PV forecast hours are included by
+   default; controlled by ``COOLING_ML_AT_FORECAST_HOURS`` and
+   ``COOLING_ML_PV_FORECAST_HOURS`` env vars (comma-separated lists).
 6. Compute rolling-max label: did indoor temp exceed cooling_target within
    PRE_COOL_HORIZON_HOURS?
 7. Train LightGBM with class weighting; tune decision threshold on val split.
@@ -73,6 +76,36 @@ def calibrate_cooling_ml(
     logger.info("=== COOLING ML CALIBRATION START ===")
 
     # ── 0. Parameters ──────────────────────────────────────────────────
+    # Resolve lookback_hours from COOLING_ML_CALIBRATION_START_DATE when set,
+    # so the caller does not need to be changed.  The explicit lookback_hours
+    # argument (default 2160 h = 90 days) is used as the fallback.
+    _start_date_str = getattr(config, "COOLING_ML_CALIBRATION_START_DATE", "")
+    if _start_date_str and _start_date_str.strip():
+        _parse_fn = getattr(config, "_parse_cooling_start_date", None)
+        _start_dt = _parse_fn(_start_date_str) if callable(_parse_fn) else None
+        if _start_dt is not None:
+            from datetime import timezone as _dt_tz
+            _now_utc = datetime.now(_dt_tz.utc)
+            _computed_h = math.ceil((_now_utc - _start_dt).total_seconds() / 3600)
+            if _computed_h > 0:
+                lookback_hours = _computed_h
+                logger.info(
+                    "Resolved lookback_hours=%d from start date '%s'",
+                    lookback_hours, _start_date_str,
+                )
+            else:
+                logger.warning(
+                    "COOLING_ML_CALIBRATION_START_DATE '%s' is in the future; "
+                    "using default lookback_hours=%d",
+                    _start_date_str, lookback_hours,
+                )
+        else:
+            logger.warning(
+                "COOLING_ML_CALIBRATION_START_DATE '%s' is not a valid DD.MM.YYYY date; "
+                "using default lookback_hours=%d",
+                _start_date_str, lookback_hours,
+            )
+
     steps_per_hour = round(60 / float(getattr(config, "CYCLE_INTERVAL_MINUTES", 10)))
     horizon_h = int(getattr(config, "PRE_COOL_HORIZON_HOURS", 12))
 
@@ -218,16 +251,45 @@ def calibrate_cooling_ml(
         df[pv_col2] = df["PV_Generate"].shift(-shift)
         forecast_feature_cols.extend([at_col, pv_col2])
 
-    # ── 6. Define feature set (only use 4h AT forecast to match nb03) ───
+    # ── 6. Define feature set ────────────────────────────────────────────
     # The exact columns are saved to metadata; inference reads them back.
-    # We include AT_roh_4h (≈ nb03 training feature) and drop the rest
-    # to match the notebook-trained model signature.  Override by setting
-    # COOLING_ML_FORECAST_HOURS env var as comma-separated list.
-    _fc_env = os.getenv("COOLING_ML_FORECAST_HOURS", "4")
+    # AT hindcast hours: controlled by COOLING_ML_AT_FORECAST_HOURS
+    # (legacy alias: COOLING_ML_FORECAST_HOURS).  Defaults to all 12 hours.
+    # PV hindcast hours: controlled by COOLING_ML_PV_FORECAST_HOURS.
+    # Defaults to all 12 hours.
+    # The coverage guard in Step 8 silently drops any column whose data
+    # coverage is below 5% (e.g. the last N rows which have no future window).
+    _default_fc_hours = ",".join(str(h) for h in range(1, horizon_h + 1))
+    _at_fc_env = os.getenv(
+        "COOLING_ML_AT_FORECAST_HOURS",
+        os.getenv("COOLING_ML_FORECAST_HOURS", _default_fc_hours),
+    )
     try:
-        forecast_hours_used = [int(x) for x in _fc_env.split(",") if x.strip()]
+        at_forecast_hours = [int(x) for x in _at_fc_env.split(",") if x.strip()]
     except ValueError:
-        forecast_hours_used = [4]
+        logger.warning(
+            "COOLING_ML_AT_FORECAST_HOURS value %r is invalid; "
+            "falling back to all %d hours",
+            _at_fc_env, horizon_h,
+        )
+        at_forecast_hours = list(range(1, horizon_h + 1))
+
+    _pv_fc_env = os.getenv("COOLING_ML_PV_FORECAST_HOURS", _default_fc_hours)
+    try:
+        pv_forecast_hours = [int(x) for x in _pv_fc_env.split(",") if x.strip()]
+    except ValueError:
+        logger.warning(
+            "COOLING_ML_PV_FORECAST_HOURS value %r is invalid; "
+            "falling back to all %d hours",
+            _pv_fc_env, horizon_h,
+        )
+        pv_forecast_hours = list(range(1, horizon_h + 1))
+
+    logger.info(
+        "Forecast feature hours — AT: %s | PV: %s",
+        at_forecast_hours,
+        pv_forecast_hours,
+    )
 
     feature_cols = [
         "indoor_temp",
@@ -237,13 +299,18 @@ def calibrate_cooling_ml(
         "AT",
         "at_delta_indoor",
     ]
-    for h in forecast_hours_used:
+    for h in at_forecast_hours:
         feature_cols.append(f"AT_roh_{h}h")
 
     feature_cols += [
         "PV_Generate",
         "pv_roll_1h",
         "pv_roll_2h",
+    ]
+    for h in pv_forecast_hours:
+        feature_cols.append(f"pv_forecast_{h}h")
+
+    feature_cols += [
         "thermal_power_kw",
         "delta_t",
         "outlet_indoor_diff",

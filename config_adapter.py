@@ -565,6 +565,47 @@ def convert_addon_to_env(config):
         'OUTLET_SMOOTHING_BYPASS': str(
             config.get('outlet_smoothing_bypass', 2.0)
         ),
+
+        # --- Pre-Cooling (Predictive Overheating Prevention) ---
+        'PRE_COOL_ENABLED': str(
+            config.get('pre_cool_enabled', True)
+        ).lower(),
+        'PRE_COOL_TRIGGER_MARGIN_K': str(
+            config.get('pre_cool_trigger_margin_k', 0.5)
+        ),
+        'PRE_COOL_HORIZON_HOURS': str(
+            config.get('pre_cool_horizon_hours', 12)
+        ),
+        'PRE_COOL_LEAD_TIME_HOURS': str(
+            config.get('pre_cool_lead_time_hours', 8.0)
+        ),
+        'PRE_COOL_TARGET_OFFSET_K': str(
+            config.get('pre_cool_target_offset_k', 0.5)
+        ),
+        'PRE_COOL_MIN_PV_FORECAST_W': str(
+            config.get('pre_cool_min_pv_forecast_w', 1000.0)
+        ),
+        'PRE_COOL_MIN_OUTDOOR_FORECAST_C': str(
+            config.get('pre_cool_min_outdoor_forecast_c', 22.0)
+        ),
+
+        # --- ML-Based Pre-Cooling Model (LightGBM Overheating Classifier) ---
+        'PRE_COOL_MODEL_TYPE': config.get('pre_cool_model_type', 'trajectory'),
+        'COOLING_ML_MIN_TRAINING_SAMPLES': str(
+            config.get('cooling_ml_min_training_samples', 200)
+        ),
+        'COOLING_ML_RETRAIN_TRIGGER_K': str(
+            config.get('cooling_ml_retrain_trigger_k', 50)
+        ),
+        'COOLING_ML_BUFFER_MAX_N': str(
+            config.get('cooling_ml_buffer_max_n', 500)
+        ),
+        'COOLING_ML_RETRAIN_VAL_FRACTION': str(
+            config.get('cooling_ml_retrain_val_fraction', 0.25)
+        ),
+        'COOLING_ML_CALIBRATION_START_DATE': config.get(
+            'cooling_ml_calibration_start_date', ''
+        ),
     }
 
     # Set environment variables for the ML system

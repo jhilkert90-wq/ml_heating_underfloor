@@ -540,3 +540,336 @@ class TestJsonDefault:
         from src.cooling_ml_calibration import _json_default
         with pytest.raises(TypeError):
             _json_default(object())
+
+
+# ===========================================================================
+# Forecast Hour Selection
+# ===========================================================================
+
+class TestForecastHourSelection:
+    """Verify AT and PV forecast hour selection via env vars."""
+
+    def _run_calibration_with_env(self, tmp_path, env_overrides: dict) -> dict:
+        """Run calibrate_cooling_ml with specific env vars and return metadata."""
+        import src.config as real_config
+
+        model_path = str(tmp_path / "model.joblib")
+        meta_path = str(tmp_path / "meta.json")
+        cfg_overrides = dict(
+            COOLING_ML_MODEL_PATH=model_path,
+            COOLING_ML_METADATA_PATH=meta_path,
+            COOLING_ML_MIN_TRAINING_SAMPLES=10,
+        )
+        df = _make_warm_df(n_rows=800)
+
+        mock_lgb_cls = MagicMock()
+        mock_model = MagicMock()
+        mock_model.predict_proba.side_effect = lambda X: np.column_stack([
+            np.random.rand(X.shape[0]),
+            np.random.rand(X.shape[0]),
+        ])
+        mock_lgb_cls.return_value = mock_model
+
+        mock_lgb = MagicMock()
+        mock_lgb.LGBMClassifier = mock_lgb_cls
+        mock_lgb.early_stopping.return_value = MagicMock()
+        mock_lgb.log_evaluation.return_value = MagicMock()
+
+        config_patches = {k: patch.object(real_config, k, v, create=True) for k, v in cfg_overrides.items()}
+        for p in config_patches.values():
+            p.start()
+
+        mock_physics_cal = MagicMock()
+        mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        try:
+            with patch.dict("sys.modules", {
+                "lightgbm": mock_lgb,
+                "joblib": _make_mock_joblib(),
+                "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
+                "physics_calibration": mock_physics_cal,
+                "src.physics_calibration": mock_physics_cal,
+            }), patch.dict("os.environ", env_overrides, clear=False):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                result = calibrate_cooling_ml()
+        finally:
+            for p in config_patches.values():
+                p.stop()
+
+        assert result is True
+        with open(meta_path, "r") as f:
+            return json.load(f)
+
+    def test_custom_at_forecast_hours_in_metadata(self, tmp_path):
+        """When COOLING_ML_AT_FORECAST_HOURS=1,2,3, only AT_roh_1h/2h/3h appear."""
+        meta = self._run_calibration_with_env(
+            tmp_path,
+            {"COOLING_ML_AT_FORECAST_HOURS": "1,2,3", "COOLING_ML_PV_FORECAST_HOURS": ""},
+        )
+        cols = meta["feature_cols"]
+        assert "AT_roh_1h" in cols
+        assert "AT_roh_2h" in cols
+        assert "AT_roh_3h" in cols
+        # Hours not in the list must be absent
+        for h in range(4, 13):
+            assert f"AT_roh_{h}h" not in cols
+
+    def test_custom_pv_forecast_hours_in_metadata(self, tmp_path):
+        """When COOLING_ML_PV_FORECAST_HOURS=1,2, only pv_forecast_1h/2h appear."""
+        meta = self._run_calibration_with_env(
+            tmp_path,
+            {"COOLING_ML_AT_FORECAST_HOURS": "", "COOLING_ML_PV_FORECAST_HOURS": "1,2"},
+        )
+        cols = meta["feature_cols"]
+        assert "pv_forecast_1h" in cols
+        assert "pv_forecast_2h" in cols
+        for h in range(3, 13):
+            assert f"pv_forecast_{h}h" not in cols
+
+    def test_default_includes_all_12_at_and_pv_hours(self, tmp_path):
+        """With default env, all AT_roh_1h–12h and pv_forecast_1h–12h appear."""
+        # Remove any overriding env vars from outer scope so defaults apply.
+        clean_env = {k: v for k, v in os.environ.items()
+                     if k not in ("COOLING_ML_AT_FORECAST_HOURS",
+                                  "COOLING_ML_FORECAST_HOURS",
+                                  "COOLING_ML_PV_FORECAST_HOURS")}
+        import src.config as real_config
+
+        model_path = str(tmp_path / "model.joblib")
+        meta_path = str(tmp_path / "meta.json")
+        cfg_overrides = dict(
+            COOLING_ML_MODEL_PATH=model_path,
+            COOLING_ML_METADATA_PATH=meta_path,
+            COOLING_ML_MIN_TRAINING_SAMPLES=10,
+        )
+        df = _make_warm_df(n_rows=800)
+
+        mock_lgb_cls = MagicMock()
+        mock_model = MagicMock()
+        mock_model.predict_proba.side_effect = lambda X: np.column_stack([
+            np.random.rand(X.shape[0]),
+            np.random.rand(X.shape[0]),
+        ])
+        mock_lgb_cls.return_value = mock_model
+
+        mock_lgb = MagicMock()
+        mock_lgb.LGBMClassifier = mock_lgb_cls
+        mock_lgb.early_stopping.return_value = MagicMock()
+        mock_lgb.log_evaluation.return_value = MagicMock()
+
+        config_patches = {k: patch.object(real_config, k, v, create=True) for k, v in cfg_overrides.items()}
+        for p in config_patches.values():
+            p.start()
+
+        mock_physics_cal = MagicMock()
+        mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        try:
+            with patch.dict("sys.modules", {
+                "lightgbm": mock_lgb,
+                "joblib": _make_mock_joblib(),
+                "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
+                "physics_calibration": mock_physics_cal,
+                "src.physics_calibration": mock_physics_cal,
+            }), patch.dict("os.environ", clean_env, clear=True):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                result = calibrate_cooling_ml()
+        finally:
+            for p in config_patches.values():
+                p.stop()
+
+        assert result is True
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        cols = meta["feature_cols"]
+        # All 12 AT hindcast columns must be present.
+        # Coverage of AT_roh_12h with 800 rows and 10-min intervals:
+        # (800 - 72) / 800 = 91%, well above the 5% guard.
+        for h in range(1, 13):
+            assert f"AT_roh_{h}h" in cols, f"AT_roh_{h}h missing from feature_cols"
+        # All 12 PV forecast columns must be present (same reasoning).
+        for h in range(1, 13):
+            assert f"pv_forecast_{h}h" in cols, f"pv_forecast_{h}h missing from feature_cols"
+
+    def test_legacy_cooling_ml_forecast_hours_alias(self, tmp_path):
+        """Legacy COOLING_ML_FORECAST_HOURS env var still controls AT forecast hours
+        when COOLING_ML_AT_FORECAST_HOURS is absent from the environment."""
+        import src.config as real_config
+
+        model_path = str(tmp_path / "model.joblib")
+        meta_path = str(tmp_path / "meta.json")
+        cfg_overrides = dict(
+            COOLING_ML_MODEL_PATH=model_path,
+            COOLING_ML_METADATA_PATH=meta_path,
+            COOLING_ML_MIN_TRAINING_SAMPLES=10,
+        )
+        df = _make_warm_df(n_rows=800)
+
+        mock_lgb_cls = MagicMock()
+        mock_model = MagicMock()
+        mock_model.predict_proba.side_effect = lambda X: np.column_stack([
+            np.random.rand(X.shape[0]),
+            np.random.rand(X.shape[0]),
+        ])
+        mock_lgb_cls.return_value = mock_model
+
+        mock_lgb = MagicMock()
+        mock_lgb.LGBMClassifier = mock_lgb_cls
+        mock_lgb.early_stopping.return_value = MagicMock()
+        mock_lgb.log_evaluation.return_value = MagicMock()
+
+        config_patches = {k: patch.object(real_config, k, v, create=True) for k, v in cfg_overrides.items()}
+        for p in config_patches.values():
+            p.start()
+
+        mock_physics_cal = MagicMock()
+        mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+
+        # Build an environment that has the legacy key but NOT the new key,
+        # so the new-key fallback inside os.getenv resolves to the legacy value.
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if k not in ("COOLING_ML_AT_FORECAST_HOURS",
+                         "COOLING_ML_FORECAST_HOURS",
+                         "COOLING_ML_PV_FORECAST_HOURS")
+        }
+        clean_env["COOLING_ML_FORECAST_HOURS"] = "4,8"
+        # COOLING_ML_PV_FORECAST_HOURS is absent, so it defaults to all 12 hours
+
+        try:
+            with patch.dict("sys.modules", {
+                "lightgbm": mock_lgb,
+                "joblib": _make_mock_joblib(),
+                "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
+                "physics_calibration": mock_physics_cal,
+                "src.physics_calibration": mock_physics_cal,
+            }), patch.dict("os.environ", clean_env, clear=True):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                result = calibrate_cooling_ml()
+        finally:
+            for p in config_patches.values():
+                p.stop()
+
+        assert result is True
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        cols = meta["feature_cols"]
+        assert "AT_roh_4h" in cols
+        assert "AT_roh_8h" in cols
+        for h in [1, 2, 3, 5, 6, 7, 9, 10, 11, 12]:
+            assert f"AT_roh_{h}h" not in cols
+
+
+# ===========================================================================
+# Cooling Calibration Start Date
+# ===========================================================================
+
+class TestCoolingStartDate:
+    """Verify COOLING_ML_CALIBRATION_START_DATE resolution in calibrate_cooling_ml."""
+
+    def test_valid_start_date_overrides_lookback(self):
+        """A valid DD.MM.YYYY date resolves to a lookback_hours larger than the default."""
+        import src.config as real_config
+        from datetime import datetime, timezone
+
+        # Use a fixed historical date far in the past so lookback > default 2160 h.
+        start_date_str = "01.01.2020"
+        start_dt = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        expected_hours = int((now_utc - start_dt).total_seconds() / 3600)
+
+        captured_lookback = []
+
+        def _fake_fetch(lookback_hours):
+            captured_lookback.append(lookback_hours)
+            return None  # trigger early exit after data fetch
+
+        with patch.object(real_config, "COOLING_ML_CALIBRATION_START_DATE", start_date_str):
+            with patch.dict("sys.modules", {
+                "physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+                "src.physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+            }):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                calibrate_cooling_ml()
+
+        assert len(captured_lookback) == 1
+        # Allow a small tolerance (up to 2 h) for test execution time.
+        assert abs(captured_lookback[0] - expected_hours) <= 2
+
+    def test_empty_start_date_uses_default_lookback(self):
+        """Empty COOLING_ML_CALIBRATION_START_DATE leaves lookback_hours at default 2160."""
+        import src.config as real_config
+
+        captured_lookback = []
+
+        def _fake_fetch(lookback_hours):
+            captured_lookback.append(lookback_hours)
+            return None
+
+        with patch.object(real_config, "COOLING_ML_CALIBRATION_START_DATE", ""):
+            with patch.dict("sys.modules", {
+                "physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+                "src.physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+            }):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                calibrate_cooling_ml()
+
+        assert len(captured_lookback) == 1
+        assert captured_lookback[0] == 2160
+
+    def test_invalid_start_date_uses_default_lookback_and_warns(self, caplog):
+        """An invalid date string falls back to 2160 h and logs a warning."""
+        import logging
+        import src.config as real_config
+
+        captured_lookback = []
+
+        def _fake_fetch(lookback_hours):
+            captured_lookback.append(lookback_hours)
+            return None
+
+        with patch.object(real_config, "COOLING_ML_CALIBRATION_START_DATE", "not-a-date"):
+            with patch.dict("sys.modules", {
+                "physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+                "src.physics_calibration": MagicMock(
+                    fetch_historical_data_for_calibration=_fake_fetch
+                ),
+            }), caplog.at_level(logging.WARNING):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                calibrate_cooling_ml()
+
+        assert len(captured_lookback) == 1
+        assert captured_lookback[0] == 2160
+        assert any("not a valid" in r.message.lower() or "not_a_date" in r.message.lower()
+                   or "not-a-date" in r.message for r in caplog.records)
+
+    def test_parse_cooling_start_date_valid(self):
+        """_parse_cooling_start_date returns aware UTC datetime for valid input."""
+        from datetime import timezone
+        import src.config as real_config
+        result = real_config._parse_cooling_start_date("01.06.2024")
+        assert result is not None
+        assert result.tzinfo == timezone.utc
+        assert result.day == 1
+        assert result.month == 6
+        assert result.year == 2024
+
+    def test_parse_cooling_start_date_empty(self):
+        """_parse_cooling_start_date returns None for empty string."""
+        import src.config as real_config
+        assert real_config._parse_cooling_start_date("") is None
+        assert real_config._parse_cooling_start_date("   ") is None
+
+    def test_parse_cooling_start_date_invalid(self):
+        """_parse_cooling_start_date returns None for non-date strings."""
+        import src.config as real_config
+        assert real_config._parse_cooling_start_date("2024-06-01") is None
+        assert real_config._parse_cooling_start_date("not-a-date") is None

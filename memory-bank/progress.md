@@ -1,5 +1,43 @@
 # ML Heating System - Current Progress
 
+## ✨ Feature: Cooling ML configurable calibration start date (2026-05-14)
+
+**Status:** COMPLETED
+
+- `calibrate_cooling_ml()` now reads `COOLING_ML_CALIBRATION_START_DATE` (format `DD.MM.YYYY`) from config/env and converts it to `lookback_hours` at runtime. Falls back to 2160 h (90 days) when empty or invalid; warns on bad input.
+- `_parse_cooling_start_date()` helper added to `src/config.py`.
+- New HA add-on option + schema + tooltip added to `config.yaml` and `translations/en.yaml`.
+- 6 new unit tests in `TestCoolingStartDate`.
+
+**Files changed:**
+- `src/config.py`
+- `src/cooling_ml_calibration.py`
+- `ml_heating_underfloor/config.yaml`
+- `ml_heating_underfloor/translations/en.yaml`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
+**Status:** COMPLETED
+
+- Extended `cooling_ml_calibration.py` Step 6 to include all 12 outdoor-temperature hindcast columns (`AT_roh_1h`–`AT_roh_12h`) and all 12 PV-power hindcast columns (`pv_forecast_1h`–`pv_forecast_12h`) in the training feature set by default (previously only `AT_roh_4h` was used).
+- Added `COOLING_ML_AT_FORECAST_HOURS` and `COOLING_ML_PV_FORECAST_HOURS` config/env vars (defaults `"1,2,3,4,5,6,7,8,9,10,11,12"`); legacy `COOLING_ML_FORECAST_HOURS` kept as alias.
+- Inference-side handlers in `cooling_ml_model.py` were already complete — no changes needed there.
+- 4 new unit tests in `TestForecastHourSelection` cover custom hour lists, default all-12h regression, and the legacy alias.
+
+**Files changed:**
+- `src/config.py`
+- `src/cooling_ml_calibration.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 ## 🔧 Fix: auto-trigger Docker build on push to main (2026-05-14)
 
 **Status:** COMPLETED

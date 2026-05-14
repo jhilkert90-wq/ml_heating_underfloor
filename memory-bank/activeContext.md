@@ -1,5 +1,43 @@
 # Active Context - Current Work & Decision State
 
+### ✨ Feature: Cooling ML calibration start date + review fixes — 2026-05-14
+
+#### **What changed**
+- `config_adapter.py`: added pre-cooling / cooling-ML options block mapping all `PRE_COOL_*`, `COOLING_ML_*`, and `COOLING_ML_CALIBRATION_START_DATE` to their env var counterparts so HA add-on settings take effect at runtime.
+- `src/cooling_ml_calibration.py`: `calibrate_cooling_ml()` reads `COOLING_ML_CALIBRATION_START_DATE` at step 0; uses `math.ceil` (not `int(...)`) for ceiling arithmetic so the full start date is always covered. Invalid `COOLING_ML_AT/PV_FORECAST_HOURS` values now log a warning before falling back.
+- `src/config.py`: `_parse_cooling_start_date()` has `-> "Optional[datetime]"` return type; `Optional` imported from `typing` at module level.
+- `tests/unit/test_cooling_ml_calibration.py`: fixed inaccurate comment about PV columns being absent when `COOLING_ML_PV_FORECAST_HOURS` is unset (it defaults to all 12 hours).
+- `CHANGELOG.md`: updated to call out the full AT/PV forecast horizon change as a model-signature change and note the config-adapter fix.
+
+#### **Why**
+- Review feedback: config option was not wired; int() floors caused systematic under-coverage; missing return type; misleading test comment; unclear changelog.
+
+#### **Files changed**
+- `config_adapter.py`
+- `src/config.py`
+- `src/cooling_ml_calibration.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
+
+#### **Why**
+- The hindcast DataFrames already contained all 12 AT and PV forecast columns (from the `df["AT"].shift(-h)` loop in Step 5), but Step 6 discarded them all except `AT_roh_4h`.  Exposing the full daily cycle allows LightGBM to learn peak-timing patterns that the single 4h proxy missed.
+- Inference-side extraction in `cooling_ml_model.py` already handled `AT_roh_Xh` and `pv_forecast_Xh` dynamically for any h, so no inference changes were needed.
+
+#### **Files changed**
+- `src/config.py`
+- `src/cooling_ml_calibration.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 ### 🔧 Fix: auto-trigger build on push to main — 2026-05-14
 
 #### **What changed**

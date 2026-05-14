@@ -153,6 +153,10 @@ options:
   # Fraction of the buffer held out for threshold optimisation during each retrain.
   # [MODEL-BASED only] Default: 0.25.
   cooling_ml_retrain_val_fraction: 0.25
+  # Earliest date for cooling ML training data. Format: DD.MM.YYYY (e.g. 01.06.2024).
+  # Leave empty to use the default 90-day (2160 h) lookback.
+  # [MODEL-BASED only]
+  cooling_ml_calibration_start_date: ""
 
   # === InfluxDB Configuration ===
   # URL of your InfluxDB instance, including the protocol and port
@@ -554,6 +558,7 @@ schema:
   cooling_ml_retrain_trigger_k: "int(10,500)"
   cooling_ml_buffer_max_n: "int(100,5000)"
   cooling_ml_retrain_val_fraction: "float(0.05,0.5)"
+  cooling_ml_calibration_start_date: "str?"
   # InfluxDB Configuration
   influx_url: "str"
   influx_token: "str"

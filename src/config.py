@@ -19,6 +19,7 @@ the `HASS_URL`, `HASS_TOKEN`, and all `*_ENTITY_ID` variables, to match your
 specific Home Assistant setup.
 """
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from a .env file if it exists.
@@ -731,6 +732,57 @@ COOLING_ML_BUFFER_MAX_N: int = int(os.getenv("COOLING_ML_BUFFER_MAX_N", "500"))
 COOLING_ML_RETRAIN_VAL_FRACTION: float = float(
     os.getenv("COOLING_ML_RETRAIN_VAL_FRACTION", "0.25")
 )
+# Default comma-separated list of forecast hours used for AT and PV hindcast
+# features during cooling ML calibration.  Covers the full 12-hour cycle.
+_COOLING_ML_DEFAULT_FORECAST_HOURS = "1,2,3,4,5,6,7,8,9,10,11,12"
+
+# Comma-separated list of forecast hours to use as outdoor-temperature hindcast
+# features (AT_roh_Xh) during calibration.  All 12 hours are included by default
+# so the model can see the full daily temperature cycle ahead.
+# Legacy env var COOLING_ML_FORECAST_HOURS is honoured as an alias.
+# Tooltip: MODEL-BASED only.
+COOLING_ML_AT_FORECAST_HOURS: str = os.getenv(
+    "COOLING_ML_AT_FORECAST_HOURS",
+    os.getenv("COOLING_ML_FORECAST_HOURS", _COOLING_ML_DEFAULT_FORECAST_HOURS),
+)
+# Backward-compat alias: resolved from COOLING_ML_AT_FORECAST_HOURS (which already
+# consumed the legacy COOLING_ML_FORECAST_HOURS env var as its own fallback).
+COOLING_ML_FORECAST_HOURS: str = COOLING_ML_AT_FORECAST_HOURS
+# Comma-separated list of forecast hours to use as PV-power hindcast features
+# (pv_forecast_Xh) during calibration.  All 12 hours are included by default.
+# Tooltip: MODEL-BASED only.
+COOLING_ML_PV_FORECAST_HOURS: str = os.getenv(
+    "COOLING_ML_PV_FORECAST_HOURS", _COOLING_ML_DEFAULT_FORECAST_HOURS
+)
+
+# Earliest date for cooling ML training data.  Format: DD.MM.YYYY (e.g. 01.06.2024).
+# When set, calibrate_cooling_ml() computes lookback_hours as (now − start_date).
+# Leave empty to use the default 2160 h (90-day) lookback.
+# Tooltip: MODEL-BASED only.
+COOLING_ML_CALIBRATION_START_DATE: str = os.getenv(
+    "COOLING_ML_CALIBRATION_START_DATE", ""
+)
+
+
+def _parse_cooling_start_date(date_str: str) -> "Optional[datetime]":
+    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
+
+    Returns
+    -------
+    datetime or None
+        Timezone-aware UTC datetime for the start of the given date,
+        or ``None`` if ``date_str`` is empty or not a valid DD.MM.YYYY string.
+    """
+    from datetime import datetime, timezone  # local import avoids circular issues
+    s = (date_str or "").strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s, "%d.%m.%Y")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
 
 # Thermal Model Parameters
 PV_HEAT_WEIGHT: float = float(os.getenv("PV_HEAT_WEIGHT", "0.0020704649305198215"))
