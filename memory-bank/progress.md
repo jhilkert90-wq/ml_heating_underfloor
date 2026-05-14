@@ -1,5 +1,21 @@
 # ML Heating System - Current Progress
 
+## 🔧 Fix: auto-trigger Docker build on push to main (2026-05-14)
+
+**Status:** COMPLETED
+
+- Root cause: `.github/workflows/build.yaml` only had `workflow_dispatch` trigger. Merging a PR that bumped the version in `config.yaml` never automatically built a Docker image, so HA tried to pull a non-existent image tag and got `[404] manifest unknown`.
+- Fix: added `push: branches: [main]` trigger with `paths-ignore` for markdown/docs to skip unnecessary rebuilds.
+- The version-bump commit already includes `[skip ci]`, so no infinite loop.
+
+**Files changed:**
+- `.github/workflows/build.yaml`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 ## 🐛 Fix aarch64 Docker build: Alpine → Debian slim (2026-05-14)
 
 **Status:** COMPLETED

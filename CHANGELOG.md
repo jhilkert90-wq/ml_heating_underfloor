@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Build workflow now triggers automatically on every push to `main` (in addition to manual `workflow_dispatch`), preventing Docker images from being missing after PR merges. A `paths-ignore` filter skips rebuilds for documentation-only commits.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

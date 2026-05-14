@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### 🔧 Fix: auto-trigger build on push to main — 2026-05-14
+
+#### **What changed**
+- Added `push: branches: [main]` trigger to `.github/workflows/build.yaml`, alongside the existing `workflow_dispatch`.
+- Added `paths-ignore` for `**.md`, `memory-bank/**`, `docs/**` so documentation-only commits don't waste build minutes.
+
+#### **Why**
+- Without an auto-trigger, merging a PR that set a new version in `config.yaml` never kicked off a Docker build. Home Assistant saw the new version string but the image was absent from GHCR, causing `[404] manifest unknown` errors.
+- The version-bump commit already uses `[skip ci]` in its message, so the workflow will not re-trigger after the auto-bump, preventing an infinite loop.
+
+#### **Files changed**
+- `.github/workflows/build.yaml`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 ### 🐛 Fix aarch64 Docker build: switch from Alpine to Debian slim — 2026-05-14
 
 #### **What changed**
