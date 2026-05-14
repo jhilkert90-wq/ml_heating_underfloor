@@ -6,12 +6,15 @@ Tests cover:
 - Forecast input handling (missing, empty, truncated)
 - Guard thresholds (min PV, min outdoor)
 - Edge cases (night, HP at limit, disabled, multiple peaks)
+- PV feature key contract (thermal vs electrical key families)
 """
 
 import pytest
+from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock
 
 from src.overheating_predictor import OverheatingPredictor
+from src.hlc_learner import _build_cycle, HLCCycle
 from src import config
 
 
@@ -697,3 +700,173 @@ class TestEdgeCases:
 
         call_kwargs = model.predict_thermal_trajectory.call_args.kwargs
         assert call_kwargs["climate_mode"] == "cooling"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PV Key Contract Regression Tests
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPVKeyContract:
+    """Regression tests for the PV feature key contract.
+
+    OverheatingPredictor MUST consume the thermal-corrected keys
+    (pv_now, pv_forecast_{h}h) and must NOT be sensitive to — or
+    accidentally consume — the raw electrical keys
+    (pv_now_electrical, pv_forecast_electrical_{h}h).
+
+    See memory-bank/systemPatterns.md → "PV Feature Key Contract" for
+    the full usage map and rationale.
+    """
+
+    def test_uses_pv_now_not_pv_now_electrical(self):
+        """Predictor reads pv_now (thermal) for guard check, ignores pv_now_electrical.
+
+        If it accidentally used pv_now_electrical only, a features dict that
+        has pv_now=3000 but no pv_now_electrical would suppress the guard and
+        return no-risk.  The correct behaviour is risk=True.
+        """
+        features = _make_features(
+            outdoor_temp=18.0,
+            pv_now=4000.0,
+            pv_forecasts=[0.0] * 12,
+            outdoor_forecasts=[18.0] * 12,
+        )
+        # Remove the electrical key to prove it isn't required
+        features.pop("pv_now_electrical", None)
+
+        model = _make_trajectory_model(
+            [23.5, 24.5, 25.0], [1.0, 2.0, 3.0]
+        )
+        predictor = OverheatingPredictor()
+
+        result = predictor.predict_overheating_risk(
+            22.0, 23.0, features, model, "cooling"
+        )
+
+        # Guard must have passed (high pv_now) and risk detected
+        assert result["risk"] is True, (
+            "Predictor failed to detect risk when pv_now_electrical was absent "
+            "— it may be reading the wrong key family."
+        )
+        call_kwargs = model.predict_thermal_trajectory.call_args.kwargs
+        assert call_kwargs["pv_power"] == 4000.0
+        assert call_kwargs["pv_forecasts"] == [4000.0] + [0.0] * 12
+
+    def test_pv_forecast_thermal_keys_used_for_trajectory(self):
+        """Trajectory PV forecast list is built from pv_forecast_{h}h (thermal).
+
+        Verify by providing thermal forecasts that trigger the guard while
+        keeping electrical forecast keys absent.
+        """
+        thermal_fc = [1200.0] + [0.0] * 11
+        features = _make_features(
+            outdoor_temp=18.0,
+            pv_now=0.0,
+            pv_forecasts=thermal_fc,    # thermal-only signal should pass guard
+            outdoor_forecasts=[18.0] * 12,
+        )
+        # Remove all electrical forecast keys
+        for h in range(1, 13):
+            features.pop(f"pv_forecast_electrical_{h}h", None)
+
+        model = _make_trajectory_model(
+            [23.5, 24.0, 25.0], [1.0, 2.0, 3.0]
+        )
+        predictor = OverheatingPredictor()
+
+        result = predictor.predict_overheating_risk(
+            22.0, 23.0, features, model, "cooling"
+        )
+
+        assert result["risk"] is True
+        assert model.predict_thermal_trajectory.called
+        call_kwargs = model.predict_thermal_trajectory.call_args.kwargs
+        assert call_kwargs["pv_forecasts"] == [0.0] + thermal_fc
+
+    def test_pv_now_electrical_alone_insufficient_to_pass_guard(self):
+        """Guard must NOT pass on electrical key alone when thermal key is absent/zero.
+
+        If the predictor incorrectly reads pv_now_electrical instead of pv_now,
+        and pv_now is missing/zero, this test catches the regression.
+        """
+        features = _make_features(
+            outdoor_temp=18.0,
+            pv_now=0.0,           # thermal: no solar gain
+            pv_forecasts=[0.0] * 12,
+            outdoor_forecasts=[18.0] * 12,
+        )
+        # Inject a high electrical value that should be invisible to the predictor
+        features["pv_now_electrical"] = 5000.0
+        for h in range(1, 13):
+            features[f"pv_forecast_electrical_{h}h"] = 5000.0
+
+        model = _make_trajectory_model([25.0] * 12, list(range(1, 13)))
+        predictor = OverheatingPredictor()
+
+        result = predictor.predict_overheating_risk(
+            22.0, 23.0, features, model, "cooling"
+        )
+
+        # Guards should NOT pass — pv_now=0 (thermal) and outdoor < 22°C
+        assert result["risk"] is False, (
+            "Predictor passed guard using pv_now_electrical instead of pv_now. "
+            "The thermal key pv_now must be the guard input."
+        )
+
+    def test_hlc_cycle_requires_pv_now_electrical_field(self):
+        """HLCCycle.pv_now_electrical is the correct field for HLC session logic.
+
+        This is the opposite rule: HLC uses the *electrical* key.
+        Confirm the _build_cycle helper reads pv_now_electrical from context,
+        not pv_now.
+        """
+        ctx = {
+            "timestamp": datetime(2026, 6, 1, 10, 0),
+            "thermal_power_kw": 1.5,
+            "indoor_temp": 21.0,
+            "outdoor_temp": 5.0,
+            "target_temp": 21.0,
+            "indoor_temp_delta_60m": 0.0,
+            "pv_now_electrical": 3500.0,   # electrical key — correct
+            "pv_now": 1200.0,              # thermal key — must NOT be used for session FSM
+            "fireplace_on": 0.0,
+            "tv_on": 0.0,
+            "dhw_heating": 0.0,
+            "defrosting": 0.0,
+            "dhw_boost_heater": 0.0,
+            "is_blocking": False,
+        }
+        cycle = _build_cycle(ctx)
+
+        assert isinstance(cycle, HLCCycle)
+        assert cycle.pv_now_electrical == pytest.approx(3500.0), (
+            "HLCCycle.pv_now_electrical must be read from the electrical key, "
+            "not from pv_now."
+        )
+
+    def test_hlc_cycle_pv_now_electrical_defaults_to_zero_when_absent(self):
+        """_build_cycle falls back to 0.0 when pv_now_electrical is missing."""
+        ctx = {
+            "timestamp": datetime(2026, 6, 1, 10, 0),
+            "thermal_power_kw": 1.5,
+            "indoor_temp": 21.0,
+            "outdoor_temp": 5.0,
+            "target_temp": 21.0,
+            "indoor_temp_delta_60m": 0.0,
+            # pv_now_electrical intentionally absent
+            "pv_now": 2000.0,
+            "fireplace_on": 0.0,
+            "tv_on": 0.0,
+            "dhw_heating": 0.0,
+            "defrosting": 0.0,
+            "dhw_boost_heater": 0.0,
+            "is_blocking": False,
+        }
+        cycle = _build_cycle(ctx)
+
+        assert isinstance(cycle, HLCCycle)
+        assert cycle.pv_now_electrical == pytest.approx(0.0), (
+            "_build_cycle must default pv_now_electrical to 0.0 when absent, "
+            "not fall back to pv_now."
+        )
