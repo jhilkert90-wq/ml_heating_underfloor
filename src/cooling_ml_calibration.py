@@ -86,7 +86,7 @@ def calibrate_cooling_ml(
         if _start_dt is not None:
             from datetime import timezone as _dt_tz
             _now_utc = datetime.now(_dt_tz.utc)
-            _computed_h = int((_now_utc - _start_dt).total_seconds() / 3600)
+            _computed_h = math.ceil((_now_utc - _start_dt).total_seconds() / 3600)
             if _computed_h > 0:
                 lookback_hours = _computed_h
                 logger.info(
@@ -267,12 +267,22 @@ def calibrate_cooling_ml(
     try:
         at_forecast_hours = [int(x) for x in _at_fc_env.split(",") if x.strip()]
     except ValueError:
+        logger.warning(
+            "COOLING_ML_AT_FORECAST_HOURS value %r is invalid; "
+            "falling back to all %d hours",
+            _at_fc_env, horizon_h,
+        )
         at_forecast_hours = list(range(1, horizon_h + 1))
 
     _pv_fc_env = os.getenv("COOLING_ML_PV_FORECAST_HOURS", _default_fc_hours)
     try:
         pv_forecast_hours = [int(x) for x in _pv_fc_env.split(",") if x.strip()]
     except ValueError:
+        logger.warning(
+            "COOLING_ML_PV_FORECAST_HOURS value %r is invalid; "
+            "falling back to all %d hours",
+            _pv_fc_env, horizon_h,
+        )
         pv_forecast_hours = list(range(1, horizon_h + 1))
 
     logger.info(

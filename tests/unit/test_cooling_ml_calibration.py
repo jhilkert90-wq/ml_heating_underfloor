@@ -732,7 +732,7 @@ class TestForecastHourSelection:
                          "COOLING_ML_PV_FORECAST_HOURS")
         }
         clean_env["COOLING_ML_FORECAST_HOURS"] = "4,8"
-        # leave COOLING_ML_PV_FORECAST_HOURS absent → no PV columns
+        # COOLING_ML_PV_FORECAST_HOURS is absent, so it defaults to all 12 hours
 
         try:
             with patch.dict("sys.modules", {

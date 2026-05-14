@@ -19,6 +19,7 @@ the `HASS_URL`, `HASS_TOKEN`, and all `*_ENTITY_ID` variables, to match your
 specific Home Assistant setup.
 """
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from a .env file if it exists.
@@ -763,8 +764,15 @@ COOLING_ML_CALIBRATION_START_DATE: str = os.getenv(
 )
 
 
-def _parse_cooling_start_date(date_str: str):
-    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None."""
+def _parse_cooling_start_date(date_str: str) -> "Optional[datetime]":
+    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
+
+    Returns
+    -------
+    datetime or None
+        Timezone-aware UTC datetime for the start of the given date,
+        or ``None`` if ``date_str`` is empty or not a valid DD.MM.YYYY string.
+    """
     from datetime import datetime, timezone  # local import avoids circular issues
     s = (date_str or "").strip()
     if not s:
