@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PV Feature Key Contract documentation**: Added a canonical, highly-visible `⚠️ AI MODEL NOTICE — PV Feature Key Contract` section at the top of `memory-bank/systemPatterns.md` that maps every consumer of `pv_now_electrical` / `pv_forecast_electrical_*` (electrical, raw) vs `pv_now` / `pv_forecast_{h}h` (thermal, corrected). Includes a table, explicit rules, anti-patterns, and source-code citations.
+- **ML Cooling Guide PV warning**: Added a `⚠️ PV Feature Key Contract` warning block to `docs/ML_COOLING_MODEL_GUIDE.md` clarifying that `OverheatingPredictor` and ML cooling paths must use thermal keys.
+- **PV key contract regression tests** (`tests/unit/test_overheating_predictor.py`): 5 new tests in `TestPVKeyContract` that:
+  - Confirm `OverheatingPredictor` reads `pv_now` (thermal) for its guard check and works without `pv_now_electrical`
+  - Confirm trajectory PV forecast is built from `pv_forecast_{h}h` (thermal) even when electrical keys are absent
+  - Confirm `pv_now_electrical` alone (with `pv_now=0`) cannot pass the guard
+  - Confirm `HLCCycle._build_cycle()` reads `pv_now_electrical` (not `pv_now`) from context
+  - Confirm `_build_cycle()` defaults `pv_now_electrical` to 0.0 when the key is absent
+- **Reviewer-follow-up regression hardening**: Strengthened 2 `TestPVKeyContract` tests to assert `predict_thermal_trajectory()` call kwargs (`pv_power`, `pv_forecasts`) directly, preventing false positives from mocked trajectory outputs.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

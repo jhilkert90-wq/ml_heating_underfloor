@@ -1,5 +1,72 @@
 # System Architecture & Patterns - ML Heating Control
 
+---
+
+## ⚠️ AI MODEL NOTICE — PV Feature Key Contract (READ THIS FIRST)
+
+> **This note exists because AI models have previously used the wrong PV feature keys,
+> causing incorrect behaviour.  Every AI model or human contributor that touches
+> PV-related code MUST read this section before making any change.**
+
+### Two distinct PV feature key families exist in every features dict
+
+| Family | Key examples | What it represents | Produced by |
+|--------|-------------|-------------------|-------------|
+| **Electrical (raw)** | `pv_now_electrical`, `pv_forecast_electrical_{h}h` | Actual panel output in watts — **not** corrected for solar-to-thermal conversion | `src/physics_features.py` |
+| **Thermal (corrected)** | `pv_now`, `pv_forecast_{h}h` | Panel output **× `solar_correction_factor`** — the fraction that heats the building | `src/physics_features.py` |
+
+`pv_now_electrical = float(pv_now_raw)` is captured *before* the correction is applied.  
+`pv_now = pv_now_raw * solar_correction_factor` is the thermally relevant value.
+
+`pv_forecast_electrical_{h}h` keys are only written when `PV_TRAJ_FORECAST_MODE_ENABLED=True`.
+
+### Who must use which family
+
+| Module / function | Key family required | Reason |
+|---|---|---|
+| `src/physics_features.py` — produces both families | n/a | Source of truth |
+| `src/main.py` — HLC session context | **electrical** | HLC_PV_MAX_W threshold is in raw watts |
+| `src/main.py` — PV trajectory scaling (`compute_dynamic_trajectory_steps`) | **electrical** | PV_TRAJ_THRESHOLD_W is in raw watts |
+| `src/main.py` — price-suppression in forecast mode | **electrical** | Same trajectory logic |
+| `src/model_wrapper.py` — PV surplus cheap override | **electrical** (with `pv_now` fallback) | PV_SURPLUS_CHEAP_THRESHOLD_W is in raw watts |
+| `src/model_wrapper.py` — end-of-sun scalar override (`pv_forecast_1h` check) | **electrical** (with `pv_forecast_1h` fallback) | PV_TRAJ_ZERO_W is in raw watts |
+| `src/hlc_learner.py` — `HLCCycle.pv_now_electrical` field | **electrical** | Session FSM open/close uses HLC_PV_MAX_W |
+| `src/overheating_predictor.py` — `predict_overheating_risk` | **thermal** (`pv_now`, `pv_forecast_{h}h`) | Trajectory simulation is thermal, not electrical |
+| `src/cooling_ml_calibration.py` / `src/cooling_ml_model.py` | **thermal** | Feature set matches OverheatingPredictor |
+
+### Rules — never break these
+
+1. **Do NOT pass `pv_now_electrical` or `pv_forecast_electrical_*` to `OverheatingPredictor`.**
+   The predictor simulates a thermal trajectory; using uncorrected electrical values
+   over-estimates solar gain by `1 / solar_correction_factor` (typically 2×–3×).
+
+2. **Do NOT use `pv_now` (thermal) for threshold comparisons against `PV_TRAJ_THRESHOLD_W`,
+   `HLC_PV_MAX_W`, or `PV_SURPLUS_CHEAP_THRESHOLD_W`.**  Those thresholds are defined
+   in electrical watts and will mismatch after the correction factor is applied.
+
+3. **Both families come from the same `build_physics_features()` call.**
+   You never need to fetch the sensor a second time.  Just use the correct key.
+
+4. **When `pv_forecast_electrical_{h}h` is absent** (forecast mode disabled), code that
+   needs the electrical forecast should fall back to the thermal `pv_forecast_{h}h`
+   key — this is always present and is a reasonable approximation when the correction
+   factor is close to 1.0.  The pattern `features.get("pv_forecast_electrical_1h", features.get("pv_forecast_1h", 0.0))`
+   is the correct idiom.
+
+### Source-code citations (verified 2026-05-14)
+
+- `src/physics_features.py:352` — `pv_now_electrical = float(pv_now)` (snapshot before correction)
+- `src/physics_features.py:357` — `pv_forecasts_electrical = list(pv_forecasts)` (snapshot before correction)
+- `src/physics_features.py:510,519,524` — keys written to features dict
+- `src/main.py:1542,1603,1610,1653,1657` — electrical keys used for HLC and trajectory logic
+- `src/model_wrapper.py:480` — `pv_now_electrical` for PV surplus threshold
+- `src/model_wrapper.py:793` — `pv_forecast_electrical_1h` for end-of-sun scalar
+- `src/hlc_learner.py:77` — `HLCCycle.pv_now_electrical` field declaration
+- `src/hlc_learner.py:133,269` — electrical key consumed from context
+- `src/overheating_predictor.py:100,104` — `pv_now` and `pv_forecast_{h}h` (thermal) used
+
+---
+
 ## System Architecture Overview
 
 ### High-Level Architecture

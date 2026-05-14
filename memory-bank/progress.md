@@ -1,5 +1,43 @@
 # ML Heating System - Current Progress
 
+## ✅ Reviewer Follow-up: PV Contract Test Assertions Hardened (2026-05-14)
+
+**Status:** COMPLETED
+
+- Updated 2 `TestPVKeyContract` cases in `tests/unit/test_overheating_predictor.py` to assert `predict_thermal_trajectory()` call kwargs directly:
+  - `pv_power` anchored from `pv_now` (thermal key family)
+  - `pv_forecasts` built from `pv_forecast_{h}h` even when electrical forecast keys are absent
+- Removed ambiguity from prior assertions that only checked `result["risk"]` with mocked trajectory outputs.
+- Verified table formatting concern: no `||` rows exist in `memory-bank/systemPatterns.md` or `docs/ML_COOLING_MODEL_GUIDE.md`.
+- Targeted validation: `python -m pytest tests/unit/test_overheating_predictor.py -q --tb=short` → **33 passed**.
+
+**Files changed:**
+- `tests/unit/test_overheating_predictor.py` — strengthened regression assertions
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
+## 📚 PV Feature Key Contract — Documentation & Regression Tests (2026-05-14)
+
+**Status:** COMPLETED
+
+- **Documentation**: Added canonical `⚠️ AI MODEL NOTICE — PV Feature Key Contract` section at the top of `memory-bank/systemPatterns.md`. Contains a two-family key table, per-module usage map, four explicit rules, and source-code citations.
+- **Cooling guide warning**: Added matching warning block to `docs/ML_COOLING_MODEL_GUIDE.md` above the Feature Engineering section.
+- **5 regression tests** in `tests/unit/test_overheating_predictor.py` (`TestPVKeyContract`): lock in that `OverheatingPredictor` uses thermal keys (`pv_now`, `pv_forecast_{h}h`) and that `HLCCycle._build_cycle()` uses the electrical key (`pv_now_electrical`).
+- **Purpose**: Prevent future AI/human contributors from accidentally using the wrong PV key family and causing silent over-estimation of solar gain in thermal trajectory predictions.
+
+**Files changed:**
+- `memory-bank/systemPatterns.md` — canonical PV key contract
+- `docs/ML_COOLING_MODEL_GUIDE.md` — warning block
+- `tests/unit/test_overheating_predictor.py` — 5 regression tests
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ## ML Heating Underfloor v0.2.30 Release Bump (2026-05-13)
 
 **Status:** COMPLETED
