@@ -52,13 +52,15 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     
     # Verify column count: dynamic forecast keys scale with TRAJECTORY_STEPS (default 4).
     # Previously 58 columns assumed 6 forecast slots; with TRAJECTORY_STEPS=4 → 52 columns.
-    # +1 only for the newly added pv_power_history_electrical column.
-    expected_cols = 58 - 3 * (6 - config.TRAJECTORY_STEPS) + 2  # 3 groups: temp, pv, cloud_cover
+    expected_cols_without_raw_history = 58 - 3 * (6 - config.TRAJECTORY_STEPS) + 1
+    # +1 for the newly added pv_power_history_electrical column.
+    expected_cols = expected_cols_without_raw_history + 1  # 3 groups: temp, pv, cloud_cover
     assert len(features_df.columns) == expected_cols
     
     # Verify original features
     assert features_df['indoor_temp_lag_30m'][0] == 19.6
     assert features_df['pv_power_history_electrical'][0] == [100.0, 200.0, 300.0, 400.0, 500.0, 600.0]
+    assert features_df['pv_power_history_electrical'][0] != features_df['pv_power_history'][0]
     
     # Verify new thermodynamic features
     assert features_df['inlet_temp'][0] == 35.0
