@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Cooling ML calibration lead-time semantics**: Reduced default `PRE_COOL_LEAD_TIME_HOURS` from 8.0 to 3.0 for more responsive pre-cooling label assignment, aligning model training and inference semantics.
+- **Cooling ML PV feature contract hardening**: All cooling ML PV features (`pv_roll_*`, `PV_Generate`, `pv_forecast_*h`) now strictly prefer raw electrical keys (`pv_now_electrical`, `pv_power_history_electrical`, `pv_forecast_electrical_*h`) and only fall back to thermal-corrected keys if electrical keys are absent, ensuring feature scale matches training data.
+
+### Fixed
+- **Pre-cooling calibration bugs**: Fixed bugs in pre-cooling calibration including:
+  - Use of correct PV keys for feature extraction and rolling PV history.
+  - Alignment of feature scale between training and inference.
+  - Buffer persistence: cooling observation buffer now saves after every push/resolve cycle, preserving pending entries and evolving label state across restarts.
+  - Lead-time and label horizon calculation now matches intended semantics.
+- **Missing `scikit-learn` dependency**: Added `scikit-learn>=1.0.0` to `requirements.txt` to fix silent failures in calibration metrics.
+
+### Added
+- **Test coverage for cooling calibration workflow**: Added and clarified unit tests for cooling ML calibration and PV feature extraction, including tighter assertions for raw vs thermal PV history and column-count expectations.
+
+### Changed
 - **CI: GitHub Actions workflow versions and architecture**: Updated `.github/workflows/build.yaml` to use newer versions of GitHub Actions (`actions/checkout@v4`, `docker/login-action@v3`, `docker/setup-buildx-action@v3`, `docker/build-push-action@v6`) and improved architecture handling. Native runners are now used per architecture (no QEMU required), and build cache is separated per arch for improved reliability and performance.
 
 ### Added

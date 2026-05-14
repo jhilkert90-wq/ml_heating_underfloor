@@ -1,5 +1,34 @@
 # ML Heating System - Current Progress
 
+## 🛡️ Harden Cooling ML Calibration & PV Feature Contract (2026-05-14)
+
+**Status:** COMPLETED
+
+- Hardened cooling ML calibration semantics:
+  - Default pre-cooling lead-time reduced from 8.0h to 3.0h for more responsive label assignment.
+  - Calibration and inference now strictly use raw electrical PV keys for all cooling ML features, falling back to thermal-corrected keys only if electrical keys are absent.
+  - Fixed bugs in pre-cooling calibration: correct PV key usage, feature scale alignment, buffer persistence, and lead-time/label horizon calculation.
+- Cooling observation buffer now persists after every push/resolve cycle, so pending entries and evolving label state survive restarts.
+- Added `scikit-learn>=1.0.0` to `requirements.txt` to fix silent metric failures in calibration.
+- Added/tightened unit tests for cooling ML calibration and PV feature extraction (raw vs thermal PV history, column-count expectations).
+
+**Test status:**
+- Unit tests for cooling ML calibration and PV feature extraction updated and expanded; regression coverage for PV contract and calibration workflow confirmed. No test regressions detected.
+
+**Files changed:**
+- `src/cooling_ml_calibration.py`
+- `src/cooling_ml_model.py`
+- `src/main.py`
+- `src/physics_features.py`
+- `requirements.txt`
+- `.github/workflows/build.yaml`
+- `tests/unit/test_cooling_ml.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `tests/unit/test_physics_features.py`
+- `tests/unit/test_pre_cooling_integration.py`
+
+---
+
 ## Resolve PR Merge Conflicts (2026-05-14, latest sync)
 
 **Status:** COMPLETED
