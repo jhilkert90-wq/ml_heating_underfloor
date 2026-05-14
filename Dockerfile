@@ -1,4 +1,4 @@
-FROM python:3.11-alpine3.18
+FROM python:3.11-slim
 
 # Build arguments
 ARG BUILD_ARCH
@@ -34,19 +34,18 @@ ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1
 
 # Install system dependencies for ML workload and HA addon support
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     curl \
     jq \
     tzdata \
     gcc \
     g++ \
-    musl-dev \
-    linux-headers \
     gfortran \
-    openblas-dev \
-    lapack-dev \
-    && rm -rf /var/cache/apk/*
+    libopenblas-dev \
+    liblapack-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install bashio for Home Assistant addon support
 RUN curl -L -s -o /tmp/bashio.tar.gz \

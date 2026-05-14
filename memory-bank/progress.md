@@ -1,5 +1,20 @@
 # ML Heating System - Current Progress
 
+## 🐛 Fix aarch64 Docker build: Alpine → Debian slim (2026-05-14)
+
+**Status:** COMPLETED
+
+- Root cause: native ARM runner (`ubuntu-24.04-arm`) + Alpine musl → no pre-built scikit-learn wheel for `musllinux_1_2_aarch64` → source compilation fails with GCC `-Werror=array-bounds` in `_ball_tree.c`.
+- Fix: changed base image to `python:3.11-slim` (Debian/glibc); updated system package installs from `apk` to `apt-get`.
+
+**Files changed:**
+- `Dockerfile`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 ## 🛡️ Harden Cooling ML Calibration & PV Feature Contract (2026-05-14)
 
 **Status:** COMPLETED

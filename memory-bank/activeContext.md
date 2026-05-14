@@ -1,5 +1,20 @@
 # Active Context - Current Work & Decision State
 
+### 🐛 Fix aarch64 Docker build: switch from Alpine to Debian slim — 2026-05-14
+
+#### **What changed**
+- Changed `Dockerfile` base image from `python:3.11-alpine3.18` to `python:3.11-slim` (Debian).
+- Replaced `apk add` system-package block with `apt-get install` equivalents; removed musl-only packages (`musl-dev`, `linux-headers`); renamed `openblas-dev`/`lapack-dev` to `libopenblas-dev`/`liblapack-dev`.
+
+#### **Why**
+- The aarch64 build started using a native ARM runner (`ubuntu-24.04-arm`) instead of QEMU. On Alpine (musl libc), `scikit-learn` has no pre-built `musllinux_1_2_aarch64` wheel for the current version, so pip falls back to source compilation. The meson/GCC build fails with a `-Werror=array-bounds` error, blocking the entire build. Debian slim uses glibc for which pre-built wheels exist on PyPI for all major architectures.
+
+#### **Files changed**
+- `Dockerfile`
+- `CHANGELOG.md`
+
+---
+
 ### 🛡️ Harden Cooling ML Calibration & PV Feature Contract — 2026-05-14
 
 #### **What changed**
