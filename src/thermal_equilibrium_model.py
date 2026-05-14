@@ -2334,11 +2334,17 @@ class ThermalEquilibriumModel:
         outdoor_temp,
         time_available_hours=1.0,
         config_override=None,
+        climate_mode="heating",
         **external_sources,
     ):
         """
         Calculate optimal outlet temperature to reach target indoor
         temperature.
+
+        In cooling mode the outlet bounds are taken from the cooling
+        clamp range (COOLING_CLAMP_MIN_ABS .. COOLING_CLAMP_MAX_ABS)
+        and the "outlet below outdoor" fallback is skipped because a
+        cooling outlet *should* be below outdoor temperature.
         """
         self._sync_model_from_orchestrator()
 
@@ -2347,12 +2353,14 @@ class ThermalEquilibriumModel:
         )
         fireplace_on = external_sources.get("fireplace_on", 0)
         tv_on = external_sources.get("tv_on", 0)
+        is_cooling = climate_mode == "cooling"
 
         temp_change_required = target_indoor - current_indoor
 
         if abs(temp_change_required) < 0.1:
             outlet_temp = self._calculate_equilibrium_outlet_temperature(
-                target_indoor, outdoor_temp, pv_power, fireplace_on, tv_on
+                target_indoor, outdoor_temp, pv_power, fireplace_on, tv_on,
+                climate_mode=climate_mode,
             )
             return {
                 "optimal_outlet_temp": outlet_temp,
@@ -2389,16 +2397,23 @@ class ThermalEquilibriumModel:
         ) / outlet_effectiveness
         required_equilibrium = target_indoor
 
-        min_outlet = max(outdoor_temp + 5, 25.0)
-        max_outlet = 70.0
+        if is_cooling:
+            min_outlet = float(getattr(config, "COOLING_CLAMP_MIN_ABS", 18.0))
+            max_outlet = float(getattr(config, "COOLING_CLAMP_MAX_ABS", 24.0))
+        else:
+            min_outlet = max(outdoor_temp + 5, 25.0)
+            max_outlet = 70.0
 
         optimal_outlet_bounded = max(
             min_outlet, min(optimal_outlet, max_outlet)
         )
 
-        if optimal_outlet_bounded < outdoor_temp:
+        # In heating mode an outlet below outdoor is unrealistic;
+        # in cooling mode the outlet *should* be below outdoor.
+        if not is_cooling and optimal_outlet_bounded < outdoor_temp:
             fallback_outlet = self._calculate_equilibrium_outlet_temperature(
-                target_indoor, outdoor_temp, pv_power, fireplace_on, tv_on
+                target_indoor, outdoor_temp, pv_power, fireplace_on, tv_on,
+                climate_mode=climate_mode,
             )
             return {
                 "optimal_outlet_temp": fallback_outlet,
@@ -2421,7 +2436,8 @@ class ThermalEquilibriumModel:
         }
 
     def _calculate_equilibrium_outlet_temperature(
-        self, target_temp, outdoor_temp, pv_power=0, fireplace_on=0, tv_on=0
+        self, target_temp, outdoor_temp, pv_power=0, fireplace_on=0, tv_on=0,
+        climate_mode="heating",
     ):
         """
         Calculate outlet temperature needed for equilibrium at target temp.
@@ -2435,7 +2451,7 @@ class ThermalEquilibriumModel:
         )
 
         if self.outlet_effectiveness <= 0:
-            return 35.0
+            return 35.0 if climate_mode != "cooling" else 20.0
 
         total_conductance = (
             self.heat_loss_coefficient + self.outlet_effectiveness
@@ -2446,8 +2462,12 @@ class ThermalEquilibriumModel:
             - external_heating
         ) / self.outlet_effectiveness
 
-        min_outlet = max(outdoor_temp + 5, 25.0)
-        max_outlet = 65.0
+        if climate_mode == "cooling":
+            min_outlet = float(getattr(config, "COOLING_CLAMP_MIN_ABS", 18.0))
+            max_outlet = float(getattr(config, "COOLING_CLAMP_MAX_ABS", 24.0))
+        else:
+            min_outlet = max(outdoor_temp + 5, 25.0)
+            max_outlet = 65.0
 
         return max(min_outlet, min(equilibrium_outlet, max_outlet))
 

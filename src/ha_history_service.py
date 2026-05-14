@@ -31,14 +31,26 @@ logger = logging.getLogger(__name__)
 # Entity mapping: config attribute name → short column name used by
 # physics_calibration (matches InfluxDB ``get_training_data()`` schema).
 # ---------------------------------------------------------------------------
-def _build_entity_map() -> Dict[str, str]:
+def _build_entity_map(
+    entity_ids: Optional[List[str]] = None,
+) -> Dict[str, str]:
     """
     Build a mapping of full HA entity_id → short column name.
 
     The short name equals ``entity_id.split('.', 1)[-1]`` which is the
     convention used by ``influx_service.get_training_data()``.
+
+    Parameters
+    ----------
+    entity_ids : list[str], optional
+        Explicit list of full HA entity IDs to include.  When *None*
+        (default), all entities needed for heating + cooling calibration
+        are included.
     """
-    entity_ids = [
+    if entity_ids is not None:
+        return {eid: eid.split(".", 1)[-1] for eid in entity_ids}
+
+    _entity_ids = [
         config.ACTUAL_OUTLET_TEMP_ENTITY_ID,
         config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID,
         config.INDOOR_TEMP_ENTITY_ID,
@@ -58,9 +70,9 @@ def _build_entity_map() -> Dict[str, str]:
     # Optional: living room temp for FP spread calibration
     living_room = getattr(config, "LIVING_ROOM_TEMP_ENTITY_ID", None)
     if living_room:
-        entity_ids.append(living_room)
+        _entity_ids.append(living_room)
 
-    return {eid: eid.split(".", 1)[-1] for eid in entity_ids}
+    return {eid: eid.split(".", 1)[-1] for eid in _entity_ids}
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +233,7 @@ def _ha_history_to_dataframe(
 def get_training_data_from_ha(
     lookback_hours: int,
     ha_client: Optional[HAClient] = None,
+    entity_ids: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
     Fetch historical calibration data from the HA REST API.
@@ -236,6 +249,9 @@ def get_training_data_from_ha(
     ha_client : HAClient, optional
         An existing client instance.  If *None*, one is created via
         ``create_ha_client()``.
+    entity_ids : list[str], optional
+        Full HA entity IDs to query.  When *None* (default), all entities
+        needed for heating + cooling calibration are queried.
 
     Returns
     -------
@@ -245,8 +261,8 @@ def get_training_data_from_ha(
         from .ha_client import create_ha_client
         ha_client = create_ha_client()
 
-    entity_map = _build_entity_map()
-    entity_ids = list(entity_map.keys())
+    entity_map = _build_entity_map(entity_ids=entity_ids)
+    _entity_ids = list(entity_map.keys())
 
     end_time = datetime.now(tz=timezone.utc)
     start_time = end_time - timedelta(hours=lookback_hours)
@@ -254,17 +270,17 @@ def get_training_data_from_ha(
     logger.info(
         "Fetching %d hours of history from HA for %d entities …",
         lookback_hours,
-        len(entity_ids),
+        len(_entity_ids),
     )
 
-    raw = ha_client.get_history_bulk(entity_ids, start_time, end_time)
+    raw = ha_client.get_history_bulk(_entity_ids, start_time, end_time)
     if raw is None:
         logger.error("HA history request returned None")
         return pd.DataFrame()
 
     logger.info("Received history arrays for %d entities", len(raw))
 
-    df = _ha_history_to_dataframe(raw, entity_map, entity_ids)
+    df = _ha_history_to_dataframe(raw, entity_map, _entity_ids)
     if df.empty:
         logger.error("HA history produced empty DataFrame")
         return df

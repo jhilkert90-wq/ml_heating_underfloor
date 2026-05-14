@@ -44,9 +44,10 @@ def _fake_config(**overrides):
     defaults = dict(
         CYCLE_INTERVAL_MINUTES=10,
         PRE_COOL_HORIZON_HOURS=12,
-        PRE_COOL_LEAD_TIME_HOURS=3.0,
+        PRE_COOL_LEAD_TIME_HOURS=8.0,
         COOLING_CLAMP_MAX_ABS=24.0,
         PRE_COOL_MIN_OUTDOOR_FORECAST_C=22.0,
+        COOLING_ML_WARM_THRESHOLD_C=10.0,
         SPECIFIC_HEAT_CAPACITY=4.186,
         COOLING_ML_MIN_TRAINING_SAMPLES=10,
         COOLING_ML_RETRAIN_VAL_FRACTION=0.25,
@@ -778,7 +779,7 @@ class TestCoolingStartDate:
 
         captured_lookback = []
 
-        def _fake_fetch(lookback_hours):
+        def _fake_fetch(lookback_hours, **kwargs):
             captured_lookback.append(lookback_hours)
             return None  # trigger early exit after data fetch
 
@@ -804,7 +805,7 @@ class TestCoolingStartDate:
 
         captured_lookback = []
 
-        def _fake_fetch(lookback_hours):
+        def _fake_fetch(lookback_hours, **kwargs):
             captured_lookback.append(lookback_hours)
             return None
 
@@ -830,7 +831,7 @@ class TestCoolingStartDate:
 
         captured_lookback = []
 
-        def _fake_fetch(lookback_hours):
+        def _fake_fetch(lookback_hours, **kwargs):
             captured_lookback.append(lookback_hours)
             return None
 

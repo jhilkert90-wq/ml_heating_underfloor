@@ -173,9 +173,9 @@ class TestBasicPrediction:
             outdoor_forecasts=[25.0, 26.0, 27.0, 28.0, 29.0, 28.0,
                               27.0, 26.0, 25.0, 23.0, 22.0, 20.0],
         )
-        # Peak at 8h (beyond 3h lead time)
-        traj = [22.0, 22.2, 22.5, 22.8, 23.0, 23.3, 23.5, 24.0,
-                23.5, 23.0, 22.5, 22.0]
+        # Peak at 10h (beyond 8h lead time)
+        traj = [22.0, 22.2, 22.3, 22.4, 22.5, 22.6, 22.7, 22.8,
+                23.2, 24.0, 23.5, 22.0]
         times = [float(h) for h in range(1, 13)]
         model = _make_trajectory_model(traj, times)
         predictor = OverheatingPredictor()
@@ -190,7 +190,7 @@ class TestBasicPrediction:
 
         assert result["risk"] is True
         assert result["should_cool_now"] is False
-        assert result["peak_hour"] == 8.0
+        assert result["peak_hour"] == 10.0
 
     def test_already_above_target(self):
         """Room already above target → always cool regardless of forecast."""

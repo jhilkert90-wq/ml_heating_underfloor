@@ -561,7 +561,7 @@ def validate_thermal_model():
         return False
 
 
-def fetch_historical_data_for_calibration(lookback_hours=672):
+def fetch_historical_data_for_calibration(lookback_hours=672, purpose="heating"):
     """Fetch historical data for calibration.
 
     Respects ``config.TRAINING_DATA_SOURCE``:
@@ -569,10 +569,42 @@ def fetch_historical_data_for_calibration(lookback_hours=672):
     * ``"ha_history"`` – only HA REST API history
     * ``"auto"``       – try InfluxDB first; if data is empty **or** missing
                          important columns, supplement / fall back to HA history
+
+    Parameters
+    ----------
+    lookback_hours : int
+        Hours of history to request.
+    purpose : str
+        ``"heating"`` (default) fetches all 15 entities for full
+        calibration.  ``"cooling"`` fetches only the 5 required + 2
+        optional entities used by the cooling ML LGBM model, reducing
+        InfluxDB and HA API load.
     """
     logging.info(f"=== FETCHING {lookback_hours} HOURS OF HISTORICAL DATA ===")
 
     source = getattr(config, "TRAINING_DATA_SOURCE", "auto").lower()
+
+    # Build entity list based on purpose.  Cooling calibration only needs
+    # temperature, PV and (optionally) flow/power sensors — not the
+    # heating-only quality gates (DHW, defrost, TV, fireplace, etc.).
+    if purpose == "cooling":
+        _cooling_entity_ids = [
+            config.INDOOR_TEMP_ENTITY_ID,
+            config.OUTDOOR_TEMP_ENTITY_ID,
+            getattr(config, "OUTLET_TEMP_ENTITY_ID",
+                    config.ACTUAL_OUTLET_TEMP_ENTITY_ID),
+            config.INLET_TEMP_ENTITY_ID,
+            config.PV_POWER_ENTITY_ID,
+            # Optional: thermal_power_kw derivation
+            config.FLOW_RATE_ENTITY_ID,
+            config.POWER_CONSUMPTION_ENTITY_ID,
+        ]
+        logging.info(
+            "Cooling-only fetch: %d entities (reduced from 15)",
+            len(_cooling_entity_ids),
+        )
+    else:
+        _cooling_entity_ids = None  # use full default list
 
     df = pd.DataFrame()
 
@@ -584,7 +616,10 @@ def fetch_historical_data_for_calibration(lookback_hours=672):
                 token=config.INFLUX_TOKEN,
                 org=config.INFLUX_ORG,
             )
-            df = influx.get_training_data(lookback_hours=lookback_hours)
+            df = influx.get_training_data(
+                lookback_hours=lookback_hours,
+                entity_ids=_cooling_entity_ids,
+            )
         except Exception as exc:
             logging.warning("InfluxDB fetch failed: %s", exc)
             df = pd.DataFrame()
@@ -595,22 +630,36 @@ def fetch_historical_data_for_calibration(lookback_hours=672):
                 len(df), len(df) / 12,
             )
 
-    # Columns we expect for full-featured calibration
-    required_columns = [
-        config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
-        config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
-        config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
-        config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
-        config.PV_POWER_ENTITY_ID.split(".", 1)[-1],
-        config.TV_STATUS_ENTITY_ID.split(".", 1)[-1],
-    ]
-    important_optional_columns = [
-        config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1],
-        config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1],
-        config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1],
-        config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1],
-        config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1],
-    ]
+    # Columns we expect — cooling needs fewer than heating.
+    if purpose == "cooling":
+        required_columns = [
+            config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
+            getattr(config, "OUTLET_TEMP_ENTITY_ID",
+                    config.ACTUAL_OUTLET_TEMP_ENTITY_ID).split(".", 1)[-1],
+            config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
+            config.PV_POWER_ENTITY_ID.split(".", 1)[-1],
+        ]
+        important_optional_columns = [
+            config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+            config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1],
+            config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1],
+        ]
+    else:
+        required_columns = [
+            config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
+            config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+            config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+            config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
+            config.PV_POWER_ENTITY_ID.split(".", 1)[-1],
+            config.TV_STATUS_ENTITY_ID.split(".", 1)[-1],
+        ]
+        important_optional_columns = [
+            config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1],
+            config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+            config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1],
+            config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1],
+            config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1],
+        ]
 
     # --- HA history: full fallback (empty primary) or column supplement ---
     def _get_ha_df():
@@ -619,7 +668,10 @@ def fetch_historical_data_for_calibration(lookback_hours=672):
             from .ha_history_service import get_training_data_from_ha
         except ImportError:
             from ha_history_service import get_training_data_from_ha  # type: ignore
-        return get_training_data_from_ha(lookback_hours=lookback_hours)
+        return get_training_data_from_ha(
+            lookback_hours=lookback_hours,
+            entity_ids=_cooling_entity_ids,
+        )
 
     if df.empty and source in ("ha_history", "auto"):
         # Full fallback
@@ -688,6 +740,7 @@ def fetch_historical_data_for_calibration(lookback_hours=672):
     # ------------------------------------------------------------------
     _META_COLS = frozenset({
         "_time", "result", "table", "_start", "_stop", "_measurement",
+        "_field",  # InfluxDB pivot artifact, not a real entity
     })
 
     if not df.empty and source == "auto":

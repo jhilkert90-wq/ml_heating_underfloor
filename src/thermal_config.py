@@ -31,21 +31,21 @@ class ThermalParameterConfig:
     DEFAULTS = {
         'outlet_temp_max': 35.0,                    # °C
         'outlet_temp_min': 0.0,                     # °C
-        'thermal_time_constant': 4.390554703745845,  # hours
+        'thermal_time_constant': 4.39,  # hours
         'equilibrium_ratio': 0.17,                  # dimensionless
         'total_conductance': 0.8,                   # 1/hour
-        'pv_heat_weight': 0.0020704649305198215,    # °C/W
+        'pv_heat_weight': 0.002,    # °C/W
         'fireplace_heat_weight': 0.387,             # °C
         'tv_heat_weight': 0.35,                     # °C
         'fp_heat_output_kw': 3.0,                   # kW
-        'fp_decay_time_constant': 3.9144707244638868,  # hours
+        'fp_decay_time_constant': 3.91,  # hours
         'room_spread_delay_minutes': 18.0,          # minutes
         'adaptive_learning_rate': 0.01,
         'learning_confidence': 3.0,
         'min_learning_rate': 0.001,
         'max_learning_rate': 0.1,
-        'heat_loss_coefficient': 0.1245214561975565,  # 1/hour
-        'outlet_effectiveness': 0.9526723072021629,   # dimensionless
+        'heat_loss_coefficient': 0.124,  # 1/hour
+        'outlet_effectiveness': 0.83,   # dimensionless
         'delta_t_floor': 2.3,                       # °C
         'cloud_factor_exponent': 1.0,               # dimensionless
         'solar_lag_minutes': 45.0,                  # minutes
@@ -62,7 +62,7 @@ class ThermalParameterConfig:
         'thermal_time_constant': (3.0, 100.0),     # Hours
         'equilibrium_ratio': (0.1, 0.9),         # dimensionless
         'total_conductance': (0.1, 0.8),         # 1/hour
-        'pv_heat_weight': (0.0001, 0.005),       # W/°C
+        'pv_heat_weight': (0.00001, 0.005),       # W/°C (changed to 0.00001 because of 15kW Peak)
         'fireplace_heat_weight': (0.01, 6.0),    # 1/°C
         'tv_heat_weight': (0.05, 1.5),           # W/°C
         'fp_heat_output_kw': (0.5, 15.0),        # kW
@@ -173,7 +173,7 @@ class ThermalParameterConfig:
         'thermal_time_constant': (1.0, 50.0),
         'equilibrium_ratio': (0.1, 0.9),
         'total_conductance': (0.1, 0.8),
-        'pv_heat_weight': (0.0001, 0.005),
+        'pv_heat_weight': (0.00001, 0.005),
         'fireplace_heat_weight': (0.01, 6.0),
         'tv_heat_weight': (0.05, 1.5),
         'fp_heat_output_kw': (0.5, 15.0),

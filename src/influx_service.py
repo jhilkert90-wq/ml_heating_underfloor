@@ -518,42 +518,51 @@ class InfluxService:
         )
         return result_df
 
-    def get_training_data(self, lookback_hours: int) -> pd.DataFrame:
+    def get_training_data(
+        self,
+        lookback_hours: int,
+        entity_ids: Optional[List[str]] = None,
+    ) -> pd.DataFrame:
         """
         Fetches a comprehensive dataset for model training.
 
         It queries multiple entities over a specified lookback period,
         pivots the data into a wide format, and performs cleaning steps
         like filling missing values.
-        """
-        hp_outlet_temp_id = (
-            config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-        )
-        actual_target_outlet_temp_id = (
-            config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-        )
-        kuche_temperatur_id = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
-        fernseher_id = config.TV_STATUS_ENTITY_ID.split(".", 1)[-1]
-        dhw_status_id = config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1]
-        defrost_status_id = config.DEFROST_STATUS_ENTITY_ID.split(".", 1)[-1]
-        disinfection_status_id = (
-            config.DISINFECTION_STATUS_ENTITY_ID.split(".", 1)[-1]
-        )
-        dhw_boost_heater_status_id = (
-            config.DHW_BOOST_HEATER_STATUS_ENTITY_ID.split(".", 1)[-1]
-        )
-        outdoor_temp_id = config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
-        pv_power_id = config.PV_POWER_ENTITY_ID.split(".", 1)[-1]
 
-        # New sensors for physics calibration
-        inlet_temp_id = config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-        flow_rate_id = config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1]
-        power_consumption_id = (
-            config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1]
-        )
-        fireplace_id = config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1]
-        living_room_temp_id = (
-            config.LIVING_ROOM_TEMP_ENTITY_ID.split(".", 1)[-1]
+        Parameters
+        ----------
+        lookback_hours : int
+            How many hours of history to fetch.
+        entity_ids : list[str], optional
+            Full HA entity IDs to query (e.g. ``["sensor.rt_mittelwert", ...]``).
+            When *None* (default), all entities needed for heating + cooling
+            calibration are queried.  Pass a reduced list for cooling-only
+            calibration to cut InfluxDB payload.
+        """
+        if entity_ids is not None:
+            short_ids = [eid.split(".", 1)[-1] for eid in entity_ids]
+        else:
+            short_ids = [
+                config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+                config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+                config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
+                config.TV_STATUS_ENTITY_ID.split(".", 1)[-1],
+                config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1],
+                config.DEFROST_STATUS_ENTITY_ID.split(".", 1)[-1],
+                config.DISINFECTION_STATUS_ENTITY_ID.split(".", 1)[-1],
+                config.DHW_BOOST_HEATER_STATUS_ENTITY_ID.split(".", 1)[-1],
+                config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1],
+                config.PV_POWER_ENTITY_ID.split(".", 1)[-1],
+                config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1],
+                config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1],
+                config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1],
+                config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1],
+                config.LIVING_ROOM_TEMP_ENTITY_ID.split(".", 1)[-1],
+            ]
+
+        entity_filter = " or\n                ".join(
+            f'r["entity_id"] == "{sid}"' for sid in short_ids
         )
 
         flux_query = f"""
@@ -561,21 +570,7 @@ class InfluxService:
             |> range(start: -{lookback_hours}h)
             |> filter(fn: (r) => r["_field"] == "value")
             |> filter(fn: (r) =>
-                r["entity_id"] == "{hp_outlet_temp_id}" or
-                r["entity_id"] == "{actual_target_outlet_temp_id}" or
-                r["entity_id"] == "{kuche_temperatur_id}" or
-                r["entity_id"] == "{outdoor_temp_id}" or
-                r["entity_id"] == "{pv_power_id}" or
-                r["entity_id"] == "{dhw_status_id}" or
-                r["entity_id"] == "{defrost_status_id}" or
-                r["entity_id"] == "{disinfection_status_id}" or
-                r["entity_id"] == "{dhw_boost_heater_status_id}" or
-                r["entity_id"] == "{fernseher_id}" or
-                r["entity_id"] == "{inlet_temp_id}" or
-                r["entity_id"] == "{flow_rate_id}" or
-                r["entity_id"] == "{power_consumption_id}" or
-                r["entity_id"] == "{fireplace_id}" or
-                r["entity_id"] == "{living_room_temp_id}"
+                {entity_filter}
             )
             |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
             |> pivot(

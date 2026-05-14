@@ -606,6 +606,9 @@ def convert_addon_to_env(config):
         'COOLING_ML_CALIBRATION_START_DATE': config.get(
             'cooling_ml_calibration_start_date', ''
         ),
+        'COOLING_ML_WARM_THRESHOLD_C': str(
+            config.get('cooling_ml_warm_threshold_c', 10.0)
+        ),
     }
 
     # Set environment variables for the ML system

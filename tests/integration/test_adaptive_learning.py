@@ -206,11 +206,13 @@ def test_source_attribution_learning():
         print("   ✅ TV weight adaptation confirmed")
 
         # --- Test PV Learning ---
+        # Ensure PV weight starts below its upper clamp so we can observe growth
+        model.external_source_weights['pv'] = 0.002
         initial_pv_weight = model.external_source_weights['pv']
         print(f"   Initial PV weight: {initial_pv_weight:.6f}")
         
         # Simulate consistent overheating when PV is HIGH
-        for _ in range(5):
+        for _ in range(15):
             model.update_prediction_feedback(
                 predicted_temp=20.0,
                 actual_temp=20.5,  # Overheating

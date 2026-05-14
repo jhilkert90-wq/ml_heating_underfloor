@@ -15,6 +15,9 @@ import pytest
 import pandas as pd
 from datetime import datetime, timedelta
 
+# Dashboard components require streamlit at import time
+streamlit = pytest.importorskip("streamlit", reason="streamlit not installed")
+
 # Insert dashboard directory so component modules can be imported
 sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "dashboard")

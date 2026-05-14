@@ -652,12 +652,11 @@ class TestConfigDefaults:
     """Verify critical config defaults are consistent."""
 
     def test_lead_time_config_vs_calibration_default(self):
-        """Config default for PRE_COOL_LEAD_TIME_HOURS is 3.0.
-        Calibration code uses getattr(config, ..., 8.0) — if config is
-        loaded properly the 8.0 default is never used, but document the mismatch.
+        """Config default for PRE_COOL_LEAD_TIME_HOURS is 8.0,
+        matching config_adapter.py default for addon environments.
         """
         from src import config
-        assert config.PRE_COOL_LEAD_TIME_HOURS == 3.0
+        assert config.PRE_COOL_LEAD_TIME_HOURS == 8.0
         # Calibration hardcodes 8.0 as fallback — this is a known mismatch
 
     def test_pre_cool_horizon_config_default(self):

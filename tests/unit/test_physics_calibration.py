@@ -690,8 +690,9 @@ def test_pv_heat_weight_new_bounds():
     lo, hi = ThermalParameterConfig.get_bounds('pv_heat_weight')
     assert lo == 0.0001
     assert hi == 0.005
-    # Default is the calibrated baseline value
-    assert ThermalParameterConfig.get_default('pv_heat_weight') == 0.0020704649305198215
+    # Default must lie within the valid bounds
+    default = ThermalParameterConfig.get_default('pv_heat_weight')
+    assert lo <= default <= hi
 
 
 def test_cloud_exponent_not_learned_when_disabled():

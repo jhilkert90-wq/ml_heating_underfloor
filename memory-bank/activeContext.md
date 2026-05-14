@@ -1,5 +1,63 @@
 # Active Context - Current Work & Decision State
 
+### 🔧 Fix `calculate_optimal_outlet_temperature` for cooling mode — 2026-05-14
+
+#### **What changed**
+- `src/thermal_equilibrium_model.py`: Added `climate_mode` parameter to `calculate_optimal_outlet_temperature()` and `_calculate_equilibrium_outlet_temperature()`. Cooling mode uses `[COOLING_CLAMP_MIN_ABS, COOLING_CLAMP_MAX_ABS]` bounds instead of heating bounds `[outdoor+5, 70]`, and skips the "outlet below outdoor" fallback since cooling outlets should be below outdoor temp.
+- `notebooks/analysis/05_cooling_scenario_simulation.ipynb`: `simulate_model_mode()` now passes `climate_mode='cooling'` to the analytical outlet method.
+
+#### **Why**
+- The notebook's model-mode simulation showed HP never activating. The analytical method always returned heating-range outlets (25–35°C) that got clamped to 24°C, failing the `outlet < inlet - MIN_COOLING_DELTA_K` gate. The underlying equilibrium formula was correct — only the bounds were wrong for cooling.
+- Production was unaffected: `main.py` uses binary search via `model_wrapper._calculate_required_outlet_temp()` which already has full cooling support.
+
+#### **Files changed**
+- `src/thermal_equilibrium_model.py`, `notebooks/analysis/05_cooling_scenario_simulation.ipynb`
+
+---
+
+### ✅ Fix all 24 pre-existing test failures — 2026-05-14
+
+#### **What changed**
+- `tests/unit/test_config.py`: Added `tearDown()` to restore `sys.modules['src.config']` after each test — root cause of 7 config pollution failures
+- `tests/unit/test_dashboard_components.py`: Added `pytest.importorskip("streamlit")` — 9 failures resolved
+- `tests/unit/test_dashboard_data_service.py`: `missing_state` fixture now patches both `_STATE_FILE_CANDIDATES` and `_COOLING_STATE_FILE_CANDIDATES` — 5 failures resolved
+- `tests/unit/test_overheating_predictor.py`: Peak moved from hour 8 to 10 (beyond 8h lead time)
+- `tests/integration/test_adaptive_learning.py`: PV weight set to 0.002 explicitly before learning; iterations increased to 15
+- `tests/unit/test_physics_calibration.py`: Default assertion checks bounds membership instead of exact value
+
+#### **Why**
+- 24 tests were failing in the full suite due to test isolation issues, config module identity pollution, and assertion drift from earlier lead-time changes
+- Root cause: `test_config.py::setUp` deleted `sys.modules['src.config']` causing all subsequent `from src import config` to create a NEW module object, while existing modules still referenced the OLD one — making `patch.object(config, ...)` invisible to downstream code
+
+#### **Files changed**
+- `tests/unit/test_config.py`, `tests/unit/test_dashboard_components.py`, `tests/unit/test_dashboard_data_service.py`, `tests/unit/test_overheating_predictor.py`, `tests/unit/test_physics_calibration.py`, `tests/integration/test_adaptive_learning.py`
+
+---
+
+### ✨ Cooling ML calibration data optimization — 2026-05-14
+
+#### **What changed**
+- `src/physics_calibration.py`: `fetch_historical_data_for_calibration()` now accepts `purpose="cooling"` to build a reduced entity list (7 vs 15 entities). `_field` added to `_META_COLS` to suppress InfluxDB artifact gap warnings.
+- `src/influx_service.py`: `get_training_data()` accepts optional `entity_ids` list; when provided, only those entities are queried in Flux.
+- `src/ha_history_service.py`: `_build_entity_map()` and `get_training_data_from_ha()` accept optional `entity_ids` override.
+- `src/cooling_ml_calibration.py`: passes `purpose="cooling"` to fetch function; warm-season filter now uses `COOLING_ML_WARM_THRESHOLD_C` (default 10°C) instead of derived `PRE_COOL_MIN_OUTDOOR_FORECAST_C - 6`.
+- `src/config.py`: `PRE_COOL_LEAD_TIME_HOURS` default fixed from 3.0 → 8.0; forecast defaults now derived from lead time; new `COOLING_ML_WARM_THRESHOLD_C` config added.
+- `config_adapter.py`: wired `COOLING_ML_WARM_THRESHOLD_C` env var mapping.
+
+#### **Why**
+- Cooling ML calibration was fetching 15 entities (incl. heating-only quality gates: DHW, defrost, TV, fireplace) but only uses 5-7. This wasted InfluxDB query bandwidth and HA REST API calls.
+- Warm-season filter at 16°C excluded shoulder-season data, causing 85.3% positive label imbalance. Lowering to 10°C adds critical negative examples.
+- Forecast features defaulting to 12h exceeded the 8h label window, adding noise features.
+- `PRE_COOL_LEAD_TIME_HOURS` had mismatched defaults between config.py (3.0) and config_adapter.py (8.0).
+
+#### **Files changed**
+- `src/config.py`, `src/influx_service.py`, `src/ha_history_service.py`
+- `src/physics_calibration.py`, `src/cooling_ml_calibration.py`
+- `config_adapter.py`
+- `tests/unit/test_cooling_ml_calibration.py`, `tests/unit/test_cooling_ml_extended.py`
+
+---
+
 ### ✨ Feature: Cooling ML calibration start date + review fixes — 2026-05-14
 
 #### **What changed**

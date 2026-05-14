@@ -671,7 +671,7 @@ PRE_COOL_HORIZON_HOURS: int = int(
 )
 # Start pre-cooling this many hours before the predicted peak.
 PRE_COOL_LEAD_TIME_HOURS: float = float(
-    os.getenv("PRE_COOL_LEAD_TIME_HOURS", "3.0")
+    os.getenv("PRE_COOL_LEAD_TIME_HOURS", "8.0")
 )
 # How much to shift the binary-search target temperature down [K] to trigger
 # the heat pump when the room hasn't overheated yet.
@@ -733,8 +733,11 @@ COOLING_ML_RETRAIN_VAL_FRACTION: float = float(
     os.getenv("COOLING_ML_RETRAIN_VAL_FRACTION", "0.25")
 )
 # Default comma-separated list of forecast hours used for AT and PV hindcast
-# features during cooling ML calibration.  Covers the full 12-hour cycle.
-_COOLING_ML_DEFAULT_FORECAST_HOURS = "1,2,3,4,5,6,7,8,9,10,11,12"
+# features during cooling ML calibration.  Derived from PRE_COOL_LEAD_TIME_HOURS
+# so only hours within the label window are included by default.
+_COOLING_ML_DEFAULT_FORECAST_HOURS = ",".join(
+    str(h) for h in range(1, int(PRE_COOL_LEAD_TIME_HOURS) + 1)
+)
 
 # Comma-separated list of forecast hours to use as outdoor-temperature hindcast
 # features (AT_roh_Xh) during calibration.  All 12 hours are included by default
@@ -753,6 +756,13 @@ COOLING_ML_FORECAST_HOURS: str = COOLING_ML_AT_FORECAST_HOURS
 # Tooltip: MODEL-BASED only.
 COOLING_ML_PV_FORECAST_HOURS: str = os.getenv(
     "COOLING_ML_PV_FORECAST_HOURS", _COOLING_ML_DEFAULT_FORECAST_HOURS
+)
+
+# Minimum outdoor temperature [°C] to include rows in the cooling ML training
+# set.  A lower value (e.g. 10°C) adds shoulder-season data with mostly
+# negative labels, improving class balance.
+COOLING_ML_WARM_THRESHOLD_C: float = float(
+    os.getenv("COOLING_ML_WARM_THRESHOLD_C", "10.0")
 )
 
 # Earliest date for cooling ML training data.  Format: DD.MM.YYYY (e.g. 01.06.2024).

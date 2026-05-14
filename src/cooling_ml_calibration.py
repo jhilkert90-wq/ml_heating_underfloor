@@ -140,7 +140,10 @@ def calibrate_cooling_ml(
             logger.error("Cannot import fetch_historical_data_for_calibration")
             return False
 
-    df = fetch_historical_data_for_calibration(lookback_hours=lookback_hours)
+    df = fetch_historical_data_for_calibration(
+        lookback_hours=lookback_hours,
+        purpose="cooling",
+    )
     if df is None or df.empty:
         logger.error("Calibration aborted: no historical data fetched")
         return False
@@ -181,7 +184,7 @@ def calibrate_cooling_ml(
     for col in ["indoor_temp", "AT", "VLT", "RLT", "PV_Generate"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    warm_threshold = float(getattr(config, "PRE_COOL_MIN_OUTDOOR_FORECAST_C", 22.0)) - 6.0
+    warm_threshold = float(getattr(config, "COOLING_ML_WARM_THRESHOLD_C", 10.0))
     df = df[df["AT"] > warm_threshold].copy()
     logger.info("After warm-season filter (AT > %.1f°C): %d rows", warm_threshold, len(df))
 

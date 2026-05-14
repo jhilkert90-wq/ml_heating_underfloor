@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`calculate_optimal_outlet_temperature` cooling mode support** — Method was heating-only (bounds `[outdoor+5, 70]`), always returning outlet ≥25°C in cooling scenarios. Added `climate_mode` parameter; cooling mode uses `[COOLING_CLAMP_MIN_ABS, COOLING_CLAMP_MAX_ABS]` bounds and skips the "outlet below outdoor" fallback. Also fixed `_calculate_equilibrium_outlet_temperature` with same cooling bounds. Production unaffected (uses binary search via `model_wrapper`), but analytical method now works for notebooks and offline simulation.
+
+### Changed
+- **Cooling ML calibration: dedicated fetch path** — `fetch_historical_data_for_calibration()` accepts `purpose="cooling"` to fetch only 7 entities instead of 15, reducing InfluxDB and HA API load by ~50%
+- **Warm-season filter decoupled** — New `COOLING_ML_WARM_THRESHOLD_C` config (default 10°C) replaces the derived `PRE_COOL_MIN_OUTDOOR_FORECAST_C - 6` formula, including shoulder-season data for better label balance
+- **Forecast defaults aligned to lead time** — `COOLING_ML_AT_FORECAST_HOURS` and `COOLING_ML_PV_FORECAST_HOURS` now default to `1..PRE_COOL_LEAD_TIME_HOURS` (8h) instead of hardcoded 12h
+
+### Fixed
+- **`PRE_COOL_LEAD_TIME_HOURS` default mismatch** — `config.py` default changed from 3.0 to 8.0 to match `config_adapter.py`
+- **`_field` gap-detection artifact** — InfluxDB pivot metadata column `_field` no longer triggers misleading coverage-gap warnings
+- **24 pre-existing test failures resolved** — Fixed config module identity pollution (`test_config.py` deleting `sys.modules['src.config']` without restore), dashboard data-service isolation (missing `_COOLING_STATE_FILE_CANDIDATES` patch), streamlit import skip for dashboard component tests, overheating predictor peak-hour assertion aligned to 8h lead time, PV weight adaptive-learning test robustness, and TDD-fixture-sensitive default assertion
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

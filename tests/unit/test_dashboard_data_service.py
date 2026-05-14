@@ -160,6 +160,7 @@ def missing_state(monkeypatch):
     """Ensure no state file is found."""
     import data_service as ds
     monkeypatch.setattr(ds, "_STATE_FILE_CANDIDATES", ["/nonexistent/x.json"])
+    monkeypatch.setattr(ds, "_COOLING_STATE_FILE_CANDIDATES", ["/nonexistent/x.json"])
 
 
 # ---------------------------------------------------------------------------
