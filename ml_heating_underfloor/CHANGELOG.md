@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.33] - 2026-05-14
+
+### Fixed
+- Switch Docker base image from `python:3.11-alpine3.18` to `python:3.11-slim` to fix aarch64 build: Alpine uses musl libc which has no pre-built scikit-learn wheels for aarch64, causing source compilation to fail with a GCC error on the native ARM runner.
+
 ## [0.2.32] - 2026-05-14
 
 ### Changed
