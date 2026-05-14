@@ -7,50 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **Cooling ML calibration lead-time semantics**: Reduced default `PRE_COOL_LEAD_TIME_HOURS` from 8.0 to 3.0 for more responsive pre-cooling label assignment, aligning model training and inference semantics.
-- **Cooling ML PV feature contract hardening**: All cooling ML PV features (`pv_roll_*`, `PV_Generate`, `pv_forecast_*h`) now strictly prefer raw electrical keys (`pv_now_electrical`, `pv_power_history_electrical`, `pv_forecast_electrical_*h`) and only fall back to thermal-corrected keys if electrical keys are absent, ensuring feature scale matches training data.
-
-### Fixed
-- **Pre-cooling calibration bugs**: Fixed bugs in pre-cooling calibration including:
-  - Use of correct PV keys for feature extraction and rolling PV history.
-  - Alignment of feature scale between training and inference.
-  - Buffer persistence: cooling observation buffer now saves after every push/resolve cycle, preserving pending entries and evolving label state across restarts.
-  - Lead-time and label horizon calculation now matches intended semantics.
-- **Missing `scikit-learn` dependency**: Added `scikit-learn>=1.0.0` to `requirements.txt` to fix silent failures in calibration metrics.
-
-### Added
-- **Test coverage for cooling calibration workflow**: Added and clarified unit tests for cooling ML calibration and PV feature extraction, including tighter assertions for raw vs thermal PV history and column-count expectations.
-
-### Changed
-- **CI: GitHub Actions workflow versions and architecture**: Updated `.github/workflows/build.yaml` to use newer versions of GitHub Actions (`actions/checkout@v4`, `docker/login-action@v3`, `docker/setup-buildx-action@v3`, `docker/build-push-action@v6`) and improved architecture handling. Native runners are now used per architecture (no QEMU required), and build cache is separated per arch for improved reliability and performance.
-
-### Added
-- **PV Feature Key Contract documentation**: Added a canonical, highly-visible `⚠️ AI MODEL NOTICE — PV Feature Key Contract` section at the top of `memory-bank/systemPatterns.md` that maps every consumer of `pv_now_electrical` / `pv_forecast_electrical_*` (electrical, raw) vs `pv_now` / `pv_forecast_{h}h` (thermal, corrected). Includes a table, explicit rules, anti-patterns, and source-code citations.
-- **ML Cooling Guide PV warning**: Added a `⚠️ PV Feature Key Contract` warning block to `docs/ML_COOLING_MODEL_GUIDE.md` clarifying that `OverheatingPredictor` and ML cooling paths must use thermal keys.
-- **PV key contract regression tests** (`tests/unit/test_overheating_predictor.py`): 5 new tests in `TestPVKeyContract` that:
-  - Confirm `OverheatingPredictor` reads `pv_now` (thermal) for its guard check and works without `pv_now_electrical`
-  - Confirm trajectory PV forecast is built from `pv_forecast_{h}h` (thermal) even when electrical keys are absent
-  - Confirm `pv_now_electrical` alone (with `pv_now=0`) cannot pass the guard
-  - Confirm `HLCCycle._build_cycle()` reads `pv_now_electrical` (not `pv_now`) from context
-  - Confirm `_build_cycle()` defaults `pv_now_electrical` to 0.0 when the key is absent
-- **Reviewer-follow-up regression hardening**: Strengthened 2 `TestPVKeyContract` tests to assert `predict_thermal_trajectory()` call kwargs (`pv_power`, `pv_forecasts`) directly, preventing false positives from mocked trajectory outputs.
-
-### Fixed
-- **Merge conflict resolution (latest sync)**: Resolved newly introduced conflicts while merging latest `origin/main` into the PR branch, reconciling `memory-bank/activeContext.md` and `memory-bank/progress.md` and preserving entries from both branches.
-- **Post-merge cleanup**: Repaired a truncated sentence in `memory-bank/activeContext.md` and normalized non-English inline comments in `.github/workflows/build.yaml` to English for consistency.
-- **Post-merge review cleanup**: Restored the missing `Files changed` block in the PV contract context entry, removed an extra trailing separator in `memory-bank/activeContext.md`, and reformatted `new_addon_lines` in `.github/workflows/build.yaml` for readability.
-- **[HIGH] Cooling observation buffer durability gap before label maturity**: Pre-cooling loop now persists the observation buffer after every `push_pending()`/`resolve_labels()` cycle, so pending samples and evolving label state survive restarts even before labels mature.
-- **[HIGH] Remaining PV roll scale drift in cooling ML inference**: Added raw `pv_power_history_electrical` to physics features and updated cooling ML `pv_roll_*` extraction to prefer the raw electrical history used during training.
-- **Merge conflict resolution for PR branch**: Resolved conflicts against `origin/main` in `CHANGELOG.md`, `memory-bank/activeContext.md`, and `memory-bank/progress.md` by preserving entries from both branches and removing conflict markers.
-- **[CRITICAL] Missing `scikit-learn` dependency**: Added `scikit-learn>=1.0.0` to `requirements.txt`; its absence caused `roc_auc_score` import to silently fail, writing `null` AUC to model metadata.
-- **[HIGH] Wrong PV/forecast feature keys in pre-cooling integration tests**: `_make_features()` in `test_pre_cooling_integration.py` used `pv_now_electrical`, `pv_forecast_electrical_{h}h`, and `outdoor_forecast_{h}h` — none of which `OverheatingPredictor` reads. Fixed to `pv_now`, `pv_forecast_{h}h`, and `temp_forecast_{h}h` so the PV guard is actually exercised.
-- **[HIGH] Missing PV contract assertion in pre-cooling integration tests**: Added an explicit assertion that `OverheatingPredictor` passes the corrected PV values into `predict_thermal_trajectory()` as `pv_power` and `pv_forecasts`, so PV-guard regressions are caught.
-- **[MEDIUM] Training/inference PV scale mismatch for LGBM cooling model**: `_extract_feature()` in `cooling_ml_model.py` used thermally-corrected `pv_now`/`pv_forecast_{h}h` at inference while training used raw electrical watts. Now prefers `pv_now_electrical`/`pv_forecast_electrical_{h}h` with graceful fallback to corrected values.
-- **[LOW] Incorrect `PRE_COOL_LEAD_TIME_HOURS` fallback in calibration**: Hardcoded default was `8.0` in `cooling_ml_calibration.py`; corrected to `3.0` to match `config.py`.
-- **[LOW] Cooling observation buffer not persisted between cycles**: Buffer was only saved on successful retrain. Now saved whenever `resolve_labels()` returns newly-labeled observations, preventing data loss on restart.
-- **[LOW] Stale cooling ML test defaults**: Updated cooling ML test fixtures and fake configs to use the runtime default `PRE_COOL_LEAD_TIME_HOURS=3.0` instead of the old `8.0`, keeping calibration tests aligned with production behavior.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
