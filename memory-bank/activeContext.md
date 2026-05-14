@@ -1,5 +1,24 @@
 # Active Context - Current Work & Decision State
 
+### 🚀 CI Workflow Modernization & Architecture Improvements — 2026-05-14
+
+#### **What changed**
+- **GitHub Actions workflow updated:**
+  - `.github/workflows/build.yaml` now uses newer versions of core actions (`actions/checkout@v4`, `docker/login-action@v3`, `docker/setup-buildx-action@v3`, `docker/build-push-action@v6`).
+  - Architecture handling improved: jobs run natively on their respective runners (`ubuntu-24.04-arm` for ARM, `ubuntu-latest` for AMD64), eliminating the need for QEMU emulation.
+  - Build cache is now separated per architecture for faster and more reliable builds.
+  - Minor log and changelog update messages clarified.
+
+#### **Why**
+- Ensures compatibility with latest GitHub Actions ecosystem.
+- Native builds improve speed and reliability, reduce complexity (no QEMU).
+- Per-arch cache prevents cross-architecture cache pollution.
+
+#### **Files changed**
+- `.github/workflows/build.yaml`
+
+---
+
 ### 🛡️ PV Key Ownership Codified & Pre-cooling Path Regressions — 2026-05-14
 
 #### **What changed**
@@ -56,43 +75,4 @@
 - Added **5 regression tests** (`TestPVKeyContract`) to `tests/unit/test_overheating_predictor.py` that lock in the correct key usage for `OverheatingPredictor` and `HLCCycle._build_cycle`.
 
 #### **Why**
-- AI models previously used `pv_now_electrical` / `pv_forecast_electrical_*` in places that should use the thermally-corrected `pv_now` / `pv_forecast_{h}h` keys, causing silent over-estimation of solar gain in the thermal trajectory simulation. The documentation and tests make the contract explicit and machine-checkable.
-
-#### **Files changed**
-- `memory-bank/systemPatterns.md` — canonical PV key contract note (top of file)
-- `docs/ML_COOLING_MODEL_GUIDE.md` — warning block above Feature Engineering
-- `tests/unit/test_overheating_predictor.py` — 5 regression tests
-- `CHANGELOG.md`
-- `memory-bank/progress.md`
-- `memory-bank/activeContext.md`
-
----
-
-### 🔖 ML Heating Underfloor v0.2.30 Release Bump — 2026-05-13
-
-#### **What changed**
-- Version updated in `config.yaml` from `0.2.29` to `0.2.30`.
-- No functional changes; this is a release bump to reflect recent bug fixes and ML pre-cooling enhancements already documented in the [Unreleased] changelog.
-
-#### **Files changed**
-- `ml_heating_underfloor/config.yaml`
-
----
-
-### **Fix Cooling ML Calibration Import Crash — 2026-05-14**
-
-#### **What changed**
-- Fixed `import config` → `try: from . import config / except ImportError: import config` in `src/cooling_ml_calibration.py` (line 63) and `src/cooling_ml_model.py` (line 253)
-- Added `joblib` and uncommented `lightgbm` in `requirements.txt`
-- Created `tests/unit/test_cooling_ml_calibration.py` with 23 tests covering all calibration pipeline paths
-- Extended `tests/unit/test_cooling_ml.py` with 4 import regression tests
-
-#### **Why**
-- Production log showed `calibrate_cooling_ml: missing dependency — No module named 'config'` at container startup. The bare `import config` worked only when the module was executed directly (not as a package), which is never the case in the add-on container.
-
-#### **Files changed**
-- `src/cooling_ml_calibration.py` — import fix
-- `src/cooling_ml_model.py` — import fix
-- `requirements.txt` — dependency fixes
-- `tests/unit/test_cooling_ml_calibration.py` — 23 new tests (NEW)
--
+- AI models previously used `pv_now_electrical` / `pv_forecast_electrical_*` in places that should use the thermally-corrected `pv_now` / `pv_forecast_{h}h` keys, causing silent over-estimation of solar gain in the thermal trajectory simulation. The documentation and tests make the contract explicit and machin

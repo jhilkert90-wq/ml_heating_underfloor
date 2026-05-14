@@ -1,5 +1,26 @@
 # ML Heating System - Current Progress
 
+## 🚀 CI Workflow Modernization & Architecture Improvements (2026-05-14)
+
+**Status:** COMPLETED
+
+- **GitHub Actions workflow updated:**
+  - `.github/workflows/build.yaml` now uses latest versions of core actions (`actions/checkout@v4`, `docker/login-action@v3`, `docker/setup-buildx-action@v3`, `docker/build-push-action@v6`).
+  - Native runners are used for each architecture (`ubuntu-24.04-arm` for ARM, `ubuntu-latest` for AMD64), eliminating QEMU emulation.
+  - Build cache is now separated per architecture for improved speed and reliability.
+  - Minor log and changelog update messages clarified.
+
+**Purpose:**
+- Ensures CI compatibility with latest GitHub Actions ecosystem.
+- Native builds improve speed, reliability, and reduce complexity.
+- Per-arch cache prevents cross-architecture cache pollution.
+
+**Test status:**
+- CI workflow runs completed successfully for both ARM and AMD64 builds; no regressions detected.
+
+**Files changed:**
+- `.github/workflows/build.yaml`
+
 ## 🛡️ PV Key Ownership Codified & Pre-cooling Path Regressions (2026-05-14)
 
 **Status:** COMPLETED
