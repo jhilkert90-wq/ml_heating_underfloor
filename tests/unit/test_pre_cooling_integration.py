@@ -116,6 +116,10 @@ class TestPreCoolDecisionFlow:
 
         assert result["risk"] is True
         assert result["should_cool_now"] is True
+        model.predict_thermal_trajectory.assert_called_once()
+        kwargs = model.predict_thermal_trajectory.call_args.kwargs
+        assert kwargs["pv_power"] == pytest.approx(6000.0)
+        assert kwargs["pv_forecasts"] == pytest.approx([6000.0] * 13)
 
     def test_cloudy_cool_day_no_pre_cool(self):
         """Cool cloudy day → no overheating risk."""

@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### 🧪 Review Cooling Calibration Workflow Follow-up — 2026-05-14
+
+#### **What changed**
+- Reviewed the pre-cooling calibration follow-up work for remaining bugs in the cooling calibration workflow.
+- Added a regression assertion in `tests/unit/test_pre_cooling_integration.py` proving that the corrected thermal PV keys reach `predict_thermal_trajectory()` as `pv_power=6000.0` and `pv_forecasts=[6000.0] * 13`.
+- Updated stale cooling ML test configs in `tests/unit/test_cooling_ml.py` and `tests/unit/test_cooling_ml_calibration.py` from `PRE_COOL_LEAD_TIME_HOURS=8.0` to `3.0` so tests match production defaults.
+
+#### **Why**
+- The earlier fix corrected the test helper keys, but the integration test still did not explicitly assert that PV values were forwarded into the predictor call, leaving a regression gap.
+- Several cooling ML tests still encoded the old 8-hour lead-time default, which could hide future drift between calibration tests and runtime behavior.
+
+#### **Files changed**
+- `tests/unit/test_pre_cooling_integration.py`
+- `tests/unit/test_cooling_ml.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+
+---
+
 ### 🐛 Fix Pre-Cooling Calibration Bugs — 2026-05-14
 
 #### **What changed**

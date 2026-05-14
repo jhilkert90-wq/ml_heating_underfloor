@@ -314,7 +314,7 @@ class TestCoolingMLModel:
             fake_config = types.SimpleNamespace(
                 PRE_COOL_TRIGGER_MARGIN_K=0.5,
                 PRE_COOL_HORIZON_HOURS=12,
-                PRE_COOL_LEAD_TIME_HOURS=8.0,
+                PRE_COOL_LEAD_TIME_HOURS=3.0,
             )
             with patch.dict("sys.modules", {"config": fake_config}):
                 result = model.predict_overheating_risk(22.0, 23.0, physics)
@@ -330,7 +330,7 @@ class TestCoolingMLModel:
         fake_config = types.SimpleNamespace(
             PRE_COOL_TRIGGER_MARGIN_K=0.5,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
         )
         with patch.dict("sys.modules", {"config": fake_config}):
             result = model.predict_overheating_risk(22.0, 23.0, _make_physics())
@@ -345,7 +345,7 @@ class TestCoolingMLModel:
         fake_config = types.SimpleNamespace(
             PRE_COOL_TRIGGER_MARGIN_K=0.5,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
         )
         with patch.dict("sys.modules", {"config": fake_config}):
             result = model.predict_overheating_risk(22.0, 23.0, _make_physics())
@@ -359,7 +359,7 @@ class TestCoolingMLModel:
         fake_config = types.SimpleNamespace(
             PRE_COOL_TRIGGER_MARGIN_K=0.5,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
         )
         with patch.dict("sys.modules", {"config": fake_config}):
             result = model.predict_overheating_risk(22.0, 23.0, _make_physics(), climate_mode="heating")
@@ -376,7 +376,7 @@ class TestCoolingMLModel:
         fake_config = types.SimpleNamespace(
             PRE_COOL_TRIGGER_MARGIN_K=0.5,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
         )
 
         feature_cols = ["indoor_temp", "at_delta_indoor", "AT"]
@@ -512,7 +512,7 @@ class TestCalibrateCoolingMlParams:
         fake_config = types.SimpleNamespace(
             CYCLE_INTERVAL_MINUTES=10,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
             COOLING_CLAMP_MAX_ABS=24.0,
             PRE_COOL_MIN_OUTDOOR_FORECAST_C=22.0,
             COOLING_ML_MIN_TRAINING_SAMPLES=200,
@@ -635,7 +635,7 @@ class TestImportConfigRegression:
         fake_cfg = types.SimpleNamespace(
             CYCLE_INTERVAL_MINUTES=10,
             PRE_COOL_HORIZON_HOURS=12,
-            PRE_COOL_LEAD_TIME_HOURS=8.0,
+            PRE_COOL_LEAD_TIME_HOURS=3.0,
             COOLING_CLAMP_MAX_ABS=24.0,
             PRE_COOL_MIN_OUTDOOR_FORECAST_C=22.0,
             COOLING_ML_MIN_TRAINING_SAMPLES=200,

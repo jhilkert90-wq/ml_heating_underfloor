@@ -1,5 +1,22 @@
 # ML Heating System - Current Progress
 
+## Review Cooling Calibration Workflow Follow-up (2026-05-14)
+
+**Status:** COMPLETED
+
+- Reviewed the recently landed pre-cooling calibration fixes for remaining workflow gaps.
+- Added an explicit PV contract assertion in `tests/unit/test_pre_cooling_integration.py` to verify `OverheatingPredictor` forwards corrected `pv_now` / `pv_forecast_*` values into `predict_thermal_trajectory()`.
+- Updated stale cooling ML test fixtures and fake configs from `PRE_COOL_LEAD_TIME_HOURS=8.0` to `3.0` to match runtime/config defaults.
+- Validation: `python -m pytest tests/unit/test_pre_cooling_integration.py tests/unit/test_cooling_ml.py tests/unit/test_cooling_ml_calibration.py -q --tb=short` → **75 passed**.
+
+**Files changed:**
+- `tests/unit/test_pre_cooling_integration.py`
+- `tests/unit/test_cooling_ml.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ## Fix Pre-Cooling Calibration Bugs (2026-05-14)
 
 **Status:** COMPLETED

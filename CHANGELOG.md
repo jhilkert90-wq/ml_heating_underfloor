@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **[CRITICAL] Missing `scikit-learn` dependency**: Added `scikit-learn>=1.0.0` to `requirements.txt`; its absence caused `roc_auc_score` import to silently fail, writing `null` AUC to model metadata.
 - **[HIGH] Wrong PV/forecast feature keys in pre-cooling integration tests**: `_make_features()` in `test_pre_cooling_integration.py` used `pv_now_electrical`, `pv_forecast_electrical_{h}h`, and `outdoor_forecast_{h}h` — none of which `OverheatingPredictor` reads. Fixed to `pv_now`, `pv_forecast_{h}h`, and `temp_forecast_{h}h` so the PV guard is actually exercised.
+- **[HIGH] Missing PV contract assertion in pre-cooling integration tests**: Added an explicit assertion that `OverheatingPredictor` passes the corrected PV values into `predict_thermal_trajectory()` as `pv_power` and `pv_forecasts`, so PV-guard regressions are caught.
 - **[MEDIUM] Training/inference PV scale mismatch for LGBM cooling model**: `_extract_feature()` in `cooling_ml_model.py` used thermally-corrected `pv_now`/`pv_forecast_{h}h` at inference while training used raw electrical watts. Now prefers `pv_now_electrical`/`pv_forecast_electrical_{h}h` with graceful fallback to corrected values.
 - **[LOW] Incorrect `PRE_COOL_LEAD_TIME_HOURS` fallback in calibration**: Hardcoded default was `8.0` in `cooling_ml_calibration.py`; corrected to `3.0` to match `config.py`.
 - **[LOW] Cooling observation buffer not persisted between cycles**: Buffer was only saved on successful retrain. Now saved whenever `resolve_labels()` returns newly-labeled observations, preventing data loss on restart.
+- **[LOW] Stale cooling ML test defaults**: Updated cooling ML test fixtures and fake configs to use the runtime default `PRE_COOL_LEAD_TIME_HOURS=3.0` instead of the old `8.0`, keeping calibration tests aligned with production behavior.
 
 ## [0.2.0] - 2026-02-10
 
