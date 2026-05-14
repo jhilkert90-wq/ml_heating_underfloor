@@ -727,10 +727,10 @@ class TestPVKeyContract:
         return no-risk.  The correct behaviour is risk=True.
         """
         features = _make_features(
-            outdoor_temp=28.0,
+            outdoor_temp=18.0,
             pv_now=4000.0,
-            pv_forecasts=[5000.0] * 12,
-            outdoor_forecasts=[28.0] * 12,
+            pv_forecasts=[0.0] * 12,
+            outdoor_forecasts=[18.0] * 12,
         )
         # Remove the electrical key to prove it isn't required
         features.pop("pv_now_electrical", None)
@@ -749,6 +749,9 @@ class TestPVKeyContract:
             "Predictor failed to detect risk when pv_now_electrical was absent "
             "— it may be reading the wrong key family."
         )
+        call_kwargs = model.predict_thermal_trajectory.call_args.kwargs
+        assert call_kwargs["pv_power"] == 4000.0
+        assert call_kwargs["pv_forecasts"] == [4000.0] + [0.0] * 12
 
     def test_pv_forecast_thermal_keys_used_for_trajectory(self):
         """Trajectory PV forecast list is built from pv_forecast_{h}h (thermal).
@@ -756,11 +759,12 @@ class TestPVKeyContract:
         Verify by providing thermal forecasts that trigger the guard while
         keeping electrical forecast keys absent.
         """
+        thermal_fc = [1200.0] + [0.0] * 11
         features = _make_features(
-            outdoor_temp=25.0,
-            pv_now=2000.0,
-            pv_forecasts=[8000.0] * 12,    # thermal: high enough to pass guard
-            outdoor_forecasts=[25.0] * 12,
+            outdoor_temp=18.0,
+            pv_now=0.0,
+            pv_forecasts=thermal_fc,    # thermal-only signal should pass guard
+            outdoor_forecasts=[18.0] * 12,
         )
         # Remove all electrical forecast keys
         for h in range(1, 13):
@@ -775,12 +779,10 @@ class TestPVKeyContract:
             22.0, 23.0, features, model, "cooling"
         )
 
-        assert result["risk"] is True, (
-            "Predictor blocked risk when pv_forecast_electrical_* was absent. "
-            "It must use thermal pv_forecast_{h}h keys."
-        )
-        # Confirm trajectory was actually called (didn't short-circuit)
+        assert result["risk"] is True
         assert model.predict_thermal_trajectory.called
+        call_kwargs = model.predict_thermal_trajectory.call_args.kwargs
+        assert call_kwargs["pv_forecasts"] == [0.0] + thermal_fc
 
     def test_pv_now_electrical_alone_insufficient_to_pass_guard(self):
         """Guard must NOT pass on electrical key alone when thermal key is absent/zero.

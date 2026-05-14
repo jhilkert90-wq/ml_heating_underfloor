@@ -1,5 +1,24 @@
 # ML Heating System - Current Progress
 
+## ✅ Reviewer Follow-up: PV Contract Test Assertions Hardened (2026-05-14)
+
+**Status:** COMPLETED
+
+- Updated 2 `TestPVKeyContract` cases in `tests/unit/test_overheating_predictor.py` to assert `predict_thermal_trajectory()` call kwargs directly:
+  - `pv_power` anchored from `pv_now` (thermal key family)
+  - `pv_forecasts` built from `pv_forecast_{h}h` even when electrical forecast keys are absent
+- Removed ambiguity from prior assertions that only checked `result["risk"]` with mocked trajectory outputs.
+- Verified table formatting concern: no `||` rows exist in `memory-bank/systemPatterns.md` or `docs/ML_COOLING_MODEL_GUIDE.md`.
+- Targeted validation: `python -m pytest tests/unit/test_overheating_predictor.py -q --tb=short` → **33 passed**.
+
+**Files changed:**
+- `tests/unit/test_overheating_predictor.py` — strengthened regression assertions
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ## 📚 PV Feature Key Contract — Documentation & Regression Tests (2026-05-14)
 
 **Status:** COMPLETED

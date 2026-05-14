@@ -1,5 +1,25 @@
 # Active Context - Current Work & Decision State
 
+### 🧪 Reviewer Follow-up — PV Contract Tests Made Strict — 2026-05-14
+
+#### **What changed**
+- Updated 2 regression tests in `tests/unit/test_overheating_predictor.py` (`TestPVKeyContract`) so they assert `predict_thermal_trajectory()` kwargs directly instead of relying only on `result["risk"]`.
+- Added explicit assertions for:
+  - `pv_power == pv_now` in thermal-key-only scenarios
+  - `pv_forecasts` list being constructed from thermal `pv_forecast_{h}h` keys when `pv_forecast_electrical_*` keys are absent
+- Re-checked markdown table formatting in `memory-bank/systemPatterns.md` and `docs/ML_COOLING_MODEL_GUIDE.md`; no malformed `||` table rows remain.
+
+#### **Why**
+- PR review correctly flagged that mocked trajectory outputs could allow false positives even if key-family wiring regressed. Asserting the call kwargs directly makes these tests true contract tests for key selection.
+
+#### **Files changed**
+- `tests/unit/test_overheating_predictor.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### 📚 PV Feature Key Contract — Documentation & Regression Tests — 2026-05-14
 
 #### **What changed**

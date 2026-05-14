@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Confirm `pv_now_electrical` alone (with `pv_now=0`) cannot pass the guard
   - Confirm `HLCCycle._build_cycle()` reads `pv_now_electrical` (not `pv_now`) from context
   - Confirm `_build_cycle()` defaults `pv_now_electrical` to 0.0 when the key is absent
+- **Reviewer-follow-up regression hardening**: Strengthened 2 `TestPVKeyContract` tests to assert `predict_thermal_trajectory()` call kwargs (`pv_power`, `pv_forecasts`) directly, preventing false positives from mocked trajectory outputs.
 
 ## [0.2.0] - 2026-02-10
 
