@@ -1,5 +1,30 @@
 # ML Heating System - Current Progress
 
+## Address Reviewer Thread Follow-ups (2026-05-14)
+
+**Status:** COMPLETED
+
+- Implemented reviewer-requested persistence hardening in `src/main.py`: observation buffer is now saved every pre-cooling cycle after `push_pending()` + `resolve_labels()`, preserving pending entries and per-step label state across restarts.
+- Implemented reviewer-requested PV scale alignment fix for rolling features:
+  - Added raw `pv_power_history_electrical` to physics features in `src/physics_features.py`.
+  - Updated cooling ML rolling PV extraction in `src/cooling_ml_model.py` to prefer raw electrical history and only fall back to thermal-corrected history.
+- Added regression coverage:
+  - `tests/unit/test_cooling_ml.py`: verifies `pv_roll_1h` prefers raw electrical history.
+  - `tests/unit/test_physics_features.py`: verifies raw PV history feature is emitted.
+- Validation note: targeted tests could not be executed in this runner because `pytest` is unavailable (`No module named pytest`).
+
+**Files changed:**
+- `src/main.py`
+- `src/physics_features.py`
+- `src/cooling_ml_model.py`
+- `tests/unit/test_cooling_ml.py`
+- `tests/unit/test_physics_features.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ## Resolve PR Merge Conflicts (2026-05-14)
 
 **Status:** COMPLETED

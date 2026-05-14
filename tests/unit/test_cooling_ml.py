@@ -288,6 +288,16 @@ class TestCoolingMLModel:
         val = _extract_feature("pv_roll_1h", physics, 22.0, 23.0, 6)
         assert val == pytest.approx(2000.0)
 
+    def test_pv_roll_prefers_raw_electrical_history(self):
+        """pv_roll features should use raw electrical history when available."""
+        from src.cooling_ml_model import _extract_feature
+        physics = {
+            "pv_power_history": [1000.0] * 12,              # thermal-corrected
+            "pv_power_history_electrical": [2500.0] * 12,   # raw electrical
+        }
+        val = _extract_feature("pv_roll_1h", physics, 22.0, 23.0, 6)
+        assert val == pytest.approx(2500.0)
+
     def test_unknown_feature_fills_zero(self):
         """Completely unknown feature columns fill with 0.0 without crashing."""
         from src.cooling_ml_model import _extract_feature

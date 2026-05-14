@@ -1746,17 +1746,16 @@ def main():
                             cooling_target=target_indoor_temp,
                             timestamp=_dt.datetime.utcnow().isoformat() + "Z",
                         )
-                        _newly_labeled = _cooling_obs_buffer.resolve_labels(prediction_indoor_temp)
-                        # Persist the buffer whenever new labels are resolved so
-                        # observations survive a process restart between retrains.
-                        if _newly_labeled > 0:
-                            try:
-                                _cooling_obs_buffer.save()
-                            except Exception as _save_err:
-                                logging.warning(
-                                    "Cooling obs buffer save failed (non-fatal): %s",
-                                    _save_err,
-                                )
+                        _cooling_obs_buffer.resolve_labels(prediction_indoor_temp)
+                        # Persist after each push/resolve cycle so pending entries
+                        # (and their evolving label state) survive restarts.
+                        try:
+                            _cooling_obs_buffer.save()
+                        except Exception as _save_err:
+                            logging.warning(
+                                "Cooling obs buffer save failed (non-fatal): %s",
+                                _save_err,
+                            )
                         # Auto-retrain when enough new labeled samples accumulated
                         if _cooling_obs_buffer.should_retrain():
                             logging.info(

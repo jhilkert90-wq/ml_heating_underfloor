@@ -56,8 +56,12 @@ def _load_numpy():
 # ---------------------------------------------------------------------------
 
 def _pv_roll(physics: dict[str, Any], hours: int, steps_per_hour: int = 6) -> float:
-    """Mean PV power over the last ``hours`` hours from pv_power_history."""
-    history: list[float] = physics.get("pv_power_history") or []
+    """Mean raw PV power over the last ``hours`` hours."""
+    history: list[float] = (
+        physics.get("pv_power_history_electrical")
+        or physics.get("pv_power_history")
+        or []
+    )
     n = hours * steps_per_hour
     if not history:
         return 0.0

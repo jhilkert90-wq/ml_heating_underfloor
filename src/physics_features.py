@@ -350,6 +350,9 @@ def build_physics_features(
     # scaling) where we want to know the actual panel output, not the
     # fraction that contributes to house thermal gain.
     pv_now_electrical = float(pv_now)
+    # Preserve raw PV history for ML features that are trained on electrical
+    # (uncorrected) PV generation scale.
+    pv_history_electrical = list(pv_history)
     # Preserve raw electrical PV forecasts before applying the thermal
     # correction factor.  compute_forecast_driven_trajectory_steps() compares
     # against PV_TRAJ_THRESHOLD_W which is defined in electrical watts, so it
@@ -567,5 +570,7 @@ def build_physics_features(
         ),
         # PV power history for solar lag computation
         'pv_power_history': pv_history,
+        # Raw electrical PV history for cooling ML feature extraction.
+        'pv_power_history_electrical': pv_history_electrical,
     }
     return pd.DataFrame([features]), outlet_history

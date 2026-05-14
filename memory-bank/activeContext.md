@@ -1,5 +1,30 @@
 # Active Context - Current Work & Decision State
 
+### 🧩 Address Reviewer Thread Follow-ups — 2026-05-14
+
+#### **What changed**
+- Updated cooling observation-buffer persistence in `src/main.py` to save after every `push_pending()`/`resolve_labels()` cycle (not only when new labels mature), so pending-window state is restart-safe.
+- Added raw PV history support in `src/physics_features.py` via `pv_power_history_electrical` while keeping existing thermal-corrected `pv_power_history` for thermal logic.
+- Updated `src/cooling_ml_model.py` rolling PV extraction to prefer `pv_power_history_electrical` and fall back to `pv_power_history`.
+- Added/updated unit tests in:
+  - `tests/unit/test_cooling_ml.py` (raw electrical roll-history preference)
+  - `tests/unit/test_physics_features.py` (raw PV history feature emitted)
+
+#### **Why**
+- Reviewer feedback identified that pending observations could still be lost on restart before label maturity and that `pv_roll_*` inference remained on thermally corrected scale despite training on raw electrical PV.
+
+#### **Files changed**
+- `src/main.py`
+- `src/physics_features.py`
+- `src/cooling_ml_model.py`
+- `tests/unit/test_cooling_ml.py`
+- `tests/unit/test_physics_features.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### 🔀 Resolve PR Merge Conflicts — 2026-05-14
 
 #### **What changed**
