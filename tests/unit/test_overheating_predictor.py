@@ -6,12 +6,15 @@ Tests cover:
 - Forecast input handling (missing, empty, truncated)
 - Guard thresholds (min PV, min outdoor)
 - Edge cases (night, HP at limit, disabled, multiple peaks)
+- PV feature key contract (thermal vs electrical key families)
 """
 
 import pytest
+from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock
 
 from src.overheating_predictor import OverheatingPredictor
+from src.hlc_learner import _build_cycle, HLCCycle
 from src import config
 
 
@@ -816,9 +819,6 @@ class TestPVKeyContract:
         Confirm the _build_cycle helper reads pv_now_electrical from context,
         not pv_now.
         """
-        from src.hlc_learner import _build_cycle, HLCCycle
-        from datetime import datetime
-
         ctx = {
             "timestamp": datetime(2026, 6, 1, 10, 0),
             "thermal_power_kw": 1.5,
@@ -845,9 +845,6 @@ class TestPVKeyContract:
 
     def test_hlc_cycle_pv_now_electrical_defaults_to_zero_when_absent(self):
         """_build_cycle falls back to 0.0 when pv_now_electrical is missing."""
-        from src.hlc_learner import _build_cycle, HLCCycle
-        from datetime import datetime
-
         ctx = {
             "timestamp": datetime(2026, 6, 1, 10, 0),
             "thermal_power_kw": 1.5,
