@@ -540,3 +540,218 @@ class TestJsonDefault:
         from src.cooling_ml_calibration import _json_default
         with pytest.raises(TypeError):
             _json_default(object())
+
+
+# ===========================================================================
+# Forecast Hour Selection
+# ===========================================================================
+
+class TestForecastHourSelection:
+    """Verify AT and PV forecast hour selection via env vars."""
+
+    def _run_calibration_with_env(self, tmp_path, env_overrides: dict) -> dict:
+        """Run calibrate_cooling_ml with specific env vars and return metadata."""
+        import src.config as real_config
+
+        model_path = str(tmp_path / "model.joblib")
+        meta_path = str(tmp_path / "meta.json")
+        cfg_overrides = dict(
+            COOLING_ML_MODEL_PATH=model_path,
+            COOLING_ML_METADATA_PATH=meta_path,
+            COOLING_ML_MIN_TRAINING_SAMPLES=10,
+        )
+        df = _make_warm_df(n_rows=800)
+
+        mock_lgb_cls = MagicMock()
+        mock_model = MagicMock()
+        mock_model.predict_proba.side_effect = lambda X: np.column_stack([
+            np.random.rand(X.shape[0]),
+            np.random.rand(X.shape[0]),
+        ])
+        mock_lgb_cls.return_value = mock_model
+
+        mock_lgb = MagicMock()
+        mock_lgb.LGBMClassifier = mock_lgb_cls
+        mock_lgb.early_stopping.return_value = MagicMock()
+        mock_lgb.log_evaluation.return_value = MagicMock()
+
+        config_patches = {k: patch.object(real_config, k, v, create=True) for k, v in cfg_overrides.items()}
+        for p in config_patches.values():
+            p.start()
+
+        mock_physics_cal = MagicMock()
+        mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        try:
+            with patch.dict("sys.modules", {
+                "lightgbm": mock_lgb,
+                "joblib": _make_mock_joblib(),
+                "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
+                "physics_calibration": mock_physics_cal,
+                "src.physics_calibration": mock_physics_cal,
+            }), patch.dict("os.environ", env_overrides, clear=False):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                result = calibrate_cooling_ml()
+        finally:
+            for p in config_patches.values():
+                p.stop()
+
+        assert result is True
+        with open(meta_path, "r") as f:
+            return json.load(f)
+
+    def test_custom_at_forecast_hours_in_metadata(self, tmp_path):
+        """When COOLING_ML_AT_FORECAST_HOURS=1,2,3, only AT_roh_1h/2h/3h appear."""
+        meta = self._run_calibration_with_env(
+            tmp_path,
+            {"COOLING_ML_AT_FORECAST_HOURS": "1,2,3", "COOLING_ML_PV_FORECAST_HOURS": ""},
+        )
+        cols = meta["feature_cols"]
+        assert "AT_roh_1h" in cols
+        assert "AT_roh_2h" in cols
+        assert "AT_roh_3h" in cols
+        # Hours not in the list must be absent
+        for h in range(4, 13):
+            assert f"AT_roh_{h}h" not in cols
+
+    def test_custom_pv_forecast_hours_in_metadata(self, tmp_path):
+        """When COOLING_ML_PV_FORECAST_HOURS=1,2, only pv_forecast_1h/2h appear."""
+        meta = self._run_calibration_with_env(
+            tmp_path,
+            {"COOLING_ML_AT_FORECAST_HOURS": "", "COOLING_ML_PV_FORECAST_HOURS": "1,2"},
+        )
+        cols = meta["feature_cols"]
+        assert "pv_forecast_1h" in cols
+        assert "pv_forecast_2h" in cols
+        for h in range(3, 13):
+            assert f"pv_forecast_{h}h" not in cols
+
+    def test_default_includes_all_12_at_and_pv_hours(self, tmp_path):
+        """With default env, all AT_roh_1h–12h and pv_forecast_1h–12h appear."""
+        # Remove any overriding env vars from outer scope so defaults apply.
+        clean_env = {k: v for k, v in os.environ.items()
+                     if k not in ("COOLING_ML_AT_FORECAST_HOURS",
+                                  "COOLING_ML_FORECAST_HOURS",
+                                  "COOLING_ML_PV_FORECAST_HOURS")}
+        import src.config as real_config
+
+        model_path = str(tmp_path / "model.joblib")
+        meta_path = str(tmp_path / "meta.json")
+        cfg_overrides = dict(
+            COOLING_ML_MODEL_PATH=model_path,
+            COOLING_ML_METADATA_PATH=meta_path,
+            COOLING_ML_MIN_TRAINING_SAMPLES=10,
+        )
+        df = _make_warm_df(n_rows=800)
+
+        mock_lgb_cls = MagicMock()
+        mock_model = MagicMock()
+        mock_model.predict_proba.side_effect = lambda X: np.column_stack([
+            np.random.rand(X.shape[0]),
+            np.random.rand(X.shape[0]),
+        ])
+        mock_lgb_cls.return_value = mock_model
+
+        mock_lgb = MagicMock()
+        mock_lgb.LGBMClassifier = mock_lgb_cls
+        mock_lgb.early_stopping.return_value = MagicMock()
+        mock_lgb.log_evaluation.return_value = MagicMock()
+
+        config_patches = {k: patch.object(real_config, k, v, create=True) for k, v in cfg_overrides.items()}
+        for p in config_patches.values():
+            p.start()
+
+        mock_physics_cal = MagicMock()
+        mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        try:
+            with patch.dict("sys.modules", {
+                "lightgbm": mock_lgb,
+                "joblib": _make_mock_joblib(),
+                "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
+                "physics_calibration": mock_physics_cal,
+                "src.physics_calibration": mock_physics_cal,
+            }), patch.dict("os.environ", clean_env, clear=True):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                result = calibrate_cooling_ml()
+        finally:
+            for p in config_patches.values():
+                p.stop()
+
+        assert result is True
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        cols = meta["feature_cols"]
+        # All 12 AT hindcast columns must be present (coverage guard may drop
+        # the very last few due to NaN from forward-shift, so we check 1–10).
+        for h in range(1, 11):
+            assert f"AT_roh_{h}h" in cols, f"AT_roh_{h}h missing from feature_cols"
+        # All 12 PV forecast columns must be present (same caveat).
+        for h in range(1, 11):
+            assert f"pv_forecast_{h}h" in cols, f"pv_forecast_{h}h missing from feature_cols"
+
+    def test_legacy_cooling_ml_forecast_hours_alias(self, tmp_path):
+        """Legacy COOLING_ML_FORECAST_HOURS env var still controls AT forecast hours
+        when COOLING_ML_AT_FORECAST_HOURS is absent from the environment."""
+        import src.config as real_config
+
+        model_path = str(tmp_path / "model.joblib")
+        meta_path = str(tmp_path / "meta.json")
+        cfg_overrides = dict(
+            COOLING_ML_MODEL_PATH=model_path,
+            COOLING_ML_METADATA_PATH=meta_path,
+            COOLING_ML_MIN_TRAINING_SAMPLES=10,
+        )
+        df = _make_warm_df(n_rows=800)
+
+        mock_lgb_cls = MagicMock()
+        mock_model = MagicMock()
+        mock_model.predict_proba.side_effect = lambda X: np.column_stack([
+            np.random.rand(X.shape[0]),
+            np.random.rand(X.shape[0]),
+        ])
+        mock_lgb_cls.return_value = mock_model
+
+        mock_lgb = MagicMock()
+        mock_lgb.LGBMClassifier = mock_lgb_cls
+        mock_lgb.early_stopping.return_value = MagicMock()
+        mock_lgb.log_evaluation.return_value = MagicMock()
+
+        config_patches = {k: patch.object(real_config, k, v, create=True) for k, v in cfg_overrides.items()}
+        for p in config_patches.values():
+            p.start()
+
+        mock_physics_cal = MagicMock()
+        mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+
+        # Build an environment that has the legacy key but NOT the new key,
+        # so the new-key fallback inside os.getenv resolves to the legacy value.
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if k not in ("COOLING_ML_AT_FORECAST_HOURS",
+                         "COOLING_ML_FORECAST_HOURS",
+                         "COOLING_ML_PV_FORECAST_HOURS")
+        }
+        clean_env["COOLING_ML_FORECAST_HOURS"] = "4,8"
+        # leave COOLING_ML_PV_FORECAST_HOURS absent → no PV columns
+
+        try:
+            with patch.dict("sys.modules", {
+                "lightgbm": mock_lgb,
+                "joblib": _make_mock_joblib(),
+                "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
+                "physics_calibration": mock_physics_cal,
+                "src.physics_calibration": mock_physics_cal,
+            }), patch.dict("os.environ", clean_env, clear=True):
+                from src.cooling_ml_calibration import calibrate_cooling_ml
+                result = calibrate_cooling_ml()
+        finally:
+            for p in config_patches.values():
+                p.stop()
+
+        assert result is True
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        cols = meta["feature_cols"]
+        assert "AT_roh_4h" in cols
+        assert "AT_roh_8h" in cols
+        for h in [1, 2, 3, 5, 6, 7, 9, 10, 11, 12]:
+            assert f"AT_roh_{h}h" not in cols

@@ -1,5 +1,26 @@
 # Active Context - Current Work & Decision State
 
+### ✨ Feature: Cooling ML full-horizon AT + PV forecast features — 2026-05-14
+
+#### **What changed**
+- `src/cooling_ml_calibration.py` Step 6 now builds the feature set from all 12 AT hindcast hours (`AT_roh_1h`–`AT_roh_12h`) and all 12 PV hindcast hours (`pv_forecast_1h`–`pv_forecast_12h`) instead of only `AT_roh_4h`.  Controlled by `COOLING_ML_AT_FORECAST_HOURS` and `COOLING_ML_PV_FORECAST_HOURS` env vars.
+- `src/config.py` adds `COOLING_ML_AT_FORECAST_HOURS`, `COOLING_ML_PV_FORECAST_HOURS`, and keeps `COOLING_ML_FORECAST_HOURS` as a backward-compat alias.
+- 4 new tests in `tests/unit/test_cooling_ml_calibration.py::TestForecastHourSelection` verify custom hour selection, default all-12h, and the legacy alias.
+
+#### **Why**
+- The hindcast DataFrames already contained all 12 AT and PV forecast columns (from the `df["AT"].shift(-h)` loop in Step 5), but Step 6 discarded them all except `AT_roh_4h`.  Exposing the full daily cycle allows LightGBM to learn peak-timing patterns that the single 4h proxy missed.
+- Inference-side extraction in `cooling_ml_model.py` already handled `AT_roh_Xh` and `pv_forecast_Xh` dynamically for any h, so no inference changes were needed.
+
+#### **Files changed**
+- `src/config.py`
+- `src/cooling_ml_calibration.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/progress.md`
+
+---
+
 ### 🔧 Fix: auto-trigger build on push to main — 2026-05-14
 
 #### **What changed**

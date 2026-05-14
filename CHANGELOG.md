@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Cooling ML: Full forecast horizon features** — `cooling_ml_calibration.py` now includes all 12 outdoor-temperature hindcast columns (`AT_roh_1h`–`AT_roh_12h`) and all 12 PV-power hindcast columns (`pv_forecast_1h`–`pv_forecast_12h`) in the training feature set by default, enabling the model to capture the full daily thermal and solar cycle when predicting overheating risk.
+- New config vars `COOLING_ML_AT_FORECAST_HOURS` and `COOLING_ML_PV_FORECAST_HOURS` (comma-separated hour lists, default `"1,2,3,4,5,6,7,8,9,10,11,12"`) to control which forecast horizons are included; the legacy `COOLING_ML_FORECAST_HOURS` env var remains as a backward-compatible alias for `COOLING_ML_AT_FORECAST_HOURS`.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
