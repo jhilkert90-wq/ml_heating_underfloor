@@ -229,16 +229,17 @@ def calibrate_cooling_ml(
     # Defaults to all 12 hours.
     # The coverage guard in Step 8 silently drops any column whose data
     # coverage is below 5% (e.g. the last N rows which have no future window).
+    _default_fc_hours = ",".join(str(h) for h in range(1, horizon_h + 1))
     _at_fc_env = os.getenv(
         "COOLING_ML_AT_FORECAST_HOURS",
-        os.getenv("COOLING_ML_FORECAST_HOURS", "1,2,3,4,5,6,7,8,9,10,11,12"),
+        os.getenv("COOLING_ML_FORECAST_HOURS", _default_fc_hours),
     )
     try:
         at_forecast_hours = [int(x) for x in _at_fc_env.split(",") if x.strip()]
     except ValueError:
         at_forecast_hours = list(range(1, horizon_h + 1))
 
-    _pv_fc_env = os.getenv("COOLING_ML_PV_FORECAST_HOURS", "1,2,3,4,5,6,7,8,9,10,11,12")
+    _pv_fc_env = os.getenv("COOLING_ML_PV_FORECAST_HOURS", _default_fc_hours)
     try:
         pv_forecast_hours = [int(x) for x in _pv_fc_env.split(",") if x.strip()]
     except ValueError:

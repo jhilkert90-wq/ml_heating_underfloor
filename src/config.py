@@ -731,6 +731,10 @@ COOLING_ML_BUFFER_MAX_N: int = int(os.getenv("COOLING_ML_BUFFER_MAX_N", "500"))
 COOLING_ML_RETRAIN_VAL_FRACTION: float = float(
     os.getenv("COOLING_ML_RETRAIN_VAL_FRACTION", "0.25")
 )
+# Default comma-separated list of forecast hours used for AT and PV hindcast
+# features during cooling ML calibration.  Covers the full 12-hour cycle.
+_COOLING_ML_DEFAULT_FORECAST_HOURS = "1,2,3,4,5,6,7,8,9,10,11,12"
+
 # Comma-separated list of forecast hours to use as outdoor-temperature hindcast
 # features (AT_roh_Xh) during calibration.  All 12 hours are included by default
 # so the model can see the full daily temperature cycle ahead.
@@ -738,15 +742,16 @@ COOLING_ML_RETRAIN_VAL_FRACTION: float = float(
 # Tooltip: MODEL-BASED only.
 COOLING_ML_AT_FORECAST_HOURS: str = os.getenv(
     "COOLING_ML_AT_FORECAST_HOURS",
-    os.getenv("COOLING_ML_FORECAST_HOURS", "1,2,3,4,5,6,7,8,9,10,11,12"),
+    os.getenv("COOLING_ML_FORECAST_HOURS", _COOLING_ML_DEFAULT_FORECAST_HOURS),
 )
-# Backward-compat alias: same as COOLING_ML_AT_FORECAST_HOURS.
+# Backward-compat alias: resolved from COOLING_ML_AT_FORECAST_HOURS (which already
+# consumed the legacy COOLING_ML_FORECAST_HOURS env var as its own fallback).
 COOLING_ML_FORECAST_HOURS: str = COOLING_ML_AT_FORECAST_HOURS
 # Comma-separated list of forecast hours to use as PV-power hindcast features
 # (pv_forecast_Xh) during calibration.  All 12 hours are included by default.
 # Tooltip: MODEL-BASED only.
 COOLING_ML_PV_FORECAST_HOURS: str = os.getenv(
-    "COOLING_ML_PV_FORECAST_HOURS", "1,2,3,4,5,6,7,8,9,10,11,12"
+    "COOLING_ML_PV_FORECAST_HOURS", _COOLING_ML_DEFAULT_FORECAST_HOURS
 )
 
 # Thermal Model Parameters

@@ -680,12 +680,13 @@ class TestForecastHourSelection:
         with open(meta_path, "r") as f:
             meta = json.load(f)
         cols = meta["feature_cols"]
-        # All 12 AT hindcast columns must be present (coverage guard may drop
-        # the very last few due to NaN from forward-shift, so we check 1–10).
-        for h in range(1, 11):
+        # All 12 AT hindcast columns must be present.
+        # Coverage of AT_roh_12h with 800 rows and 10-min intervals:
+        # (800 - 72) / 800 = 91%, well above the 5% guard.
+        for h in range(1, 13):
             assert f"AT_roh_{h}h" in cols, f"AT_roh_{h}h missing from feature_cols"
-        # All 12 PV forecast columns must be present (same caveat).
-        for h in range(1, 11):
+        # All 12 PV forecast columns must be present (same reasoning).
+        for h in range(1, 13):
             assert f"pv_forecast_{h}h" in cols, f"pv_forecast_{h}h missing from feature_cols"
 
     def test_legacy_cooling_ml_forecast_hours_alias(self, tmp_path):
