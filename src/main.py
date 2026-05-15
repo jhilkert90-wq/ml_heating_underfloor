@@ -1936,11 +1936,12 @@ def main():
                     )
 
             # --- Heating Correction ML: Observation Buffer (push + resolve + retrain) ---
-            # Runs every cycle:
-            #   • push_pending  — only on heating cycles (climate_mode == "heating")
-            #   • resolve_labels — every cycle so pending entries age correctly
-            #   • auto-retrain  — when enough new labels have accumulated
-            if _heating_obs_buffer is not None:
+            # Mirrors the cooling obs buffer pattern: the entire block is gated on
+            # climate_mode == "heating" so that:
+            #   • resolve_labels is never called with summer/cooling indoor temps,
+            #     which would assign garbage labels to pending heating observations.
+            #   • retrain is only triggered during a heating cycle.
+            if _heating_obs_buffer is not None and climate_mode == "heating":
                 import datetime as _dt
                 try:
                     # Compute S_H from current calibrated thermal parameters.
@@ -1953,17 +1954,16 @@ def main():
                     _hob_label_h = float(getattr(config, "HEATING_ML_LABEL_HORIZON_H", 4))
                     _hob_s_h = _compute_s_h(_hob_eta, _hob_u, _hob_tau, _hob_label_h)
 
-                    # Push a new pending observation on heating cycles.
-                    if climate_mode == "heating":
-                        _hob_features = features_dict if isinstance(features_dict, dict) else {}
-                        _heating_obs_buffer.push_pending(
-                            features=_hob_features,
-                            indoor_temp=prediction_indoor_temp,
-                            heating_target=target_indoor_temp,
-                            timestamp=_dt.datetime.utcnow().isoformat() + "Z",
-                        )
+                    # Push a new pending observation every heating cycle.
+                    _hob_features = features_dict if isinstance(features_dict, dict) else {}
+                    _heating_obs_buffer.push_pending(
+                        features=_hob_features,
+                        indoor_temp=prediction_indoor_temp,
+                        heating_target=target_indoor_temp,
+                        timestamp=_dt.datetime.utcnow().isoformat() + "Z",
+                    )
 
-                    # Resolve pending labels every cycle (advances age for pending entries).
+                    # Resolve pending labels (advances age for pending entries).
                     _hob_newly_labeled = _heating_obs_buffer.resolve_labels(
                         prediction_indoor_temp, _hob_s_h
                     )
