@@ -1,6 +1,22 @@
 # ML Heating System - Current Progress
 
-## 🐛 Newton S(t_worst) Bug Fix (2026-05-15)
+## ✅ ML-Based Heating Correction Implementation (2026-05-15)
+
+**Status:** COMPLETED — all new tests pass (50 new unit tests, 0 failures)
+
+Implemented the full ML-based heating correction pipeline (HEATING_CORRECTION_MODE = "ml") mirroring the CoolingMLModel / cooling_ml_calibration.py pattern:
+
+- `src/heating_correction_ml_model.py`: `HeatingCorrectionMLModel` class — loads joblib model + metadata JSON, exposes `predict(features, target_indoor)` returning ΔT_outlet [°C], and `r2_score` property for blend weighting.
+- `src/heating_correction_ml_calibration.py`: `calibrate_heating_correction_ml()` — cold-season filter (AT < 18°C), 18-feature vector (indoor trends, AT hindcast 1–4h, fireplace/TV lags, delta_T, thermal power, cyclical time), LightGBM regressor (MAE objective), regression label `−(T_future − T_target) / S_H`.
+- `src/model_wrapper.py`: replaced stub `_calculate_ml_correction()` with confidence-weighted blend; added `_get_heating_correction_ml_model()` lazy singleton loader.
+- `src/main.py`: `--calibrate-heating-correction-ml` CLI flag + flag-file detection.
+- `src/config.py`: 8 new config vars + `_parse_heating_start_date()` helper.
+- `config_adapter.py`: new env var mappings.
+- `ml_heating_underfloor/config.yaml`: new options + schema entries.
+
+**Files changed:** `src/config.py`, `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `src/model_wrapper.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_calibration.py`, `tests/unit/test_heating_correction_ml_model.py`, `tests/unit/test_heating_correction.py`, `docs/HEATING_CORRECTION_PHYSICS_VS_ML_ANALYSIS.md`, `CHANGELOG.md`
+
+
 
 **Status:** COMPLETED — 1250 passed, 0 new failures
 

@@ -1,0 +1,553 @@
+"""
+heating_correction_ml_calibration.py
+--------------------------------------
+One-shot training of the LightGBM heating-correction regressor.
+
+Called via
+  ``python -m src.main --calibrate-heating-correction-ml``
+or triggered by the flag file ``/data/config/calibrate_heating_correction_ml_flag``.
+
+Pipeline
+--------
+1.  Fetch multi-month historical data (same helper as physics calibration).
+2.  Rename entity-ID columns to model-friendly names.
+3.  Filter to cold-season rows (AT < HEATING_ML_COLD_THRESHOLD_C, default 18 °C).
+4.  Compute derived features: indoor_margin, trends, delta_t, fireplace/TV lags,
+    cyclical time features, AT hindcast substitution (1–4 h).
+5.  Compute regression label: what ΔT_outlet would have zeroed the N-step
+    future indoor error?
+        label[t] = -(T_indoor[t + N_steps] - T_target[t]) / S_H
+    where S_H = (η/(η+U)) × (1 − exp(−H/τ_room)) is computed from the
+    persisted ``baseline_parameters``.
+6.  Train LightGBM regressor (objective = "regression_l1" / MAE).
+7.  Save model (joblib) + metadata JSON.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import os
+from datetime import datetime
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# Module-level config import so tests can patch `src.heating_correction_ml_calibration.config`.
+try:
+    from . import config
+except ImportError:
+    try:
+        import config  # type: ignore
+    except ImportError:
+        config = None  # type: ignore
+
+# Module-level import of data-fetching helper so tests can patch it.
+# Falls back gracefully to a stub that always returns None when the
+# full src package is not on the path (e.g. standalone usage).
+try:
+    from src.physics_calibration import fetch_historical_data_for_calibration
+except ImportError:
+    try:
+        from physics_calibration import fetch_historical_data_for_calibration  # type: ignore
+    except ImportError:
+        def fetch_historical_data_for_calibration(*args, **kwargs):  # type: ignore
+            return None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _json_default(obj):
+    """JSON serialiser fallback for numpy scalars."""
+    try:
+        return float(obj)
+    except (TypeError, ValueError):
+        return str(obj)
+
+
+def _compute_s_h(eta: float, u_loss: float, tau_room: float, h: float) -> float:
+    """Physics sensitivity S(H) = [η/(η+U)] × [1 − exp(−H/τ)]."""
+    denom = eta + u_loss
+    if denom < 1e-6 or tau_room < 1e-3:
+        return 0.0
+    return (eta / denom) * (1.0 - math.exp(-h / tau_room))
+
+
+def _read_baseline_thermal_params(config) -> tuple[float, float, float]:
+    """Read η, U, τ from persisted baseline_parameters or config defaults.
+
+    Returns (outlet_effectiveness, heat_loss_coefficient, thermal_time_constant).
+    """
+    try:
+        from src.unified_thermal_state import get_thermal_state_manager
+        state_manager = get_thermal_state_manager()
+        params = getattr(state_manager, "baseline_parameters", {}) or {}
+        eta = float(params.get("outlet_effectiveness")
+                    or getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
+        u = float(params.get("heat_loss_coefficient")
+                  or getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+        tau = float(params.get("thermal_time_constant")
+                    or getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+        return eta, u, tau
+    except Exception:
+        logger.warning(
+            "Could not read baseline_parameters; using config defaults for S_H"
+        )
+        eta = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
+        u = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+        tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+        return eta, u, tau
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def calibrate_heating_correction_ml(
+    lookback_hours: int = 2160,  # 90 days
+    heating_target_c: Optional[float] = None,
+) -> bool:
+    """
+    Train and persist the LightGBM heating correction regressor.
+
+    Parameters
+    ----------
+    lookback_hours:
+        Hours of historical data to fetch.
+    heating_target_c:
+        Indoor target temperature [°C] used for the label calculation.
+        Defaults to the value read from the HA state / config at call time.
+
+    Returns
+    -------
+    bool: True on success, False on failure.
+    """
+    try:
+        import numpy as np
+        import pandas as pd
+    except ImportError as exc:
+        logger.error(
+            "calibrate_heating_correction_ml: missing dependency — %s", exc
+        )
+        return False
+
+    logger.info("=== HEATING CORRECTION ML CALIBRATION START ===")
+
+    # ── 0. Parameters ──────────────────────────────────────────────────
+    # Resolve lookback_hours from HEATING_ML_CALIBRATION_START_DATE when set.
+    _start_date_str = getattr(config, "HEATING_ML_CALIBRATION_START_DATE", "")
+    if _start_date_str and _start_date_str.strip():
+        _parse_fn = getattr(config, "_parse_heating_start_date", None)
+        _start_dt = _parse_fn(_start_date_str) if callable(_parse_fn) else None
+        if _start_dt is not None:
+            from datetime import timezone as _dt_tz
+            _now_utc = datetime.now(_dt_tz.utc)
+            _computed_h = math.ceil(
+                (_now_utc - _start_dt).total_seconds() / 3600
+            )
+            if _computed_h > 0:
+                lookback_hours = _computed_h
+                logger.info(
+                    "Resolved lookback_hours=%d from start date '%s'",
+                    lookback_hours, _start_date_str,
+                )
+            else:
+                logger.warning(
+                    "HEATING_ML_CALIBRATION_START_DATE '%s' is in the future; "
+                    "using default lookback_hours=%d",
+                    _start_date_str, lookback_hours,
+                )
+        else:
+            logger.warning(
+                "HEATING_ML_CALIBRATION_START_DATE '%s' is not a valid DD.MM.YYYY "
+                "date; using default lookback_hours=%d",
+                _start_date_str, lookback_hours,
+            )
+
+    steps_per_hour = round(
+        60 / float(getattr(config, "CYCLE_INTERVAL_MINUTES", 10))
+    )
+    label_horizon_h = int(getattr(config, "HEATING_ML_LABEL_HORIZON_H", 4))
+    label_horizon_steps = label_horizon_h * steps_per_hour
+
+    cold_threshold = float(getattr(config, "HEATING_ML_COLD_THRESHOLD_C", 18.0))
+
+    # Heating target for label: fall back to a typical comfort setpoint
+    if heating_target_c is None:
+        heating_target_c = float(
+            getattr(config, "HLC_DEFAULT_TARGET_TEMP", 21.0)
+        )
+
+    # AT forecast hours: default 1–4 h
+    _at_fc_env = getattr(config, "HEATING_ML_AT_FORECAST_HOURS", "1,2,3,4")
+    try:
+        at_forecast_hours = [int(x) for x in _at_fc_env.split(",") if x.strip()]
+    except ValueError:
+        logger.warning(
+            "HEATING_ML_AT_FORECAST_HOURS value %r is invalid; using 1,2,3,4",
+            _at_fc_env,
+        )
+        at_forecast_hours = [1, 2, 3, 4]
+
+    logger.info(
+        "Calibration params: label_horizon=%dh (%d steps), cold_threshold=%.1f°C, "
+        "target=%.1f°C, steps_per_hour=%d, lookback=%dh, AT_fc_hours=%s",
+        label_horizon_h, label_horizon_steps, cold_threshold,
+        heating_target_c, steps_per_hour, lookback_hours, at_forecast_hours,
+    )
+
+    # ── 1. Fetch historical data ────────────────────────────────────────
+    df = fetch_historical_data_for_calibration(
+        lookback_hours=lookback_hours,
+        purpose="heating",
+    )
+    if df is None or df.empty:
+        logger.error("Calibration aborted: no historical data fetched")
+        return False
+
+    logger.info("Fetched %d rows of historical data", len(df))
+
+    # ── 2. Rename entity-ID columns → model-friendly names ─────────────
+    indoor_col = getattr(
+        config, "INDOOR_TEMP_ENTITY_ID", "sensor.rt_mittelwert"
+    ).split(".", 1)[-1]
+    outdoor_col = getattr(
+        config, "OUTDOOR_TEMP_ENTITY_ID", "sensor.nibe_bt1_outdoor_temperature"
+    ).split(".", 1)[-1]
+    outlet_col = getattr(
+        config, "OUTLET_TEMP_ENTITY_ID", "sensor.nibe_bt2_supply_temp_s1"
+    ).split(".", 1)[-1]
+    inlet_col = getattr(
+        config, "INLET_TEMP_ENTITY_ID", "sensor.nibe_eb100_ep14_bt3_return_temp"
+    ).split(".", 1)[-1]
+    flow_col = getattr(
+        config, "FLOW_RATE_ENTITY_ID", "input_number.hp_current_flow_rate"
+    ).split(".", 1)[-1]
+    power_col = getattr(
+        config, "POWER_CONSUMPTION_ENTITY_ID", "sensor.nibe_el_leistung"
+    ).split(".", 1)[-1]
+    fireplace_col = getattr(
+        config, "FIREPLACE_STATUS_ENTITY_ID", "binary_sensor.fireplace_active"
+    ).split(".", 1)[-1]
+    tv_col = getattr(
+        config, "TV_STATUS_ENTITY_ID", "input_boolean.fernseher"
+    ).split(".", 1)[-1]
+
+    rename_map = {
+        indoor_col:    "indoor_temp",
+        outdoor_col:   "AT",
+        outlet_col:    "VLT",
+        inlet_col:     "RLT",
+        flow_col:      "flow_rate",
+        power_col:     "power_w",
+        fireplace_col: "fireplace_on",
+        tv_col:        "tv_on",
+    }
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+
+    required = ["indoor_temp", "AT", "VLT", "RLT"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        logger.error(
+            "Calibration aborted: missing required columns: %s", missing
+        )
+        return False
+
+    # Sort by time
+    if "_time" in df.columns:
+        df = df.sort_values("_time").reset_index(drop=True)
+
+    # ── 3. Numeric coercion & cold-season filter ────────────────────────
+    for col in ["indoor_temp", "AT", "VLT", "RLT"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = df[df["AT"] < cold_threshold].copy()
+    logger.info(
+        "After cold-season filter (AT < %.1f°C): %d rows",
+        cold_threshold, len(df),
+    )
+
+    if len(df) < 500:
+        logger.error(
+            "Only %d cold-season rows available — need at least 500. "
+            "Increase lookback_hours or adjust HEATING_ML_COLD_THRESHOLD_C.",
+            len(df),
+        )
+        return False
+
+    df = df.reset_index(drop=True)
+
+    # ── 4. Derived features ─────────────────────────────────────────────
+    specific_heat = float(getattr(config, "SPECIFIC_HEAT_CAPACITY", 4.186))
+
+    df["delta_t"] = (
+        pd.to_numeric(df["VLT"], errors="coerce")
+        - pd.to_numeric(df["RLT"], errors="coerce")
+    )
+    if "flow_rate" in df.columns:
+        df["flow_rate"] = pd.to_numeric(df["flow_rate"], errors="coerce").fillna(0.0)
+        df["thermal_power_kw"] = (
+            df["flow_rate"] * specific_heat * df["delta_t"] / 60.0
+        )
+    elif "power_w" in df.columns:
+        df["power_w"] = pd.to_numeric(df["power_w"], errors="coerce").fillna(0.0)
+        df["thermal_power_kw"] = df["power_w"] / 1000.0
+    else:
+        df["thermal_power_kw"] = 0.0
+
+    df["outlet_indoor_diff"] = df["VLT"] - df["indoor_temp"]
+    df["at_delta_indoor"] = df["AT"] - df["indoor_temp"]
+    df["indoor_margin"] = heating_target_c - df["indoor_temp"]
+
+    # Rolling indoor trends (30 min = 3 steps at 10-min intervals)
+    df["indoor_trend_30m"] = df["indoor_temp"].diff(3)
+    df["indoor_trend_1h"] = df["indoor_temp"].diff(steps_per_hour)
+
+    # Fireplace and TV features (binary) — fill missing with 0
+    for src_col in ["fireplace_on", "tv_on"]:
+        if src_col in df.columns:
+            df[src_col] = pd.to_numeric(
+                df[src_col], errors="coerce"
+            ).fillna(0.0).clip(0, 1)
+        else:
+            df[src_col] = 0.0
+
+    # Lag features: rolling max captures residual heat after source turns off
+    # 6 × 10-min steps = 1 h for fireplace;  3 × 10-min steps = 30 min for TV
+    df["fireplace_lag_1h"] = df["fireplace_on"].rolling(
+        steps_per_hour, min_periods=1
+    ).max()
+    df["tv_lag_30m"] = df["tv_on"].rolling(
+        max(1, steps_per_hour // 2), min_periods=1
+    ).max()
+
+    # Temporal cyclical features
+    if "_time" in df.columns:
+        ts = pd.to_datetime(df["_time"], utc=True)
+        hour_frac = ts.dt.hour + ts.dt.minute / 60.0
+        doy = ts.dt.dayofyear
+    else:
+        hour_frac = pd.Series([12.0] * len(df))
+        doy = pd.Series([180] * len(df))
+
+    df["hour_sin"] = np.sin(2 * np.pi * hour_frac / 24.0)
+    df["hour_cos"] = np.cos(2 * np.pi * hour_frac / 24.0)
+    df["doy_sin"] = np.sin(2 * np.pi * doy / 365.25)
+    df["doy_cos"] = np.cos(2 * np.pi * doy / 365.25)
+
+    # AT hindcast substitution: AT_roh_Xh[t] = AT[t + X_steps]
+    for h in at_forecast_hours:
+        shift = h * steps_per_hour
+        df[f"AT_roh_{h}h"] = df["AT"].shift(-shift)
+
+    # ── 5. Regression label construction ───────────────────────────────
+    # Estimate S_H from calibrated thermal parameters
+    eta, u_loss, tau_room = _read_baseline_thermal_params(config)
+    s_h = _compute_s_h(eta, u_loss, tau_room, float(label_horizon_h))
+    if s_h < 0.05:
+        # Fallback: use S_H computed from config defaults
+        eta_fb = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
+        u_fb = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+        tau_fb = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+        s_h = _compute_s_h(eta_fb, u_fb, tau_fb, float(label_horizon_h))
+        logger.warning(
+            "S_H from persisted params is %.4f (degenerate); "
+            "fell back to config defaults → S_H=%.4f",
+            s_h, s_h,
+        )
+    logger.info(
+        "S_H estimate: η=%.4f U=%.4f τ=%.2fh H=%dh → S_H=%.4f",
+        eta, u_loss, tau_room, label_horizon_h, s_h,
+    )
+
+    # label[t] = −(T_indoor[t + N_steps] − T_target) / S_H
+    # Positive label means outlet should have been raised (undershoot),
+    # negative label means outlet should have been lowered (overshoot).
+    future_indoor = df["indoor_temp"].shift(-label_horizon_steps)
+    raw_label = -(future_indoor - heating_target_c) / s_h
+
+    # Rows with trivially small margin contribute a label ≈ 0; use 0 directly
+    trivial_mask = df["indoor_margin"].abs() <= 0.05
+    raw_label = raw_label.where(~trivial_mask, other=0.0)
+
+    # Clip label to ±5 °C: extreme values indicate DHW, sensor glitch, etc.
+    raw_label = raw_label.clip(-5.0, 5.0)
+    df["label"] = raw_label
+
+    # ── 6. Feature set ──────────────────────────────────────────────────
+    feature_cols = [
+        "indoor_temp",
+        "indoor_margin",
+        "indoor_trend_30m",
+        "indoor_trend_1h",
+        "AT",
+        "at_delta_indoor",
+    ]
+    for h in at_forecast_hours:
+        feature_cols.append(f"AT_roh_{h}h")
+
+    feature_cols += [
+        "VLT",
+        "RLT",
+        "delta_t",
+        "outlet_indoor_diff",
+        "thermal_power_kw",
+        "fireplace_on",
+        "tv_on",
+        "fireplace_lag_1h",
+        "tv_lag_30m",
+        "hour_sin",
+        "hour_cos",
+        "doy_sin",
+        "doy_cos",
+    ]
+
+    # Guard: only keep columns that exist and have > 5% coverage
+    available_features = []
+    for col in feature_cols:
+        if col not in df.columns:
+            logger.warning("Feature '%s' not in dataframe — skipping", col)
+            continue
+        coverage = df[col].notna().mean()
+        if coverage < 0.05:
+            logger.warning(
+                "Feature '%s' coverage %.1f%% < 5%% — skipping",
+                col, 100 * coverage,
+            )
+            continue
+        available_features.append(col)
+
+    if len(available_features) < 5:
+        logger.error(
+            "Too few usable feature columns (%d) — aborting", len(available_features)
+        )
+        return False
+
+    # ── 7. Drop rows with NaN in features or label ──────────────────────
+    df_train = df[available_features + ["label"]].dropna().copy()
+    feature_cols = available_features  # update to what was actually available
+
+    logger.info(
+        "Training set: %d rows, %d features, label mean=%.3f std=%.3f",
+        len(df_train),
+        len(feature_cols),
+        df_train["label"].mean(),
+        df_train["label"].std(),
+    )
+
+    min_samples = int(getattr(config, "HEATING_ML_MIN_TRAINING_SAMPLES", 200))
+    if len(df_train) < min_samples:
+        logger.error(
+            "Only %d training samples (need %d). "
+            "Increase lookback_hours or adjust cold_threshold.",
+            len(df_train), min_samples,
+        )
+        return False
+
+    # ── 8. Train / val split (temporal) ────────────────────────────────
+    val_fraction = float(getattr(config, "HEATING_ML_RETRAIN_VAL_FRACTION", 0.25))
+    n_val = max(1, int(len(df_train) * val_fraction))
+    df_val = df_train.iloc[-n_val:].copy()
+    df_fit = df_train.iloc[:-n_val].copy()
+
+    X_fit = df_fit[feature_cols].values.astype(float)
+    y_fit = df_fit["label"].values
+    X_val = df_val[feature_cols].values.astype(float)
+    y_val = df_val["label"].values
+
+    # ── 9. Train LightGBM regressor ─────────────────────────────────────
+    try:
+        import lightgbm as lgb  # type: ignore
+    except ImportError:
+        logger.error("lightgbm not installed — cannot train model")
+        return False
+
+    lgb_params = {
+        "objective": "regression_l1",  # MAE — robust to outliers
+        "metric": "mae",
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "max_depth": 6,
+        "num_leaves": 31,
+        "min_child_samples": 20,
+        "random_state": 42,
+        "n_jobs": -1,
+        "verbose": -1,
+    }
+
+    model = lgb.LGBMRegressor(**lgb_params)
+    model.fit(
+        X_fit, y_fit,
+        eval_set=[(X_val, y_val)],
+        callbacks=[
+            lgb.early_stopping(20, verbose=False),
+            lgb.log_evaluation(50),
+        ],
+    )
+
+    # ── 10. Validation metrics ──────────────────────────────────────────
+    y_pred = model.predict(X_val)
+    val_mae = float(np.mean(np.abs(y_pred - y_val)))
+    ss_res = float(np.sum((y_val - y_pred) ** 2))
+    ss_tot = float(np.sum((y_val - float(np.mean(y_val))) ** 2))
+    val_r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    logger.info("Val MAE=%.4f°C, Val R²=%.4f", val_mae, val_r2)
+
+    # ── 11. Save model + metadata ───────────────────────────────────────
+    try:
+        import joblib  # type: ignore
+    except ImportError:
+        logger.error("joblib not installed — cannot save model")
+        return False
+
+    model_path = getattr(
+        config,
+        "HEATING_ML_CORRECTION_MODEL_PATH",
+        "/opt/ml_heating/heating_correction_ml_model.joblib",
+    )
+    metadata_path = getattr(
+        config,
+        "HEATING_ML_CORRECTION_METADATA_PATH",
+        "/opt/ml_heating/heating_correction_ml_metadata.json",
+    )
+
+    os.makedirs(os.path.dirname(model_path) or ".", exist_ok=True)
+
+    tmp_model = model_path + ".tmp"
+    joblib.dump(model, tmp_model)
+    os.replace(tmp_model, model_path)
+
+    metadata = {
+        "trained_at": datetime.now(tz=__import__("datetime").timezone.utc).isoformat(),
+        "feature_cols": feature_cols,
+        "n_features": len(feature_cols),
+        "val_mae": val_mae,
+        "val_r2": val_r2,
+        "n_train": int(len(df_fit)),
+        "n_val": int(len(df_val)),
+        "label_horizon_h": label_horizon_h,
+        "steps_per_hour": steps_per_hour,
+        "cold_threshold_c": cold_threshold,
+        "heating_target_c": heating_target_c,
+        "s_h_estimated": s_h,
+        "eta": eta,
+        "u_loss": u_loss,
+        "tau_room": tau_room,
+        "lookback_hours": lookback_hours,
+        "at_forecast_hours": at_forecast_hours,
+        "lgb_params": lgb_params,
+    }
+    tmp_meta = metadata_path + ".tmp"
+    with open(tmp_meta, "w", encoding="utf-8") as fh:
+        json.dump(metadata, fh, indent=2, default=_json_default)
+    os.replace(tmp_meta, metadata_path)
+
+    logger.info(
+        "=== HEATING CORRECTION ML CALIBRATION COMPLETE: "
+        "model → %s | MAE=%.4f R²=%.4f ===",
+        model_path, val_mae, val_r2,
+    )
+    return True

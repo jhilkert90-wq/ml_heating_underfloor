@@ -1,6 +1,25 @@
 # Active Context - Current Work & Decision State
 
-### 🐛 Newton S(t_worst) Bug Fix — 2026-05-15
+### ✅ ML-Based Heating Correction Implementation — 2026-05-15
+
+#### **What changed**
+- `src/heating_correction_ml_model.py` (new): `HeatingCorrectionMLModel` class — lazy-loads joblib model + metadata, predicts ΔT_outlet, exposes `r2_score` for blend weight. Feature extraction mirrors `CoolingMLModel._extract_feature`.
+- `src/heating_correction_ml_calibration.py` (new): `calibrate_heating_correction_ml()` — module-level imports for patchability, cold-season filter (AT < `HEATING_ML_COLD_THRESHOLD_C`), full feature engineering, LightGBM L1 regression, model + metadata persistence.
+- `src/model_wrapper.py`: replaced `_calculate_ml_correction()` stub with blended dispatch (`w = R²` if `R² ≥ HEATING_ML_BLEND_MIN_R2`, else `w=0`); added `_get_heating_correction_ml_model()` lazy singleton (class-level `_heating_correction_ml_model = None`).
+- `src/main.py`: `--calibrate-heating-correction-ml` argument; flag-file block `/data/config/calibrate_heating_correction_ml_flag`.
+- `src/config.py`: 8 new vars: `HEATING_ML_COLD_THRESHOLD_C`, `HEATING_ML_CALIBRATION_START_DATE`, `HEATING_ML_AT_FORECAST_HOURS`, `HEATING_ML_CORRECTION_MODEL_PATH`, `HEATING_ML_CORRECTION_METADATA_PATH`, `HEATING_ML_MIN_TRAINING_SAMPLES`, `HEATING_ML_LABEL_HORIZON_H`, `HEATING_ML_BLEND_MIN_R2`; `_parse_heating_start_date()` helper.
+- `config_adapter.py`: 6 new env var mappings in `convert_addon_to_env()`.
+- `ml_heating_underfloor/config.yaml`: 7 new options + 7 schema entries.
+
+#### **Why**
+Implements the planned ML-based heating correction to complement the existing physics Newton step, enabling the system to learn unmeasured heat sources (solar gain, occupancy patterns) from data.
+
+#### **Files changed**
+`src/config.py`, `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `src/model_wrapper.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_calibration.py`, `tests/unit/test_heating_correction_ml_model.py`, `tests/unit/test_heating_correction.py`, `docs/HEATING_CORRECTION_PHYSICS_VS_ML_ANALYSIS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+
 
 #### **What changed**
 - `src/model_wrapper.py`: `_calculate_physics_newton_correction()` now evaluates `S(t_worst)` instead of `S(H)`. Each violation branch sets `_worst_idx = trajectory_temps.index(worst_value)`. After the branches, `t_eval` is resolved from `trajectory["times"][_worst_idx]` (if available) or `(idx+1) * H/n_steps`. Sensitivity formula: `s_t = equilibrium_fraction * (1 - exp(-t_eval/tau_room))`.

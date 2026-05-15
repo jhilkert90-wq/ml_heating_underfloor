@@ -158,6 +158,25 @@ options:
   # [MODEL-BASED only]
   cooling_ml_calibration_start_date: ""
 
+  # === ML-Based Heating Correction (LightGBM Regressor) ===
+  # Used when heating_correction_mode is set to "ml".
+  # Requires a calibration run (--calibrate-heating-correction-ml) before use.
+  # Outdoor temperature ceiling [°C] for the heating-season data filter.
+  # Only rows with AT < this threshold are used for calibration.
+  heating_ml_cold_threshold_c: 18.0
+  # Earliest date for heating correction ML training data. Format: DD.MM.YYYY.
+  # Leave empty to use the default 90-day (2160 h) lookback.
+  heating_ml_calibration_start_date: ""
+  # Comma-separated AT forecast hours to include as hindcast features (e.g. "1,2,3,4").
+  heating_ml_at_forecast_hours: "1,2,3,4"
+  # Minimum cold-season rows required before training is accepted.
+  heating_ml_min_training_samples: 200
+  # Label lookahead horizon [hours]. Should match trajectory_steps.
+  heating_ml_label_horizon_h: 4
+  # Minimum validation R² required for the ML model to participate in the blend.
+  # Below this threshold the system uses only the physics Newton step.
+  heating_ml_blend_min_r2: 0.3
+
   # === InfluxDB Configuration ===
   # URL of your InfluxDB instance, including the protocol and port
   influx_url: "http://192.168.0.223:8089"
@@ -570,6 +589,13 @@ schema:
   cooling_ml_buffer_max_n: "int(100,5000)"
   cooling_ml_retrain_val_fraction: "float(0.05,0.5)"
   cooling_ml_calibration_start_date: "str?"
+  # ML-Based Heating Correction
+  heating_ml_cold_threshold_c: "float(5.0,25.0)"
+  heating_ml_calibration_start_date: "str?"
+  heating_ml_at_forecast_hours: "str"
+  heating_ml_min_training_samples: "int(50,2000)"
+  heating_ml_label_horizon_h: "int(1,12)"
+  heating_ml_blend_min_r2: "float(0.0,1.0)"
   # InfluxDB Configuration
   influx_url: "str"
   influx_token: "str"

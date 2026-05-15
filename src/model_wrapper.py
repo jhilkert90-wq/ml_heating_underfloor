@@ -2359,6 +2359,37 @@ class EnhancedModelWrapper:
             logging.error(f"Physics Newton correction failed: {e}")
             return outlet_temp
 
+    # ------------------------------------------------------------------
+    # Heating-correction ML model lazy singleton
+    # ------------------------------------------------------------------
+
+    _heating_correction_ml_model = None  # class-level cache
+
+    def _get_heating_correction_ml_model(self):
+        """Return the loaded HeatingCorrectionMLModel, or None on failure."""
+        if EnhancedModelWrapper._heating_correction_ml_model is not None:
+            return EnhancedModelWrapper._heating_correction_ml_model
+        try:
+            from src.heating_correction_ml_model import HeatingCorrectionMLModel
+        except ImportError:
+            logging.debug(
+                "[ML correction] HeatingCorrectionMLModel not importable"
+            )
+            return None
+        model_path = getattr(
+            config, "HEATING_ML_CORRECTION_MODEL_PATH", ""
+        )
+        metadata_path = getattr(
+            config, "HEATING_ML_CORRECTION_METADATA_PATH", ""
+        )
+        if not model_path or not metadata_path:
+            return None
+        ml_model = HeatingCorrectionMLModel(model_path, metadata_path)
+        if ml_model.load():
+            EnhancedModelWrapper._heating_correction_ml_model = ml_model
+            return ml_model
+        return None
+
     def _calculate_ml_correction(
         self,
         outlet_temp: float,
@@ -2367,18 +2398,59 @@ class EnhancedModelWrapper:
         cycle_hours: float,
     ) -> float:
         """
-        ML-based correction (LightGBM regressor — future feature).
+        ML-based correction: confidence-weighted blend of physics Newton step
+        and LightGBM regressor prediction.
 
-        Falls back to the physics Newton step until a trained model is
-        available.
+        Blend formula:
+            w = max(0, min(1, R²)) clamped to 0 if R² < HEATING_ML_BLEND_MIN_R2
+            delta_blend = (1 − w) × delta_physics + w × delta_ml
+            corrected_outlet = outlet_temp + delta_blend
+
+        Falls back to the physics Newton step when the model is not loaded,
+        inference fails, or R² is below the configured minimum threshold.
         """
-        logging.warning(
-            "[ML correction] LightGBM heating-correction model not yet "
-            "implemented — falling back to physics Newton step."
-        )
-        return self._calculate_physics_newton_correction(
+        # Step 1: physics Newton delta (always computed as a safe baseline)
+        physics_outlet = self._calculate_physics_newton_correction(
             outlet_temp, trajectory, target_indoor, cycle_hours
         )
+        delta_physics = physics_outlet - outlet_temp
+
+        # Step 2: try to load the ML model
+        ml_model = self._get_heating_correction_ml_model()
+        if ml_model is None:
+            logging.debug(
+                "[ML correction] Model not loaded — using physics Newton step."
+            )
+            return physics_outlet
+
+        # Step 3: ML inference
+        features = getattr(self, "_current_features", {}) or {}
+        delta_ml = ml_model.predict(features, target_indoor)
+        if delta_ml is None:
+            logging.debug(
+                "[ML correction] ML inference returned None — "
+                "using physics Newton step."
+            )
+            return physics_outlet
+
+        # Step 4: confidence-weighted blend
+        blend_min_r2 = float(
+            getattr(config, "HEATING_ML_BLEND_MIN_R2", 0.3)
+        )
+        r2 = ml_model.r2_score
+        w = 0.0 if r2 < blend_min_r2 else max(0.0, min(1.0, r2))
+        delta_blend = (1.0 - w) * delta_physics + w * delta_ml
+
+        corrected = outlet_temp + delta_blend
+        clamp_min, clamp_max = config.get_outlet_bounds(self._climate_mode)
+        corrected = max(clamp_min, min(clamp_max, corrected))
+
+        logging.info(
+            "🤖 [ML correction] R²=%.3f w=%.3f Δphysics=%+.3f°C "
+            "Δml=%+.3f°C Δblend=%+.3f°C → outlet=%.1f°C",
+            r2, w, delta_physics, delta_ml, delta_blend, corrected,
+        )
+        return corrected
 
     def _calculate_time_pressure(
         self, trajectory: Dict, cycle_hours: float

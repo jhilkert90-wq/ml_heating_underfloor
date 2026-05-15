@@ -106,6 +106,11 @@ def main():
         action="store_true",
         help="Train the LightGBM overheating classifier for ML-based pre-cooling and exit.",
     )
+    parser.add_argument(
+        "--calibrate-heating-correction-ml",
+        action="store_true",
+        help="Train the LightGBM heating-correction regressor and exit.",
+    )
     args = parser.parse_args()
     # Load environment variables and configure logging.
     load_dotenv()
@@ -189,6 +194,40 @@ def main():
                     logging.error("❌ Cooling ML calibration failed — check logs")
             except Exception as _cml_err:
                 logging.error("❌ Cooling ML calibration error: %s", _cml_err, exc_info=True)
+
+    # --- Heating Correction ML Calibration Flag Detection ---
+    _heating_ml_flag = "/data/config/calibrate_heating_correction_ml_flag"
+    if os.path.exists(_heating_ml_flag):
+        logging.info(
+            "🤖 Heating correction ML calibrate flag detected — running LGBM training"
+        )
+        try:
+            os.remove(_heating_ml_flag)
+        except OSError as _flag_err:
+            logging.error(
+                "❌ Could not remove heating ML flag %s — skipping to avoid loop: %s",
+                _heating_ml_flag, _flag_err,
+            )
+            _heating_ml_flag = None
+        if _heating_ml_flag is not None:
+            try:
+                from .heating_correction_ml_calibration import (
+                    calibrate_heating_correction_ml,
+                )
+                _ok = calibrate_heating_correction_ml()
+                if _ok:
+                    logging.info(
+                        "✅ Heating correction ML model calibrated successfully"
+                    )
+                else:
+                    logging.error(
+                        "❌ Heating correction ML calibration failed — check logs"
+                    )
+            except Exception as _hml_err:
+                logging.error(
+                    "❌ Heating correction ML calibration error: %s",
+                    _hml_err, exc_info=True,
+                )
 
     # --- Physics-Direct Calibration Flag Detection ---
     _physics_direct_flag = "/data/config/calibrate_physics_direct_flag"
@@ -439,6 +478,27 @@ def main():
                 logging.error("❌ Cooling ML calibration failed")
         except Exception as _cml_exc:
             logging.error("Cooling ML calibration error: %s", _cml_exc, exc_info=True)
+        return
+
+    # --- Heating Correction ML Calibration (CLI) ---
+    if _bool_arg(args, "calibrate_heating_correction_ml"):
+        logging.info("=== HEATING CORRECTION ML CALIBRATION (CLI) ===")
+        try:
+            from .heating_correction_ml_calibration import (
+                calibrate_heating_correction_ml,
+            )
+            _ok = calibrate_heating_correction_ml()
+            if _ok:
+                logging.info(
+                    "✅ Heating correction ML model trained and saved successfully"
+                )
+            else:
+                logging.error("❌ Heating correction ML calibration failed")
+        except Exception as _hml_exc:
+            logging.error(
+                "Heating correction ML calibration error: %s",
+                _hml_exc, exc_info=True,
+            )
         return
 
     # --- Thermal Model Validation ---
