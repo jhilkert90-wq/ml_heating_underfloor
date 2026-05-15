@@ -153,8 +153,6 @@ class TestHeatingMLModelLoad:
         with patch("joblib.load", _fake_joblib_load), \
              patch("os.path.exists", return_value=True):
             from src.heating_correction_ml_model import HeatingCorrectionMLModel
-            # Clear the class cache before test
-            HeatingCorrectionMLModel.__dict__  # just access dict
             m = HeatingCorrectionMLModel(str(model_file), str(meta_file))
             ok = m.load()
 

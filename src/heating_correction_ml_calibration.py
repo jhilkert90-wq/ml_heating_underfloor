@@ -29,7 +29,7 @@ import json
 import logging
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -521,7 +521,7 @@ def calibrate_heating_correction_ml(
     os.replace(tmp_model, model_path)
 
     metadata = {
-        "trained_at": datetime.now(tz=__import__("datetime").timezone.utc).isoformat(),
+        "trained_at": datetime.now(tz=timezone.utc).isoformat(),
         "feature_cols": feature_cols,
         "n_features": len(feature_cols),
         "val_mae": val_mae,

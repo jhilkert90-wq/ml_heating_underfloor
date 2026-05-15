@@ -151,7 +151,6 @@ class TestHeatingStartDate:
             mock_model.predict.side_effect = lambda X: np.zeros(len(X))
             mock_model.fit = MagicMock()
 
-            import joblib as _jl
             with patch.dict("sys.modules", {"lightgbm": mock_lgb}), \
                  patch("joblib.dump"), \
                  patch("os.replace"):
