@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Physics Newton-Step Heating Correction** (`_calculate_physics_newton_correction()` in `model_wrapper.py`): implements the exact formula `ΔT_outlet = ε / S_H` where `S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]`. Symmetric for under- and overshoot, horizon-aware, and ~2× more accurate than the legacy formula after calibration. Shares all boundary-violation guards and clamp logic with the existing method.
+- **ML Correction Stub** (`_calculate_ml_correction()` in `model_wrapper.py`): placeholder that warns and falls back to the Newton step, ready to be replaced with a LightGBM regressor once sufficient historical data is available.
+- **`HEATING_CORRECTION_MODE` config variable** (`src/config.py`): selects the active correction algorithm at runtime. Accepted values: `"legacy"` (default), `"physics"`, `"ml"`.
+- **Home Assistant dropdown selector** (`ml_heating_underfloor/config.yaml`): `heating_correction_mode: "list(legacy|physics|ml)"` renders as a dropdown in the HA add-on UI — no text entry required.
+- **config_adapter wiring** (`config_adapter.py`): `heating_correction_mode` option is now mapped to `HEATING_CORRECTION_MODE` env var in `convert_addon_to_env()`.
+- **Translation entry** (`ml_heating_underfloor/translations/en.yaml`): descriptive label and tooltip for the new dropdown.
+- **11 unit tests** (`tests/unit/test_heating_correction.py`): cover Newton undershoot/overshoot accuracy (±0.01°C tolerance), degenerate-S_H fallback, clamp guard, mode dispatch for all three modes, and config_adapter mapping.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

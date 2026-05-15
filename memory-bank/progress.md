@@ -1,6 +1,18 @@
 # ML Heating System - Current Progress
 
-## 🔧 Fix `calculate_optimal_outlet_temperature` for cooling mode (2026-05-14)
+## ✨ Physics Newton-Step Heating Correction (2026-05-15)
+
+**Status:** COMPLETED — 11 new tests pass; all 62 regression tests pass
+
+- Implemented `_calculate_physics_newton_correction()` in `model_wrapper.py` using the exact formula `ΔT = ε / S_H` where `S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]`. At default params (η=0.830, U=0.124, τ=4.39h, H=4h) this gives S_H ≈ 0.5202 → +0.577°C correction for a 0.3 K undershoot (vs +1.305°C from legacy code).
+- Added `_calculate_ml_correction()` stub that warns and delegates to Newton, ready for future LightGBM regressor.
+- Added `HEATING_CORRECTION_MODE` env var / config option with dispatch logic in `verify_trajectory_temperature_predictions()`. Default is `"legacy"` to preserve existing behaviour.
+- Wired `heating_correction_mode` through `config_adapter.py` → `src/config.py`.
+- Added HA dropdown (`list(legacy|physics|ml)`) in `config.yaml` schema and description in `translations/en.yaml`.
+
+**Files changed:** `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_heating_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
 
 **Status:** COMPLETED — 1221 passed, 0 failed (1 pre-existing skip)
 

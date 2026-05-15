@@ -1,6 +1,25 @@
 # Active Context - Current Work & Decision State
 
-### 🔧 Fix `calculate_optimal_outlet_temperature` for cooling mode — 2026-05-14
+### ✨ Physics Newton-Step Heating Correction — 2026-05-15
+
+#### **What changed**
+- `src/model_wrapper.py`: Added `_calculate_physics_newton_correction()` implementing the exact formula `ΔT = ε / S_H` where `S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]`. Shares all boundary guards and clamp logic with the existing `_calculate_physics_based_correction()`. Added `_calculate_ml_correction()` stub that falls back to Newton. Dispatch in `verify_trajectory_temperature_predictions()` reads `config.HEATING_CORRECTION_MODE` and routes to the appropriate method (default `"legacy"`).
+- `src/config.py`: Added `HEATING_CORRECTION_MODE: str = os.getenv("HEATING_CORRECTION_MODE", "legacy")`.
+- `config_adapter.py`: Added `'HEATING_CORRECTION_MODE': config.get('heating_correction_mode', 'legacy')` in `convert_addon_to_env()`.
+- `ml_heating_underfloor/config.yaml`: Added `heating_correction_mode: "legacy"` in defaults block; `heating_correction_mode: "list(legacy|physics|ml)"` in schema (renders as HA dropdown).
+- `ml_heating_underfloor/translations/en.yaml`: Added description entry for `heating_correction_mode`.
+- `tests/unit/test_heating_correction.py`: 11 new unit tests (Newton accuracy, S_H fallback, clamp, dispatch, config_adapter).
+
+#### **Why**
+- The existing `_calculate_physics_based_correction()` over-corrects undershoot by ~2.26× and under-corrects overshoot by ~0.65× due to `urgency_multiplier=3.0` and asymmetric `overshoot_dampening`. The correct physics formula is a single Newton step `ΔT = ε / S_H` which is symmetric and horizon-aware.
+- Legacy mode is preserved as default so existing installations are unaffected. Users can switch to `"physics"` in the HA dropdown after confirming calibration.
+
+#### **Files changed**
+- `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_heating_correction.py`
+
+---
+
+
 
 #### **What changed**
 - `src/thermal_equilibrium_model.py`: Added `climate_mode` parameter to `calculate_optimal_outlet_temperature()` and `_calculate_equilibrium_outlet_temperature()`. Cooling mode uses `[COOLING_CLAMP_MIN_ABS, COOLING_CLAMP_MAX_ABS]` bounds instead of heating bounds `[outdoor+5, 70]`, and skips the "outlet below outdoor" fallback since cooling outlets should be below outdoor temp.

@@ -497,6 +497,15 @@ options:
   # Skip smoothing when change exceeds this threshold (°C) for fast recovery
   outlet_smoothing_bypass: 2.0
 
+  # === Heating Correction Mode ===
+  # Selects the algorithm used to correct under/overshoot when the predicted
+  # trajectory diverges from the target temperature.
+  # "legacy"  = current empirical formula (default, safe starting point).
+  # "physics" = Newton step ΔT = ε / S_H — symmetric, horizon-aware, ~2×
+  #             more accurate after calibration.
+  # "ml"      = LightGBM regressor (future feature, falls back to physics).
+  heating_correction_mode: "legacy"
+
 schema:
   # Core Entity Configuration
   target_indoor_temp_entity: "str"
@@ -717,3 +726,5 @@ schema:
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"
+  # Heating Correction Mode
+  heating_correction_mode: "list(legacy|physics|ml)"

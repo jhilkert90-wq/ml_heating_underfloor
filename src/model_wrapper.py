@@ -1855,13 +1855,31 @@ class EnhancedModelWrapper:
                     "correction"
                 )
 
-            # Calculate physics-based correction
-            corrected_outlet = self._calculate_physics_based_correction(
-                outlet_temp=outlet_temp,
-                trajectory=trajectory,
-                target_indoor=target_indoor,
-                cycle_hours=cycle_hours,
+            # Calculate correction using the configured mode
+            _correction_mode = getattr(
+                config, "HEATING_CORRECTION_MODE", "legacy"
             )
+            if _correction_mode == "physics":
+                corrected_outlet = self._calculate_physics_newton_correction(
+                    outlet_temp=outlet_temp,
+                    trajectory=trajectory,
+                    target_indoor=target_indoor,
+                    cycle_hours=cycle_hours,
+                )
+            elif _correction_mode == "ml":
+                corrected_outlet = self._calculate_ml_correction(
+                    outlet_temp=outlet_temp,
+                    trajectory=trajectory,
+                    target_indoor=target_indoor,
+                    cycle_hours=cycle_hours,
+                )
+            else:  # "legacy" or unknown — preserve existing behaviour
+                corrected_outlet = self._calculate_physics_based_correction(
+                    outlet_temp=outlet_temp,
+                    trajectory=trajectory,
+                    target_indoor=target_indoor,
+                    cycle_hours=cycle_hours,
+                )
 
             return corrected_outlet
 
@@ -2095,6 +2113,202 @@ class EnhancedModelWrapper:
         except Exception as e:
             logging.error(f"Physics-based correction failed: {e}")
             return outlet_temp
+
+    def _calculate_physics_newton_correction(
+        self,
+        outlet_temp: float,
+        trajectory: Dict,
+        target_indoor: float,
+        cycle_hours: float,
+    ) -> float:
+        """
+        Physics Newton-step correction: ΔT_outlet = ε / S_H.
+
+        S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]
+
+        This is a single Newton step that exactly compensates the predicted
+        trajectory error at the planning horizon H.  It is symmetric for
+        under- and overshoot and does not apply any urgency multiplier or
+        aggression factor — the physical sensitivity S_H already encodes the
+        horizon and house time constant.
+
+        Falls back to the legacy correction if thermal parameters are
+        degenerate (S_H ≤ 0.01).
+        """
+        import math
+        try:
+            trajectory_temps = trajectory.get("trajectory", [])
+            if not trajectory_temps:
+                return outlet_temp
+
+            # --- Shared guard logic (mirrors the legacy method) ---
+            current_indoor = getattr(self, '_current_indoor', target_indoor)
+            _features = getattr(self, '_current_features', None) or {}
+            indoor_trend_60m = _features.get('indoor_temp_delta_60m', 0.0)
+            projected_indoor = (
+                current_indoor
+                + config.TRAJECTORY_STEPS * indoor_trend_60m
+            )
+            boundary_tolerance = 0.1
+
+            min_predicted_temp = min(trajectory_temps)
+            max_predicted_temp = max(trajectory_temps)
+            min_violates = (
+                min_predicted_temp <= target_indoor - boundary_tolerance
+            )
+            max_violates = (
+                max_predicted_temp >= target_indoor + boundary_tolerance
+            )
+
+            if min_violates and max_violates:
+                min_severity = abs(
+                    min_predicted_temp - (target_indoor - boundary_tolerance)
+                )
+                max_severity = abs(
+                    max_predicted_temp - (target_indoor + boundary_tolerance)
+                )
+                if min_severity > max_severity:
+                    if projected_indoor > target_indoor - boundary_tolerance:
+                        logging.info(
+                            "🔄 [Newton] Skipping undershoot correction (both "
+                            "violated, min wins): projected indoor "
+                            f"{projected_indoor:.2f}°C > target-0.1 "
+                            f"({target_indoor - boundary_tolerance:.1f}°C) — "
+                            "house self-correcting"
+                        )
+                        return outlet_temp
+                    temp_error = target_indoor - min_predicted_temp
+                else:
+                    if projected_indoor < target_indoor + boundary_tolerance:
+                        logging.info(
+                            "🔄 [Newton] Skipping overshoot correction (both "
+                            "violated, max wins): projected indoor "
+                            f"{projected_indoor:.2f}°C < target+0.1 "
+                            f"({target_indoor + boundary_tolerance:.1f}°C) — "
+                            "house self-correcting"
+                        )
+                        return outlet_temp
+                    temp_error = target_indoor - max_predicted_temp
+            elif min_violates:
+                if projected_indoor > target_indoor - boundary_tolerance:
+                    logging.info(
+                        "🔄 [Newton] Skipping undershoot correction: projected "
+                        f"indoor {projected_indoor:.2f}°C > target-0.1 "
+                        f"({target_indoor - boundary_tolerance:.1f}°C) — "
+                        "house self-correcting"
+                    )
+                    return outlet_temp
+                temp_error = target_indoor - min_predicted_temp
+            elif max_violates:
+                if projected_indoor < target_indoor + boundary_tolerance:
+                    logging.info(
+                        "🔄 [Newton] Skipping overshoot correction: projected "
+                        f"indoor {projected_indoor:.2f}°C < target+0.1 "
+                        f"({target_indoor + boundary_tolerance:.1f}°C) — "
+                        "house self-correcting"
+                    )
+                    return outlet_temp
+                temp_error = target_indoor - max_predicted_temp
+            else:
+                reaches_target_at = trajectory.get("reaches_target_at")
+                if (
+                    reaches_target_at is None
+                    or reaches_target_at > cycle_hours
+                ):
+                    temp_error = target_indoor - trajectory_temps[-1]
+                else:
+                    temp_error = 0.0
+
+            # Cooling safety net: never raise outlet when room is already
+            # above target.
+            if current_indoor > target_indoor and temp_error > 0:
+                logging.info(
+                    "🛡️ [Newton] Cooling guard: room %.2f°C > target %.1f°C, "
+                    "zeroing positive temp_error %.2f°C",
+                    current_indoor, target_indoor, temp_error,
+                )
+                temp_error = 0.0
+
+            if temp_error == 0.0:
+                return outlet_temp
+
+            # --- Physics Newton step ---
+            eta = self.thermal_model.outlet_effectiveness        # η
+            u_loss = self.thermal_model.heat_loss_coefficient    # U
+            tau_room = self.thermal_model.thermal_time_constant  # τ_room (h)
+            H = float(config.TRAJECTORY_STEPS)                  # horizon (h)
+
+            eta_u_sum = eta + u_loss
+            if eta_u_sum < 1e-6 or tau_room < 1e-3:
+                logging.warning(
+                    "[Newton] Degenerate thermal params (η=%.3f, U=%.3f, "
+                    "τ=%.3f) — falling back to legacy correction.",
+                    eta, u_loss, tau_room,
+                )
+                return self._calculate_physics_based_correction(
+                    outlet_temp, trajectory, target_indoor, cycle_hours
+                )
+
+            equilibrium_fraction = eta / eta_u_sum
+            s_h = equilibrium_fraction * (1.0 - math.exp(-H / tau_room))
+
+            if s_h < 0.01:
+                logging.warning(
+                    "[Newton] S_H=%.4f too small — falling back to legacy "
+                    "correction.",
+                    s_h,
+                )
+                return self._calculate_physics_based_correction(
+                    outlet_temp, trajectory, target_indoor, cycle_hours
+                )
+
+            correction = temp_error / s_h
+
+            # Clamp to ±2.5 °C
+            max_correction = 2.5
+            correction = max(-max_correction, min(max_correction, correction))
+
+            corrected_outlet = outlet_temp + correction
+            clamp_min, clamp_max = config.get_outlet_bounds(
+                self._climate_mode
+            )
+            corrected_outlet = max(
+                clamp_min, min(clamp_max, corrected_outlet)
+            )
+
+            logging.info(
+                "🎯 [Newton] S_H=%.4f (η=%.3f, U=%.3f, τ=%.2fh, H=%.1fh) "
+                "ε=%+.3f°C → ΔT=%+.3f°C → outlet %.1f°C",
+                s_h, eta, u_loss, tau_room, H,
+                temp_error, correction, corrected_outlet,
+            )
+
+            return corrected_outlet
+
+        except Exception as e:
+            logging.error(f"Physics Newton correction failed: {e}")
+            return outlet_temp
+
+    def _calculate_ml_correction(
+        self,
+        outlet_temp: float,
+        trajectory: Dict,
+        target_indoor: float,
+        cycle_hours: float,
+    ) -> float:
+        """
+        ML-based correction (LightGBM regressor — future feature).
+
+        Falls back to the physics Newton step until a trained model is
+        available.
+        """
+        logging.warning(
+            "[ML correction] LightGBM heating-correction model not yet "
+            "implemented — falling back to physics Newton step."
+        )
+        return self._calculate_physics_newton_correction(
+            outlet_temp, trajectory, target_indoor, cycle_hours
+        )
 
     def _calculate_time_pressure(
         self, trajectory: Dict, cycle_hours: float

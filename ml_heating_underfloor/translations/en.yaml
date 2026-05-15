@@ -395,6 +395,16 @@ configuration:
   overshoot_detection_enabled:
     name: "Overshoot Detection Enabled"
     description: "Enables trajectory-based overshoot gates that skip outlet temperature corrections when the indoor temperature is already moving in the right direction. Prevents overcorrection oscillation."
+  heating_correction_mode:
+    name: "Heating Correction Mode"
+    description: >
+      Selects the algorithm used to correct under/overshoot when the
+      predicted trajectory diverges from the target.
+      'legacy' = existing empirical formula (default, safe starting point).
+      'physics' = Newton step ΔT = ε / S_H (recommended after calibration,
+      ~2× more accurate — symmetric for over- and undershoot, horizon-aware).
+      'ml' = LightGBM regressor (future feature, currently falls back to
+      physics Newton step).
 
   # === Advanced Learning Features ===
   enable_multi_lag_learning:

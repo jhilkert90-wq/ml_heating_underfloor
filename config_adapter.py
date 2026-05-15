@@ -566,6 +566,11 @@ def convert_addon_to_env(config):
             config.get('outlet_smoothing_bypass', 2.0)
         ),
 
+        # --- Heating Correction Mode ---
+        'HEATING_CORRECTION_MODE': config.get(
+            'heating_correction_mode', 'legacy'
+        ),
+
         # --- Pre-Cooling (Predictive Overheating Prevention) ---
         'PRE_COOL_ENABLED': str(
             config.get('pre_cool_enabled', True)
