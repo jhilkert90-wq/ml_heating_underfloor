@@ -1,16 +1,16 @@
 # ML Heating System - Current Progress
 
-## ✨ Physics Newton-Step Heating Correction (2026-05-15)
+## 🐛 Binary Search / Correction Gate Bug Fixes (2026-05-15)
 
-**Status:** COMPLETED — 11 new tests pass; all 62 regression tests pass
+**Status:** COMPLETED — 1248 passed, 0 new failures (1 pre-existing failure unrelated to these changes)
 
-- Implemented `_calculate_physics_newton_correction()` in `model_wrapper.py` using the exact formula `ΔT = ε / S_H` where `S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]`. At default params (η=0.830, U=0.124, τ=4.39h, H=4h) this gives S_H ≈ 0.5202 → +0.577°C correction for a 0.3 K undershoot (vs +1.305°C from legacy code).
-- Added `_calculate_ml_correction()` stub that warns and delegates to Newton, ready for future LightGBM regressor.
-- Added `HEATING_CORRECTION_MODE` env var / config option with dispatch logic in `verify_trajectory_temperature_predictions()`. Default is `"legacy"` to preserve existing behaviour.
-- Wired `heating_correction_mode` through `config_adapter.py` → `src/config.py`.
-- Added HA dropdown (`list(legacy|physics|ml)`) in `config.yaml` schema and description in `translations/en.yaml`.
+- Fixed binary search range-collapse early-exit bypassing `_verify_trajectory_and_correct` entirely (e.g. when saturating at 21 °C min outlet due to high PV forecast). Trajectory verification is now called on this path too, matching the converged and non-converged paths.
+- Fixed `projected_indoor` linear over-estimation in both `_calculate_physics_based_correction` and `_calculate_physics_newton_correction`: replaced `current + H × trend` with the exponential-decay integral `current + trend × τ × (1 − exp(−H/τ))`, matching the trajectory model. At H=4 h, τ=1.5 h the linear formula over-estimated by ~2.9×, causing legitimate corrections to be skipped.
+- Fixed Newton `else` branch threshold inconsistency: aligned `reaches_target_at > cycle_hours` to `> cycle_hours + tolerance_hours` matching the outer gate filter.
+- Fixed fragile `temp_error == 0.0` float equality to `abs(temp_error) < 1e-6` in Newton.
+- Updated `TestProjectedTempOvershootGate` tests to use trend −0.3 °C/h (instead of −0.2 °C/h) and pinned `TREND_DECAY_TAU_HOURS=1.5` so the skip condition holds correctly under the new exponential formula.
 
-**Files changed:** `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_heating_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
 
 

@@ -1079,6 +1079,23 @@ class EnhancedModelWrapper:
                     f"iterations: range collapsed to {range_size:.3f}°C, "
                     f"using {final_outlet:.1f}°C"
                 )
+                # Apply trajectory verification so the correction layer
+                # runs even when the search range collapses (e.g. binary
+                # search saturates at 21 °C min outlet).
+                if config.TRAJECTORY_PREDICTION_ENABLED:
+                    final_outlet = self._verify_trajectory_and_correct(
+                        outlet_temp=final_outlet,
+                        current_indoor=current_indoor,
+                        target_indoor=target_indoor,
+                        outdoor_temp=outdoor_temp,
+                        thermal_features=thermal_features,
+                        features=getattr(
+                            self, "_current_features", {}
+                        ),
+                        outdoor_forecast=outdoor_forecast,
+                        pv_forecast=pv_forecast,
+                        pv_history_for_buffer=pv_input,
+                    )
                 return final_outlet
 
             outlet_mid = (outlet_min + outlet_max) / 2.0
@@ -1931,11 +1948,18 @@ class EnhancedModelWrapper:
             # If the natural trend brings indoor below target + 0.1°C
             # within TRAJECTORY_STEPS hours, skip overshoot correction
             # and let the house return to normal.
+            #
+            # Use the same exponential-decay integral as the trajectory
+            # model (TREND_DECAY_TAU_HOURS) instead of a linear projection.
+            # Linear projection over-estimates by up to 2-3× at H=4h,
+            # causing the gate to over-skip legitimate corrections.
             _features = getattr(self, '_current_features', None) or {}
             indoor_trend_60m = _features.get('indoor_temp_delta_60m', 0.0)
+            _H = float(config.TRAJECTORY_STEPS)
+            _tau = max(config.TREND_DECAY_TAU_HOURS, 0.1)
             projected_indoor = (
                 current_indoor
-                + config.TRAJECTORY_STEPS * indoor_trend_60m
+                + indoor_trend_60m * _tau * (1.0 - math.exp(-_H / _tau))
             )
 
             if min_violates and max_violates:
@@ -2145,9 +2169,14 @@ class EnhancedModelWrapper:
             current_indoor = getattr(self, '_current_indoor', target_indoor)
             _features = getattr(self, '_current_features', None) or {}
             indoor_trend_60m = _features.get('indoor_temp_delta_60m', 0.0)
+            # Use exponential-decay integral to match the trajectory model's
+            # decaying trend bias; linear projection overestimates by 2-3×
+            # at H=4 h and causes the gate to over-skip corrections.
+            _H = float(config.TRAJECTORY_STEPS)
+            _tau = max(config.TREND_DECAY_TAU_HOURS, 0.1)
             projected_indoor = (
                 current_indoor
-                + config.TRAJECTORY_STEPS * indoor_trend_60m
+                + indoor_trend_60m * _tau * (1.0 - math.exp(-_H / _tau))
             )
             boundary_tolerance = 0.1
 
@@ -2211,9 +2240,14 @@ class EnhancedModelWrapper:
                 temp_error = target_indoor - max_predicted_temp
             else:
                 reaches_target_at = trajectory.get("reaches_target_at")
+                # Use the same threshold as the outer gate
+                # (cycle_hours + tolerance_hours) so that the Newton method
+                # only applies a correction when the outer gate has already
+                # determined the target is not reachable within 3 cycles.
+                tolerance_hours = cycle_hours * 2  # matches outer gate
                 if (
                     reaches_target_at is None
-                    or reaches_target_at > cycle_hours
+                    or reaches_target_at > cycle_hours + tolerance_hours
                 ):
                     temp_error = target_indoor - trajectory_temps[-1]
                 else:
@@ -2229,7 +2263,7 @@ class EnhancedModelWrapper:
                 )
                 temp_error = 0.0
 
-            if temp_error == 0.0:
+            if abs(temp_error) < 1e-6:
                 return outlet_temp
 
             # --- Physics Newton step ---

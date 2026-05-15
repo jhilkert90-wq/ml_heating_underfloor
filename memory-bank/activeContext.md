@@ -1,23 +1,25 @@
 # Active Context - Current Work & Decision State
 
-### ✨ Physics Newton-Step Heating Correction — 2026-05-15
+### 🐛 Binary Search / Correction Gate Bug Fixes — 2026-05-15
 
 #### **What changed**
-- `src/model_wrapper.py`: Added `_calculate_physics_newton_correction()` implementing the exact formula `ΔT = ε / S_H` where `S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]`. Shares all boundary guards and clamp logic with the existing `_calculate_physics_based_correction()`. Added `_calculate_ml_correction()` stub that falls back to Newton. Dispatch in `verify_trajectory_temperature_predictions()` reads `config.HEATING_CORRECTION_MODE` and routes to the appropriate method (default `"legacy"`).
-- `src/config.py`: Added `HEATING_CORRECTION_MODE: str = os.getenv("HEATING_CORRECTION_MODE", "legacy")`.
-- `config_adapter.py`: Added `'HEATING_CORRECTION_MODE': config.get('heating_correction_mode', 'legacy')` in `convert_addon_to_env()`.
-- `ml_heating_underfloor/config.yaml`: Added `heating_correction_mode: "legacy"` in defaults block; `heating_correction_mode: "list(legacy|physics|ml)"` in schema (renders as HA dropdown).
-- `ml_heating_underfloor/translations/en.yaml`: Added description entry for `heating_correction_mode`.
-- `tests/unit/test_heating_correction.py`: 11 new unit tests (Newton accuracy, S_H fallback, clamp, dispatch, config_adapter).
+- `src/model_wrapper.py`:
+  1. **Range-collapse bypass** (critical): binary search early-exit at `range_size < 0.05` now calls `_verify_trajectory_and_correct` before returning, matching the converged and non-converged code paths.
+  2. **`projected_indoor` exponential fix** (both `_calculate_physics_based_correction` and `_calculate_physics_newton_correction`): replaced `current + TRAJECTORY_STEPS × trend` with `current + trend × τ × (1 − exp(−H/τ))` using `TREND_DECAY_TAU_HOURS`. This matches the trajectory model's decaying trend bias and avoids 2–3× over-estimation that was causing the self-correction gate to skip legitimate corrections.
+  3. **Newton `else` branch alignment**: `reaches_target_at > cycle_hours` → `> cycle_hours + tolerance_hours` (tolerance_hours = cycle_hours × 2), matching the outer gate.
+  4. **Fragile float equality**: `temp_error == 0.0` → `abs(temp_error) < 1e-6`.
+- `tests/unit/test_model_wrapper.py`: updated `TestProjectedTempOvershootGate` fixture to use trend −0.3 °C/h and pinned `TREND_DECAY_TAU_HOURS=1.5` so skip-condition tests hold under the corrected formula.
 
 #### **Why**
-- The existing `_calculate_physics_based_correction()` over-corrects undershoot by ~2.26× and under-corrects overshoot by ~0.65× due to `urgency_multiplier=3.0` and asymmetric `overshoot_dampening`. The correct physics formula is a single Newton step `ΔT = ε / S_H` which is symmetric and horizon-aware.
-- Legacy mode is preserved as default so existing installations are unaffected. Users can switch to `"physics"` in the HA dropdown after confirming calibration.
+- Bug #1 meant the correction layer was silently bypassed whenever the binary search saturated at the floor (e.g. 21 °C with high PV forecast), so over-temperature conditions were not corrected.
+- Bug #2 caused the self-correction gate to over-skip: linear projection said the room would drop 0.8 °C in 4 h when the actual decaying-trend model accumulates only ~0.28 °C for the same −0.2 °C/h trend.
+- Bugs #3 and #4 were low-severity consistency/fragility issues.
 
 #### **Files changed**
-- `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_heating_correction.py`
+- `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
 ---
+
 
 
 

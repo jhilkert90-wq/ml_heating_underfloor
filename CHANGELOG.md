@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Binary search range-collapse bypass** (`model_wrapper.py`): when the binary search range collapsed to < 0.05 °C (e.g. saturating at 21 °C min outlet due to high PV forecast), the early-exit path returned immediately without running `_verify_trajectory_and_correct`. The correction layer is now called before returning in this path, matching the converged and non-converged paths.
+- **`projected_indoor` linear over-estimation** (`model_wrapper.py`, both `_calculate_physics_based_correction` and `_calculate_physics_newton_correction`): the self-correction gate computed `projected_indoor = current + TRAJECTORY_STEPS × trend` (linear). At H=4 h this overestimated the room's natural travel by 2–3× compared to the actual trajectory, causing legitimate overshoot/undershoot corrections to be skipped. Replaced with the exponential-decay integral `current + trend × τ × (1 − exp(−H/τ))` using `TREND_DECAY_TAU_HOURS` (default 1.5 h), matching exactly how the trajectory model accumulates the trend bias.
+- **Newton `else` branch threshold inconsistency** (`model_wrapper.py`, `_calculate_physics_newton_correction`): the internal fallback branch used `reaches_target_at > cycle_hours` (1× cycle) while the outer gate filters at `cycle_hours + tolerance_hours` (3× cycle). Aligned the Newton branch to `cycle_hours + tolerance_hours` for consistency.
+- **Fragile exact float equality** (`model_wrapper.py`, `_calculate_physics_newton_correction`): replaced `if temp_error == 0.0` with `if abs(temp_error) < 1e-6` to avoid potential floating-point precision issues.
+
 ### Added
 - **Physics Newton-Step Heating Correction** (`_calculate_physics_newton_correction()` in `model_wrapper.py`): implements the exact formula `ΔT_outlet = ε / S_H` where `S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]`. Symmetric for under- and overshoot, horizon-aware, and ~2× more accurate than the legacy formula after calibration. Shares all boundary-violation guards and clamp logic with the existing method.
 - **ML Correction Stub** (`_calculate_ml_correction()` in `model_wrapper.py`): placeholder that warns and falls back to the Newton step, ready to be replaced with a LightGBM regressor once sufficient historical data is available.
