@@ -81,7 +81,7 @@ class TestExtractHeatingFeature:
         v = self._call("indoor_margin", {"indoor_temp_lag_30m": 19.5}, target=21.0)
         assert v == pytest.approx(1.5)
 
-
+    def test_at_delta_indoor(self):
         """at_delta_indoor = -temp_diff_indoor_outdoor = AT - indoor"""
         v = self._call("at_delta_indoor", {"temp_diff_indoor_outdoor": 10.0})
         assert v == pytest.approx(-10.0)
@@ -166,6 +166,8 @@ class TestExtractHeatingFeature:
     def test_pv_forecast_zero_when_absent(self):
         v = self._call("pv_forecast_4h", {})
         assert v == pytest.approx(0.0)
+
+    def test_unknown_col_fills_zero(self):
         """Unknown column fills 0.0."""
         v = self._call("totally_unknown_col", {})
         assert v == pytest.approx(0.0)
