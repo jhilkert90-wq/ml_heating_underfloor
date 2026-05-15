@@ -1,5 +1,19 @@
 # Active Context - Current Work & Decision State
 
+### 🐛 Newton S(t_worst) Bug Fix — 2026-05-15
+
+#### **What changed**
+- `src/model_wrapper.py`: `_calculate_physics_newton_correction()` now evaluates `S(t_worst)` instead of `S(H)`. Each violation branch sets `_worst_idx = trajectory_temps.index(worst_value)`. After the branches, `t_eval` is resolved from `trajectory["times"][_worst_idx]` (if available) or `(idx+1) * H/n_steps`. Sensitivity formula: `s_t = equilibrium_fraction * (1 - exp(-t_eval/tau_room))`.
+- `tests/unit/test_heating_correction.py`: added `S_3H_EXPECTED`; updated `test_undershoot_0_3k` / `test_overshoot_0_3k` to assert against `S(3h)`; added `test_mid_horizon_pv_overshoot_uses_t_worst` and `test_undershoot_at_last_step_uses_s_h`.
+
+#### **Why**
+- `ε / S_H` under-corrects when the worst trajectory point is at `t_worst < H` because `S(H) > S(t_worst)`. Most visible when PV peaks mid-day (overshoot at t=2h in a 4h horizon). Using `S(t_worst)` gives the correct Newton step.
+
+#### **Files changed**
+- `src/model_wrapper.py`, `tests/unit/test_heating_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### 🐛 Binary Search / Correction Gate Bug Fixes — 2026-05-15
 
 #### **What changed**
@@ -19,6 +33,8 @@
 - `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
 ---
+
+
 
 
 

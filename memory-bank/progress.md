@@ -1,16 +1,15 @@
 # ML Heating System - Current Progress
 
-## 🐛 Binary Search / Correction Gate Bug Fixes (2026-05-15)
+## 🐛 Newton S(t_worst) Bug Fix (2026-05-15)
 
-**Status:** COMPLETED — 1248 passed, 0 new failures (1 pre-existing failure unrelated to these changes)
+**Status:** COMPLETED — 1250 passed, 0 new failures
 
-- Fixed binary search range-collapse early-exit bypassing `_verify_trajectory_and_correct` entirely (e.g. when saturating at 21 °C min outlet due to high PV forecast). Trajectory verification is now called on this path too, matching the converged and non-converged paths.
-- Fixed `projected_indoor` linear over-estimation in both `_calculate_physics_based_correction` and `_calculate_physics_newton_correction`: replaced `current + H × trend` with the exponential-decay integral `current + trend × τ × (1 − exp(−H/τ))`, matching the trajectory model. At H=4 h, τ=1.5 h the linear formula over-estimated by ~2.9×, causing legitimate corrections to be skipped.
-- Fixed Newton `else` branch threshold inconsistency: aligned `reaches_target_at > cycle_hours` to `> cycle_hours + tolerance_hours` matching the outer gate filter.
-- Fixed fragile `temp_error == 0.0` float equality to `abs(temp_error) < 1e-6` in Newton.
-- Updated `TestProjectedTempOvershootGate` tests to use trend −0.3 °C/h (instead of −0.2 °C/h) and pinned `TREND_DECAY_TAU_HOURS=1.5` so the skip condition holds correctly under the new exponential formula.
+- Fixed `_calculate_physics_newton_correction()` to evaluate sensitivity `S` at the time of the worst trajectory point (`t_worst`) instead of always at the full horizon H. When PV drives a mid-horizon overshoot the worst point occurs at `t_worst < H`, and since `S(H) > S(t_worst)`, using `S_H` in the denominator systematically under-corrects. With `S(t_worst)` the correction is `ε / S(t_worst) > ε / S_H` (larger magnitude), correctly compensating.
+- Added `_worst_idx` tracking in each violation branch; time resolved via `trajectory["times"]` if available, otherwise inferred as `(idx+1) * H/n_steps`.
+- Updated test constants `S_3H_EXPECTED` for the undershoot/overshoot tests (min/max at step 2 of 4 = t=3h not t=H).
+- Added `test_mid_horizon_pv_overshoot_uses_t_worst` and `test_undershoot_at_last_step_uses_s_h` to cover both the PV scenario and the no-change case.
 
-**Files changed:** `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_heating_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
 
 

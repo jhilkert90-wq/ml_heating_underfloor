@@ -2147,18 +2147,20 @@ class EnhancedModelWrapper:
         cycle_hours: float,
     ) -> float:
         """
-        Physics Newton-step correction: ΔT_outlet = ε / S_H.
+        Physics Newton-step correction: ΔT_outlet = ε / S(t_worst).
 
-        S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]
+        S(t) = [η/(η+U)] × [1 − exp(−t/τ_room)]
 
-        This is a single Newton step that exactly compensates the predicted
-        trajectory error at the planning horizon H.  It is symmetric for
-        under- and overshoot and does not apply any urgency multiplier or
-        aggression factor — the physical sensitivity S_H already encodes the
-        horizon and house time constant.
+        This is a single Newton step that compensates the predicted trajectory
+        error at the time t_worst when the worst violation occurs.  Unlike
+        using S(H) (full horizon), evaluating sensitivity at t_worst avoids
+        systematic under-correction when:
+          - The error peaks mid-horizon (t_worst < H), or
+          - External heat sources such as PV drive an early overshoot.
+        It is symmetric for under- and overshoot.
 
         Falls back to the legacy correction if thermal parameters are
-        degenerate (S_H ≤ 0.01).
+        degenerate (S(t_worst) ≤ 0.01).
         """
         try:
             trajectory_temps = trajectory.get("trajectory", [])
@@ -2188,6 +2190,10 @@ class EnhancedModelWrapper:
             max_violates = (
                 max_predicted_temp >= target_indoor + boundary_tolerance
             )
+            # Default worst index: last step.  Updated in each violation
+            # branch so that sensitivity is evaluated at the same time t as ε
+            # rather than always at the full horizon H.
+            _worst_idx = len(trajectory_temps) - 1
 
             if min_violates and max_violates:
                 min_severity = abs(
@@ -2207,6 +2213,7 @@ class EnhancedModelWrapper:
                         )
                         return outlet_temp
                     temp_error = target_indoor - min_predicted_temp
+                    _worst_idx = trajectory_temps.index(min_predicted_temp)
                 else:
                     if projected_indoor < target_indoor + boundary_tolerance:
                         logging.info(
@@ -2218,6 +2225,7 @@ class EnhancedModelWrapper:
                         )
                         return outlet_temp
                     temp_error = target_indoor - max_predicted_temp
+                    _worst_idx = trajectory_temps.index(max_predicted_temp)
             elif min_violates:
                 if projected_indoor > target_indoor - boundary_tolerance:
                     logging.info(
@@ -2228,6 +2236,7 @@ class EnhancedModelWrapper:
                     )
                     return outlet_temp
                 temp_error = target_indoor - min_predicted_temp
+                _worst_idx = trajectory_temps.index(min_predicted_temp)
             elif max_violates:
                 if projected_indoor < target_indoor + boundary_tolerance:
                     logging.info(
@@ -2238,6 +2247,7 @@ class EnhancedModelWrapper:
                     )
                     return outlet_temp
                 temp_error = target_indoor - max_predicted_temp
+                _worst_idx = trajectory_temps.index(max_predicted_temp)
             else:
                 reaches_target_at = trajectory.get("reaches_target_at")
                 # Use the same threshold as the outer gate
@@ -2250,6 +2260,7 @@ class EnhancedModelWrapper:
                     or reaches_target_at > cycle_hours + tolerance_hours
                 ):
                     temp_error = target_indoor - trajectory_temps[-1]
+                    # _worst_idx stays at len-1 (last step = H)
                 else:
                     temp_error = 0.0
 
@@ -2272,6 +2283,27 @@ class EnhancedModelWrapper:
             tau_room = self.thermal_model.thermal_time_constant  # τ_room (h)
             H = float(config.TRAJECTORY_STEPS)                  # horizon (h)
 
+            # Evaluate sensitivity at the time of the worst trajectory point,
+            # not always at the full horizon H.
+            #
+            # S(t) = [η/(η+U)] × [1 − exp(−t/τ_room)]
+            #
+            # When the worst error occurs at t_worst < H (e.g. PV drives a
+            # mid-horizon overshoot), S(H) > S(t_worst), so using S_H
+            # divides by a larger denominator and under-corrects.  Evaluating
+            # at t_worst gives the correct Newton step for the actual error
+            # horizon.
+            _traj_times = trajectory.get("times", [])
+            _n = len(trajectory_temps)
+            if _traj_times and len(_traj_times) == _n:
+                t_eval = _traj_times[_worst_idx]
+            else:
+                # Fallback: uniform step size derived from H and step count
+                _dt = H / _n if _n > 0 else 1.0
+                t_eval = (_worst_idx + 1) * _dt
+            # Guard: t_eval must be positive to avoid division by zero in S
+            t_eval = max(t_eval, 1e-3)
+
             eta_u_sum = eta + u_loss
             if eta_u_sum < 1e-6 or tau_room < 1e-3:
                 logging.warning(
@@ -2284,19 +2316,19 @@ class EnhancedModelWrapper:
                 )
 
             equilibrium_fraction = eta / eta_u_sum
-            s_h = equilibrium_fraction * (1.0 - math.exp(-H / tau_room))
+            s_t = equilibrium_fraction * (1.0 - math.exp(-t_eval / tau_room))
 
-            if s_h < 0.01:
+            if s_t < 0.01:
                 logging.warning(
-                    "[Newton] S_H=%.4f too small — falling back to legacy "
-                    "correction.",
-                    s_h,
+                    "[Newton] S(t=%.2fh)=%.4f too small — falling back to "
+                    "legacy correction.",
+                    t_eval, s_t,
                 )
                 return self._calculate_physics_based_correction(
                     outlet_temp, trajectory, target_indoor, cycle_hours
                 )
 
-            correction = temp_error / s_h
+            correction = temp_error / s_t
 
             # Clamp to ±2.5 °C
             max_correction = 2.5
@@ -2311,9 +2343,9 @@ class EnhancedModelWrapper:
             )
 
             logging.info(
-                "🎯 [Newton] S_H=%.4f (η=%.3f, U=%.3f, τ=%.2fh, H=%.1fh) "
-                "ε=%+.3f°C → ΔT=%+.3f°C → outlet %.1f°C",
-                s_h, eta, u_loss, tau_room, H,
+                "🎯 [Newton] S(t=%.2fh)=%.4f (η=%.3f, U=%.3f, τ=%.2fh, "
+                "H=%.1fh) ε=%+.3f°C → ΔT=%+.3f°C → outlet %.1f°C",
+                t_eval, s_t, eta, u_loss, tau_room, H,
                 temp_error, correction, corrected_outlet,
             )
 

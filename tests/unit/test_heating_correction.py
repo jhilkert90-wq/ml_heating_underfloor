@@ -4,12 +4,14 @@ Unit tests for the physics Newton-step heating correction and mode dispatch.
 Covers:
 1. _calculate_physics_newton_correction() with ε = +0.3 K (undershoot)
 2. _calculate_physics_newton_correction() with ε = −0.3 K (overshoot)
-3. S_H ≤ 0.01 safety guard falls back to legacy correction
+3. S_t ≤ 0.01 safety guard falls back to legacy correction
 4. Large ε clamped to ±2.5 °C
 5. Mode dispatch: "physics" routes to Newton method
 6. Mode dispatch: "legacy" routes to legacy method
 7. Mode dispatch: "ml" falls back to Newton (with warning)
 8. config_adapter maps heating_correction_mode → HEATING_CORRECTION_MODE
+9. Mid-horizon PV overshoot uses S(t_worst) not S(H)
+10. Undershoot at last step uses S(H) (t_worst = H)
 """
 import math
 import logging
@@ -30,8 +32,13 @@ U   = 0.124   # heat_loss_coefficient
 TAU = 4.39    # thermal_time_constant (h)
 H   = 4.0     # trajectory_steps (h)
 
-# Expected S_H = [η/(η+U)] × [1 − exp(−H/τ)]
+# S_H = [η/(η+U)] × [1 − exp(−H/τ)] — used when worst point is at t=H
 S_H_EXPECTED = (ETA / (ETA + U)) * (1.0 - math.exp(-H / TAU))  # ≈ 0.5202
+
+# S at t=3h (index 2 out of 4 uniform steps, step size = H/4 = 1h)
+# This is what the Newton method uses when the worst point is at step 2.
+T_3H = 3.0
+S_3H_EXPECTED = (ETA / (ETA + U)) * (1.0 - math.exp(-T_3H / TAU))  # ≈ 0.4306
 
 
 def _make_wrapper():
@@ -79,13 +86,14 @@ class TestPhysicsNewtonCorrection:
         self._clamp_min_patcher.stop()
         self._clamp_max_patcher.stop()
 
-    # 1. Undershoot ε = +0.3 K -------------------------------------------------
+    # 1. Undershoot ε = +0.3 K at step 2 (t=3h) --------------------------------
     @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
     def test_undershoot_0_3k(self):
-        """ε = +0.3 K at H=4 h should give ΔT ≈ +0.577 °C."""
+        """ε = +0.3 K at step 2 (t=3h) should give ΔT = 0.3 / S(3h)."""
         target = 21.0
         outlet = 25.0
-        # min of trajectory is 20.7 → ε = 0.3 K
+        # min of trajectory is 20.7 at index 2 → t_worst = 3h (step 2 of 4,
+        # step size = H/4 = 1h, so t = (2+1)*1 = 3h)
         trajectory = {
             'trajectory': [21.0, 20.9, 20.7, 20.8],
             'reaches_target_at': None,
@@ -101,19 +109,20 @@ class TestPhysicsNewtonCorrection:
             cycle_hours=10 / 60,
         )
 
-        expected_correction = 0.3 / S_H_EXPECTED  # ≈ 0.577
+        # t_worst = 3h (index 2, step size = 4/4 = 1h)
+        expected_correction = 0.3 / S_3H_EXPECTED
         assert result == pytest.approx(outlet + expected_correction, abs=0.01), (
             f"Expected outlet ≈ {outlet + expected_correction:.3f}°C, "
-            f"got {result:.3f}°C"
+            f"got {result:.3f}°C (used S(3h)={S_3H_EXPECTED:.4f})"
         )
 
-    # 2. Overshoot ε = −0.3 K --------------------------------------------------
+    # 2. Overshoot ε = −0.3 K at step 2 (t=3h) --------------------------------
     @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
     def test_overshoot_0_3k(self):
-        """ε = −0.3 K at H=4 h should give ΔT ≈ −0.577 °C."""
+        """ε = −0.3 K at step 2 (t=3h) should give ΔT = −0.3 / S(3h)."""
         target = 21.0
         outlet = 25.0
-        # max of trajectory is 21.3 → ε = −0.3 K
+        # max of trajectory is 21.3 at index 2 → t_worst = 3h
         trajectory = {
             'trajectory': [21.0, 21.2, 21.3, 21.2],
             'reaches_target_at': 0.1,
@@ -129,16 +138,16 @@ class TestPhysicsNewtonCorrection:
             cycle_hours=10 / 60,
         )
 
-        expected_correction = -0.3 / S_H_EXPECTED  # ≈ −0.577
+        expected_correction = -0.3 / S_3H_EXPECTED
         assert result == pytest.approx(outlet + expected_correction, abs=0.01), (
             f"Expected outlet ≈ {outlet + expected_correction:.3f}°C, "
-            f"got {result:.3f}°C"
+            f"got {result:.3f}°C (used S(3h)={S_3H_EXPECTED:.4f})"
         )
 
-    # 3. S_H ≤ 0.01 safety guard → fallback to legacy -------------------------
+    # 3. S_t ≤ 0.01 safety guard → fallback to legacy -------------------------
     @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
     def test_degenerate_eta_falls_back_to_legacy(self):
-        """η = 0 → S_H < 0.01 → method must fall back to legacy."""
+        """η = 0 → S(t) < 0.01 → method must fall back to legacy."""
         _patch_thermal_params(self.wrapper, eta=0.0)  # Degenerate
         trajectory = {
             'trajectory': [21.0, 20.9, 20.7, 20.8],
@@ -165,7 +174,7 @@ class TestPhysicsNewtonCorrection:
     # 4. Large ε clamped to ±2.5 °C -------------------------------------------
     @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
     def test_large_undershoot_clamped(self):
-        """ε = 5.0 K → raw correction ≈ 9.6 °C, but clamped to 2.5 °C."""
+        """ε = 5.0 K → raw correction is large but clamped to 2.5 °C."""
         target = 21.0
         outlet = 25.0
         trajectory = {
@@ -184,6 +193,90 @@ class TestPhysicsNewtonCorrection:
 
         assert result == pytest.approx(outlet + 2.5, abs=0.01), (
             f"Clamped correction should be 2.5°C, outlet={result:.3f}°C"
+        )
+
+    # 9. Mid-horizon PV overshoot: S(t_worst) < S(H) → bigger correction ------
+    @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
+    def test_mid_horizon_pv_overshoot_uses_t_worst(self):
+        """PV drives overshoot at t=2h (step 1); S(2h) < S(4h) → larger ΔT.
+
+        This test guards against the regression where S_H was used regardless
+        of when the worst point occurred, causing systematic under-correction
+        when solar gain peaks mid-trajectory.
+
+        With t_worst=2h: S(2h) = (ETA/(ETA+U)) * (1 - exp(-2/TAU))
+        With t_worst=4h: S(4h) = (ETA/(ETA+U)) * (1 - exp(-4/TAU))
+        Since 2h < 4h, S(2h) < S(4h), so correction = ε/S(2h) > ε/S(4h).
+        """
+        target = 21.0
+        outlet = 25.0
+        # Max at index 1 (t=2h for 4 equal steps of 1h each).
+        # trajectory dict includes "times" so t_worst is unambiguous.
+        trajectory = {
+            'trajectory': [21.0, 21.4, 21.1, 21.05],  # max=21.4 at idx 1
+            'times': [1.0, 2.0, 3.0, 4.0],
+            'reaches_target_at': 0.05,
+        }
+        # Positive trend so self-correction gate does not skip
+        self.wrapper._current_indoor = target
+        self.wrapper._current_features = {'indoor_temp_delta_60m': +0.5}
+
+        result = self.wrapper._calculate_physics_newton_correction(
+            outlet_temp=outlet,
+            trajectory=trajectory,
+            target_indoor=target,
+            cycle_hours=10 / 60,
+        )
+
+        # t_worst = times[1] = 2.0 h
+        t_worst = 2.0
+        s_t_worst = (ETA / (ETA + U)) * (1.0 - math.exp(-t_worst / TAU))
+        s_h = S_H_EXPECTED
+        eps = target - 21.4  # = -0.4 K
+
+        expected_correction_t_worst = eps / s_t_worst   # larger magnitude
+        expected_correction_h      = eps / s_h          # smaller magnitude
+
+        # The correction must use t_worst (larger magnitude)
+        assert result == pytest.approx(
+            outlet + expected_correction_t_worst, abs=0.01
+        ), (
+            f"Expected S(t_worst=2h)={s_t_worst:.4f} correction "
+            f"{expected_correction_t_worst:+.3f}°C, got {result - outlet:+.3f}°C. "
+            f"Under-correction from S_H={s_h:.4f} would have been "
+            f"{expected_correction_h:+.3f}°C."
+        )
+        # Sanity: t_worst correction must be larger in magnitude than H correction
+        assert abs(expected_correction_t_worst) > abs(expected_correction_h)
+
+    # 10. Error at last step uses S(H) -----------------------------------------
+    @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
+    def test_undershoot_at_last_step_uses_s_h(self):
+        """When worst undershoot is at the last step, S(H) is correct."""
+        target = 21.0
+        outlet = 25.0
+        # Min is at index 3 (last step) → t_worst = H = 4h
+        trajectory = {
+            'trajectory': [21.0, 20.95, 20.9, 20.7],
+            'times': [1.0, 2.0, 3.0, 4.0],
+            'reaches_target_at': None,
+        }
+        self.wrapper._current_indoor = target
+        self.wrapper._current_features = {'indoor_temp_delta_60m': -0.1}
+
+        result = self.wrapper._calculate_physics_newton_correction(
+            outlet_temp=outlet,
+            trajectory=trajectory,
+            target_indoor=target,
+            cycle_hours=10 / 60,
+        )
+
+        # t_worst = 4h = H → should use S_H
+        eps = target - 20.7  # = +0.3 K
+        expected_correction = eps / S_H_EXPECTED
+        assert result == pytest.approx(outlet + expected_correction, abs=0.01), (
+            f"Expected S(H=4h)={S_H_EXPECTED:.4f} correction "
+            f"{expected_correction:+.3f}°C, got {result - outlet:+.3f}°C."
         )
 
 
