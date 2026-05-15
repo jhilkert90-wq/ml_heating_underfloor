@@ -2147,20 +2147,18 @@ class EnhancedModelWrapper:
         cycle_hours: float,
     ) -> float:
         """
-        Physics Newton-step correction: ΔT_outlet = ε / S(t_worst).
+        Physics Newton-step correction: ΔT_outlet = ε / S(t_eval).
 
         S(t) = [η/(η+U)] × [1 − exp(−t/τ_room)]
 
-        This is a single Newton step that compensates the predicted trajectory
-        error at the time t_worst when the worst violation occurs.  Unlike
-        using S(H) (full horizon), evaluating sensitivity at t_worst avoids
-        systematic under-correction when:
-          - The error peaks mid-horizon (t_worst < H), or
-          - External heat sources such as PV drive an early overshoot.
-        It is symmetric for under- and overshoot.
+        Both ε and S are evaluated at t_eval = max(t_worst, τ_room/2).
+        The floor prevents degenerate corrections when the worst trajectory
+        violation is at a very early step (t < 1 h) where S(t) ≈ 0 because
+        the floor slab hasn't responded yet.  For genuine mid-horizon errors
+        (t_worst > τ/2), the original t_worst is preserved.
 
         Falls back to the legacy correction if thermal parameters are
-        degenerate (S(t_worst) ≤ 0.01).
+        degenerate (S(t_eval) ≤ 0.01).
         """
         try:
             trajectory_temps = trajectory.get("trajectory", [])
@@ -2307,6 +2305,44 @@ class EnhancedModelWrapper:
             # Clamp to a sensible minimum (1e-3 h ≈ 3.6 s) so the exponential
             # exp(-t_eval/tau_room) is well-behaved and S(t) stays in (0, 1].
             t_eval = max(t_eval, 1e-3)
+
+            # Floor t_eval to τ_room/2.  For underfloor heating the first
+            # trajectory steps (t < 1 h) produce degenerate S(t) ≈ 0 because
+            # the slab hasn't responded yet.  To keep the Newton step
+            # physically consistent, BOTH ε and S(t) are evaluated at
+            # max(t_worst, τ/2) — the earliest time at which the slab has
+            # meaningfully responded (≈ 39 % of equilibrium).
+            t_min = tau_room * 0.5
+            if t_eval < t_min:
+                t_eval_raw = t_eval
+                t_eval = t_min
+                # Re-evaluate ε at the floored time: find the nearest
+                # trajectory index to t_min.
+                if _traj_times and len(_traj_times) == _n:
+                    _floored_idx = min(
+                        range(_n),
+                        key=lambda i: abs(_traj_times[i] - t_min),
+                    )
+                else:
+                    _floored_idx = max(
+                        0, min(round(t_min / _dt) - 1, _n - 1)
+                    )
+                _old_eps = temp_error
+                _eps_at_floor = target_indoor - trajectory_temps[_floored_idx]
+                # Preserve the violation direction: if the trajectory has
+                # recovered by t_min (sign flip), suppress the correction.
+                if (_old_eps > 0 and _eps_at_floor <= 0) or \
+                   (_old_eps < 0 and _eps_at_floor >= 0):
+                    temp_error = 0.0
+                else:
+                    temp_error = _eps_at_floor
+                logging.debug(
+                    "[Newton] t_eval floored: %.2fh → %.2fh (τ/2=%.2fh); "
+                    "ε: %+.3f°C → %+.3f°C",
+                    t_eval_raw, t_eval, t_min, _old_eps, temp_error,
+                )
+                if abs(temp_error) < 1e-6:
+                    return outlet_temp
 
             eta_u_sum = eta + u_loss
             if eta_u_sum < 1e-6 or tau_room < 1e-3:

@@ -407,6 +407,42 @@ configuration:
       corrects PV-driven mid-horizon errors).
       'ml' = LightGBM regressor (future feature, currently falls back to
       physics Newton step).
+  heating_ml_cold_threshold_c:
+    name: "ML Heating Cold Threshold (°C)"
+    description: "Outdoor temperature ceiling for the heating-season data filter. Only rows with outdoor temp < this threshold are used for ML calibration. Default: 18°C."
+  heating_ml_calibration_start_date:
+    name: "ML Heating Calibration Start Date"
+    description: "Earliest date for ML heating correction training data (format: DD.MM.YYYY). Leave empty to use the default 90-day lookback."
+  heating_ml_at_forecast_hours:
+    name: "ML Heating AT Forecast Hours"
+    description: "Comma-separated outdoor temperature forecast hours to include as hindcast features (e.g. '1,2,3,4'). Default: '1,2,3,4'."
+  heating_ml_pv_forecast_hours:
+    name: "ML Heating PV Forecast Hours"
+    description: "Comma-separated PV forecast hours to include as features (e.g. '1,2,3,4'). Default: '1,2,3,4'."
+  heating_ml_fireplace_lag_hours:
+    name: "ML Heating Fireplace Lag Hours"
+    description: "Comma-separated fireplace lag hours for feature generation (e.g. '1,2'). Default: '1,2'."
+  heating_ml_tv_lag_hours:
+    name: "ML Heating TV Lag Hours"
+    description: "Comma-separated TV lag hours for feature generation (e.g. '0.5,1'). Default: '0.5,1'."
+  heating_ml_min_training_samples:
+    name: "ML Heating Min Training Samples"
+    description: "Minimum number of cold-season rows required before ML training is accepted. Default: 200."
+  heating_ml_label_horizon_h:
+    name: "ML Heating Label Horizon (h)"
+    description: "Label lookahead horizon in hours. Should match trajectory_steps. Default: 4."
+  heating_ml_blend_min_r2:
+    name: "ML Heating Blend Min R²"
+    description: "Minimum validation R² required for the ML model to participate in the blend. Below this threshold, only the physics Newton step is used. Default: 0.3."
+  heating_ml_retrain_val_fraction:
+    name: "ML Heating Retrain Validation Fraction"
+    description: "Fraction of training set held out for validation metrics (0.0–1.0). Default: 0.25."
+  heating_ml_retrain_trigger_k:
+    name: "ML Heating Retrain Trigger Count"
+    description: "Number of new labeled observations that triggers an automatic online retrain. Default: 50."
+  heating_ml_buffer_max_n:
+    name: "ML Heating Buffer Max Size"
+    description: "Rolling observation buffer size: keep the last N labeled samples for online retraining. Default: 500."
 
   # === Advanced Learning Features ===
   enable_multi_lag_learning:
@@ -615,6 +651,9 @@ configuration:
   pv_traj_disable_price_in_forecast_mode:
     name: "Disable Price Offset in Forecast Mode [Advanced]"
     description: "When enabled (default), the electricity price target-temperature offset is suppressed while the forecast-driven trajectory is active. This prevents Tibber price adjustments from interfering with the solar pre-heat plan. Default: true."
+  pv_traj_forecast_rescue_enabled:
+    name: "Forecast Rescue Enabled [Advanced]"
+    description: "When enabled, allows the forecast-driven trajectory mode to 'rescue' the planning horizon if PV production drops unexpectedly mid-day by extending the hold duration. Default: true."
 
   # === Outlet Smoothing ===
   outlet_smoothing_alpha:

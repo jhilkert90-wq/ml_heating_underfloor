@@ -241,6 +241,25 @@ def render_system_controls():
                         st.warning(f"Flag written but restart failed: {output}")
                 except Exception as e:
                     st.error(f"ML cooling calibration trigger failed: {e}")
+
+        if st.button("🧠 Calibrate ML Heating Model", help="Train the LightGBM heating correction model from historical data. Requires cold-season data (≥90 days recommended). Set heating_correction_mode=ml to activate after training."):
+            with st.spinner("Writing ML heating calibration flag..."):
+                try:
+                    os.makedirs('/data/config', exist_ok=True)
+                    with open('/data/config/calibrate_heating_correction_ml_flag', 'w') as f:
+                        f.write(datetime.now().isoformat())
+                    success, output = restart_ml_system()
+                    if success:
+                        st.success(
+                            "ML heating correction model calibration triggered! "
+                            "The system will train the LightGBM regressor from "
+                            "historical data on next startup. Set heating_correction_mode=ml "
+                            "to activate it after training completes."
+                        )
+                    else:
+                        st.warning(f"Flag written but restart failed: {output}")
+                except Exception as e:
+                    st.error(f"ML heating calibration trigger failed: {e}")
     
     with col4:
         if st.button("📋 View Logs"):

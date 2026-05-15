@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Newton correction τ/2 floor fix + UI improvements — 2026-05-16
+
+#### **What changed**
+- `src/model_wrapper.py`: `_calculate_physics_newton_correction()` now floors `t_eval` to `τ_room * 0.5` when the worst trajectory violation is at an early step. Both ε and S(t) are re-evaluated at the floored time. If the sign of ε flips (trajectory recovered), the correction is suppressed entirely. Docstring updated to reflect the new semantics.
+- `tests/unit/test_heating_correction.py`: Test 9 updated (overshoot peak moved from t=2h to t=3h to stay above τ/2). Two new tests: test 12 (τ/2 floor prevents always-clamped correction) and test 13 (sign flip suppression).
+- `ml_heating_underfloor/translations/en.yaml`: Added 13 missing tooltip descriptions for ML heating correction parameters (`heating_ml_*`) and `pv_traj_forecast_rescue_enabled`.
+- `dashboard/components/control.py`: Added "Calibrate ML Heating Model" button with flag `/data/config/calibrate_heating_correction_ml_flag`.
+
+#### **Why**
+- The Newton correction was always clamped to ±2.5°C because S(t≈0.17h)≈0.03 at step 0 made ε/S(t) exceed the clamp for any non-trivial error. Log evidence: 7 consecutive cycles all showed `S(t=0.17h)=0.0296` with ΔT=+2.500°C. The τ/2 floor fixes the root cause (evaluating at a time when the slab has meaningfully responded).
+- Missing tooltips made 13 configuration parameters invisible in the HA add-on UI.
+- Missing dashboard button prevented users from triggering ML heating model calibration.
+
+#### **Design decisions**
+- τ/2 chosen as the floor because at t=τ/2 the system has reached ~39% of equilibrium — the earliest time where the Newton step is physically meaningful for underfloor heating.
+- Sign-flip detection at the floored time prevents the correction from "solving" a transient that has already self-corrected.
+
 ### ✅ ML heating correction workflow audit — 3 bugs fixed — 2026-05-15
 
 #### **What changed**

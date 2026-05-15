@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## ✅ Newton correction τ/2 floor fix + UI improvements (2026-05-16)
+
+**Status:** COMPLETED — critical Newton correction bug fixed; 17/17 heating correction tests pass
+
+### Changes
+1. **Critical fix — Newton correction τ/2 floor** (`src/model_wrapper.py`): Both ε and S(t) now evaluated at max(t_worst, τ_room/2) instead of always at t_worst. Prevents degenerate S(t)≈0.03 at early trajectory steps from always clamping corrections to ±2.5°C. Sign-flip detection suppresses correction when trajectory recovers by τ/2.
+2. **Test updates** (`tests/unit/test_heating_correction.py`): Updated test 9 (moved overshoot peak from t=2h to t=3h above τ/2). Added test 12 (τ/2 floor suppresses degenerate correction) and test 13 (sign flip suppresses correction).
+3. **Missing tooltips** (`ml_heating_underfloor/translations/en.yaml`): Added 13 missing HA UI descriptions for ML heating correction parameters and `pv_traj_forecast_rescue_enabled`.
+4. **Dashboard button** (`dashboard/components/control.py`): Added "Calibrate ML Heating Model" button with flag file `/data/config/calibrate_heating_correction_ml_flag`.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_heating_correction.py`, `ml_heating_underfloor/translations/en.yaml`, `dashboard/components/control.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ ML heating correction workflow audit — 3 bugs fixed (2026-05-15)
 
 **Status:** COMPLETED — 3 bugs fixed; 3 regression tests added; all 67 affected tests pass

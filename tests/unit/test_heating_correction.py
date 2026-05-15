@@ -200,22 +200,25 @@ class TestPhysicsNewtonCorrection:
     # 9. Mid-horizon PV overshoot: S(t_worst) < S(H) → bigger correction ------
     @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
     def test_mid_horizon_pv_overshoot_uses_t_worst(self):
-        """PV drives overshoot at t=2h (step 1); S(2h) < S(4h) → larger ΔT.
+        """PV drives overshoot at t=3h (step 2); S(3h) < S(4h) → larger ΔT.
 
         This test guards against the regression where S_H was used regardless
         of when the worst point occurred, causing systematic under-correction
         when solar gain peaks mid-trajectory.
 
-        With t_worst=2h: S(2h) = (ETA/(ETA+U)) * (1 - exp(-2/TAU))
+        With t_worst=3h: S(3h) = (ETA/(ETA+U)) * (1 - exp(-3/TAU))
         With t_worst=4h: S(4h) = (ETA/(ETA+U)) * (1 - exp(-4/TAU))
-        Since 2h < 4h, S(2h) < S(4h), so correction = ε/S(2h) > ε/S(4h).
+        Since 3h < 4h, S(3h) < S(4h), so correction = ε/S(3h) > ε/S(4h).
+
+        NOTE: t_worst=3h is above τ/2≈2.2h so the τ/2 floor does NOT
+        trigger here — this test validates the pure mid-horizon correction.
         """
         target = 21.0
         outlet = 25.0
-        # Max at index 1 (t=2h for 4 equal steps of 1h each).
+        # Max at index 2 (t=3h for 4 equal steps of 1h each).
         # trajectory dict includes "times" so t_worst is unambiguous.
         trajectory = {
-            'trajectory': [21.0, 21.4, 21.1, 21.05],  # max=21.4 at idx 1
+            'trajectory': [21.0, 21.2, 21.4, 21.1],  # max=21.4 at idx 2
             'times': [1.0, 2.0, 3.0, 4.0],
             'reaches_target_at': 0.05,
         }
@@ -230,9 +233,8 @@ class TestPhysicsNewtonCorrection:
             cycle_hours=10 / 60,
         )
 
-        # t_worst = times[1] = 2.0 h
-        t_worst = 2.0
-        s_t_worst = (ETA / (ETA + U)) * (1.0 - math.exp(-t_worst / TAU))
+        # t_worst = times[2] = 3.0 h
+        s_t_worst = S_3H_EXPECTED
         s_h = S_H_EXPECTED
         eps = target - 21.4  # = -0.4 K
 
@@ -243,7 +245,7 @@ class TestPhysicsNewtonCorrection:
         assert result == pytest.approx(
             outlet + expected_correction_t_worst, abs=0.01
         ), (
-            f"Expected S(t_worst=2h)={s_t_worst:.4f} correction "
+            f"Expected S(t_worst=3h)={s_t_worst:.4f} correction "
             f"{expected_correction_t_worst:+.3f}°C, got {result - outlet:+.3f}°C. "
             f"Under-correction from S_H={s_h:.4f} would have been "
             f"{expected_correction_h:+.3f}°C."
@@ -350,6 +352,79 @@ class TestPhysicsNewtonCorrection:
             f"Δ={result - outlet:+.4f}°C."
         )
 
+    # 12. τ/2 floor suppresses degenerate early-step correction ----------------
+    @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
+    def test_tau_half_floor_suppresses_degenerate_correction(self):
+        """When worst error is at step 0 (t=1h < τ/2=2.195h), the floor
+        re-evaluates ε at the nearest step to τ/2, preventing degenerate
+        S(t) ≈ 0 and always-clamped corrections.
+        """
+        target = 21.0
+        outlet = 25.0
+        # Undershoot worst at step 0 (t=1h), improving monotonically
+        trajectory = {
+            'trajectory': [20.5, 20.8, 20.95, 21.0],
+            'times': [1.0, 2.0, 3.0, 4.0],
+            'reaches_target_at': 4.0,
+        }
+        self.wrapper._current_indoor = target
+        self.wrapper._current_features = {'indoor_temp_delta_60m': -0.1}
+
+        result = self.wrapper._calculate_physics_newton_correction(
+            outlet_temp=outlet,
+            trajectory=trajectory,
+            target_indoor=target,
+            cycle_hours=10 / 60,
+        )
+
+        # τ/2 = 4.39/2 = 2.195h → nearest step is index 1 (t=2h)
+        # ε_floored = 21.0 - 20.8 = +0.2°C (not +0.5°C from step 0)
+        # S(τ/2) = (ETA/(ETA+U)) * (1 - exp(-τ/2 / TAU))
+        t_floor = TAU * 0.5
+        s_floor = (ETA / (ETA + U)) * (1.0 - math.exp(-t_floor / TAU))
+        eps_floored = target - 20.8  # +0.2°C
+        expected_correction = eps_floored / s_floor
+
+        assert result == pytest.approx(
+            outlet + expected_correction, abs=0.05
+        ), (
+            f"Floor should give ε={eps_floored:+.2f}°C / S(τ/2)={s_floor:.4f} "
+            f"= {expected_correction:+.3f}°C, got {result - outlet:+.3f}°C"
+        )
+        # Must NOT be clamped (without floor it would be +2.5°C clamped)
+        assert abs(result - outlet) < 2.5, "Correction should not be clamped"
+
+    # 13. τ/2 floor sign flip suppresses correction entirely -------------------
+    @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
+    def test_tau_half_floor_sign_flip_suppresses_correction(self):
+        """When the trajectory has recovered by τ/2 (sign flips from
+        undershoot to overshoot), the correction is suppressed entirely.
+        """
+        target = 21.0
+        outlet = 25.0
+        # Undershoot at step 0, but recovered (overshoot) by step 1
+        trajectory = {
+            'trajectory': [20.5, 21.2, 21.1, 21.05],
+            'times': [1.0, 2.0, 3.0, 4.0],
+            'reaches_target_at': 1.5,
+        }
+        self.wrapper._current_indoor = target
+        self.wrapper._current_features = {'indoor_temp_delta_60m': -0.1}
+
+        result = self.wrapper._calculate_physics_newton_correction(
+            outlet_temp=outlet,
+            trajectory=trajectory,
+            target_indoor=target,
+            cycle_hours=10 / 60,
+        )
+
+        # τ/2 = 2.195h → nearest is index 1 (t=2h), temp=21.2 > target
+        # Original ε = +0.5 (undershoot), floored ε = -0.2 (overshoot)
+        # Sign flip → correction suppressed → returns outlet unchanged
+        assert result == pytest.approx(outlet, abs=0.01), (
+            f"Sign flip at τ/2 should suppress correction, "
+            f"got Δ={result - outlet:+.3f}°C"
+        )
 
 
 class TestCorrectionModeDispatch:
