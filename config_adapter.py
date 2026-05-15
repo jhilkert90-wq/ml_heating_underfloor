@@ -643,6 +643,9 @@ def convert_addon_to_env(config):
         'HEATING_ML_BLEND_MIN_R2': str(
             config.get('heating_ml_blend_min_r2', 0.3)
         ),
+        'HEATING_ML_RETRAIN_VAL_FRACTION': str(
+            config.get('heating_ml_retrain_val_fraction', 0.25)
+        ),
         'HEATING_ML_RETRAIN_TRIGGER_K': str(
             config.get('heating_ml_retrain_trigger_k', 50)
         ),

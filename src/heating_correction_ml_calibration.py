@@ -421,6 +421,7 @@ def calibrate_heating_correction_ml(
     s_h = _compute_s_h(eta, u_loss, tau_room, float(label_horizon_h))
     if s_h < 0.05:
         # Fallback: use S_H computed from config defaults
+        _s_h_degenerate = s_h  # save the degenerate value for logging
         eta_fb = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
         u_fb = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
         tau_fb = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
@@ -428,7 +429,7 @@ def calibrate_heating_correction_ml(
         logger.warning(
             "S_H from persisted params is %.4f (degenerate); "
             "fell back to config defaults → S_H=%.4f",
-            s_h, s_h,
+            _s_h_degenerate, s_h,
         )
     logger.info(
         "S_H estimate: η=%.4f U=%.4f τ=%.2fh H=%dh → S_H=%.4f",

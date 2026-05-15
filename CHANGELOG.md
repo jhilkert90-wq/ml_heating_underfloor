@@ -33,9 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation: section 7 of `docs/HEATING_CORRECTION_PHYSICS_VS_ML_ANALYSIS.md` updated with final feature list, label construction, and blend formula
 
 ### Fixed
-- **Heating Correction ML label pollution in cooling mode**: `src/main.py` now gates the full heating observation-buffer workflow (`push_pending`, `resolve_labels`, retrain trigger) on `climate_mode == "heating"`.
-  - Prevents pending heating observations from being labeled with summer/cooling indoor temperatures
-  - Prevents spurious retrains driven by contaminated heating labels
+- **Heating Correction ML: `indoor_temp` key mismatch at inference time** (`src/heating_correction_ml_model.py`): `_extract_heating_feature("indoor_temp")` and `_extract_heating_feature("indoor_margin")` returned 0.0 at runtime because `build_physics_features()` stores the indoor temperature under `indoor_temp_lag_30m` (not `indoor_temp`). Added fallback so inference correctly reads `indoor_temp_lag_30m` when `indoor_temp` is absent.  3 new regression tests added in `tests/unit/test_heating_correction_ml_model.py`.
+- **Heating Correction ML calibration: duplicated warning format arg** (`src/heating_correction_ml_calibration.py`): The `S_H from persisted params` warning message logged the fallback `s_h` value for both format args, hiding the original degenerate value. Fixed by saving the original before overwriting.
+- **Config adapter / config.yaml missing `HEATING_ML_RETRAIN_VAL_FRACTION`** (`config_adapter.py`, `ml_heating_underfloor/config.yaml`): The validation-split fraction for the heating ML regressor was defined in `config.py` but not wired to the HA add-on config schema. Added `heating_ml_retrain_val_fraction` option (default 0.25, range 0.05–0.5).
+
+
 
 ## [0.2.0] - 2026-02-10
 

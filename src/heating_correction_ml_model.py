@@ -134,10 +134,22 @@ def _extract_heating_feature(
     """
     # ── Temperature scalars ────────────────────────────────────────────
     if col == "indoor_temp":
-        return float(physics.get("indoor_temp") or 0.0)
+        # build_physics_features() stores the current indoor temperature as
+        # "indoor_temp_lag_30m" (the 30-minute-smoothed lag value used as the
+        # prediction baseline) but does NOT create a plain "indoor_temp" key.
+        # Fall back to that lag key so inference always produces the real
+        # indoor temperature rather than a spurious 0.0.
+        val = physics.get("indoor_temp")
+        if val is None:
+            val = physics.get("indoor_temp_lag_30m")
+        return float(val) if val is not None else 0.0
     if col == "indoor_margin":
-        # Positive when room is too cold (target > indoor), negative when warm
-        indoor = float(physics.get("indoor_temp") or 0.0)
+        # Positive when room is too cold (target > indoor), negative when warm.
+        # Same key-fallback as "indoor_temp" above.
+        indoor = physics.get("indoor_temp")
+        if indoor is None:
+            indoor = physics.get("indoor_temp_lag_30m")
+        indoor = float(indoor) if indoor is not None else 0.0
         return target_indoor - indoor
     if col == "indoor_trend_30m":
         return float(physics.get("indoor_temp_delta_30m") or 0.0)

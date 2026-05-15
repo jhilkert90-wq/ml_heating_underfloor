@@ -1,5 +1,18 @@
 # ML Heating System - Current Progress
 
+## ✅ ML heating correction workflow audit — 3 bugs fixed (2026-05-15)
+
+**Status:** COMPLETED — 3 bugs fixed; 3 regression tests added; all 67 affected tests pass
+
+Full end-to-end audit of the ML-based heating correction workflow (main.py, model_wrapper.py, heating_correction_ml_model.py, heating_correction_ml_calibration.py, heating_correction_ml_observation_buffer.py).
+
+### Bugs fixed
+1. **Critical — `indoor_temp` key mismatch at ML inference** (`src/heating_correction_ml_model.py`): `_extract_heating_feature("indoor_temp")` returned 0.0 at runtime because `build_physics_features()` stores the indoor temperature as `indoor_temp_lag_30m` not `indoor_temp`. `indoor_margin` had the same bug. Added fallback to `indoor_temp_lag_30m` in both handlers. 3 new regression tests in `tests/unit/test_heating_correction_ml_model.py`.
+2. **Minor — duplicated format arg in S_H warning** (`src/heating_correction_ml_calibration.py`): The `s_h < 0.05` fallback warning logged the new fallback value for both `%f` placeholders, hiding the original degenerate value. Saved the original before overwriting.
+3. **Missing config — `HEATING_ML_RETRAIN_VAL_FRACTION` not wired** (`config_adapter.py`, `ml_heating_underfloor/config.yaml`): Config var existed in `config.py` but had no add-on schema entry or adapter mapping.
+
+**Files changed:** `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_model.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Heating ML correction workflow review + cooling-label pollution fix (2026-05-15)
 
 **Status:** COMPLETED — critical workflow bug fixed; syntax validation passed

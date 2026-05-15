@@ -54,7 +54,34 @@ class TestExtractHeatingFeature:
         v = self._call("indoor_temp", {"indoor_temp": 20.5})
         assert v == pytest.approx(20.5)
 
-    def test_at_delta_indoor(self):
+    def test_indoor_temp_falls_back_to_lag_30m(self):
+        """indoor_temp falls back to indoor_temp_lag_30m when indoor_temp absent.
+
+        build_physics_features() does not produce an 'indoor_temp' key; it
+        stores the current reading as 'indoor_temp_lag_30m'.  This test
+        confirms the inference fallback so the model does not silently receive
+        a spurious 0.0.
+        """
+        v = self._call("indoor_temp", {"indoor_temp_lag_30m": 19.8})
+        assert v == pytest.approx(19.8)
+
+    def test_indoor_temp_returns_zero_when_both_keys_absent(self):
+        """indoor_temp returns 0.0 when neither key is present."""
+        v = self._call("indoor_temp", {})
+        assert v == pytest.approx(0.0)
+
+    def test_indoor_margin_falls_back_to_lag_30m(self):
+        """indoor_margin = target - indoor_temp, falling back to lag_30m.
+
+        Regression for the inference key-mismatch bug: when indoor_temp is
+        absent (runtime build_physics_features dict) the margin must use
+        indoor_temp_lag_30m rather than hard-coding 0.0.
+        """
+        # With fallback: margin = 21.0 - 19.5 = 1.5
+        v = self._call("indoor_margin", {"indoor_temp_lag_30m": 19.5}, target=21.0)
+        assert v == pytest.approx(1.5)
+
+
         """at_delta_indoor = -temp_diff_indoor_outdoor = AT - indoor"""
         v = self._call("at_delta_indoor", {"temp_diff_indoor_outdoor": 10.0})
         assert v == pytest.approx(-10.0)

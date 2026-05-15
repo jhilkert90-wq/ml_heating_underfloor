@@ -1,6 +1,27 @@
 # Active Context - Current Work & Decision State
 
-### ✅ Heating ML correction workflow review + cooling-label pollution fix — 2026-05-15
+### ✅ ML heating correction workflow audit — 3 bugs fixed — 2026-05-15
+
+#### **What changed**
+- `src/heating_correction_ml_model.py`: `_extract_heating_feature("indoor_temp")` and `_extract_heating_feature("indoor_margin")` now fall back to `physics.get("indoor_temp_lag_30m")` when `indoor_temp` is absent. `build_physics_features()` never emits `indoor_temp`; at runtime both functions were returning 0.0 (critical: model received completely wrong temperature values).
+- `src/heating_correction_ml_calibration.py`: S_H fallback warning now correctly logs the original degenerate value in the first format arg instead of the fallback value twice.
+- `config_adapter.py`: Added `HEATING_ML_RETRAIN_VAL_FRACTION` env var mapping (was missing from the HA add-on adapter).
+- `ml_heating_underfloor/config.yaml`: Added `heating_ml_retrain_val_fraction` option (default 0.25, schema range 0.05–0.5).
+- `tests/unit/test_heating_correction_ml_model.py`: 3 new regression tests: `test_indoor_temp_falls_back_to_lag_30m`, `test_indoor_temp_returns_zero_when_both_keys_absent`, `test_indoor_margin_falls_back_to_lag_30m`.
+
+#### **Why**
+- The `indoor_temp` key mismatch is critical: the ML correction model would silently use an indoor temperature of 0.0°C, making `indoor_margin` ≈ target_temp (21°C) and `indoor_temp` = 0°C — both completely wrong — for every inference cycle. This would cause the model to consistently output a large positive correction delta even when the room was already warm.
+- The warning message bug meant operators could not diagnose which S_H value triggered the fallback.
+- The missing config adapter entry meant `HEATING_ML_RETRAIN_VAL_FRACTION` could not be changed via the HA UI add-on config.
+
+#### **Design decisions**
+- Use `indoor_temp_lag_30m` as the inference fallback for `indoor_temp` since: (a) it's the proxy the rest of the thermal model already uses as the indoor temperature baseline, and (b) at training time `df["indoor_temp"]` is the InfluxDB reading which corresponds to the same 10-minute-interval value.
+- Keep existing behaviour (explicit `indoor_temp` key wins if present) for forward compatibility with any future code that does inject it.
+
+#### **Files changed**
+`src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_model.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
 
 #### **What changed**
 - `src/main.py`: gated the complete heating observation-buffer block on `climate_mode == "heating"` so `push_pending`, `resolve_labels`, save, and retrain trigger only execute during heating operation.

@@ -179,6 +179,9 @@ options:
   # Minimum validation R² required for the ML model to participate in the blend.
   # Below this threshold the system uses only the physics Newton step.
   heating_ml_blend_min_r2: 0.3
+  # Fraction of training set held out for validation metrics (0.0–1.0).
+  # Default: 0.25.
+  heating_ml_retrain_val_fraction: 0.25
   # Number of new labeled observations that triggers an automatic online retrain.
   # Default: 50.
   heating_ml_retrain_trigger_k: 50
@@ -608,6 +611,7 @@ schema:
   heating_ml_min_training_samples: "int(50,2000)"
   heating_ml_label_horizon_h: "int(1,12)"
   heating_ml_blend_min_r2: "float(0.0,1.0)"
+  heating_ml_retrain_val_fraction: "float(0.05,0.5)"
   heating_ml_retrain_trigger_k: "int(10,500)"
   heating_ml_buffer_max_n: "int(100,5000)"
   # InfluxDB Configuration
