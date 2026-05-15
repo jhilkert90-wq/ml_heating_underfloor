@@ -13,6 +13,7 @@ Key features:
 """
 
 import logging
+import math
 from typing import Any, Dict, Optional, Tuple
 from datetime import datetime
 
@@ -2135,7 +2136,6 @@ class EnhancedModelWrapper:
         Falls back to the legacy correction if thermal parameters are
         degenerate (S_H ≤ 0.01).
         """
-        import math
         try:
             trajectory_temps = trajectory.get("trajectory", [])
             if not trajectory_temps:

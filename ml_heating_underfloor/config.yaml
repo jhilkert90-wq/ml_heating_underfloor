@@ -504,7 +504,7 @@ options:
   # "physics" = Newton step ΔT = ε / S_H — symmetric, horizon-aware, ~2×
   #             more accurate after calibration.
   # "ml"      = LightGBM regressor (future feature, falls back to physics).
-  heating_correction_mode: "legacy"
+  heating_correction_mode: "legacy"  # Default: legacy (preserves existing behaviour)
 
 schema:
   # Core Entity Configuration

@@ -301,13 +301,14 @@ class TestCorrectionModeDispatch:
             self.wrapper,
             '_calculate_physics_newton_correction',
             return_value=25.6,
-        ) as mock_newton, caplog.at_level(logging.WARNING, logger='src.model_wrapper'):
-            result = self.wrapper._calculate_ml_correction(
-                outlet_temp=25.0,
-                trajectory=trajectory,
-                target_indoor=21.0,
-                cycle_hours=10 / 60,
-            )
+        ) as mock_newton:
+            with caplog.at_level(logging.WARNING, logger='src.model_wrapper'):
+                result = self.wrapper._calculate_ml_correction(
+                    outlet_temp=25.0,
+                    trajectory=trajectory,
+                    target_indoor=21.0,
+                    cycle_hours=10 / 60,
+                )
 
         mock_newton.assert_called_once()
         assert result == 25.6
