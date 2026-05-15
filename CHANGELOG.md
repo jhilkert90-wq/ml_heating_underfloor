@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Critical — Newton correction always clamped to ±2.5°C**: `_calculate_physics_newton_correction()` evaluated S(t) at t_worst which was typically step 0 (t≈0.17h) for underfloor heating. At this early time S(t)≈0.03, causing ε/S(t) to always exceed the ±2.5°C clamp. Added τ/2 floor: both ε and S(t) are now evaluated at max(t_worst, τ_room/2), preventing degenerate corrections from the thermal-inertia transient. If the trajectory has recovered by τ/2 (sign flip), the correction is suppressed entirely.
-
-### Added
-- **ML Heating correction parameter tooltips**: Added 13 missing Home Assistant UI descriptions for `heating_ml_*` parameters and `pv_traj_forecast_rescue_enabled` in `en.yaml`.
-- **Dashboard "Calibrate ML Heating Model" button**: Added calibration trigger button to the Streamlit control page, mirroring the existing ML Cooling button pattern.
-- **Newton correction τ/2 floor tests**: Two new unit tests — `test_tau_half_floor_suppresses_degenerate_correction` (test 12) and `test_tau_half_floor_sign_flip_suppresses_correction` (test 13).
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
