@@ -53,6 +53,9 @@ configuration:
   pv_power_entity:
     name: "PV Power Sensor (W)"
     description: "Sensor providing the current total PV power generation in Watts. The thermal model uses this to account for solar heat gain entering through windows and the building envelope."
+  wind_speed_entity:
+    name: "Wind Speed Sensor"
+    description: "Sensor providing current wind speed (m/s or km/h). Used by the ML heating correction model to account for convective heat loss — higher wind increases building heat loss."
   solar_correction_entity:
     name: "Solar Correction Input Number Entity"
     description: "An input_number entity (0–100 %) used to dynamically adjust how much PV solar power is credited as indoor heat gain. Useful when shading reduces actual solar gain below rated output."

@@ -63,6 +63,8 @@ options:
   # === External Heat Sources ===
   # A single aggregated sensor for total PV power generation
   pv_power_entity: "sensor.pv_leistung_gefiltert"
+  # Wind speed sensor for improved ML correction (affects heat loss)
+  wind_speed_entity: "sensor.wind_speed"
   # Home Assistant input_number for dynamic solar correction in percent
   solar_correction_entity: "input_number.ml_heating_solar_correction"
   # Fallback and clamping for solar correction input_number (in percent)
@@ -559,6 +561,7 @@ schema:
   living_room_temp_entity: "str"
   # External Heat Sources
   pv_power_entity: "str"
+  wind_speed_entity: "str"
   solar_correction_entity: "str"
   solar_correction_default_percent: "float(0.0,100.0)"
   solar_correction_min_percent: "float(0.0,100.0)"

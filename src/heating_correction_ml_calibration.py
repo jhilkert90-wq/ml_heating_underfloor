@@ -275,6 +275,12 @@ def calibrate_heating_correction_ml(
     tv_col = getattr(
         config, "TV_STATUS_ENTITY_ID", "input_boolean.fernseher"
     ).split(".", 1)[-1]
+    living_room_col = getattr(
+        config, "LIVING_ROOM_TEMP_ENTITY_ID", "sensor.rt_wz"
+    ).split(".", 1)[-1]
+    wind_col = getattr(
+        config, "WIND_SPEED_ENTITY_ID", "sensor.wind_speed"
+    ).split(".", 1)[-1]
 
     rename_map = {
         indoor_col:    "indoor_temp",
@@ -286,6 +292,8 @@ def calibrate_heating_correction_ml(
         pv_col:        "PV_Generate",
         fireplace_col: "fireplace_on",
         tv_col:        "tv_on",
+        living_room_col: "living_room_temp",
+        wind_col:      "wind_speed",
     }
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
@@ -346,6 +354,47 @@ def calibrate_heating_correction_ml(
     # Rolling indoor trends (30 min = 3 steps at 10-min intervals)
     df["indoor_trend_30m"] = df["indoor_temp"].diff(3)
     df["indoor_trend_1h"] = df["indoor_temp"].diff(steps_per_hour)
+
+    # ── 4b. NEW: 8 additional ML correction features ──────────────────
+    # Wind speed — fill missing with 0 (calm)
+    if "wind_speed" in df.columns:
+        df["wind_speed"] = pd.to_numeric(
+            df["wind_speed"], errors="coerce"
+        ).fillna(0.0).clip(0, 200)
+    else:
+        df["wind_speed"] = 0.0
+
+    # Indoor temp gradient (°C / 5-min step → °C/h)
+    df["indoor_temp_gradient"] = df["indoor_temp"].diff() * steps_per_hour
+
+    # Living room temperature
+    if "living_room_temp" in df.columns:
+        df["living_room_temp"] = pd.to_numeric(
+            df["living_room_temp"], errors="coerce"
+        ).fillna(method="ffill").fillna(df["indoor_temp"])
+    else:
+        df["living_room_temp"] = df["indoor_temp"]
+
+    # Heat pump active — delta_t > 1°C indicates flow
+    df["is_hp_active"] = (df["delta_t"].abs() > 1.0).astype(float)
+
+    # Weekend indicator
+    if "_time" in df.columns:
+        ts_wd = pd.to_datetime(df["_time"], utc=True)
+        df["is_weekend"] = ts_wd.dt.dayofweek.isin([5, 6]).astype(float)
+    else:
+        df["is_weekend"] = 0.0
+
+    # Rolling 1-hour thermal power
+    df["thermal_power_rolling_1h"] = df["thermal_power_kw"].rolling(
+        steps_per_hour, min_periods=1
+    ).mean()
+
+    # Indoor margin rate of change (°C/h)
+    df["indoor_margin_rate"] = df["indoor_margin"].diff() * steps_per_hour
+
+    # Overshoot indicator: indoor > target
+    df["is_overshoot"] = (df["indoor_temp"] > heating_target_c).astype(float)
 
     # Fireplace and TV features (binary) — fill missing with 0
     for src_col in ["fireplace_on", "tv_on"]:
@@ -502,6 +551,18 @@ def calibrate_heating_correction_ml(
         "doy_cos",
     ]
 
+    # NEW: 8 additional ML correction features
+    feature_cols += [
+        "wind_speed",
+        "indoor_temp_gradient",
+        "living_room_temp",
+        "is_hp_active",
+        "is_weekend",
+        "thermal_power_rolling_1h",
+        "indoor_margin_rate",
+        "is_overshoot",
+    ]
+
     # Guard: only keep columns that exist and have > 5% coverage
     available_features = []
     for col in feature_cols:
@@ -593,6 +654,35 @@ def calibrate_heating_correction_ml(
     val_r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
     logger.info("Val MAE=%.4f°C, Val R²=%.4f", val_mae, val_r2)
 
+    # ── 10b. Feature importance logging ─────────────────────────────────
+    # LightGBM built-in feature importance (split-based)
+    importances = model.feature_importances_
+    feat_imp_pairs = sorted(
+        zip(feature_cols, importances), key=lambda x: x[1], reverse=True
+    )
+    logger.info("=== FEATURE IMPORTANCE (LightGBM split-based) ===")
+    for fname, imp in feat_imp_pairs:
+        logger.info("  %-30s  %6d", fname, imp)
+
+    # Permutation importance (optional — needs sklearn)
+    try:
+        from sklearn.inspection import permutation_importance  # type: ignore
+        perm_result = permutation_importance(
+            model, X_val, y_val, n_repeats=10, random_state=42, n_jobs=-1,
+            scoring="neg_mean_absolute_error",
+        )
+        perm_pairs = sorted(
+            zip(feature_cols, perm_result.importances_mean),
+            key=lambda x: x[1], reverse=True,
+        )
+        logger.info("=== PERMUTATION IMPORTANCE (val set, 10 repeats) ===")
+        for fname, imp in perm_pairs:
+            logger.info("  %-30s  %.4f", fname, imp)
+    except ImportError:
+        logger.info("sklearn not available — skipping permutation importance")
+    except Exception as exc:
+        logger.warning("Permutation importance failed: %s", exc)
+
     # ── 11. Save model + metadata ───────────────────────────────────────
     try:
         import joblib  # type: ignore
@@ -639,6 +729,9 @@ def calibrate_heating_correction_ml(
         "fireplace_lag_hours": fireplace_lag_hours,
         "tv_lag_hours": tv_lag_hours,
         "lgb_params": lgb_params,
+        "feature_importances": {
+            fname: int(imp) for fname, imp in feat_imp_pairs
+        },
     }
     tmp_meta = metadata_path + ".tmp"
     with open(tmp_meta, "w", encoding="utf-8") as fh:

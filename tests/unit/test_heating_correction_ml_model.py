@@ -172,6 +172,82 @@ class TestExtractHeatingFeature:
         v = self._call("totally_unknown_col", {})
         assert v == pytest.approx(0.0)
 
+    # ── NEW: 8 additional ML correction feature handlers ────────────────
+    def test_wind_speed(self):
+        """wind_speed maps directly from physics dict."""
+        v = self._call("wind_speed", {"wind_speed": 5.2})
+        assert v == pytest.approx(5.2)
+
+    def test_wind_speed_missing(self):
+        """wind_speed returns 0.0 when absent."""
+        v = self._call("wind_speed", {})
+        assert v == pytest.approx(0.0)
+
+    def test_indoor_temp_gradient(self):
+        """indoor_temp_gradient maps directly from physics dict."""
+        v = self._call("indoor_temp_gradient", {"indoor_temp_gradient": 0.3})
+        assert v == pytest.approx(0.3)
+
+    def test_living_room_temp(self):
+        """living_room_temp maps from physics dict."""
+        v = self._call("living_room_temp", {"living_room_temp": 22.5})
+        assert v == pytest.approx(22.5)
+
+    def test_living_room_temp_fallback(self):
+        """living_room_temp falls back to indoor_temp when absent."""
+        v = self._call("living_room_temp", {"indoor_temp": 20.0})
+        assert v == pytest.approx(20.0)
+
+    def test_living_room_temp_fallback_lag(self):
+        """living_room_temp falls back to indoor_temp_lag_30m."""
+        v = self._call("living_room_temp", {"indoor_temp_lag_30m": 19.5})
+        assert v == pytest.approx(19.5)
+
+    def test_is_hp_active_on(self):
+        """is_hp_active = 1.0 when |delta_t| > 1.0."""
+        v = self._call("is_hp_active", {"delta_t": 3.5})
+        assert v == pytest.approx(1.0)
+
+    def test_is_hp_active_off(self):
+        """is_hp_active = 0.0 when |delta_t| <= 1.0."""
+        v = self._call("is_hp_active", {"delta_t": 0.5})
+        assert v == pytest.approx(0.0)
+
+    def test_is_hp_active_missing(self):
+        """is_hp_active = 0.0 when delta_t absent."""
+        v = self._call("is_hp_active", {})
+        assert v == pytest.approx(0.0)
+
+    def test_is_weekend(self):
+        """is_weekend maps from physics dict."""
+        v = self._call("is_weekend", {"is_weekend": 1.0})
+        assert v == pytest.approx(1.0)
+
+    def test_thermal_power_rolling_1h(self):
+        """thermal_power_rolling_1h uses instantaneous thermal_power_kw at inference."""
+        v = self._call("thermal_power_rolling_1h", {"thermal_power_kw": 4.5})
+        assert v == pytest.approx(4.5)
+
+    def test_indoor_margin_rate(self):
+        """indoor_margin_rate maps directly from physics dict."""
+        v = self._call("indoor_margin_rate", {"indoor_margin_rate": -0.2})
+        assert v == pytest.approx(-0.2)
+
+    def test_is_overshoot_true(self):
+        """is_overshoot = 1.0 when indoor > target."""
+        v = self._call("is_overshoot", {"indoor_temp": 22.0}, target=21.0)
+        assert v == pytest.approx(1.0)
+
+    def test_is_overshoot_false(self):
+        """is_overshoot = 0.0 when indoor <= target."""
+        v = self._call("is_overshoot", {"indoor_temp": 20.0}, target=21.0)
+        assert v == pytest.approx(0.0)
+
+    def test_is_overshoot_fallback_lag(self):
+        """is_overshoot uses indoor_temp_lag_30m fallback."""
+        v = self._call("is_overshoot", {"indoor_temp_lag_30m": 22.0}, target=21.0)
+        assert v == pytest.approx(1.0)
+
 
 # ---------------------------------------------------------------------------
 # build_heating_feature_vector

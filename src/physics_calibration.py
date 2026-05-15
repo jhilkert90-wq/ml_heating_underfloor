@@ -659,6 +659,7 @@ def fetch_historical_data_for_calibration(lookback_hours=672, purpose="heating")
             config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1],
             config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1],
             config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1],
+            config.WIND_SPEED_ENTITY_ID.split(".", 1)[-1],
         ]
 
     # --- HA history: full fallback (empty primary) or column supplement ---

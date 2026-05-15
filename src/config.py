@@ -190,6 +190,9 @@ OUTDOOR_TEMP_ENTITY_ID: str = os.getenv(
 PV_POWER_ENTITY_ID: str = os.getenv(
     "PV_POWER_ENTITY_ID", "sensor.power_pv"
 )
+WIND_SPEED_ENTITY_ID: str = os.getenv(
+    "WIND_SPEED_ENTITY_ID", "sensor.wind_speed"
+)
 SOLAR_CORRECTION_ENTITY_ID: str = os.getenv(
     "SOLAR_CORRECTION_ENTITY_ID", "input_number.ml_heating_solar_correction"
 )

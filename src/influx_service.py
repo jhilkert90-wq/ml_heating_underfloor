@@ -559,6 +559,7 @@ class InfluxService:
                 config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1],
                 config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1],
                 config.LIVING_ROOM_TEMP_ENTITY_ID.split(".", 1)[-1],
+                config.WIND_SPEED_ENTITY_ID.split(".", 1)[-1],
             ]
 
         entity_filter = " or\n                ".join(

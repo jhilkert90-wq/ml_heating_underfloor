@@ -1,5 +1,21 @@
 # ML Heating System - Current Progress
 
+## ✅ ML correction model improvement — 8 new features + feature importance (2026-05-16)
+
+**Status:** COMPLETED — 8 new features added to calibration + inference, feature importance logging, sklearn warning fixed, 1327/1328 tests pass (1 pre-existing failure)
+
+### Changes
+1. **Wind speed entity plumbing**: Added `WIND_SPEED_ENTITY_ID` to `src/config.py`, `config_adapter.py`, `config.yaml` (options + schema), InfluxDB default entity list (`src/influx_service.py`), `src/physics_calibration.py` important_optional_columns.
+2. **8 new calibration features** (`src/heating_correction_ml_calibration.py`): `wind_speed`, `indoor_temp_gradient`, `living_room_temp`, `is_hp_active`, `is_weekend`, `thermal_power_rolling_1h`, `indoor_margin_rate`, `is_overshoot`. Also added column renames for living_room and wind entities.
+3. **8 new inference handlers** (`src/heating_correction_ml_model.py`): Feature extraction handlers for all 8 new columns with appropriate fallbacks.
+4. **sklearn feature-names fix** (`src/heating_correction_ml_model.py`): `predict()` now uses `pd.DataFrame` with column names instead of raw `np.array`.
+5. **Feature importance logging** (`src/heating_correction_ml_calibration.py`): LightGBM split-based importance + optional permutation importance logged after training. Importances saved in metadata JSON.
+6. **Runtime features** (`src/physics_features.py`): Added `wind_speed`, `is_weekend`, `indoor_margin_rate` to the features dict.
+7. **Tooltips** (`ml_heating_underfloor/translations/en.yaml`): Added `wind_speed_entity` description.
+8. **Tests**: 16 new unit tests for feature extraction handlers. Fixed test mocks in `test_physics_features.py` and `test_ha_history_service.py` for wind_speed entity.
+
+**Files changed:** `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `src/influx_service.py`, `src/physics_calibration.py`, `src/heating_correction_ml_calibration.py`, `src/heating_correction_ml_model.py`, `src/physics_features.py`, `ml_heating_underfloor/translations/en.yaml`, `tests/unit/test_heating_correction_ml_model.py`, `tests/unit/test_physics_features.py`, `tests/unit/test_ha_history_service.py`, `CHANGELOG.md`
+
 ## ✅ Newton correction τ/2 floor fix + UI improvements (2026-05-16)
 
 **Status:** COMPLETED — critical Newton correction bug fixed; 17/17 heating correction tests pass

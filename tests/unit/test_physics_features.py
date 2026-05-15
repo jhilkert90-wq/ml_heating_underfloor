@@ -13,7 +13,7 @@ def mock_ha_client():
     client.get_all_states.return_value = {}
     # Updated side_effect to include new sensors
     # Order: Indoor, LivingRoom, Outdoor, Outlet, Target, Inlet, Flow, Power,
-    # DHW, Disinfection, Boost, Defrost, PV, SolarCorrection, Fireplace, TV
+    # DHW, Disinfection, Boost, Defrost, PV, SolarCorrection, WindSpeed, Fireplace, TV
     client.get_state.side_effect = [
         20.0,  # Indoor
         20.0,  # Living Room
@@ -29,6 +29,7 @@ def mock_ha_client():
         True,  # Defrost
         500.0, # PV
         0.0,   # Solar Correction
+        3.5,   # Wind Speed
         True,  # Fireplace
         False  # TV
     ]
@@ -55,7 +56,8 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     # Base includes prior +1 for pv_now_electrical.
     expected_cols_without_raw_history = 58 - 3 * (6 - config.TRAJECTORY_STEPS) + 1
     # Add +1 for the newly added pv_power_history_electrical column.
-    expected_cols = expected_cols_without_raw_history + 1  # 3 groups: temp, pv, cloud_cover
+    # Add +3 for ML correction features: wind_speed, is_weekend, indoor_margin_rate.
+    expected_cols = expected_cols_without_raw_history + 1 + 3  # 3 groups: temp, pv, cloud_cover
     assert len(features_df.columns) == expected_cols
     
     # Verify original features
@@ -216,6 +218,7 @@ class TestExtendedForecastHorizon:
             True,    # Defrost
             500.0,   # PV
             0.0,     # Solar Correction
+            3.5,     # Wind Speed
             True,    # Fireplace
             False,   # TV
         ]

@@ -1,5 +1,18 @@
 # Active Context - Current Work & Decision State
 
+### ✅ ML correction model improvement — 8 new features + feature importance — 2026-05-16
+
+#### **What changed**
+- **Config plumbing**: `WIND_SPEED_ENTITY_ID` (default `sensor.wind_speed`) added to `src/config.py`, `config_adapter.py`, `config.yaml`, `influx_service.py`, `physics_calibration.py`.
+- **Calibration** (`src/heating_correction_ml_calibration.py`): 8 new features (`wind_speed`, `indoor_temp_gradient`, `living_room_temp`, `is_hp_active`, `is_weekend`, `thermal_power_rolling_1h`, `indoor_margin_rate`, `is_overshoot`) + column renames for living_room/wind entities + feature importance logging (LightGBM split + permutation) + importances saved to metadata JSON.
+- **Inference** (`src/heating_correction_ml_model.py`): 8 new `_extract_heating_feature()` handlers with fallbacks. `predict()` now uses `pd.DataFrame` instead of `np.array` (fixes sklearn feature-names warning). Added `_load_pandas()` helper.
+- **Runtime features** (`src/physics_features.py`): Added `wind_speed`, `is_weekend`, `indoor_margin_rate` to features dict.
+- **Tooltips** (`en.yaml`): Added `wind_speed_entity` tooltip. `heating_ml_min_training_samples` tooltip was already present.
+- **Tests**: 16 new unit tests in `test_heating_correction_ml_model.py`. Fixed mocks in `test_physics_features.py` and `test_ha_history_service.py`.
+
+#### **Why**
+- ML model had R²=0.86 with 32 features. Adding wind, living room temp, HP state, weekend, thermal power rolling, margin rate, gradient, and overshoot indicator should improve accuracy. One model with `is_overshoot` indicator rather than two separate models (user decision). Feature importance logging enables analyzing which features contribute most after calibration.
+
 ### ✅ Newton correction τ/2 floor fix + UI improvements — 2026-05-16
 
 #### **What changed**

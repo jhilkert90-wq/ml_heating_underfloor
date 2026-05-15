@@ -260,6 +260,10 @@ def build_physics_features(
         )
         solar_correction_factor = solar_correction_percent / 100.0
     
+    # Wind speed for ML correction (affects convective heat loss)
+    wind_speed = ha_client.get_state(config.WIND_SPEED_ENTITY_ID, all_states) or 0.0
+    wind_speed = float(wind_speed)
+
     fireplace_on = ha_client.get_state(
         config.FIREPLACE_STATUS_ENTITY_ID, all_states, is_binary=True
     ) or False
@@ -572,5 +576,9 @@ def build_physics_features(
         'pv_power_history': pv_history,
         # Raw electrical PV history for cooling ML feature extraction.
         'pv_power_history_electrical': pv_history_electrical,
+        # === ML CORRECTION ADDITIONAL FEATURES ===
+        'wind_speed': wind_speed,
+        'is_weekend': 1.0 if datetime.now().weekday() >= 5 else 0.0,
+        'indoor_margin_rate': 0.0,  # computed by calibration from history; 0.0 at inference
     }
     return pd.DataFrame([features]), outlet_history

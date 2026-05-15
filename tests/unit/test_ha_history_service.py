@@ -285,6 +285,7 @@ class TestPerEntityCoverageGap:
             pc.config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1]: [8.0] * periods,
             pc.config.POWER_CONSUMPTION_ENTITY_ID.split(".", 1)[-1]: [200.0] * periods,
             pc.config.DHW_STATUS_ENTITY_ID.split(".", 1)[-1]: [0.0] * periods,
+            pc.config.WIND_SPEED_ENTITY_ID.split(".", 1)[-1]: [3.0] * periods,
         })
 
     @patch("src.physics_calibration.InfluxService")

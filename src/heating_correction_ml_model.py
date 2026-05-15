@@ -69,6 +69,14 @@ def _load_numpy():
         raise ImportError("numpy is required for HeatingCorrectionMLModel") from exc
 
 
+def _load_pandas():
+    try:
+        import pandas as pd  # type: ignore
+        return pd
+    except ImportError as exc:
+        raise ImportError("pandas is required for HeatingCorrectionMLModel") from exc
+
+
 # ---------------------------------------------------------------------------
 # Day-of-year helpers (used when physics dict lacks cyclical time features)
 # ---------------------------------------------------------------------------
@@ -227,6 +235,34 @@ def _extract_heating_feature(
             or 0.0
         )
 
+    # ── NEW: 8 additional ML correction features ──────────────────────
+    if col == "wind_speed":
+        return float(physics.get("wind_speed") or 0.0)
+    if col == "indoor_temp_gradient":
+        return float(physics.get("indoor_temp_gradient") or 0.0)
+    if col == "living_room_temp":
+        val = physics.get("living_room_temp")
+        if val is None:
+            val = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+        return float(val) if val is not None else 0.0
+    if col == "is_hp_active":
+        dt = physics.get("delta_t")
+        if dt is not None:
+            return 1.0 if abs(float(dt)) > 1.0 else 0.0
+        return 0.0
+    if col == "is_weekend":
+        return float(physics.get("is_weekend") or 0.0)
+    if col == "thermal_power_rolling_1h":
+        # At inference we only have the instantaneous value
+        return float(physics.get("thermal_power_kw") or 0.0)
+    if col == "indoor_margin_rate":
+        return float(physics.get("indoor_margin_rate") or 0.0)
+    if col == "is_overshoot":
+        indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+        if indoor is not None:
+            return 1.0 if float(indoor) > target_indoor else 0.0
+        return 0.0
+
     logger.warning(
         "HeatingCorrectionMLModel: unknown feature column '%s', filling 0.0", col
     )
@@ -355,10 +391,11 @@ class HeatingCorrectionMLModel:
             return None
         try:
             np = _load_numpy()
+            pd = _load_pandas()
             vec = build_heating_feature_vector(
                 self._feature_cols, features, target_indoor
             )
-            X = np.array(vec, dtype=float).reshape(1, -1)
+            X = pd.DataFrame([vec], columns=self._feature_cols)
             delta: float = float(self._model.predict(X)[0])
             logger.debug(
                 "HeatingCorrectionMLModel: raw ΔT_outlet=%.3f°C (R²=%.4f)",

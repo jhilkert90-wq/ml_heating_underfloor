@@ -113,6 +113,7 @@ def convert_addon_to_env(config):
 
         # --- External Heat Sources ---
         'PV_POWER_ENTITY_ID': config.get('pv_power_entity', ''),
+        'WIND_SPEED_ENTITY_ID': config.get('wind_speed_entity', ''),
         'SOLAR_CORRECTION_ENTITY_ID': config.get(
             'solar_correction_entity', ''
         ),
