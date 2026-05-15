@@ -1,6 +1,29 @@
 # Active Context - Current Work & Decision State
 
-### ✅ ML-Based Heating Correction Implementation — 2026-05-15
+### ✅ Heating Correction ML Online Learning — 2026-05-15
+
+#### **What changed**
+- `src/heating_correction_ml_observation_buffer.py` (new): `HeatingCorrectionObservationBuffer` — sliding-window regression label buffer; stores feature snapshots, resolves labels `−(T_indoor[t+N] − T_target) / S_H` (S_H recomputed at resolve-time from current thermal params), auto-triggers retrain, JSON persistence (atomic tmp→replace), thread-safe `RLock`, eviction policy (oldest labeled first).
+- `src/main.py`: unconditional init block before main loop; per-cycle push (heating mode only) + resolve (every cycle) + save + auto-retrain (calls `calibrate_heating_correction_ml()`, hot-reloads singleton via `EnhancedModelWrapper._heating_correction_ml_model = None`); partial back-off on retrain failure.
+- `src/config.py`: 3 new vars (`HEATING_ML_OBSERVATION_BUFFER_PATH`, `HEATING_ML_RETRAIN_TRIGGER_K`, `HEATING_ML_BUFFER_MAX_N`); defaults to `_UNIFIED_STATE_DIR`.
+- `config_adapter.py`: 2 new env var mappings in heating ML block.
+- `ml_heating_underfloor/config.yaml`: 2 new options + 2 schema entries.
+- `tests/unit/test_heating_correction_observation_buffer.py` (new): 25 tests.
+
+#### **Why**
+Adds self-improving online learning to the heating correction ML model: after initial calibration the model automatically retrains as real operational data accumulates, improving accuracy over the heating season without manual re-calibration.
+
+#### **Design decisions**
+- Observations collected always (regardless of `HEATING_CORRECTION_MODE`) so buffer fills even before ML mode is activated.
+- S_H recomputed at resolve-time from current thermal params (not stored at push-time) so labels reflect latest calibrated physics.
+- Retrain via InfluxDB (`calibrate_heating_correction_ml()`) for consistency with the initial calibration path.
+- Default paths in `_UNIFIED_STATE_DIR` (same directory as `UNIFIED_STATE_FILE`) so all runtime state co-locates.
+
+#### **Files changed**
+`src/heating_correction_ml_observation_buffer.py` (new), `src/main.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_observation_buffer.py` (new), `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 
 #### **What changed**
 - `src/heating_correction_ml_model.py` (new): `HeatingCorrectionMLModel` class — lazy-loads joblib model + metadata, predicts ΔT_outlet, exposes `r2_score` for blend weight. Feature extraction mirrors `CoolingMLModel._extract_feature`.

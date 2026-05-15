@@ -643,6 +643,12 @@ def convert_addon_to_env(config):
         'HEATING_ML_BLEND_MIN_R2': str(
             config.get('heating_ml_blend_min_r2', 0.3)
         ),
+        'HEATING_ML_RETRAIN_TRIGGER_K': str(
+            config.get('heating_ml_retrain_trigger_k', 50)
+        ),
+        'HEATING_ML_BUFFER_MAX_N': str(
+            config.get('heating_ml_buffer_max_n', 500)
+        ),
     }
 
     # Set environment variables for the ML system

@@ -1,6 +1,21 @@
 # ML Heating System - Current Progress
 
-## ✅ ML-Based Heating Correction Implementation (2026-05-15)
+## ✅ Heating Correction ML Online Learning (2026-05-15)
+
+**Status:** COMPLETED — 25 new unit tests pass (0 failures)
+
+Added sliding-window online learning to the heating correction ML model, mirroring the pre-cooling `CoolingObservationBuffer` pattern:
+
+- `src/heating_correction_ml_observation_buffer.py` (new): `HeatingCorrectionObservationBuffer` — regression label buffer; push-pending on heating cycles, resolve labels (float: `−(T_future − T_target) / S_H`) after `label_horizon_steps` cycles, auto-retrain trigger, JSON persistence, thread-safe RLock, eviction of oldest labeled entries.
+- `src/main.py`: init block before main loop (unconditional); per-cycle push/resolve/save/retrain block; hot-reloads singleton via `EnhancedModelWrapper._heating_correction_ml_model = None`.
+- `src/config.py`: 3 new vars `HEATING_ML_OBSERVATION_BUFFER_PATH`, `HEATING_ML_RETRAIN_TRIGGER_K`, `HEATING_ML_BUFFER_MAX_N`.
+- `config_adapter.py`: 2 new env var mappings.
+- `ml_heating_underfloor/config.yaml`: 2 new options + 2 schema entries.
+- `tests/unit/test_heating_correction_observation_buffer.py` (new): 25 tests.
+
+**Files changed:** `src/heating_correction_ml_observation_buffer.py` (new), `src/main.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_observation_buffer.py` (new), `CHANGELOG.md`
+
+
 
 **Status:** COMPLETED — all new tests pass (50 new unit tests, 0 failures)
 

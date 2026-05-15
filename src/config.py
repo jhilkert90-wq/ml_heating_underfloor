@@ -841,6 +841,19 @@ HEATING_ML_LABEL_HORIZON_H: int = int(
 HEATING_ML_BLEND_MIN_R2: float = float(
     os.getenv("HEATING_ML_BLEND_MIN_R2", "0.3")
 )
+# Path to the online-learning observation buffer JSON for the heating correction
+# regressor.  Defaults to the same directory as UNIFIED_STATE_FILE so all
+# runtime state lives in one place.
+HEATING_ML_OBSERVATION_BUFFER_PATH: str = os.getenv(
+    "HEATING_ML_OBSERVATION_BUFFER_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "heating_correction_ml_obs_buffer.json"),
+)
+# Number of new labeled observations that triggers an automatic retrain.
+HEATING_ML_RETRAIN_TRIGGER_K: int = int(
+    os.getenv("HEATING_ML_RETRAIN_TRIGGER_K", "50")
+)
+# Rolling buffer size: keep the last N labeled observations for retraining.
+HEATING_ML_BUFFER_MAX_N: int = int(os.getenv("HEATING_ML_BUFFER_MAX_N", "500"))
 
 
 def _parse_heating_start_date(date_str: str) -> "Optional[datetime]":

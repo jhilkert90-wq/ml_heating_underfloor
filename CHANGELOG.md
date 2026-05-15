@@ -8,7 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **ML-Based Heating Correction** (`heating_correction_mode: "ml"`): New LightGBM regression pipeline mirroring the cooling ML pattern.
+- **Heating Correction ML: Online Learning** (`HeatingCorrectionObservationBuffer`): Mirrors the pre-cooling sliding-window observation buffer pattern for the LightGBM heating regressor.
+  - `src/heating_correction_ml_observation_buffer.py` — new `HeatingCorrectionObservationBuffer` class; stores heating-cycle feature snapshots, resolves regression labels `−(T_indoor[t+N] − T_target) / S_H` after `label_horizon_steps` cycles, auto-triggers retrain via `calibrate_heating_correction_ml()` when `n_labeled ≥ min_training_samples AND labeled_since_last_train ≥ retrain_trigger_k`; JSON persistence with atomic tmp→replace writes
+  - Per-cycle integration in `src/main.py`: `push_pending` on every heating cycle, `resolve_labels` every cycle, auto-retrain with hot-reload (resets `EnhancedModelWrapper._heating_correction_ml_model = None` to force singleton reload)
+  - Buffer collects observations regardless of `HEATING_CORRECTION_MODE` so data accumulates even before ML mode is activated
+  - S_H recomputed at resolve-time from current calibrated thermal parameters (`_compute_s_h` / `_read_baseline_thermal_params`)
+- **New config vars**: `HEATING_ML_OBSERVATION_BUFFER_PATH` (default: `_UNIFIED_STATE_DIR/heating_correction_ml_obs_buffer.json`), `HEATING_ML_RETRAIN_TRIGGER_K` (default `50`), `HEATING_ML_BUFFER_MAX_N` (default `500`)
+- 25 new unit tests in `tests/unit/test_heating_correction_observation_buffer.py`
+
+
   - `src/heating_correction_ml_model.py` — inference class `HeatingCorrectionMLModel`; loads joblib model + metadata, exposes `predict(features, target_indoor)` and `r2_score`
   - `src/heating_correction_ml_calibration.py` — one-shot training: cold-season filter (AT < 18 °C), feature vector with AT hindcast, PV hindcast, dynamic fireplace/TV lags, regression label `−(T_future − T_target) / S_H`
   - Blended dispatch in `model_wrapper._calculate_ml_correction()`: confidence-weighted blend `w = R²` (clamped, with `HEATING_ML_BLEND_MIN_R2` minimum threshold)

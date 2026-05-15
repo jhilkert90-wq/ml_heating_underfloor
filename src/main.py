@@ -602,6 +602,37 @@ def main():
         except Exception as _cml_init_err:
             logging.warning("Cooling ML init failed (non-fatal): %s", _cml_init_err)
 
+    # --- Heating Correction ML observation buffer (always init) ---
+    # Collects heating-mode observations regardless of HEATING_CORRECTION_MODE
+    # so the buffer accumulates data even before the ML mode is enabled.
+    _heating_obs_buffer = None
+    _heating_obs_steps_per_hour = round(60 / float(getattr(config, "CYCLE_INTERVAL_MINUTES", 10)))
+    try:
+        from .heating_correction_ml_observation_buffer import (
+            HeatingCorrectionObservationBuffer,
+        )
+        _heating_label_h = int(getattr(config, "HEATING_ML_LABEL_HORIZON_H", 4))
+        _heating_obs_buffer = HeatingCorrectionObservationBuffer(
+            path=getattr(
+                config,
+                "HEATING_ML_OBSERVATION_BUFFER_PATH",
+                "/opt/ml_heating/heating_correction_ml_obs_buffer.json",
+            ),
+            max_n=int(getattr(config, "HEATING_ML_BUFFER_MAX_N", 500)),
+            min_training_samples=int(
+                getattr(config, "HEATING_ML_MIN_TRAINING_SAMPLES", 200)
+            ),
+            retrain_trigger_k=int(
+                getattr(config, "HEATING_ML_RETRAIN_TRIGGER_K", 50)
+            ),
+            horizon_steps=_heating_label_h * _heating_obs_steps_per_hour,
+        )
+    except Exception as _hml_buf_init_err:
+        logging.warning(
+            "Heating correction obs buffer init failed (non-fatal): %s",
+            _hml_buf_init_err,
+        )
+
     while True:
         try:
             # CYCLE START DEBUG LOGGING
@@ -1902,6 +1933,98 @@ def main():
                 except Exception as _pre_cool_exc:
                     logging.debug(
                         "Pre-cooling check failed: %s", _pre_cool_exc
+                    )
+
+            # --- Heating Correction ML: Observation Buffer (push + resolve + retrain) ---
+            # Runs every cycle:
+            #   • push_pending  — only on heating cycles (climate_mode == "heating")
+            #   • resolve_labels — every cycle so pending entries age correctly
+            #   • auto-retrain  — when enough new labels have accumulated
+            if _heating_obs_buffer is not None:
+                import datetime as _dt
+                try:
+                    # Compute S_H from current calibrated thermal parameters.
+                    # Uses the same formula as calibrate_heating_correction_ml().
+                    from .heating_correction_ml_calibration import (
+                        _compute_s_h,
+                        _read_baseline_thermal_params,
+                    )
+                    _hob_eta, _hob_u, _hob_tau = _read_baseline_thermal_params(config)
+                    _hob_label_h = float(getattr(config, "HEATING_ML_LABEL_HORIZON_H", 4))
+                    _hob_s_h = _compute_s_h(_hob_eta, _hob_u, _hob_tau, _hob_label_h)
+
+                    # Push a new pending observation on heating cycles.
+                    if climate_mode == "heating":
+                        _hob_features = features_dict if isinstance(features_dict, dict) else {}
+                        _heating_obs_buffer.push_pending(
+                            features=_hob_features,
+                            indoor_temp=prediction_indoor_temp,
+                            heating_target=target_indoor_temp,
+                            timestamp=_dt.datetime.utcnow().isoformat() + "Z",
+                        )
+
+                    # Resolve pending labels every cycle (advances age for pending entries).
+                    _hob_newly_labeled = _heating_obs_buffer.resolve_labels(
+                        prediction_indoor_temp, _hob_s_h
+                    )
+                    if _hob_newly_labeled > 0:
+                        logging.debug(
+                            "Heating obs buffer: resolved %d new label(s) this cycle",
+                            _hob_newly_labeled,
+                        )
+
+                    # Persist after push/resolve so pending entries survive restarts.
+                    try:
+                        _heating_obs_buffer.save()
+                    except Exception as _hob_save_err:
+                        logging.warning(
+                            "Heating obs buffer save failed (non-fatal): %s",
+                            _hob_save_err,
+                        )
+
+                    # Auto-retrain when enough new labeled samples accumulated.
+                    if _heating_obs_buffer.should_retrain():
+                        logging.info(
+                            "🤖 Heating ML: retrain trigger reached "
+                            "(%d labeled) — starting retrain",
+                            _heating_obs_buffer.n_labeled,
+                        )
+                        try:
+                            from .heating_correction_ml_calibration import (
+                                calibrate_heating_correction_ml,
+                            )
+                            if calibrate_heating_correction_ml():
+                                # Invalidate the in-memory singleton so the next
+                                # inference call hot-reloads the retrained model.
+                                from .model_wrapper import EnhancedModelWrapper
+                                EnhancedModelWrapper._heating_correction_ml_model = None
+                                logging.info(
+                                    "✅ Heating correction ML model retrained and reloaded"
+                                )
+                                _heating_obs_buffer.reset_retrain_counter()
+                                _heating_obs_buffer.save()
+                            else:
+                                logging.warning(
+                                    "Heating ML retrain returned False — "
+                                    "will retry after %d more new observations",
+                                    max(1, _heating_obs_buffer._retrain_trigger_k // 2 + 1),
+                                )
+                                # Partial back-off so we retry sooner than a full K wait
+                                # but don't immediately re-trigger.
+                                with _heating_obs_buffer._lock:
+                                    _heating_obs_buffer._labeled_since_last_train = max(
+                                        0,
+                                        _heating_obs_buffer._labeled_since_last_train
+                                        - _heating_obs_buffer._retrain_trigger_k // 2 - 1,
+                                    )
+                        except Exception as _hob_retrain_err:
+                            logging.warning(
+                                "Heating ML retrain failed (non-fatal): %s",
+                                _hob_retrain_err,
+                            )
+                except Exception as _hob_err:
+                    logging.debug(
+                        "Heating obs buffer cycle failed (non-fatal): %s", _hob_err
                     )
 
             suggested_temp, confidence, metadata = (
