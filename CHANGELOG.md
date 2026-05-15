@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Heating Correction ML: Online Learning** (`HeatingCorrectionObservationBuffer`): Mirrors the pre-cooling sliding-window observation buffer pattern for the LightGBM heating regressor.
   - `src/heating_correction_ml_observation_buffer.py` — new `HeatingCorrectionObservationBuffer` class; stores heating-cycle feature snapshots, resolves regression labels `−(T_indoor[t+N] − T_target) / S_H` after `label_horizon_steps` cycles, auto-triggers retrain via `calibrate_heating_correction_ml()` when `n_labeled ≥ min_training_samples AND labeled_since_last_train ≥ retrain_trigger_k`; JSON persistence with atomic tmp→replace writes
-  - Per-cycle integration in `src/main.py`: `push_pending` on every heating cycle, `resolve_labels` every cycle, auto-retrain with hot-reload (resets `EnhancedModelWrapper._heating_correction_ml_model = None` to force singleton reload)
+  - Per-cycle integration in `src/main.py`: `push_pending`, `resolve_labels`, and auto-retrain all run on heating cycles only; successful retrains hot-reload by resetting `EnhancedModelWrapper._heating_correction_ml_model = None`
   - Buffer collects observations regardless of `HEATING_CORRECTION_MODE` so data accumulates even before ML mode is activated
   - S_H recomputed at resolve-time from current calibrated thermal parameters (`_compute_s_h` / `_read_baseline_thermal_params`)
 - **New config vars**: `HEATING_ML_OBSERVATION_BUFFER_PATH` (default: `_UNIFIED_STATE_DIR/heating_correction_ml_obs_buffer.json`), `HEATING_ML_RETRAIN_TRIGGER_K` (default `50`), `HEATING_ML_BUFFER_MAX_N` (default `500`)
@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_parse_heating_start_date()` helper in `config.py` (mirrors `_parse_cooling_start_date`)
 - 60 new unit tests across 3 test files (calibration, inference, blend dispatch)
 - Documentation: section 7 of `docs/HEATING_CORRECTION_PHYSICS_VS_ML_ANALYSIS.md` updated with final feature list, label construction, and blend formula
+
+### Fixed
+- **Heating Correction ML label pollution in cooling mode**: `src/main.py` now gates the full heating observation-buffer workflow (`push_pending`, `resolve_labels`, retrain trigger) on `climate_mode == "heating"`.
+  - Prevents pending heating observations from being labeled with summer/cooling indoor temperatures
+  - Prevents spurious retrains driven by contaminated heating labels
 
 ## [0.2.0] - 2026-02-10
 

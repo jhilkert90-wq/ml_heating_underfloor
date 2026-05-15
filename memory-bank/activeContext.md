@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Heating ML correction workflow review + cooling-label pollution fix — 2026-05-15
+
+#### **What changed**
+- `src/main.py`: gated the complete heating observation-buffer block on `climate_mode == "heating"` so `push_pending`, `resolve_labels`, save, and retrain trigger only execute during heating operation.
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`: updated to document the corrected workflow and the bug that was fixed.
+
+#### **Why**
+- Pending heating observations were otherwise vulnerable to being resolved during cooling/summer cycles with non-heating indoor temperatures, producing polluted labels and potentially causing bad retrains of the heating ML correction model.
+
+#### **Design decisions**
+- Keep collection independent of `HEATING_CORRECTION_MODE`, but tie label aging/resolution to actual heating cycles only.
+- Match the heating workflow to the same climate-mode gating pattern already used by the cooling observation buffer integration.
+
+#### **Files changed**
+`src/main.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### ✅ Heating Correction ML Online Learning — 2026-05-15
 
 #### **What changed**

@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## ✅ Heating ML correction workflow review + cooling-label pollution fix (2026-05-15)
+
+**Status:** COMPLETED — critical workflow bug fixed; syntax validation passed
+
+- Reviewed the end-to-end heating ML correction workflow in `src/main.py`, especially the new online-learning integration around `HeatingCorrectionObservationBuffer`.
+- Confirmed the main logical mismatch: the heating buffer block previously aged/labeled pending heating observations outside heating operation, which allowed cooling/summer indoor temperatures to generate invalid heating labels.
+- Fixed `src/main.py` so the entire heating observation-buffer lifecycle (`push_pending`, `resolve_labels`, save, retrain trigger) only runs during `climate_mode == "heating"`.
+- Verified the file still compiles with `python -m py_compile`.
+- Updated project docs to reflect the corrected workflow.
+
+**Files changed:** `src/main.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Heating Correction ML Online Learning (2026-05-15)
 
 **Status:** COMPLETED — 25 new unit tests pass (0 failures)
