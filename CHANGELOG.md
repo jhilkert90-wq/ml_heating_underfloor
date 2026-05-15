@@ -14,14 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ML Heating correction parameter tooltips**: Added 13 missing Home Assistant UI descriptions for `heating_ml_*` parameters and `pv_traj_forecast_rescue_enabled` in `en.yaml`.
 - **Dashboard "Calibrate ML Heating Model" button**: Added calibration trigger button to the Streamlit control page, mirroring the existing ML Cooling button pattern.
 - **Newton correction τ/2 floor tests**: Two new unit tests — `test_tau_half_floor_suppresses_degenerate_correction` (test 12) and `test_tau_half_floor_sign_flip_suppresses_correction` (test 13).
-- **8 new ML correction features**: Added `wind_speed`, `indoor_temp_gradient`, `living_room_temp`, `is_hp_active`, `is_weekend`, `thermal_power_rolling_1h`, `indoor_margin_rate`, `is_overshoot` to both calibration pipeline and inference.
-- **Wind speed sensor support**: New `WIND_SPEED_ENTITY_ID` config option (default `sensor.wind_speed`), wired through `config_adapter.py`, `config.yaml`, InfluxDB default entity list, and runtime `build_physics_features()`.
-- **Feature importance logging after ML calibration**: LightGBM split-based importance logged after training; optional permutation importance (via sklearn) also computed and logged. Feature importances saved in model metadata JSON.
-- **Wind speed entity tooltip**: Added `wind_speed_entity` description to `en.yaml`.
-- **16 new unit tests**: Feature extraction handlers for all 8 new ML features, including fallback and edge-case tests.
-
-### Changed
-- **sklearn feature-names warning fixed**: `HeatingCorrectionMLModel.predict()` now passes a `pd.DataFrame` with column names instead of a raw `np.array`, eliminating the `X does not have valid feature names` warning.
 
 ## [0.2.0] - 2026-02-10
 
