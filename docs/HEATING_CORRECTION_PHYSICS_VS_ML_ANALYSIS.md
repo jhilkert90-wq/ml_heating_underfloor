@@ -94,11 +94,12 @@ The equilibrium under the code's correction is 23.27 °C — a future overshoot 
 that then requires a negative correction next cycle, which can create sustained oscillation.
 
 Code factors:
-```
-base_scale = min(1/η × 1.1, 2.5) = min(1/0.83 × 1.1, 2.5) = 1.325
-aggression  = min(1 + 0.3/3.19, 2.0) = 1.094
-urgency     = 1 + 2 × 1.0² = 3.0
-correction  = 0.3 × 1.325 × 3.0 × 1.094 = 1.305 °C
+```python
+base_scale       = min(1.0 / outlet_effectiveness * 1.1, 2.5)  # min(1/0.83 * 1.1, 2.5) = 1.325
+aggression_factor = min(1.0 + initial_deviation / slab_tau, 2.0)  # min(1 + 0.3/3.19, 2.0) = 1.094
+urgency_multiplier = 1.0 + 2.0 * (time_pressure ** 2)  # 1.0 + 2.0 * 1.0**2 = 3.0
+correction       = temp_error * physics_scale * urgency_multiplier * aggression_factor
+#                = 0.3 * 1.325 * 3.0 * 1.094 = 1.305 °C
 ```
 
 ### Example 2 — Small undershoot ε = 0.15 K
@@ -196,20 +197,27 @@ Simulated indoor trajectory (first-order, no slab model):
 The current `_calculate_physics_based_correction()` in `model_wrapper.py` uses the formula:
 
 ```python
-base_scale = min(1.0 / outlet_effectiveness * 1.1, 2.5)   # = 1.325
-aggression  = min(1.0 + initial_deviation / slab_tau, 2.0) # ≈ 1.0–2.0
-urgency     = 1.0 + 2.0 × time_pressure²                  # = 3.0 (urgency max)
-correction  = temp_error × base_scale × urgency × aggression    # undershoot
-correction  = temp_error × base_scale × urgency × overshoot_dampening  # overshoot
+base_scale         = min(1.0 / outlet_effectiveness * 1.1, 2.5)  # = 1.325
+physics_scale      = base_scale
+aggression_factor  = min(1.0 + initial_deviation / slab_tau, 2.0)  # ~1.0–2.0
+time_pressure      = self._calculate_time_pressure(trajectory, cycle_hours)  # 0.0–1.0
+urgency_multiplier = 1.0 + 2.0 * (time_pressure ** 2)  # = 3.0 at max time-pressure
+
+# Undershoot (temp_error > 0):
+correction = temp_error * physics_scale * urgency_multiplier * aggression_factor
+
+# Overshoot (temp_error < 0):
+overshoot_dampening = 1.0 / max(slab_tau, 1.0)  # = 0.313 for slab_tau=3.19
+correction = temp_error * physics_scale * urgency_multiplier * overshoot_dampening
 ```
 
 **Problems:**
 
-1. **Urgency = 3.0 inflates every correction by 3×.** The urgency factor was designed for
+1. **`urgency_multiplier` = 3.0 inflates every correction by 3×.** The urgency factor was designed for
    time-pressure situations but is always 3.0 when the target hasn't been reached yet.
 
-2. **Asymmetric treatment:** undershoot multiplies by `aggression` (~1.0–2.0),
-   overshoot multiplies by `overshoot_dampening = 1/τ_slab = 0.313`. Physics has no such
+2. **Asymmetric treatment:** undershoot multiplies by `aggression_factor` (~1.0–2.0),
+   overshoot multiplies by `overshoot_dampening = 1.0 / max(slab_tau, 1.0) = 0.313`. Physics has no such
    asymmetry — S_H is the same in both directions.
 
 3. **No horizon-awareness:** The correction doesn't depend on the prediction horizon H.
@@ -330,8 +338,8 @@ is undertrained (low R²), the system falls back to pure physics automatically.
 ## 9. Summary of Findings
 
 1. **The current code over-corrects undershoot by ~2.2× and under-corrects overshoot by
-   ~0.65×**, primarily because `urgency = 3.0` is always applied to undershoot and
-   `overshoot_dampening = 1/τ_slab = 0.313` is always applied to overshoot.
+   ~0.65×**, primarily because `urgency_multiplier = 3.0` is always applied to undershoot and
+   `overshoot_dampening = 1.0 / max(slab_tau, 1.0) = 0.313` is always applied to overshoot.
 
 2. **The correct physics correction is `ΔT = ε / S_H`**, where
    `S_H = 0.870 × [1 − exp(−H/τ_room)] = 0.5202` at the 4-hour horizon with
