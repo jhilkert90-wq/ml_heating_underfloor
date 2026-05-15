@@ -1,6 +1,43 @@
 # Active Context - Current Work & Decision State
 
-### 🔧 Fix `calculate_optimal_outlet_temperature` for cooling mode — 2026-05-14
+### 🐛 Newton S(t_worst) Bug Fix — 2026-05-15
+
+#### **What changed**
+- `src/model_wrapper.py`: `_calculate_physics_newton_correction()` now evaluates `S(t_worst)` instead of `S(H)`. Each violation branch sets `_worst_idx = trajectory_temps.index(worst_value)`. After the branches, `t_eval` is resolved from `trajectory["times"][_worst_idx]` (if available) or `(idx+1) * H/n_steps`. Sensitivity formula: `s_t = equilibrium_fraction * (1 - exp(-t_eval/tau_room))`.
+- `tests/unit/test_heating_correction.py`: added `S_3H_EXPECTED`; updated `test_undershoot_0_3k` / `test_overshoot_0_3k` to assert against `S(3h)`; added `test_mid_horizon_pv_overshoot_uses_t_worst` and `test_undershoot_at_last_step_uses_s_h`.
+
+#### **Why**
+- `ε / S_H` under-corrects when the worst trajectory point is at `t_worst < H` because `S(H) > S(t_worst)`. Most visible when PV peaks mid-day (overshoot at t=2h in a 4h horizon). Using `S(t_worst)` gives the correct Newton step.
+
+#### **Files changed**
+- `src/model_wrapper.py`, `tests/unit/test_heating_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### 🐛 Binary Search / Correction Gate Bug Fixes — 2026-05-15
+
+#### **What changed**
+- `src/model_wrapper.py`:
+  1. **Range-collapse bypass** (critical): binary search early-exit at `range_size < 0.05` now calls `_verify_trajectory_and_correct` before returning, matching the converged and non-converged code paths.
+  2. **`projected_indoor` exponential fix** (both `_calculate_physics_based_correction` and `_calculate_physics_newton_correction`): replaced `current + TRAJECTORY_STEPS × trend` with `current + trend × τ × (1 − exp(−H/τ))` using `TREND_DECAY_TAU_HOURS`. This matches the trajectory model's decaying trend bias and avoids 2–3× over-estimation that was causing the self-correction gate to skip legitimate corrections.
+  3. **Newton `else` branch alignment**: `reaches_target_at > cycle_hours` → `> cycle_hours + tolerance_hours` (tolerance_hours = cycle_hours × 2), matching the outer gate.
+  4. **Fragile float equality**: `temp_error == 0.0` → `abs(temp_error) < 1e-6`.
+- `tests/unit/test_model_wrapper.py`: updated `TestProjectedTempOvershootGate` fixture to use trend −0.3 °C/h and pinned `TREND_DECAY_TAU_HOURS=1.5` so skip-condition tests hold under the corrected formula.
+
+#### **Why**
+- Bug #1 meant the correction layer was silently bypassed whenever the binary search saturated at the floor (e.g. 21 °C with high PV forecast), so over-temperature conditions were not corrected.
+- Bug #2 caused the self-correction gate to over-skip: linear projection said the room would drop 0.8 °C in 4 h when the actual decaying-trend model accumulates only ~0.28 °C for the same −0.2 °C/h trend.
+- Bugs #3 and #4 were low-severity consistency/fragility issues.
+
+#### **Files changed**
+- `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+
+
+
+
 
 #### **What changed**
 - `src/thermal_equilibrium_model.py`: Added `climate_mode` parameter to `calculate_optimal_outlet_temperature()` and `_calculate_equilibrium_outlet_temperature()`. Cooling mode uses `[COOLING_CLAMP_MIN_ABS, COOLING_CLAMP_MAX_ABS]` bounds instead of heating bounds `[outdoor+5, 70]`, and skips the "outlet below outdoor" fallback since cooling outlets should be below outdoor temp.

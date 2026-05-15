@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Binary search range-collapse bypass** (`model_wrapper.py`): when the binary search range collapsed to < 0.05 °C (e.g. saturating at 21 °C min outlet due to high PV forecast), the early-exit path returned immediately without running `_verify_trajectory_and_correct`. The correction layer is now called before returning in this path, matching the converged and non-converged paths.
+- **`projected_indoor` linear over-estimation** (`model_wrapper.py`, both `_calculate_physics_based_correction` and `_calculate_physics_newton_correction`): the self-correction gate computed `projected_indoor = current + TRAJECTORY_STEPS × trend` (linear). At H=4 h this overestimated the room's natural travel by 2–3× compared to the actual trajectory, causing legitimate overshoot/undershoot corrections to be skipped. Replaced with the exponential-decay integral `current + trend × τ × (1 − exp(−H/τ))` using `TREND_DECAY_TAU_HOURS` (default 1.5 h), matching exactly how the trajectory model accumulates the trend bias.
+- **Newton `else` branch threshold inconsistency** (`model_wrapper.py`, `_calculate_physics_newton_correction`): the internal fallback branch used `reaches_target_at > cycle_hours` (1× cycle) while the outer gate filters at `cycle_hours + tolerance_hours` (3× cycle). Aligned the Newton branch to `cycle_hours + tolerance_hours` for consistency.
+- **Fragile exact float equality** (`model_wrapper.py`, `_calculate_physics_newton_correction`): replaced `if temp_error == 0.0` with `if abs(temp_error) < 1e-6` to avoid potential floating-point precision issues.
+- **Newton uses `S(H)` instead of `S(t_worst)`** (`model_wrapper.py`, `_calculate_physics_newton_correction`): sensitivity was always evaluated at the full horizon H via `S_H = [η/(η+U)] × [1 − exp(−H/τ_room)]`, but ε was measured at the worst trajectory point which may occur at `t_worst < H`. Since `S(H) > S(t_worst)`, dividing by `S_H` under-corrects systematically — worst when PV drives a mid-horizon overshoot (solar gain peaks early in the day). Fixed by looking up the time-step index of the worst point and evaluating `S(t_worst)` there. The trajectory `times` array is used when present; otherwise the step size is inferred as `H / n_steps`.
+
+### Added
+- **Physics Newton-Step Heating Correction** (`_calculate_physics_newton_correction()` in `model_wrapper.py`): implements `ΔT_outlet = ε / S(t_worst)` where `S(t) = [η/(η+U)] × [1 − exp(−t/τ_room)]` is evaluated at the time of the worst trajectory violation. Symmetric for under- and overshoot, corrects PV-driven mid-horizon errors, and ~2× more accurate than the legacy formula after calibration. Shares all boundary-violation guards and clamp logic with the existing method.
+- **ML Correction Stub** (`_calculate_ml_correction()` in `model_wrapper.py`): placeholder that warns and falls back to the Newton step, ready to be replaced with a LightGBM regressor once sufficient historical data is available.
+- **`HEATING_CORRECTION_MODE` config variable** (`src/config.py`): selects the active correction algorithm at runtime. Accepted values: `"legacy"` (default), `"physics"`, `"ml"`.
+- **Home Assistant dropdown selector** (`ml_heating_underfloor/config.yaml`): `heating_correction_mode: "list(legacy|physics|ml)"` renders as a dropdown in the HA add-on UI — no text entry required.
+- **config_adapter wiring** (`config_adapter.py`): `heating_correction_mode` option is now mapped to `HEATING_CORRECTION_MODE` env var in `convert_addon_to_env()`.
+- **Translation entry** (`ml_heating_underfloor/translations/en.yaml`): descriptive label and tooltip for the new dropdown.
+- **11 unit tests** (`tests/unit/test_heating_correction.py`): cover Newton undershoot/overshoot accuracy (±0.01°C tolerance), degenerate-S_H fallback, clamp guard, mode dispatch for all three modes, and config_adapter mapping.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

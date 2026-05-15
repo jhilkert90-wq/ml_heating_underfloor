@@ -342,6 +342,13 @@ OUTLET_SMOOTHING_ALPHA: float = float(
 OUTLET_SMOOTHING_BYPASS: float = float(
     os.getenv("OUTLET_SMOOTHING_BYPASS", "2.0")
 )
+# Heating correction algorithm selector.
+# "legacy"  — current empirical formula (default, preserves existing behaviour).
+# "physics" — horizon-aware Newton step ΔT = ε / S(t_worst), where
+#             S(t) = [η/(η+U)] × [1 − exp(−t/τ)] is evaluated at the time of
+#             the worst trajectory violation (recommended after calibration).
+# "ml"      — LightGBM regressor (requires calibration run, future feature).
+HEATING_CORRECTION_MODE: str = os.getenv("HEATING_CORRECTION_MODE", "legacy")
 # Maximum minutes to wait during the grace period after blocking ends.
 GRACE_PERIOD_MAX_MINUTES: int = int(
     os.getenv("GRACE_PERIOD_MAX_MINUTES", "15")

@@ -1,6 +1,17 @@
 # ML Heating System - Current Progress
 
-## 🔧 Fix `calculate_optimal_outlet_temperature` for cooling mode (2026-05-14)
+## 🐛 Newton S(t_worst) Bug Fix (2026-05-15)
+
+**Status:** COMPLETED — 1250 passed, 0 new failures
+
+- Fixed `_calculate_physics_newton_correction()` to evaluate sensitivity `S` at the time of the worst trajectory point (`t_worst`) instead of always at the full horizon H. When PV drives a mid-horizon overshoot the worst point occurs at `t_worst < H`, and since `S(H) > S(t_worst)`, using `S_H` in the denominator systematically under-corrects. With `S(t_worst)` the correction is `ε / S(t_worst) > ε / S_H` (larger magnitude), correctly compensating.
+- Added `_worst_idx` tracking in each violation branch; time resolved via `trajectory["times"]` if available, otherwise inferred as `(idx+1) * H/n_steps`.
+- Updated test constants `S_3H_EXPECTED` for the undershoot/overshoot tests (min/max at step 2 of 4 = t=3h not t=H).
+- Added `test_mid_horizon_pv_overshoot_uses_t_worst` and `test_undershoot_at_last_step_uses_s_h` to cover both the PV scenario and the no-change case.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_heating_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
 
 **Status:** COMPLETED — 1221 passed, 0 failed (1 pre-existing skip)
 

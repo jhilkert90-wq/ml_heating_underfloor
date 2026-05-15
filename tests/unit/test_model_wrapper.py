@@ -776,15 +776,26 @@ class TestHpOffSimulatedDeltaT:
 
 class TestProjectedTempOvershootGate:
     """Overshoot correction should be skipped when the projected indoor
-    temperature (current + TRAJECTORY_STEPS * trend) falls below
-    target + 0.1°C, meaning the house will self-correct in time."""
+    temperature falls below target + 0.1°C, meaning the house will
+    self-correct in time.
+
+    Projection uses the exponential-decay integral that matches the
+    trajectory model:
+        projected = current + trend * tau * (1 - exp(-H / tau))
+    where tau = TREND_DECAY_TAU_HOURS (default 1.5 h) and H = TRAJECTORY_STEPS.
+
+    At H=4 h, tau=1.5 h the integral factor ≈ 1.396, so a trend of
+    -0.3 °C/h yields projected ≈ 22.5 - 0.419 = 22.08 °C < 22.1 °C → skip.
+    """
 
     @pytest.fixture
     def wrapper(self, clean_state):
         w = get_enhanced_model_wrapper()
         w._current_indoor = 22.5
         w._current_features = {
-            "indoor_temp_delta_60m": -0.2,  # falling 0.2°C/h
+            # -0.3 °C/h: strong enough for exp-decay integral to push
+            # projected below target+0.1 (22.08 < 22.1) at H=4 h, τ=1.5 h.
+            "indoor_temp_delta_60m": -0.3,
         }
         return w
 
@@ -796,8 +807,9 @@ class TestProjectedTempOvershootGate:
         }
 
     def test_skip_overshoot_when_projection_below_target(self, wrapper, monkeypatch):
-        """Overshoot correction skipped: projected 22.5 + 4*(-0.2) = 21.7 < 22.1."""
+        """Overshoot correction skipped: exp-decay projected ≈ 22.08 < 22.1."""
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "TREND_DECAY_TAU_HOURS", 1.5)
         trajectory = self._make_trajectory([22.3, 22.2, 22.1, 22.0])
 
         result = wrapper._calculate_physics_based_correction(
@@ -810,8 +822,9 @@ class TestProjectedTempOvershootGate:
         assert result == 28.0
 
     def test_apply_overshoot_when_projection_above_target(self, wrapper, monkeypatch):
-        """Overshoot correction applied: projected 22.5 + 4*(+0.1) = 22.9 >= 22.1."""
+        """Overshoot correction applied: trend +0.1 °C/h → projected > 22.1."""
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "TREND_DECAY_TAU_HOURS", 1.5)
         wrapper._current_features = {
             "indoor_temp_delta_60m": 0.1,  # still rising
         }
@@ -825,9 +838,11 @@ class TestProjectedTempOvershootGate:
         )
         # Should apply correction (outlet lowered)
         assert result < 28.0
+
     def test_skip_with_zero_trend_but_small_overshoot(self, wrapper, monkeypatch):
         """Zero trend (flat) but current indoor 22.05 — projected = 22.05 < 22.1."""
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "TREND_DECAY_TAU_HOURS", 1.5)
         wrapper._current_indoor = 22.05
         wrapper._current_features = {
             "indoor_temp_delta_60m": 0.0,  # flat
@@ -840,12 +855,13 @@ class TestProjectedTempOvershootGate:
             target_indoor=22.0,
             cycle_hours=0.167,
         )
-        # projected = 22.05 < 22.1 → skip
+        # projected = 22.05 + 0 = 22.05 < 22.1 → skip
         assert result == 28.0
 
     def test_both_violated_max_wins_skips_when_projected_below(self, wrapper, monkeypatch):
         """Both min and max violated, max wins — still skips if projected < target+0.1."""
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "TREND_DECAY_TAU_HOURS", 1.5)
         # Trajectory goes both below and above target
         trajectory = self._make_trajectory([21.8, 22.3, 22.2, 21.9])
 
@@ -857,7 +873,7 @@ class TestProjectedTempOvershootGate:
         )
         # max violation (22.3) > min violation (21.8 vs 21.9 boundary)
         # max_severity = 22.3 - 22.1 = 0.2, min_severity = 21.9 - 21.8 = 0.1
-        # max wins → checks projected = 22.5 + 4*(-0.2) = 21.7 < 22.1 → skip
+        # max wins → exp-decay projected ≈ 22.08 < 22.1 → skip
         assert result == 28.0
 
 
