@@ -141,7 +141,10 @@ class HeatingCorrectionObservationBuffer:
             for entry in self._entries:
                 if entry["label"] is not None:
                     continue
-                entry["steps_elapsed"] += 1
+                # Only advance the counter while below the horizon so that
+                # degenerate-s_h retries don't cause unbounded aging.
+                if entry["steps_elapsed"] < self._horizon_steps:
+                    entry["steps_elapsed"] += 1
                 if entry["steps_elapsed"] >= self._horizon_steps:
                     if s_h <= 0.0:
                         # S_H degenerate — defer labeling until params available
@@ -151,9 +154,6 @@ class HeatingCorrectionObservationBuffer:
                             s_h,
                             entry.get("timestamp", "?"),
                         )
-                        # Don't increment steps_elapsed beyond horizon so we
-                        # retry next cycle without over-aging the entry.
-                        entry["steps_elapsed"] = self._horizon_steps
                         continue
                     raw_label = -(current_indoor - entry["heating_target"]) / s_h
                     entry["label"] = float(
@@ -197,6 +197,10 @@ class HeatingCorrectionObservationBuffer:
     def n_total(self) -> int:
         with self._lock:
             return len(self._entries)
+
+    @property
+    def retrain_trigger_k(self) -> int:
+        return self._retrain_trigger_k
 
     # ------------------------------------------------------------------
     # Persistence

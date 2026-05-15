@@ -2007,7 +2007,7 @@ def main():
                                 logging.warning(
                                     "Heating ML retrain returned False — "
                                     "will retry after %d more new observations",
-                                    max(1, _heating_obs_buffer._retrain_trigger_k // 2 + 1),
+                                    max(1, _heating_obs_buffer.retrain_trigger_k // 2 + 1),
                                 )
                                 # Partial back-off so we retry sooner than a full K wait
                                 # but don't immediately re-trigger.
@@ -2015,7 +2015,7 @@ def main():
                                     _heating_obs_buffer._labeled_since_last_train = max(
                                         0,
                                         _heating_obs_buffer._labeled_since_last_train
-                                        - _heating_obs_buffer._retrain_trigger_k // 2 - 1,
+                                        - _heating_obs_buffer.retrain_trigger_k // 2 - 1,
                                     )
                         except Exception as _hob_retrain_err:
                             logging.warning(
