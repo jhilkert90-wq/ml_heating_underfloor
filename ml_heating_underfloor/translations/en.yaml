@@ -401,8 +401,10 @@ configuration:
       Selects the algorithm used to correct under/overshoot when the
       predicted trajectory diverges from the target.
       'legacy' = existing empirical formula (default, safe starting point).
-      'physics' = Newton step ΔT = ε / S_H (recommended after calibration,
-      ~2× more accurate — symmetric for over- and undershoot, horizon-aware).
+      'physics' = horizon-aware Newton step ΔT = ε / S(t_worst), where S is
+      evaluated at the worst trajectory violation time (recommended after
+      calibration, ~2× more accurate — symmetric for over- and undershoot,
+      corrects PV-driven mid-horizon errors).
       'ml' = LightGBM regressor (future feature, currently falls back to
       physics Newton step).
 

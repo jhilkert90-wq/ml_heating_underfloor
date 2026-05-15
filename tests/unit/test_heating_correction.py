@@ -281,10 +281,76 @@ class TestPhysicsNewtonCorrection:
             f"{expected_correction:+.3f}°C, got {result - outlet:+.3f}°C."
         )
 
+    # 11. else branch: no violation but target not reached within 3 cycles ----
+    @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
+    def test_else_branch_applies_correction_when_target_not_reached(self):
+        """When no min/max violation but reaches_target_at is None (target
+        never reached), the Newton method corrects using the error at the last
+        step and uses S(H) as the sensitivity (t_eval = H).
 
-# ---------------------------------------------------------------------------
-# Mode dispatch tests
-# ---------------------------------------------------------------------------
+        This test guards the threshold-alignment fix: the else branch now uses
+        `reaches_target_at > cycle_hours + tolerance_hours` (3× cycle) instead
+        of the original `> cycle_hours` (1× cycle), matching the outer gate.
+        """
+        target = 21.0
+        outlet = 25.0
+        # All trajectory points within ±0.1°C of target (no violation),
+        # but reaches_target_at = None → correction must still be applied.
+        trajectory = {
+            'trajectory': [20.95, 20.97, 20.98, 20.96],  # all within ±0.1
+            'times': [1.0, 2.0, 3.0, 4.0],
+            'reaches_target_at': None,  # never reaches target within horizon
+        }
+        self.wrapper._current_indoor = target
+        self.wrapper._current_features = {'indoor_temp_delta_60m': -0.05}
+
+        result = self.wrapper._calculate_physics_newton_correction(
+            outlet_temp=outlet,
+            trajectory=trajectory,
+            target_indoor=target,
+            cycle_hours=10 / 60,
+        )
+
+        # Error is at last step: ε = 21.0 - 20.96 = 0.04 K
+        # Sensitivity at t=H=4h
+        eps = target - trajectory['trajectory'][-1]  # +0.04 K
+        expected_correction = eps / S_H_EXPECTED
+        assert result == pytest.approx(outlet + expected_correction, abs=0.01), (
+            f"else-branch expected correction {expected_correction:+.4f}°C "
+            f"(S_H={S_H_EXPECTED:.4f}), got {result - outlet:+.4f}°C."
+        )
+
+    @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
+    def test_else_branch_no_correction_when_target_reached_in_time(self):
+        """When no violation and reaches_target_at ≤ cycle_hours + tolerance,
+        the else branch must return outlet_temp unchanged (temp_error = 0).
+        """
+        target = 21.0
+        outlet = 25.0
+        cycle_hours = 10 / 60
+        tolerance_hours = cycle_hours * 2
+        # reaches_target_at is within 3× cycle — should NOT apply correction
+        trajectory = {
+            'trajectory': [20.95, 20.97, 20.98, 20.96],
+            'times': [1.0, 2.0, 3.0, 4.0],
+            'reaches_target_at': cycle_hours + tolerance_hours - 0.01,
+        }
+        self.wrapper._current_indoor = target
+        self.wrapper._current_features = {'indoor_temp_delta_60m': -0.05}
+
+        result = self.wrapper._calculate_physics_newton_correction(
+            outlet_temp=outlet,
+            trajectory=trajectory,
+            target_indoor=target,
+            cycle_hours=cycle_hours,
+        )
+
+        assert result == pytest.approx(outlet, abs=0.01), (
+            f"No correction expected (target reached in time), got "
+            f"Δ={result - outlet:+.4f}°C."
+        )
+
+
 
 class TestCorrectionModeDispatch:
     """Tests for the HEATING_CORRECTION_MODE dispatch in
@@ -437,7 +503,7 @@ class TestConfigAdapterHeatingCorrectionMode:
         assert env['HEATING_CORRECTION_MODE'] == 'ml'
 
     def test_default_is_legacy(self):
-        """When key is absent, default must be 'legacy'."""
+        """When key is absent, adapter must still emit 'legacy' explicitly."""
         from config_adapter import convert_addon_to_env
         env = convert_addon_to_env({})
-        assert env.get('HEATING_CORRECTION_MODE', 'legacy') == 'legacy'
+        assert env['HEATING_CORRECTION_MODE'] == 'legacy'
