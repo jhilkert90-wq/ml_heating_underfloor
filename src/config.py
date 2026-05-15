@@ -797,6 +797,23 @@ HEATING_ML_CALIBRATION_START_DATE: str = os.getenv(
 HEATING_ML_AT_FORECAST_HOURS: str = os.getenv(
     "HEATING_ML_AT_FORECAST_HOURS", "1,2,3,4"
 )
+# Comma-separated list of forecast hours to use as PV hindcast features
+# (pv_forecast_Xh) during heating correction calibration.
+# PV solar gain can be significant on sunny winter days even with AT < 18 °C.
+HEATING_ML_PV_FORECAST_HOURS: str = os.getenv(
+    "HEATING_ML_PV_FORECAST_HOURS", "1,2,3,4"
+)
+# Comma-separated list of lag window sizes in HOURS for fireplace residual-heat
+# features (fireplace_lag_Xh).  Each value generates one rolling-max feature.
+# Larger windows let the model learn longer decay tails after fireplace is off.
+HEATING_ML_FIREPLACE_LAG_HOURS: str = os.getenv(
+    "HEATING_ML_FIREPLACE_LAG_HOURS", "1,2"
+)
+# Comma-separated list of lag window sizes in HOURS for TV residual-heat features.
+# Use fractional hours for sub-hour windows (e.g. "0.5" → tv_lag_30m).
+HEATING_ML_TV_LAG_HOURS: str = os.getenv(
+    "HEATING_ML_TV_LAG_HOURS", "0.5,1"
+)
 # Path to the trained LightGBM heating correction regressor (joblib).
 HEATING_ML_CORRECTION_MODEL_PATH: str = os.getenv(
     "HEATING_ML_CORRECTION_MODEL_PATH",

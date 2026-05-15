@@ -625,6 +625,15 @@ def convert_addon_to_env(config):
         'HEATING_ML_AT_FORECAST_HOURS': config.get(
             'heating_ml_at_forecast_hours', '1,2,3,4'
         ),
+        'HEATING_ML_PV_FORECAST_HOURS': config.get(
+            'heating_ml_pv_forecast_hours', '1,2,3,4'
+        ),
+        'HEATING_ML_FIREPLACE_LAG_HOURS': config.get(
+            'heating_ml_fireplace_lag_hours', '1,2'
+        ),
+        'HEATING_ML_TV_LAG_HOURS': config.get(
+            'heating_ml_tv_lag_hours', '0.5,1'
+        ),
         'HEATING_ML_MIN_TRAINING_SAMPLES': str(
             config.get('heating_ml_min_training_samples', 200)
         ),

@@ -73,18 +73,72 @@ class TestExtractHeatingFeature:
         assert v == pytest.approx(7.0)
 
     def test_fireplace_lag_falls_back_to_fireplace_on(self):
-        """fireplace_lag_1h uses fireplace_on at inference (approximation)."""
-        v = self._call("fireplace_lag_1h", {"fireplace_on": 1.0})
-        assert v == pytest.approx(1.0)
-        v0 = self._call("fireplace_lag_1h", {"fireplace_on": 0.0})
-        assert v0 == pytest.approx(0.0)
+        """fireplace_lag_1h and fireplace_lag_2h use fireplace_on at inference."""
+        v1h = self._call("fireplace_lag_1h", {"fireplace_on": 1.0})
+        assert v1h == pytest.approx(1.0)
+        v2h = self._call("fireplace_lag_2h", {"fireplace_on": 0.0})
+        assert v2h == pytest.approx(0.0)
+        # fractional: fireplace_lag_30m should also resolve
+        v30m = self._call("fireplace_lag_30m", {"fireplace_on": 1.0})
+        assert v30m == pytest.approx(1.0)
 
     def test_tv_lag_falls_back_to_tv_on(self):
-        """tv_lag_30m uses tv_on at inference (approximation)."""
-        v = self._call("tv_lag_30m", {"tv_on": 1.0})
-        assert v == pytest.approx(1.0)
+        """tv_lag_30m and tv_lag_1h both use tv_on at inference."""
+        v30m = self._call("tv_lag_30m", {"tv_on": 1.0})
+        assert v30m == pytest.approx(1.0)
+        v1h = self._call("tv_lag_1h", {"tv_on": 0.0})
+        assert v1h == pytest.approx(0.0)
 
-    def test_unknown_column_returns_zero(self):
+    def test_pv_generate_prefers_electrical(self):
+        """PV_Generate uses pv_now_electrical first, falls back to pv_now."""
+        v = self._call("PV_Generate", {"pv_now_electrical": 2500.0, "pv_now": 100.0})
+        assert v == pytest.approx(2500.0)
+
+    def test_pv_generate_fallback_to_pv_now(self):
+        """PV_Generate uses pv_now when pv_now_electrical absent."""
+        v = self._call("PV_Generate", {"pv_now": 300.0})
+        assert v == pytest.approx(300.0)
+
+    def test_pv_generate_zero_when_both_absent(self):
+        v = self._call("PV_Generate", {})
+        assert v == pytest.approx(0.0)
+
+    def test_pv_roll_1h_returns_float(self):
+        """pv_roll_1h returns float from history list."""
+        from src.heating_correction_ml_model import _extract_heating_feature
+        physics = {"pv_power_history_electrical": [1000.0] * 6}
+        v = _extract_heating_feature("pv_roll_1h", physics, 21.0)
+        assert v == pytest.approx(1000.0)
+
+    def test_pv_roll_2h_returns_float(self):
+        from src.heating_correction_ml_model import _extract_heating_feature
+        physics = {"pv_power_history_electrical": [500.0] * 12}
+        v = _extract_heating_feature("pv_roll_2h", physics, 21.0)
+        assert v == pytest.approx(500.0)
+
+    def test_pv_roll_fallback_when_no_history(self):
+        """pv_roll_1h falls back to pv_now_electrical when no history."""
+        from src.heating_correction_ml_model import _extract_heating_feature
+        physics = {"pv_now_electrical": 800.0}
+        v = _extract_heating_feature("pv_roll_1h", physics, 21.0)
+        assert v == pytest.approx(800.0)
+
+    def test_pv_forecast_prefers_electrical(self):
+        """pv_forecast_2h prefers pv_forecast_electrical_2h."""
+        v = self._call(
+            "pv_forecast_2h",
+            {"pv_forecast_electrical_2h": 1200.0, "pv_forecast_2h": 900.0},
+        )
+        assert v == pytest.approx(1200.0)
+
+    def test_pv_forecast_fallback_to_thermal(self):
+        """pv_forecast_3h falls back to pv_forecast_3h when electrical absent."""
+        v = self._call("pv_forecast_3h", {"pv_forecast_3h": 450.0})
+        assert v == pytest.approx(450.0)
+
+    def test_pv_forecast_zero_when_absent(self):
+        v = self._call("pv_forecast_4h", {})
+        assert v == pytest.approx(0.0)
         """Unknown column fills 0.0."""
         v = self._call("totally_unknown_col", {})
         assert v == pytest.approx(0.0)

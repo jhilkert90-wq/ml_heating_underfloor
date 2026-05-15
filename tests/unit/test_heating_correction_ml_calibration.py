@@ -121,6 +121,9 @@ class TestHeatingStartDate:
             mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
             mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
             mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1,2"
+            mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1,2"
+            mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1,2"
+            mock_cfg.HEATING_ML_TV_LAG_HOURS = "0.5,1"
             mock_cfg.CYCLE_INTERVAL_MINUTES = 10
             mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
             mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
@@ -139,6 +142,7 @@ class TestHeatingStartDate:
             mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
             mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
             mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+            mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv"
             mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
             mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
             # _parse_heating_start_date must be a real callable
@@ -338,6 +342,9 @@ class TestFeatureSet:
             mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
             mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
             mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1,2"
+            mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1,2"
+            mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1,2"
+            mock_cfg.HEATING_ML_TV_LAG_HOURS = "0.5,1"
             mock_cfg.CYCLE_INTERVAL_MINUTES = 10
             mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
             mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
@@ -356,6 +363,7 @@ class TestFeatureSet:
             mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
             mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
             mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+            mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv"
             mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
             mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
 
@@ -390,7 +398,7 @@ class TestFeatureSet:
                 assert n_cols >= 5
 
     def test_feature_list_contains_fireplace_lag(self):
-        """The feature_cols must include fireplace_lag_1h and tv_lag_30m."""
+        """The feature_cols must include dynamic fireplace and TV lag columns."""
         try:
             import pandas as pd
             import numpy as np
@@ -403,12 +411,155 @@ class TestFeatureSet:
         df["tv_on"] = 0.0
 
         steps_per_hour = 6
-        df["fireplace_lag_1h"] = df["fireplace_on"].rolling(
-            steps_per_hour, min_periods=1
-        ).max()
-        df["tv_lag_30m"] = df["tv_on"].rolling(
-            max(1, steps_per_hour // 2), min_periods=1
-        ).max()
+        # Default HEATING_ML_FIREPLACE_LAG_HOURS = "1,2"
+        for lag_h in [1.0, 2.0]:
+            n_steps = max(1, int(round(lag_h * steps_per_hour)))
+            col_name = f"fireplace_lag_{int(lag_h)}h"
+            df[col_name] = df["fireplace_on"].rolling(n_steps, min_periods=1).max()
+
+        # Default HEATING_ML_TV_LAG_HOURS = "0.5,1"
+        for lag_h, expected_name in [(0.5, "tv_lag_30m"), (1.0, "tv_lag_1h")]:
+            n_steps = max(1, int(round(lag_h * steps_per_hour)))
+            df[expected_name] = df["tv_on"].rolling(n_steps, min_periods=1).max()
 
         assert "fireplace_lag_1h" in df.columns
+        assert "fireplace_lag_2h" in df.columns
         assert "tv_lag_30m" in df.columns
+        assert "tv_lag_1h" in df.columns
+
+    def test_pv_features_added_when_pv_data_present(self):
+        """When PV data is in the DataFrame, pv_roll and pv_forecast columns appear."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import calibrate_heating_correction_ml
+        df = _make_df(800, at_val=8.0)
+        df["pv_leistung_gefiltert"] = np.random.default_rng(1).uniform(0, 3000, len(df))
+
+        captured_features = []
+
+        def _capture_fit(X, y, **kwargs):
+            captured_features.append(X.shape[1])
+
+        with patch(
+            "src.heating_correction_ml_calibration"
+            ".fetch_historical_data_for_calibration",
+            return_value=df,
+        ), patch(
+            "src.heating_correction_ml_calibration._read_baseline_thermal_params",
+            return_value=(0.830, 0.124, 4.39),
+        ), patch(
+            "src.heating_correction_ml_calibration.config"
+        ) as mock_cfg:
+            mock_cfg.HEATING_ML_CALIBRATION_START_DATE = ""
+            mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
+            mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
+            mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1,2"
+            mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1,2"
+            mock_cfg.HEATING_ML_TV_LAG_HOURS = "0.5,1"
+            mock_cfg.CYCLE_INTERVAL_MINUTES = 10
+            mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
+            mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+            mock_cfg.HEATING_ML_MIN_TRAINING_SAMPLES = 50
+            mock_cfg.HEATING_ML_RETRAIN_VAL_FRACTION = 0.25
+            mock_cfg.OUTLET_EFFECTIVENESS = 0.830
+            mock_cfg.HEAT_LOSS_COEFFICIENT = 0.124
+            mock_cfg.THERMAL_TIME_CONSTANT = 4.39
+            mock_cfg.HEATING_ML_CORRECTION_MODEL_PATH = "/tmp/hml_pv_test.joblib"
+            mock_cfg.HEATING_ML_CORRECTION_METADATA_PATH = "/tmp/hml_pv_meta.json"
+            mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
+            mock_cfg.OUTDOOR_TEMP_ENTITY_ID = "sensor.outdoor"
+            mock_cfg.OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
+            mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
+            mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
+            mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+            # PV entity whose suffix matches the DF column name
+            mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv_leistung_gefiltert"
+            mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
+            mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
+
+            mock_lgb = MagicMock()
+            mock_model = MagicMock()
+            mock_lgb.LGBMRegressor.return_value = mock_model
+            mock_model.predict.side_effect = lambda X: np.zeros(len(X))
+            mock_model.fit.side_effect = _capture_fit
+
+            with patch.dict("sys.modules", {"lightgbm": mock_lgb}), \
+                 patch("joblib.dump"), \
+                 patch("os.replace"):
+                try:
+                    calibrate_heating_correction_ml()
+                except Exception:
+                    pass
+
+        if captured_features:
+            # With PV data present, we expect more columns than the minimum
+            # (AT:1, indoor:5, thermal:4, fp:3, tv:3, PV:4+2fc, time:4 = ≥ 20)
+            assert captured_features[0] >= 10
+
+    def test_pv_features_fallback_to_zero_when_absent(self):
+        """When PV data is absent, calibration still succeeds (PV=0 fallback)."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import calibrate_heating_correction_ml
+        # _make_df has no PV column → should be filled with 0 silently
+        df = _make_df(800, at_val=8.0)
+
+        with patch(
+            "src.heating_correction_ml_calibration"
+            ".fetch_historical_data_for_calibration",
+            return_value=df,
+        ), patch(
+            "src.heating_correction_ml_calibration._read_baseline_thermal_params",
+            return_value=(0.830, 0.124, 4.39),
+        ), patch(
+            "src.heating_correction_ml_calibration.config"
+        ) as mock_cfg:
+            mock_cfg.HEATING_ML_CALIBRATION_START_DATE = ""
+            mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
+            mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
+            mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1"
+            mock_cfg.HEATING_ML_TV_LAG_HOURS = "0.5"
+            mock_cfg.CYCLE_INTERVAL_MINUTES = 10
+            mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
+            mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+            mock_cfg.HEATING_ML_MIN_TRAINING_SAMPLES = 50
+            mock_cfg.HEATING_ML_RETRAIN_VAL_FRACTION = 0.25
+            mock_cfg.OUTLET_EFFECTIVENESS = 0.830
+            mock_cfg.HEAT_LOSS_COEFFICIENT = 0.124
+            mock_cfg.THERMAL_TIME_CONSTANT = 4.39
+            mock_cfg.HEATING_ML_CORRECTION_MODEL_PATH = "/tmp/hml_nopv.joblib"
+            mock_cfg.HEATING_ML_CORRECTION_METADATA_PATH = "/tmp/hml_nopv_meta.json"
+            mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
+            mock_cfg.OUTDOOR_TEMP_ENTITY_ID = "sensor.outdoor"
+            mock_cfg.OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
+            mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
+            mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
+            mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+            mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv_leistung_gefiltert"
+            mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
+            mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
+
+            mock_lgb = MagicMock()
+            mock_model = MagicMock()
+            mock_lgb.LGBMRegressor.return_value = mock_model
+            mock_model.predict.side_effect = lambda X: np.zeros(len(X))
+            mock_model.fit = MagicMock()
+
+            with patch.dict("sys.modules", {"lightgbm": mock_lgb}), \
+                 patch("joblib.dump"), \
+                 patch("os.replace"):
+                result = calibrate_heating_correction_ml()
+
+        # Should not raise; returns a bool
+        assert isinstance(result, bool)

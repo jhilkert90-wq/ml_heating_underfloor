@@ -10,12 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **ML-Based Heating Correction** (`heating_correction_mode: "ml"`): New LightGBM regression pipeline mirroring the cooling ML pattern.
   - `src/heating_correction_ml_model.py` — inference class `HeatingCorrectionMLModel`; loads joblib model + metadata, exposes `predict(features, target_indoor)` and `r2_score`
-  - `src/heating_correction_ml_calibration.py` — one-shot training: cold-season filter (AT < 18 °C), 18-feature vector (indoor trends, AT hindcast 1–4 h, fireplace/TV lags, delta_T, thermal power, cyclical time), regression label `−(T_future − T_target) / S_H`
+  - `src/heating_correction_ml_calibration.py` — one-shot training: cold-season filter (AT < 18 °C), feature vector with AT hindcast, PV hindcast, dynamic fireplace/TV lags, regression label `−(T_future − T_target) / S_H`
   - Blended dispatch in `model_wrapper._calculate_ml_correction()`: confidence-weighted blend `w = R²` (clamped, with `HEATING_ML_BLEND_MIN_R2` minimum threshold)
   - `--calibrate-heating-correction-ml` CLI flag and `/data/config/calibrate_heating_correction_ml_flag` flag file
-- **New config vars**: `HEATING_ML_COLD_THRESHOLD_C`, `HEATING_ML_CALIBRATION_START_DATE`, `HEATING_ML_AT_FORECAST_HOURS`, `HEATING_ML_CORRECTION_MODEL_PATH`, `HEATING_ML_CORRECTION_METADATA_PATH`, `HEATING_ML_MIN_TRAINING_SAMPLES`, `HEATING_ML_LABEL_HORIZON_H`, `HEATING_ML_BLEND_MIN_R2`
+- **Heating ML feature expansion**:
+  - PV hindcast features (`pv_forecast_1h`–`pv_forecast_Nh`) controlled by `HEATING_ML_PV_FORECAST_HOURS` (default `"1,2,3,4"`)
+  - PV instantaneous and rolling features (`PV_Generate`, `pv_roll_1h`, `pv_roll_2h`) at both training and inference time; prefers `pv_now_electrical`/`pv_forecast_electrical_Xh` keys to match training scale
+  - Dynamic fireplace lag windows (`fireplace_lag_1h`, `fireplace_lag_2h`, …) controlled by `HEATING_ML_FIREPLACE_LAG_HOURS` (default `"1,2"`)
+  - Dynamic TV lag windows (`tv_lag_30m`, `tv_lag_1h`, …) controlled by `HEATING_ML_TV_LAG_HOURS` (default `"0.5,1"`)
+  - Regex-based feature extraction in inference model handles any `fireplace_lag_Xh/m`, `tv_lag_Xh/m`, `pv_forecast_Xh`, `AT_roh_Xh` pattern without hardcoding individual names
+- **New config vars**: `HEATING_ML_COLD_THRESHOLD_C`, `HEATING_ML_CALIBRATION_START_DATE`, `HEATING_ML_AT_FORECAST_HOURS`, `HEATING_ML_PV_FORECAST_HOURS`, `HEATING_ML_FIREPLACE_LAG_HOURS`, `HEATING_ML_TV_LAG_HOURS`, `HEATING_ML_CORRECTION_MODEL_PATH`, `HEATING_ML_CORRECTION_METADATA_PATH`, `HEATING_ML_MIN_TRAINING_SAMPLES`, `HEATING_ML_LABEL_HORIZON_H`, `HEATING_ML_BLEND_MIN_R2`
 - `_parse_heating_start_date()` helper in `config.py` (mirrors `_parse_cooling_start_date`)
-- 50 new unit tests across 3 test files (calibration, inference, blend dispatch)
+- 60 new unit tests across 3 test files (calibration, inference, blend dispatch)
 - Documentation: section 7 of `docs/HEATING_CORRECTION_PHYSICS_VS_ML_ANALYSIS.md` updated with final feature list, label construction, and blend formula
 
 ## [0.2.0] - 2026-02-10

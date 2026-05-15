@@ -169,6 +169,9 @@ options:
   heating_ml_calibration_start_date: ""
   # Comma-separated AT forecast hours to include as hindcast features (e.g. "1,2,3,4").
   heating_ml_at_forecast_hours: "1,2,3,4"
+  heating_ml_pv_forecast_hours: "1,2,3,4"
+  heating_ml_fireplace_lag_hours: "1,2"
+  heating_ml_tv_lag_hours: "0.5,1"
   # Minimum cold-season rows required before training is accepted.
   heating_ml_min_training_samples: 200
   # Label lookahead horizon [hours]. Should match trajectory_steps.
@@ -593,6 +596,9 @@ schema:
   heating_ml_cold_threshold_c: "float(5.0,25.0)"
   heating_ml_calibration_start_date: "str?"
   heating_ml_at_forecast_hours: "str"
+  heating_ml_pv_forecast_hours: "str"
+  heating_ml_fireplace_lag_hours: "str"
+  heating_ml_tv_lag_hours: "str"
   heating_ml_min_training_samples: "int(50,2000)"
   heating_ml_label_horizon_h: "int(1,12)"
   heating_ml_blend_min_r2: "float(0.0,1.0)"

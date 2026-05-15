@@ -18,15 +18,22 @@ Inference usage (inside ``model_wrapper._calculate_ml_correction()``)
 1.  ``HeatingCorrectionMLModel.predict(features, target_indoor)`` → float or None
 2.  Caller blends the ML delta with the physics Newton delta using R² as weight.
 
-Note on `fireplace_lag_1h` / `tv_lag_30m`
-------------------------------------------
-These features are computed as rolling maxima at *training* time (history data
-available).  At *inference* time, the physics_features dict only exposes the
-instantaneous ``fireplace_on`` / ``tv_on`` flags.  As an approximation we
-fall back to the instantaneous value: if the source is currently on the lag is
-also 1.0, if off we assume the lag has expired.  This is conservative (slightly
-underpredicts residual heat after FP turns off) but safe for a first version.
-A future improvement is to maintain a rolling binary history in the wrapper.
+Note on fireplace/TV lag features
+----------------------------------
+Rolling-max lag features are computed over history at *training* time.
+At *inference* time the physics_features dict exposes only the instantaneous
+``fireplace_on`` / ``tv_on`` flags.  As an approximation, any
+``fireplace_lag_Xh``, ``fireplace_lag_Xm``, ``tv_lag_Xh``, or ``tv_lag_Xm``
+column falls back to the corresponding instantaneous flag.  This is
+conservative (slightly underpredicts residual heat after source turns off)
+but safe for a first version.
+
+Note on PV features
+-------------------
+``PV_Generate`` and ``pv_roll_Xh`` read ``pv_now_electrical`` (raw watts,
+preferred) or ``pv_now`` (corrected thermal watts) from the physics dict.
+``pv_forecast_Xh`` reads ``pv_forecast_electrical_Xh`` first, then falls
+back to ``pv_forecast_Xh``, mirroring the cooling ML model.
 """
 
 from __future__ import annotations
@@ -74,6 +81,33 @@ def _doy_sin() -> float:
 def _doy_cos() -> float:
     doy = datetime.now().timetuple().tm_yday
     return math.cos(2 * math.pi * doy / 365.25)
+
+
+# ---------------------------------------------------------------------------
+# PV rolling helper (mirrors cooling_ml_model._pv_roll)
+# ---------------------------------------------------------------------------
+
+def _pv_roll(physics: dict[str, Any], hours: int, steps_per_hour: int = 6) -> float:
+    """Return mean PV power over the last *hours* from the history list.
+
+    Prefers ``pv_power_history_electrical`` (raw watts) and falls back to
+    ``pv_power_history`` (thermally corrected watts) to match training scale.
+    """
+    history = physics.get("pv_power_history_electrical") or physics.get(
+        "pv_power_history"
+    )
+    if not history:
+        # No history available: use instantaneous PV as best approximation
+        val = physics.get("pv_now_electrical")
+        if val is None:
+            val = physics.get("pv_now")
+        return float(val) if val is not None else 0.0
+    n = max(1, hours * steps_per_hour)
+    recent = list(history)[-n:]
+    try:
+        return float(sum(float(v) for v in recent) / len(recent))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -130,12 +164,36 @@ def _extract_heating_feature(
         return float(physics.get("fireplace_on") or 0.0)
     if col == "tv_on":
         return float(physics.get("tv_on") or 0.0)
-    # Lag features: approximated at inference as the instantaneous value
-    # (conservative — slightly underpredicts residual heat, but safe).
-    if col == "fireplace_lag_1h":
+
+    # Dynamic fireplace lag: fireplace_lag_Xh or fireplace_lag_Xm
+    # → approximated at inference as the instantaneous fireplace_on flag
+    if re.fullmatch(r"fireplace_lag_\d+[hm]", col):
         return float(physics.get("fireplace_on") or 0.0)
-    if col == "tv_lag_30m":
+
+    # Dynamic TV lag: tv_lag_Xh or tv_lag_Xm
+    # → approximated at inference as the instantaneous tv_on flag
+    if re.fullmatch(r"tv_lag_\d+[hm]", col):
         return float(physics.get("tv_on") or 0.0)
+
+    # ── PV features ────────────────────────────────────────────────────
+    if col == "PV_Generate":
+        val = physics.get("pv_now_electrical")
+        if val is None:
+            val = physics.get("pv_now")
+        return float(val) if val is not None else 0.0
+    if col == "pv_roll_1h":
+        return _pv_roll(physics, 1)
+    if col == "pv_roll_2h":
+        return _pv_roll(physics, 2)
+
+    # Dynamic PV forecast: pv_forecast_Xh
+    m_pv = re.fullmatch(r"pv_forecast_(\d+)h", col)
+    if m_pv:
+        h = m_pv.group(1)
+        val = physics.get(f"pv_forecast_electrical_{h}h")
+        if val is None:
+            val = physics.get(f"pv_forecast_{h}h")
+        return float(val) if val is not None else 0.0
 
     # ── Cyclical time features ─────────────────────────────────────────
     if col == "hour_sin":
@@ -148,9 +206,9 @@ def _extract_heating_feature(
         return _doy_cos()
 
     # ── Dynamic AT forecast: AT_roh_Xh → temp_forecast_Xh ─────────────
-    m = re.fullmatch(r"AT_roh_(\d+)h", col)
-    if m:
-        h = m.group(1)
+    m_at = re.fullmatch(r"AT_roh_(\d+)h", col)
+    if m_at:
+        h = m_at.group(1)
         return float(
             physics.get(f"temp_forecast_{h}h")
             or physics.get("outdoor_temp")

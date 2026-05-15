@@ -192,11 +192,48 @@ def calibrate_heating_correction_ml(
         )
         at_forecast_hours = [1, 2, 3, 4]
 
+    # PV forecast hours: default 1–4 h (optional; 0 values when no PV data)
+    _pv_fc_env = getattr(config, "HEATING_ML_PV_FORECAST_HOURS", "1,2,3,4")
+    try:
+        pv_forecast_hours = [int(x) for x in _pv_fc_env.split(",") if x.strip()]
+    except ValueError:
+        logger.warning(
+            "HEATING_ML_PV_FORECAST_HOURS value %r is invalid; using 1,2,3,4",
+            _pv_fc_env,
+        )
+        pv_forecast_hours = [1, 2, 3, 4]
+
+    # Fireplace lag windows [h]: default 1 h and 2 h
+    _fp_lag_env = getattr(config, "HEATING_ML_FIREPLACE_LAG_HOURS", "1,2")
+    try:
+        fireplace_lag_hours = [
+            float(x) for x in _fp_lag_env.split(",") if x.strip()
+        ]
+    except ValueError:
+        logger.warning(
+            "HEATING_ML_FIREPLACE_LAG_HOURS value %r is invalid; using 1,2",
+            _fp_lag_env,
+        )
+        fireplace_lag_hours = [1.0, 2.0]
+
+    # TV lag windows [h]: default 0.5 h (30 min) and 1 h
+    _tv_lag_env = getattr(config, "HEATING_ML_TV_LAG_HOURS", "0.5,1")
+    try:
+        tv_lag_hours = [float(x) for x in _tv_lag_env.split(",") if x.strip()]
+    except ValueError:
+        logger.warning(
+            "HEATING_ML_TV_LAG_HOURS value %r is invalid; using 0.5,1",
+            _tv_lag_env,
+        )
+        tv_lag_hours = [0.5, 1.0]
+
     logger.info(
         "Calibration params: label_horizon=%dh (%d steps), cold_threshold=%.1f°C, "
-        "target=%.1f°C, steps_per_hour=%d, lookback=%dh, AT_fc_hours=%s",
+        "target=%.1f°C, steps_per_hour=%d, lookback=%dh, "
+        "AT_fc=%s, PV_fc=%s, fp_lag=%s, tv_lag=%s",
         label_horizon_h, label_horizon_steps, cold_threshold,
-        heating_target_c, steps_per_hour, lookback_hours, at_forecast_hours,
+        heating_target_c, steps_per_hour, lookback_hours,
+        at_forecast_hours, pv_forecast_hours, fireplace_lag_hours, tv_lag_hours,
     )
 
     # ── 1. Fetch historical data ────────────────────────────────────────
@@ -229,6 +266,9 @@ def calibrate_heating_correction_ml(
     power_col = getattr(
         config, "POWER_CONSUMPTION_ENTITY_ID", "sensor.nibe_el_leistung"
     ).split(".", 1)[-1]
+    pv_col = getattr(
+        config, "PV_POWER_ENTITY_ID", "sensor.pv_leistung_gefiltert"
+    ).split(".", 1)[-1]
     fireplace_col = getattr(
         config, "FIREPLACE_STATUS_ENTITY_ID", "binary_sensor.fireplace_active"
     ).split(".", 1)[-1]
@@ -243,6 +283,7 @@ def calibrate_heating_correction_ml(
         inlet_col:     "RLT",
         flow_col:      "flow_rate",
         power_col:     "power_w",
+        pv_col:        "PV_Generate",
         fireplace_col: "fireplace_on",
         tv_col:        "tv_on",
     }
@@ -315,14 +356,40 @@ def calibrate_heating_correction_ml(
         else:
             df[src_col] = 0.0
 
-    # Lag features: rolling max captures residual heat after source turns off
-    # 6 × 10-min steps = 1 h for fireplace;  3 × 10-min steps = 30 min for TV
-    df["fireplace_lag_1h"] = df["fireplace_on"].rolling(
+    # Dynamic fireplace lag features (rolling max captures residual heat)
+    # Column naming: integer hours → fireplace_lag_Xh; fractional → fireplace_lag_Xm
+    for lag_h in fireplace_lag_hours:
+        n_steps = max(1, int(round(lag_h * steps_per_hour)))
+        if lag_h == int(lag_h):
+            col_name = f"fireplace_lag_{int(lag_h)}h"
+        else:
+            col_name = f"fireplace_lag_{int(round(lag_h * 60))}m"
+        df[col_name] = df["fireplace_on"].rolling(n_steps, min_periods=1).max()
+
+    # Dynamic TV lag features
+    # Column naming: integer hours → tv_lag_Xh; fractional → tv_lag_Xm
+    for lag_h in tv_lag_hours:
+        n_steps = max(1, int(round(lag_h * steps_per_hour)))
+        if lag_h == int(lag_h):
+            col_name = f"tv_lag_{int(lag_h)}h"
+        else:
+            col_name = f"tv_lag_{int(round(lag_h * 60))}m"
+        df[col_name] = df["tv_on"].rolling(n_steps, min_periods=1).max()
+
+    # PV features — optional (fill with 0 when no PV sensor in the dataset)
+    if "PV_Generate" not in df.columns:
+        df["PV_Generate"] = 0.0
+    else:
+        df["PV_Generate"] = pd.to_numeric(
+            df["PV_Generate"], errors="coerce"
+        ).fillna(0.0)
+
+    df["pv_roll_1h"] = df["PV_Generate"].rolling(
         steps_per_hour, min_periods=1
-    ).max()
-    df["tv_lag_30m"] = df["tv_on"].rolling(
-        max(1, steps_per_hour // 2), min_periods=1
-    ).max()
+    ).mean()
+    df["pv_roll_2h"] = df["PV_Generate"].rolling(
+        2 * steps_per_hour, min_periods=1
+    ).mean()
 
     # Temporal cyclical features
     if "_time" in df.columns:
@@ -342,6 +409,11 @@ def calibrate_heating_correction_ml(
     for h in at_forecast_hours:
         shift = h * steps_per_hour
         df[f"AT_roh_{h}h"] = df["AT"].shift(-shift)
+
+    # PV hindcast substitution: pv_forecast_Xh[t] = PV_Generate[t + X_steps]
+    for h in pv_forecast_hours:
+        shift = h * steps_per_hour
+        df[f"pv_forecast_{h}h"] = df["PV_Generate"].shift(-shift)
 
     # ── 5. Regression label construction ───────────────────────────────
     # Estimate S_H from calibrated thermal parameters
@@ -397,8 +469,32 @@ def calibrate_heating_correction_ml(
         "thermal_power_kw",
         "fireplace_on",
         "tv_on",
-        "fireplace_lag_1h",
-        "tv_lag_30m",
+    ]
+
+    # Dynamic fireplace lag columns
+    for lag_h in fireplace_lag_hours:
+        if lag_h == int(lag_h):
+            feature_cols.append(f"fireplace_lag_{int(lag_h)}h")
+        else:
+            feature_cols.append(f"fireplace_lag_{int(round(lag_h * 60))}m")
+
+    # Dynamic TV lag columns
+    for lag_h in tv_lag_hours:
+        if lag_h == int(lag_h):
+            feature_cols.append(f"tv_lag_{int(lag_h)}h")
+        else:
+            feature_cols.append(f"tv_lag_{int(round(lag_h * 60))}m")
+
+    # PV features (optional — present only when PV data was fetched)
+    feature_cols += [
+        "PV_Generate",
+        "pv_roll_1h",
+        "pv_roll_2h",
+    ]
+    for h in pv_forecast_hours:
+        feature_cols.append(f"pv_forecast_{h}h")
+
+    feature_cols += [
         "hour_sin",
         "hour_cos",
         "doy_sin",
@@ -538,6 +634,9 @@ def calibrate_heating_correction_ml(
         "tau_room": tau_room,
         "lookback_hours": lookback_hours,
         "at_forecast_hours": at_forecast_hours,
+        "pv_forecast_hours": pv_forecast_hours,
+        "fireplace_lag_hours": fireplace_lag_hours,
+        "tv_lag_hours": tv_lag_hours,
         "lgb_params": lgb_params,
     }
     tmp_meta = metadata_path + ".tmp"
