@@ -614,6 +614,44 @@ def convert_addon_to_env(config):
         'COOLING_ML_WARM_THRESHOLD_C': str(
             config.get('cooling_ml_warm_threshold_c', 10.0)
         ),
+
+        # --- ML-Based Heating Correction (LightGBM Regressor) ---
+        'HEATING_ML_COLD_THRESHOLD_C': str(
+            config.get('heating_ml_cold_threshold_c', 18.0)
+        ),
+        'HEATING_ML_CALIBRATION_START_DATE': config.get(
+            'heating_ml_calibration_start_date', ''
+        ),
+        'HEATING_ML_AT_FORECAST_HOURS': config.get(
+            'heating_ml_at_forecast_hours', '1,2,3,4'
+        ),
+        'HEATING_ML_PV_FORECAST_HOURS': config.get(
+            'heating_ml_pv_forecast_hours', '1,2,3,4'
+        ),
+        'HEATING_ML_FIREPLACE_LAG_HOURS': config.get(
+            'heating_ml_fireplace_lag_hours', '1,2'
+        ),
+        'HEATING_ML_TV_LAG_HOURS': config.get(
+            'heating_ml_tv_lag_hours', '0.5,1'
+        ),
+        'HEATING_ML_MIN_TRAINING_SAMPLES': str(
+            config.get('heating_ml_min_training_samples', 200)
+        ),
+        'HEATING_ML_LABEL_HORIZON_H': str(
+            config.get('heating_ml_label_horizon_h', 4)
+        ),
+        'HEATING_ML_BLEND_MIN_R2': str(
+            config.get('heating_ml_blend_min_r2', 0.3)
+        ),
+        'HEATING_ML_RETRAIN_VAL_FRACTION': str(
+            config.get('heating_ml_retrain_val_fraction', 0.25)
+        ),
+        'HEATING_ML_RETRAIN_TRIGGER_K': str(
+            config.get('heating_ml_retrain_trigger_k', 50)
+        ),
+        'HEATING_ML_BUFFER_MAX_N': str(
+            config.get('heating_ml_buffer_max_n', 500)
+        ),
     }
 
     # Set environment variables for the ML system

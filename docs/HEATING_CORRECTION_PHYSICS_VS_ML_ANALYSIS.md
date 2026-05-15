@@ -276,15 +276,74 @@ This is analogous to the cooling ML's hindcast label (did indoor temp exceed
 | `doy_sin` | `datetime.now()` | Day-of-year cyclical encoding |
 | `doy_cos` | `datetime.now()` | Day-of-year cyclical encoding |
 
-### Proposed module structure
+### Proposed module structure (Implemented)
 
 ```
 src/heating_correction_ml_model.py        # Inference  (mirrors cooling_ml_model.py)
 src/heating_correction_ml_calibration.py  # Training   (mirrors cooling_ml_calibration.py)
 ```
 
-Training is triggered via `--calibrate-heating-correction-ml` (CLI) or a flag file,
-exactly like `--calibrate-cooling-ml`.
+Training is triggered via `--calibrate-heating-correction-ml` (CLI) or a flag file
+`/data/config/calibrate_heating_correction_ml_flag`, exactly like `--calibrate-cooling-ml`.
+
+### Implemented feature vector
+
+| Feature | Source | Description |
+|---|---|---|
+| `indoor_temp` | `physics["indoor_temp"]` | Current indoor temperature |
+| `indoor_margin` | `target - indoor_temp` | Undershoot (+) or overshoot (−) [°C] |
+| `indoor_trend_30m` | `physics["indoor_temp_delta_30m"]` | 30-min indoor temperature trend |
+| `indoor_trend_1h` | `physics["indoor_temp_delta_60m"]` | 60-min indoor temperature trend |
+| `AT` | `physics["outdoor_temp"]` | Outdoor temperature |
+| `at_delta_indoor` | `−temp_diff_indoor_outdoor` | AT − indoor (drive signal) |
+| `AT_roh_Xh` | `physics["temp_forecast_Xh"]` | AT forecast 1–4 h ahead (hindcast at training) |
+| `VLT` | `physics["outlet_temp"]` | Current outlet temperature |
+| `RLT` | `physics["inlet_temp"]` | Current inlet temperature (slab state proxy) |
+| `delta_t` | `VLT − RLT` | HP load indicator |
+| `outlet_indoor_diff` | `VLT − indoor_temp` | Driving temperature difference |
+| `thermal_power_kw` | `flow × Cp × delta_t / 60` | Water-side thermal power |
+| `fireplace_on` | `physics["fireplace_on"]` | Binary 0/1 |
+| `tv_on` | `physics["tv_on"]` | Binary 0/1 |
+| `fireplace_lag_1h` | `fireplace_on.rolling(6).max()` | 1-h residual heat window (training) / `fireplace_on` at inference |
+| `tv_lag_30m` | `tv_on.rolling(3).max()` | 30-min residual heat window (training) / `tv_on` at inference |
+| `hour_sin`, `hour_cos` | datetime | Time-of-day cyclical encoding |
+| `doy_sin`, `doy_cos` | datetime | Day-of-year cyclical encoding |
+
+### Label construction
+
+```python
+# N-step lookahead label: what ΔT_outlet would have zeroed the future error?
+S_H = (η / (η + U)) × (1 − exp(−H / τ_room))  # from baseline_parameters
+label[t] = −(T_indoor[t + N_steps] − T_target) / S_H
+
+# Clips and guards:
+# - |label| > 5 °C → dropped (DHW/glitch)
+# - |indoor_margin| ≤ 0.05 °C → label = 0.0 (trivially correct rows)
+```
+
+### Blend formula in model_wrapper
+
+```python
+w = 0.0 if R² < HEATING_ML_BLEND_MIN_R2 else max(0.0, min(1.0, R²))
+delta_blend = (1 − w) × delta_physics + w × delta_ml
+corrected = outlet_temp + delta_blend  # clamped to outlet bounds
+```
+
+`HEATING_ML_BLEND_MIN_R2` defaults to 0.3.  Below this R² the system uses only the physics
+Newton step (same as if the model were not loaded).
+
+### Key config vars
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HEATING_ML_COLD_THRESHOLD_C` | 18.0 | AT filter for cold-season rows |
+| `HEATING_ML_CALIBRATION_START_DATE` | `""` | DD.MM.YYYY start date |
+| `HEATING_ML_AT_FORECAST_HOURS` | `"1,2,3,4"` | Hindcast AT hours |
+| `HEATING_ML_CORRECTION_MODEL_PATH` | `{state_dir}/heating_correction_ml_model.joblib` | |
+| `HEATING_ML_CORRECTION_METADATA_PATH` | `{state_dir}/heating_correction_ml_metadata.json` | |
+| `HEATING_ML_MIN_TRAINING_SAMPLES` | 200 | Minimum rows after filtering |
+| `HEATING_ML_LABEL_HORIZON_H` | 4 | Lookahead horizon [h] |
+| `HEATING_ML_BLEND_MIN_R2` | 0.3 | Minimum R² to activate ML blend |
 
 ---
 

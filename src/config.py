@@ -780,6 +780,97 @@ COOLING_ML_CALIBRATION_START_DATE: str = os.getenv(
     "COOLING_ML_CALIBRATION_START_DATE", ""
 )
 
+# --- ML-Based Heating Correction (LightGBM Regressor) ---
+# Outdoor temperature ceiling [°C] for the heating-season filter.
+# Only rows with AT < this threshold are used for training.
+HEATING_ML_COLD_THRESHOLD_C: float = float(
+    os.getenv("HEATING_ML_COLD_THRESHOLD_C", "18.0")
+)
+# Earliest date for heating ML correction training data.  Format: DD.MM.YYYY.
+# When set, calibrate_heating_correction_ml() computes lookback_hours as
+# (now − start_date).  Leave empty to use the default 2160 h (90-day) lookback.
+HEATING_ML_CALIBRATION_START_DATE: str = os.getenv(
+    "HEATING_ML_CALIBRATION_START_DATE", ""
+)
+# Comma-separated list of forecast hours to use as AT hindcast features
+# (AT_roh_Xh) during heating correction calibration.
+HEATING_ML_AT_FORECAST_HOURS: str = os.getenv(
+    "HEATING_ML_AT_FORECAST_HOURS", "1,2,3,4"
+)
+# Comma-separated list of forecast hours to use as PV hindcast features
+# (pv_forecast_Xh) during heating correction calibration.
+# PV solar gain can be significant on sunny winter days even with AT < 18 °C.
+HEATING_ML_PV_FORECAST_HOURS: str = os.getenv(
+    "HEATING_ML_PV_FORECAST_HOURS", "1,2,3,4"
+)
+# Comma-separated list of lag window sizes in HOURS for fireplace residual-heat
+# features (fireplace_lag_Xh).  Each value generates one rolling-max feature.
+# Larger windows let the model learn longer decay tails after fireplace is off.
+HEATING_ML_FIREPLACE_LAG_HOURS: str = os.getenv(
+    "HEATING_ML_FIREPLACE_LAG_HOURS", "1,2"
+)
+# Comma-separated list of lag window sizes in HOURS for TV residual-heat features.
+# Use fractional hours for sub-hour windows (e.g. "0.5" → tv_lag_30m).
+HEATING_ML_TV_LAG_HOURS: str = os.getenv(
+    "HEATING_ML_TV_LAG_HOURS", "0.5,1"
+)
+# Path to the trained LightGBM heating correction regressor (joblib).
+HEATING_ML_CORRECTION_MODEL_PATH: str = os.getenv(
+    "HEATING_ML_CORRECTION_MODEL_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "heating_correction_ml_model.joblib"),
+)
+# Path to heating ML model metadata JSON (feature list, R², MAE).
+HEATING_ML_CORRECTION_METADATA_PATH: str = os.getenv(
+    "HEATING_ML_CORRECTION_METADATA_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "heating_correction_ml_metadata.json"),
+)
+# Minimum cold-season rows required before training is accepted.
+HEATING_ML_MIN_TRAINING_SAMPLES: int = int(
+    os.getenv("HEATING_ML_MIN_TRAINING_SAMPLES", "200")
+)
+# Fraction of the training set held out for validation metrics.
+HEATING_ML_RETRAIN_VAL_FRACTION: float = float(
+    os.getenv("HEATING_ML_RETRAIN_VAL_FRACTION", "0.25")
+)
+# Label lookahead horizon for training [hours].  Should match TRAJECTORY_STEPS.
+HEATING_ML_LABEL_HORIZON_H: int = int(
+    os.getenv("HEATING_ML_LABEL_HORIZON_H", "4")
+)
+# Minimum R² score for the ML model to participate in the blend.
+# Below this threshold the blend weight is forced to 0 (pure physics Newton).
+HEATING_ML_BLEND_MIN_R2: float = float(
+    os.getenv("HEATING_ML_BLEND_MIN_R2", "0.3")
+)
+# Path to the online-learning observation buffer JSON for the heating correction
+# regressor.  Defaults to the same directory as UNIFIED_STATE_FILE so all
+# runtime state lives in one place.
+HEATING_ML_OBSERVATION_BUFFER_PATH: str = os.getenv(
+    "HEATING_ML_OBSERVATION_BUFFER_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "heating_correction_ml_obs_buffer.json"),
+)
+# Number of new labeled observations that triggers an automatic retrain.
+HEATING_ML_RETRAIN_TRIGGER_K: int = int(
+    os.getenv("HEATING_ML_RETRAIN_TRIGGER_K", "50")
+)
+# Rolling buffer size: keep the last N labeled observations for retraining.
+HEATING_ML_BUFFER_MAX_N: int = int(os.getenv("HEATING_ML_BUFFER_MAX_N", "500"))
+
+
+def _parse_heating_start_date(date_str: str) -> "Optional[datetime]":
+    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
+
+    Mirror of ``_parse_cooling_start_date`` for the heating ML calibration.
+    """
+    from datetime import datetime, timezone  # local import avoids circular issues
+    s = (date_str or "").strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s, "%d.%m.%Y")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
 
 def _parse_cooling_start_date(date_str: str) -> "Optional[datetime]":
     """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.

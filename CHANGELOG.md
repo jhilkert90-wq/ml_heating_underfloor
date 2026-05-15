@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Heating Correction ML: Online Learning** (`HeatingCorrectionObservationBuffer`): Mirrors the pre-cooling sliding-window observation buffer pattern for the LightGBM heating regressor.
+  - `src/heating_correction_ml_observation_buffer.py` — new `HeatingCorrectionObservationBuffer` class; stores heating-cycle feature snapshots, resolves regression labels `−(T_indoor[t+N] − T_target) / S_H` after `label_horizon_steps` cycles, auto-triggers retrain via `calibrate_heating_correction_ml()` when `n_labeled ≥ min_training_samples AND labeled_since_last_train ≥ retrain_trigger_k`; JSON persistence with atomic tmp→replace writes
+  - Per-cycle integration in `src/main.py`: `push_pending`, `resolve_labels`, and auto-retrain all run on heating cycles only; successful retrains hot-reload by resetting `EnhancedModelWrapper._heating_correction_ml_model = None`
+  - Buffer collects observations regardless of `HEATING_CORRECTION_MODE` so data accumulates even before ML mode is activated
+  - S_H recomputed at resolve-time from current calibrated thermal parameters (`_compute_s_h` / `_read_baseline_thermal_params`)
+- **New config vars**: `HEATING_ML_OBSERVATION_BUFFER_PATH` (default: `_UNIFIED_STATE_DIR/heating_correction_ml_obs_buffer.json`), `HEATING_ML_RETRAIN_TRIGGER_K` (default `50`), `HEATING_ML_BUFFER_MAX_N` (default `500`)
+- 25 new unit tests in `tests/unit/test_heating_correction_observation_buffer.py`
+
+
+  - `src/heating_correction_ml_model.py` — inference class `HeatingCorrectionMLModel`; loads joblib model + metadata, exposes `predict(features, target_indoor)` and `r2_score`
+  - `src/heating_correction_ml_calibration.py` — one-shot training: cold-season filter (AT < 18 °C), feature vector with AT hindcast, PV hindcast, dynamic fireplace/TV lags, regression label `−(T_future − T_target) / S_H`
+  - Blended dispatch in `model_wrapper._calculate_ml_correction()`: confidence-weighted blend `w = R²` (clamped, with `HEATING_ML_BLEND_MIN_R2` minimum threshold)
+  - `--calibrate-heating-correction-ml` CLI flag and `/data/config/calibrate_heating_correction_ml_flag` flag file
+- **Heating ML feature expansion**:
+  - PV hindcast features (`pv_forecast_1h`–`pv_forecast_Nh`) controlled by `HEATING_ML_PV_FORECAST_HOURS` (default `"1,2,3,4"`)
+  - PV instantaneous and rolling features (`PV_Generate`, `pv_roll_1h`, `pv_roll_2h`) at both training and inference time; prefers `pv_now_electrical`/`pv_forecast_electrical_Xh` keys to match training scale
+  - Dynamic fireplace lag windows (`fireplace_lag_1h`, `fireplace_lag_2h`, …) controlled by `HEATING_ML_FIREPLACE_LAG_HOURS` (default `"1,2"`)
+  - Dynamic TV lag windows (`tv_lag_30m`, `tv_lag_1h`, …) controlled by `HEATING_ML_TV_LAG_HOURS` (default `"0.5,1"`)
+  - Regex-based feature extraction in inference model handles any `fireplace_lag_Xh/m`, `tv_lag_Xh/m`, `pv_forecast_Xh`, `AT_roh_Xh` pattern without hardcoding individual names
+- **New config vars**: `HEATING_ML_COLD_THRESHOLD_C`, `HEATING_ML_CALIBRATION_START_DATE`, `HEATING_ML_AT_FORECAST_HOURS`, `HEATING_ML_PV_FORECAST_HOURS`, `HEATING_ML_FIREPLACE_LAG_HOURS`, `HEATING_ML_TV_LAG_HOURS`, `HEATING_ML_CORRECTION_MODEL_PATH`, `HEATING_ML_CORRECTION_METADATA_PATH`, `HEATING_ML_MIN_TRAINING_SAMPLES`, `HEATING_ML_LABEL_HORIZON_H`, `HEATING_ML_BLEND_MIN_R2`
+- `_parse_heating_start_date()` helper in `config.py` (mirrors `_parse_cooling_start_date`)
+- 60 new unit tests across 3 test files (calibration, inference, blend dispatch)
+- Documentation: section 7 of `docs/HEATING_CORRECTION_PHYSICS_VS_ML_ANALYSIS.md` updated with final feature list, label construction, and blend formula
+
+### Fixed
+- **Heating Correction ML: `indoor_temp` key mismatch at inference time** (`src/heating_correction_ml_model.py`): `_extract_heating_feature("indoor_temp")` and `_extract_heating_feature("indoor_margin")` returned 0.0 at runtime because `build_physics_features()` stores the indoor temperature under `indoor_temp_lag_30m` (not `indoor_temp`). Added fallback so inference correctly reads `indoor_temp_lag_30m` when `indoor_temp` is absent.  3 new regression tests added in `tests/unit/test_heating_correction_ml_model.py`.
+- **Heating Correction ML calibration: duplicated warning format arg** (`src/heating_correction_ml_calibration.py`): The `S_H from persisted params` warning message logged the fallback `s_h` value for both format args, hiding the original degenerate value. Fixed by saving the original before overwriting.
+- **Config adapter / config.yaml missing `HEATING_ML_RETRAIN_VAL_FRACTION`** (`config_adapter.py`, `ml_heating_underfloor/config.yaml`): The validation-split fraction for the heating ML regressor was defined in `config.py` but not wired to the HA add-on config schema. Added `heating_ml_retrain_val_fraction` option (default 0.25, range 0.05–0.5).
+
+
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

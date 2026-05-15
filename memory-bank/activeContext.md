@@ -1,6 +1,87 @@
 # Active Context - Current Work & Decision State
 
-### 🐛 Newton S(t_worst) Bug Fix — 2026-05-15
+### ✅ ML heating correction workflow audit — 3 bugs fixed — 2026-05-15
+
+#### **What changed**
+- `src/heating_correction_ml_model.py`: `_extract_heating_feature("indoor_temp")` and `_extract_heating_feature("indoor_margin")` now fall back to `physics.get("indoor_temp_lag_30m")` when `indoor_temp` is absent. `build_physics_features()` never emits `indoor_temp`; at runtime both functions were returning 0.0 (critical: model received completely wrong temperature values).
+- `src/heating_correction_ml_calibration.py`: S_H fallback warning now correctly logs the original degenerate value in the first format arg instead of the fallback value twice.
+- `config_adapter.py`: Added `HEATING_ML_RETRAIN_VAL_FRACTION` env var mapping (was missing from the HA add-on adapter).
+- `ml_heating_underfloor/config.yaml`: Added `heating_ml_retrain_val_fraction` option (default 0.25, schema range 0.05–0.5).
+- `tests/unit/test_heating_correction_ml_model.py`: 3 new regression tests: `test_indoor_temp_falls_back_to_lag_30m`, `test_indoor_temp_returns_zero_when_both_keys_absent`, `test_indoor_margin_falls_back_to_lag_30m`.
+
+#### **Why**
+- The `indoor_temp` key mismatch is critical: the ML correction model would silently use an indoor temperature of 0.0°C, making `indoor_margin` ≈ target_temp (21°C) and `indoor_temp` = 0°C — both completely wrong — for every inference cycle. This would cause the model to consistently output a large positive correction delta even when the room was already warm.
+- The warning message bug meant operators could not diagnose which S_H value triggered the fallback.
+- The missing config adapter entry meant `HEATING_ML_RETRAIN_VAL_FRACTION` could not be changed via the HA UI add-on config.
+
+#### **Design decisions**
+- Use `indoor_temp_lag_30m` as the inference fallback for `indoor_temp` since: (a) it's the proxy the rest of the thermal model already uses as the indoor temperature baseline, and (b) at training time `df["indoor_temp"]` is the InfluxDB reading which corresponds to the same 10-minute-interval value.
+- Keep existing behaviour (explicit `indoor_temp` key wins if present) for forward compatibility with any future code that does inject it.
+
+#### **Files changed**
+`src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_model.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+#### **What changed**
+- `src/main.py`: gated the complete heating observation-buffer block on `climate_mode == "heating"` so `push_pending`, `resolve_labels`, save, and retrain trigger only execute during heating operation.
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`: updated to document the corrected workflow and the bug that was fixed.
+
+#### **Why**
+- Pending heating observations were otherwise vulnerable to being resolved during cooling/summer cycles with non-heating indoor temperatures, producing polluted labels and potentially causing bad retrains of the heating ML correction model.
+
+#### **Design decisions**
+- Keep collection independent of `HEATING_CORRECTION_MODE`, but tie label aging/resolution to actual heating cycles only.
+- Match the heating workflow to the same climate-mode gating pattern already used by the cooling observation buffer integration.
+
+#### **Files changed**
+`src/main.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### ✅ Heating Correction ML Online Learning — 2026-05-15
+
+#### **What changed**
+- `src/heating_correction_ml_observation_buffer.py` (new): `HeatingCorrectionObservationBuffer` — sliding-window regression label buffer; stores feature snapshots, resolves labels `−(T_indoor[t+N] − T_target) / S_H` (S_H recomputed at resolve-time from current thermal params), auto-triggers retrain, JSON persistence (atomic tmp→replace), thread-safe `RLock`, eviction policy (oldest labeled first).
+- `src/main.py`: unconditional init block before main loop; per-cycle push (heating mode only) + resolve (every cycle) + save + auto-retrain (calls `calibrate_heating_correction_ml()`, hot-reloads singleton via `EnhancedModelWrapper._heating_correction_ml_model = None`); partial back-off on retrain failure.
+- `src/config.py`: 3 new vars (`HEATING_ML_OBSERVATION_BUFFER_PATH`, `HEATING_ML_RETRAIN_TRIGGER_K`, `HEATING_ML_BUFFER_MAX_N`); defaults to `_UNIFIED_STATE_DIR`.
+- `config_adapter.py`: 2 new env var mappings in heating ML block.
+- `ml_heating_underfloor/config.yaml`: 2 new options + 2 schema entries.
+- `tests/unit/test_heating_correction_observation_buffer.py` (new): 25 tests.
+
+#### **Why**
+Adds self-improving online learning to the heating correction ML model: after initial calibration the model automatically retrains as real operational data accumulates, improving accuracy over the heating season without manual re-calibration.
+
+#### **Design decisions**
+- Observations collected always (regardless of `HEATING_CORRECTION_MODE`) so buffer fills even before ML mode is activated.
+- S_H recomputed at resolve-time from current thermal params (not stored at push-time) so labels reflect latest calibrated physics.
+- Retrain via InfluxDB (`calibrate_heating_correction_ml()`) for consistency with the initial calibration path.
+- Default paths in `_UNIFIED_STATE_DIR` (same directory as `UNIFIED_STATE_FILE`) so all runtime state co-locates.
+
+#### **Files changed**
+`src/heating_correction_ml_observation_buffer.py` (new), `src/main.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_observation_buffer.py` (new), `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+
+#### **What changed**
+- `src/heating_correction_ml_model.py` (new): `HeatingCorrectionMLModel` class — lazy-loads joblib model + metadata, predicts ΔT_outlet, exposes `r2_score` for blend weight. Feature extraction mirrors `CoolingMLModel._extract_feature`.
+- `src/heating_correction_ml_calibration.py` (new): `calibrate_heating_correction_ml()` — module-level imports for patchability, cold-season filter (AT < `HEATING_ML_COLD_THRESHOLD_C`), full feature engineering, LightGBM L1 regression, model + metadata persistence.
+- `src/model_wrapper.py`: replaced `_calculate_ml_correction()` stub with blended dispatch (`w = R²` if `R² ≥ HEATING_ML_BLEND_MIN_R2`, else `w=0`); added `_get_heating_correction_ml_model()` lazy singleton (class-level `_heating_correction_ml_model = None`).
+- `src/main.py`: `--calibrate-heating-correction-ml` argument; flag-file block `/data/config/calibrate_heating_correction_ml_flag`.
+- `src/config.py`: 8 new vars: `HEATING_ML_COLD_THRESHOLD_C`, `HEATING_ML_CALIBRATION_START_DATE`, `HEATING_ML_AT_FORECAST_HOURS`, `HEATING_ML_CORRECTION_MODEL_PATH`, `HEATING_ML_CORRECTION_METADATA_PATH`, `HEATING_ML_MIN_TRAINING_SAMPLES`, `HEATING_ML_LABEL_HORIZON_H`, `HEATING_ML_BLEND_MIN_R2`; `_parse_heating_start_date()` helper.
+- `config_adapter.py`: 6 new env var mappings in `convert_addon_to_env()`.
+- `ml_heating_underfloor/config.yaml`: 7 new options + 7 schema entries.
+
+#### **Why**
+Implements the planned ML-based heating correction to complement the existing physics Newton step, enabling the system to learn unmeasured heat sources (solar gain, occupancy patterns) from data.
+
+#### **Files changed**
+`src/config.py`, `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `src/model_wrapper.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_calibration.py`, `tests/unit/test_heating_correction_ml_model.py`, `tests/unit/test_heating_correction.py`, `docs/HEATING_CORRECTION_PHYSICS_VS_ML_ANALYSIS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+
 
 #### **What changed**
 - `src/model_wrapper.py`: `_calculate_physics_newton_correction()` now evaluates `S(t_worst)` instead of `S(H)`. Each violation branch sets `_worst_idx = trajectory_temps.index(worst_value)`. After the branches, `t_eval` is resolved from `trajectory["times"][_worst_idx]` (if available) or `(idx+1) * H/n_steps`. Sensitivity formula: `s_t = equilibrium_fraction * (1 - exp(-t_eval/tau_room))`.

@@ -447,10 +447,14 @@ class TestCorrectionModeDispatch:
         mock_legacy.assert_called_once()
         mock_newton.assert_not_called()
 
-    # 7. "ml" mode falls back to Newton (with warning) -------------------------
+    # 7. "ml" mode: no loaded model → falls back to Newton (no crash) ----------
     @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
-    def test_ml_mode_falls_back_to_newton(self, caplog):
-        """_calculate_ml_correction() should warn and delegate to Newton."""
+    def test_ml_mode_falls_back_to_newton_when_model_not_loaded(self):
+        """When no model is loaded, _calculate_ml_correction delegates to Newton."""
+        from src.model_wrapper import EnhancedModelWrapper
+        # Ensure no cached model from other tests
+        EnhancedModelWrapper._heating_correction_ml_model = None
+
         self.wrapper._current_indoor = 21.0
         self.wrapper._current_features = {'indoor_temp_delta_60m': -0.1}
         trajectory = {
@@ -462,22 +466,20 @@ class TestCorrectionModeDispatch:
             self.wrapper,
             '_calculate_physics_newton_correction',
             return_value=25.6,
-        ) as mock_newton:
-            with caplog.at_level(logging.WARNING, logger='src.model_wrapper'):
-                result = self.wrapper._calculate_ml_correction(
-                    outlet_temp=25.0,
-                    trajectory=trajectory,
-                    target_indoor=21.0,
-                    cycle_hours=10 / 60,
-                )
+        ) as mock_newton, patch.object(
+            self.wrapper,
+            '_get_heating_correction_ml_model',
+            return_value=None,
+        ):
+            result = self.wrapper._calculate_ml_correction(
+                outlet_temp=25.0,
+                trajectory=trajectory,
+                target_indoor=21.0,
+                cycle_hours=10 / 60,
+            )
 
         mock_newton.assert_called_once()
         assert result == 25.6
-        assert any(
-            'not yet implemented' in rec.message.lower()
-            or 'falling back' in rec.message.lower()
-            for rec in caplog.records
-        ), "Expected a warning about ML not being implemented"
 
 
 # ---------------------------------------------------------------------------

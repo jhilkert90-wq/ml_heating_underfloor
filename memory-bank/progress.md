@@ -1,6 +1,62 @@
 # ML Heating System - Current Progress
 
-## 🐛 Newton S(t_worst) Bug Fix (2026-05-15)
+## ✅ ML heating correction workflow audit — 3 bugs fixed (2026-05-15)
+
+**Status:** COMPLETED — 3 bugs fixed; 3 regression tests added; all 67 affected tests pass
+
+Full end-to-end audit of the ML-based heating correction workflow (main.py, model_wrapper.py, heating_correction_ml_model.py, heating_correction_ml_calibration.py, heating_correction_ml_observation_buffer.py).
+
+### Bugs fixed
+1. **Critical — `indoor_temp` key mismatch at ML inference** (`src/heating_correction_ml_model.py`): `_extract_heating_feature("indoor_temp")` returned 0.0 at runtime because `build_physics_features()` stores the indoor temperature as `indoor_temp_lag_30m` not `indoor_temp`. `indoor_margin` had the same bug. Added fallback to `indoor_temp_lag_30m` in both handlers. 3 new regression tests in `tests/unit/test_heating_correction_ml_model.py`.
+2. **Minor — duplicated format arg in S_H warning** (`src/heating_correction_ml_calibration.py`): The `s_h < 0.05` fallback warning logged the new fallback value for both `%f` placeholders, hiding the original degenerate value. Saved the original before overwriting.
+3. **Missing config — `HEATING_ML_RETRAIN_VAL_FRACTION` not wired** (`config_adapter.py`, `ml_heating_underfloor/config.yaml`): Config var existed in `config.py` but had no add-on schema entry or adapter mapping.
+
+**Files changed:** `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_model.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+## ✅ Heating ML correction workflow review + cooling-label pollution fix (2026-05-15)
+
+**Status:** COMPLETED — critical workflow bug fixed; syntax validation passed
+
+- Reviewed the end-to-end heating ML correction workflow in `src/main.py`, especially the new online-learning integration around `HeatingCorrectionObservationBuffer`.
+- Confirmed the main logical mismatch: the heating buffer block previously aged/labeled pending heating observations outside heating operation, which allowed cooling/summer indoor temperatures to generate invalid heating labels.
+- Fixed `src/main.py` so the entire heating observation-buffer lifecycle (`push_pending`, `resolve_labels`, save, retrain trigger) only runs during `climate_mode == "heating"`.
+- Verified the file still compiles with `python -m py_compile`.
+- Updated project docs to reflect the corrected workflow.
+
+**Files changed:** `src/main.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+## ✅ Heating Correction ML Online Learning (2026-05-15)
+
+**Status:** COMPLETED — 25 new unit tests pass (0 failures)
+
+Added sliding-window online learning to the heating correction ML model, mirroring the pre-cooling `CoolingObservationBuffer` pattern:
+
+- `src/heating_correction_ml_observation_buffer.py` (new): `HeatingCorrectionObservationBuffer` — regression label buffer; push-pending on heating cycles, resolve labels (float: `−(T_future − T_target) / S_H`) after `label_horizon_steps` cycles, auto-retrain trigger, JSON persistence, thread-safe RLock, eviction of oldest labeled entries.
+- `src/main.py`: init block before main loop (unconditional); per-cycle push/resolve/save/retrain block; hot-reloads singleton via `EnhancedModelWrapper._heating_correction_ml_model = None`.
+- `src/config.py`: 3 new vars `HEATING_ML_OBSERVATION_BUFFER_PATH`, `HEATING_ML_RETRAIN_TRIGGER_K`, `HEATING_ML_BUFFER_MAX_N`.
+- `config_adapter.py`: 2 new env var mappings.
+- `ml_heating_underfloor/config.yaml`: 2 new options + 2 schema entries.
+- `tests/unit/test_heating_correction_observation_buffer.py` (new): 25 tests.
+
+**Files changed:** `src/heating_correction_ml_observation_buffer.py` (new), `src/main.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_observation_buffer.py` (new), `CHANGELOG.md`
+
+
+
+**Status:** COMPLETED — all new tests pass (50 new unit tests, 0 failures)
+
+Implemented the full ML-based heating correction pipeline (HEATING_CORRECTION_MODE = "ml") mirroring the CoolingMLModel / cooling_ml_calibration.py pattern:
+
+- `src/heating_correction_ml_model.py`: `HeatingCorrectionMLModel` class — loads joblib model + metadata JSON, exposes `predict(features, target_indoor)` returning ΔT_outlet [°C], and `r2_score` property for blend weighting.
+- `src/heating_correction_ml_calibration.py`: `calibrate_heating_correction_ml()` — cold-season filter (AT < 18°C), 18-feature vector (indoor trends, AT hindcast 1–4h, fireplace/TV lags, delta_T, thermal power, cyclical time), LightGBM regressor (MAE objective), regression label `−(T_future − T_target) / S_H`.
+- `src/model_wrapper.py`: replaced stub `_calculate_ml_correction()` with confidence-weighted blend; added `_get_heating_correction_ml_model()` lazy singleton loader.
+- `src/main.py`: `--calibrate-heating-correction-ml` CLI flag + flag-file detection.
+- `src/config.py`: 8 new config vars + `_parse_heating_start_date()` helper.
+- `config_adapter.py`: new env var mappings.
+- `ml_heating_underfloor/config.yaml`: new options + schema entries.
+
+**Files changed:** `src/config.py`, `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `src/model_wrapper.py`, `src/main.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_calibration.py`, `tests/unit/test_heating_correction_ml_model.py`, `tests/unit/test_heating_correction.py`, `docs/HEATING_CORRECTION_PHYSICS_VS_ML_ANALYSIS.md`, `CHANGELOG.md`
+
+
 
 **Status:** COMPLETED — 1250 passed, 0 new failures
 
