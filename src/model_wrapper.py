@@ -2298,10 +2298,14 @@ class EnhancedModelWrapper:
             if _traj_times and len(_traj_times) == _n:
                 t_eval = _traj_times[_worst_idx]
             else:
-                # Fallback: uniform step size derived from H and step count
+                # Fallback: uniform step size derived from H and step count.
+                # Uses (idx+1) because the trajectory model constructs times
+                # as [(step+1)*dt for step in range(n)], i.e. step 0 → 1*dt,
+                # step 1 → 2*dt, …  (there is no step at t=0).
                 _dt = H / _n if _n > 0 else 1.0
                 t_eval = (_worst_idx + 1) * _dt
-            # Guard: t_eval must be positive to avoid division by zero in S
+            # Clamp to a sensible minimum (1e-3 h ≈ 3.6 s) so the exponential
+            # exp(-t_eval/tau_room) is well-behaved and S(t) stays in (0, 1].
             t_eval = max(t_eval, 1e-3)
 
             eta_u_sum = eta + u_loss

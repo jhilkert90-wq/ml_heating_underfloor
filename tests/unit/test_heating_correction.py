@@ -92,8 +92,9 @@ class TestPhysicsNewtonCorrection:
         """ε = +0.3 K at step 2 (t=3h) should give ΔT = 0.3 / S(3h)."""
         target = 21.0
         outlet = 25.0
-        # min of trajectory is 20.7 at index 2 → t_worst = 3h (step 2 of 4,
-        # step size = H/4 = 1h, so t = (2+1)*1 = 3h)
+        # min of trajectory is 20.7 at index 2 → t_worst = 3h
+        # step size = H/n = 4h/4 = 1h; t = (idx+1)*dt = (2+1)*1h = 3h
+        # (trajectory model uses one-based times: step k → t = (k+1)*dt)
         trajectory = {
             'trajectory': [21.0, 20.9, 20.7, 20.8],
             'reaches_target_at': None,
@@ -123,6 +124,7 @@ class TestPhysicsNewtonCorrection:
         target = 21.0
         outlet = 25.0
         # max of trajectory is 21.3 at index 2 → t_worst = 3h
+        # step size = H/n = 4h/4 = 1h; t = (idx+1)*dt = (2+1)*1h = 3h
         trajectory = {
             'trajectory': [21.0, 21.2, 21.3, 21.2],
             'reaches_target_at': 0.1,
