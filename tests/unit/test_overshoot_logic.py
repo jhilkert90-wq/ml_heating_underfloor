@@ -238,7 +238,10 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
             config.PV_TRAJ_FORECAST_MODE_ENABLED = False
             config.PV_TRAJ_MIN_STEPS = 2
             config.TRAJECTORY_STEPS = 4
-        self.assertEqual(result, 32.0)
+        self.assertEqual(
+            result,
+            self.wrapper._calculate_physics_based_correction.return_value
+        )
         self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
         self.wrapper._calculate_physics_based_correction.assert_called_once()
 
