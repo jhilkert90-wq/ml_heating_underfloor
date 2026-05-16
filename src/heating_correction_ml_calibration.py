@@ -623,6 +623,9 @@ def calibrate_heating_correction_ml(
         logger.error("lightgbm not installed — cannot train model")
         return False
 
+    reg_alpha = float(getattr(config, "HEATING_ML_REG_ALPHA", 0.1))
+    reg_lambda = float(getattr(config, "HEATING_ML_REG_LAMBDA", 1.0))
+
     lgb_params = {
         "objective": "regression_l1",  # MAE — robust to outliers
         "metric": "mae",
@@ -631,10 +634,78 @@ def calibrate_heating_correction_ml(
         "max_depth": 6,
         "num_leaves": 31,
         "min_child_samples": 20,
+        "reg_alpha": reg_alpha,
+        "reg_lambda": reg_lambda,
         "random_state": 42,
         "n_jobs": -1,
         "verbose": -1,
     }
+
+    # ── 9b. Optional: Optuna hyper-parameter optimisation ───────────────
+    optuna_enabled = getattr(config, "HEATING_ML_OPTUNA_ENABLED", False)
+    if optuna_enabled:
+        try:
+            import optuna  # type: ignore
+            from sklearn.model_selection import TimeSeriesSplit  # type: ignore
+
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+            n_trials = int(getattr(config, "HEATING_ML_OPTUNA_N_TRIALS", 20))
+
+            def _optuna_objective(trial: "optuna.Trial") -> float:
+                params = {
+                    "objective": "regression_l1",
+                    "metric": "mae",
+                    "n_estimators": 300,
+                    "learning_rate": trial.suggest_float(
+                        "learning_rate", 0.01, 0.1, log=True
+                    ),
+                    "max_depth": trial.suggest_int("max_depth", 4, 8),
+                    "num_leaves": trial.suggest_int("num_leaves", 15, 63),
+                    "min_child_samples": trial.suggest_int(
+                        "min_child_samples", 10, 50
+                    ),
+                    "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 1.0),
+                    "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 5.0),
+                    "random_state": 42,
+                    "n_jobs": -1,
+                    "verbose": -1,
+                }
+                # Use fit split only to avoid leaking holdout-period data into HPO.
+                X_all = df_fit[feature_cols].astype(float).values
+                y_all = df_fit["label"].values
+                max_splits = max(2, min(3, len(X_all) - 1))
+                if len(X_all) < 3:
+                    return float("inf")
+                tscv = TimeSeriesSplit(n_splits=max_splits)
+                maes = []
+                for tr_idx, va_idx in tscv.split(X_all):
+                    m = lgb.LGBMRegressor(**params)
+                    m.fit(
+                        X_all[tr_idx], y_all[tr_idx],
+                        eval_set=[(X_all[va_idx], y_all[va_idx])],
+                        callbacks=[
+                            lgb.early_stopping(20, verbose=False),
+                        ],
+                    )
+                    preds = m.predict(X_all[va_idx])
+                    maes.append(float(np.mean(np.abs(preds - y_all[va_idx]))))
+                return float(np.mean(maes))
+
+            study = optuna.create_study(direction="minimize")
+            study.optimize(_optuna_objective, n_trials=n_trials, show_progress_bar=False)
+
+            best = study.best_params
+            lgb_params.update(best)
+            logger.info(
+                "=== OPTUNA BEST PARAMS (n_trials=%d, best_mae=%.4f) ===",
+                n_trials, study.best_value,
+            )
+            for k, v in best.items():
+                logger.info("  %-25s  %s", k, v)
+        except ImportError:
+            logger.warning("optuna not installed — using default hyper-parameters")
+        except Exception as exc:
+            logger.warning("Optuna optimisation failed: %s — using defaults", exc)
 
     model = lgb.LGBMRegressor(**lgb_params)
     model.fit(
@@ -654,6 +725,55 @@ def calibrate_heating_correction_ml(
     val_r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
     logger.info("Val MAE=%.4f°C, Val R²=%.4f", val_mae, val_r2)
 
+    # ── 10a. Optional: Time-series cross-validation metrics ─────────────
+    cv_enabled = getattr(config, "HEATING_ML_CV_ENABLED", False)
+    if cv_enabled:
+        try:
+            from sklearn.model_selection import TimeSeriesSplit  # type: ignore
+            n_splits = int(getattr(config, "HEATING_ML_CV_N_SPLITS", 3))
+            # Compute CV diagnostics on fit split only; keep holdout untouched.
+            X_all = df_fit[feature_cols].astype(float).values
+            y_all = df_fit["label"].values
+            n_splits = min(n_splits, len(X_all) - 1)
+            if n_splits < 2:
+                logger.warning(
+                    "Time-series CV skipped: need at least 3 fit samples, got %d",
+                    len(X_all),
+                )
+            else:
+                tscv = TimeSeriesSplit(n_splits=n_splits)
+                cv_maes, cv_r2s = [], []
+                for tr_idx, va_idx in tscv.split(X_all):
+                    m = lgb.LGBMRegressor(**lgb_params)
+                    m.fit(
+                        X_all[tr_idx], y_all[tr_idx],
+                        eval_set=[(X_all[va_idx], y_all[va_idx])],
+                        callbacks=[lgb.early_stopping(20, verbose=False)],
+                    )
+                    preds = m.predict(X_all[va_idx])
+                    fold_mae = float(np.mean(np.abs(preds - y_all[va_idx])))
+                    fold_ss_res = float(np.sum((y_all[va_idx] - preds) ** 2))
+                    fold_ss_tot = float(
+                        np.sum((y_all[va_idx] - float(np.mean(y_all[va_idx]))) ** 2)
+                    )
+                    fold_r2 = (
+                        1.0 - fold_ss_res / fold_ss_tot
+                        if fold_ss_tot > 1e-12 else 0.0
+                    )
+                    cv_maes.append(fold_mae)
+                    cv_r2s.append(fold_r2)
+                logger.info(
+                    "=== TIME-SERIES CV (%d-fold) ===  "
+                    "MAE=%.4f±%.4f  R²=%.4f±%.4f",
+                    n_splits,
+                    float(np.mean(cv_maes)), float(np.std(cv_maes)),
+                    float(np.mean(cv_r2s)), float(np.std(cv_r2s)),
+                )
+        except ImportError:
+            logger.warning("sklearn not available — skipping time-series CV")
+        except Exception as exc:
+            logger.warning("Time-series CV failed: %s", exc)
+
     # ── 10b. Feature importance logging ─────────────────────────────────
     # LightGBM built-in feature importance (split-based)
     importances = model.feature_importances_
@@ -665,10 +785,11 @@ def calibrate_heating_correction_ml(
         logger.info("  %-30s  %6d", fname, imp)
 
     # Permutation importance (optional — needs sklearn)
+    perm_pairs = None
     try:
         from sklearn.inspection import permutation_importance  # type: ignore
         perm_result = permutation_importance(
-            model, X_val, y_val, n_repeats=10, random_state=42, n_jobs=-1,
+            model, X_val, y_val, n_repeats=10, random_state=42, n_jobs=1,
             scoring="neg_mean_absolute_error",
         )
         perm_pairs = sorted(
@@ -682,6 +803,88 @@ def calibrate_heating_correction_ml(
         logger.info("sklearn not available — skipping permutation importance")
     except Exception as exc:
         logger.warning("Permutation importance failed: %s", exc)
+
+    # ── 10c. Feature pruning (permutation importance-based) ─────────────
+    pruning_enabled = getattr(config, "HEATING_ML_FEATURE_PRUNING_ENABLED", True)
+    pi_threshold = float(getattr(config, "HEATING_ML_PRUNE_PI_THRESHOLD", 0.0))
+
+    if pruning_enabled and perm_pairs is not None:
+        pruned_features = [
+            fname for fname, imp in perm_pairs if imp > pi_threshold
+        ]
+        dropped = [
+            fname for fname, imp in perm_pairs if imp <= pi_threshold
+        ]
+        # Need at least 5 features after pruning
+        if dropped and len(pruned_features) >= 5:
+            logger.info(
+                "=== FEATURE PRUNING: dropping %d features with PI ≤ %.4f ===",
+                len(dropped), pi_threshold,
+            )
+            for fname in dropped:
+                pi_val = next(imp for f, imp in perm_pairs if f == fname)
+                logger.info("  ✂️  %-30s  PI=%.4f", fname, pi_val)
+
+            # Retrain on pruned feature set
+            X_fit_pruned = df_fit[pruned_features].astype(float)
+            X_val_pruned = df_val[pruned_features].astype(float)
+
+            model_pruned = lgb.LGBMRegressor(**lgb_params)
+            model_pruned.fit(
+                X_fit_pruned, y_fit,
+                eval_set=[(X_val_pruned, y_val)],
+                callbacks=[
+                    lgb.early_stopping(20, verbose=False),
+                    lgb.log_evaluation(50),
+                ],
+            )
+            y_pred_pruned = model_pruned.predict(X_val_pruned)
+            pruned_mae = float(np.mean(np.abs(y_pred_pruned - y_val)))
+            pruned_ss_res = float(np.sum((y_val - y_pred_pruned) ** 2))
+            pruned_r2 = (
+                1.0 - pruned_ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+            )
+
+            # Accept if MAE did not regress beyond 0.5%
+            mae_regression_pct = (
+                (pruned_mae - val_mae) / val_mae * 100.0
+                if val_mae > 1e-12 else 0.0
+            )
+            logger.info(
+                "=== PRUNED vs UNPRUNED: MAE %.4f→%.4f (%+.2f%%), "
+                "R² %.4f→%.4f, features %d→%d ===",
+                val_mae, pruned_mae, mae_regression_pct,
+                val_r2, pruned_r2,
+                len(feature_cols), len(pruned_features),
+            )
+
+            if mae_regression_pct <= 0.5:
+                logger.info(
+                    "✅ Pruned model accepted (MAE regression %.2f%% ≤ 0.5%%)",
+                    mae_regression_pct,
+                )
+                model = model_pruned
+                feature_cols = pruned_features
+                val_mae = pruned_mae
+                val_r2 = pruned_r2
+                # Recompute feature importance for metadata
+                importances = model.feature_importances_
+                feat_imp_pairs = sorted(
+                    zip(feature_cols, importances),
+                    key=lambda x: x[1], reverse=True,
+                )
+            else:
+                logger.info(
+                    "⚠️ Pruned model rejected (MAE regression %.2f%% > 0.5%%) "
+                    "— keeping unpruned model",
+                    mae_regression_pct,
+                )
+        elif dropped:
+            logger.info(
+                "⚠️ Feature pruning skipped: only %d features would remain "
+                "(need ≥ 5)",
+                len(pruned_features),
+            )
 
     # ── 11. Save model + metadata ───────────────────────────────────────
     try:

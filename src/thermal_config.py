@@ -62,7 +62,7 @@ class ThermalParameterConfig:
         'thermal_time_constant': (3.0, 100.0),     # Hours
         'equilibrium_ratio': (0.1, 0.9),         # dimensionless
         'total_conductance': (0.1, 0.8),         # 1/hour
-        'pv_heat_weight': (0.00001, 0.005),       # W/°C (changed to 0.00001 because of 15kW Peak)
+        'pv_heat_weight': (0.0001, 0.005),        # W/°C
         'fireplace_heat_weight': (0.01, 6.0),    # 1/°C
         'tv_heat_weight': (0.05, 1.5),           # W/°C
         'fp_heat_output_kw': (0.5, 15.0),        # kW
@@ -173,7 +173,7 @@ class ThermalParameterConfig:
         'thermal_time_constant': (1.0, 50.0),
         'equilibrium_ratio': (0.1, 0.9),
         'total_conductance': (0.1, 0.8),
-        'pv_heat_weight': (0.00001, 0.005),
+        'pv_heat_weight': (0.0001, 0.005),
         'fireplace_heat_weight': (0.01, 6.0),
         'tv_heat_weight': (0.05, 1.5),
         'fp_heat_output_kw': (0.5, 15.0),

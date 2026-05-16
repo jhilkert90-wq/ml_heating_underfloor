@@ -558,6 +558,9 @@ def convert_addon_to_env(config):
         'PV_TRAJ_FORECAST_RESCUE_ENABLED': str(
             config.get('pv_traj_forecast_rescue_enabled', True)
         ).lower(),
+        'PV_TRAJ_RESCUE_MIN_HOURS': str(
+            config.get('pv_traj_rescue_min_hours', 1)
+        ),
         'PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION': str(
             config.get('pv_traj_disable_overshoot_correction', False)
         ).lower(),
@@ -655,6 +658,30 @@ def convert_addon_to_env(config):
         ),
         'HEATING_ML_BUFFER_MAX_N': str(
             config.get('heating_ml_buffer_max_n', 500)
+        ),
+        'HEATING_ML_FEATURE_PRUNING_ENABLED': str(
+            config.get('heating_ml_feature_pruning_enabled', True)
+        ).lower(),
+        'HEATING_ML_PRUNE_PI_THRESHOLD': str(
+            config.get('heating_ml_prune_pi_threshold', 0.0)
+        ),
+        'HEATING_ML_REG_ALPHA': str(
+            config.get('heating_ml_reg_alpha', 0.1)
+        ),
+        'HEATING_ML_REG_LAMBDA': str(
+            config.get('heating_ml_reg_lambda', 1.0)
+        ),
+        'HEATING_ML_OPTUNA_ENABLED': str(
+            config.get('heating_ml_optuna_enabled', False)
+        ).lower(),
+        'HEATING_ML_OPTUNA_N_TRIALS': str(
+            config.get('heating_ml_optuna_n_trials', 20)
+        ),
+        'HEATING_ML_CV_ENABLED': str(
+            config.get('heating_ml_cv_enabled', False)
+        ).lower(),
+        'HEATING_ML_CV_N_SPLITS': str(
+            config.get('heating_ml_cv_n_splits', 3)
         ),
     }
 

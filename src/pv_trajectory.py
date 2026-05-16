@@ -156,20 +156,26 @@ def compute_forecast_driven_trajectory_steps(
     if pv_power_w < threshold_w:
         rescue_enabled = getattr(config, "PV_TRAJ_FORECAST_RESCUE_ENABLED", True)
         if rescue_enabled:
+            rescue_min_hours = max(
+                1,
+                int(getattr(config, "PV_TRAJ_RESCUE_MIN_HOURS", 1)),
+            )
             horizon_rescue = (pv_forecast or [])[:max_steps]
             rescue_hours = sum(1 for v in horizon_rescue if v > threshold_w)
-            if rescue_hours >= min_steps:
+            if rescue_hours >= rescue_min_hours:
                 logger.info(
                     "☀️ Forecast trajectory: PV=%.0fW < threshold=%.0fW but "
-                    "%d forecast hours above threshold → rescued, continuing",
-                    pv_power_w, threshold_w, rescue_hours,
+                    "%d forecast hours above threshold (need %d) → rescued, "
+                    "continuing",
+                    pv_power_w, threshold_w, rescue_hours, rescue_min_hours,
                 )
             else:
                 logger.info(
                     "☀️ Forecast trajectory: PV=%.0fW < threshold=%.0fW, "
                     "only %d forecast hours above threshold (need %d) → "
                     "inactive, %d steps",
-                    pv_power_w, threshold_w, rescue_hours, min_steps, min_steps,
+                    pv_power_w, threshold_w, rescue_hours, rescue_min_hours,
+                    min_steps,
                 )
                 return min_steps
         else:

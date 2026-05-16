@@ -1,5 +1,48 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Full-Test Follow-Up: Holdout Guard + Bounds Alignment — 2026-05-17
+
+#### **What changed**
+- Added dedicated regression coverage in `tests/unit/test_heating_correction_ml_calibration.py` to assert that Optuna/CV training fits do not ingest temporal holdout rows.
+- Fixed cross-module mismatch in `src/thermal_config.py`: aligned `pv_heat_weight` lower bound to `0.0001` (from `0.00001`) to match test expectations and add-on schema.
+- Executed broad validation:
+  - Targeted + calibration unit tests passed
+  - Full unit suite passed except one dependency-gated file (`hypothesis` missing)
+  - Integration image-smoke tests remain environment-gated without local Docker CLI.
+
+#### **Why**
+- User requested both: full-suite regression check and a dedicated Optuna/CV holdout isolation test.
+- Full run surfaced one actionable code mismatch (parameter bounds) and two environment blockers (missing dependencies/tools).
+
+### ✅ Post-Implementation Review Fixes — 2026-05-17
+
+#### **What changed**
+- **Holdout leakage fixed** in `src/heating_correction_ml_calibration.py`: Optuna and optional CV now operate on `df_fit` only, preserving temporal holdout (`df_val`) as an unbiased final validation slice.
+- **CV edge-case guard**: when fit data is too short for `TimeSeriesSplit`, calibration now logs a clear skip warning instead of failing CV path.
+- **Permutation importance stability**: switched to `n_jobs=1` to avoid multiprocessing fragility in mocked/non-picklable estimator contexts.
+- **Config wording alignment**: `ml_heating_underfloor/config.yaml` tooltip for `heating_ml_cv_enabled` now matches implementation (additional CV diagnostics, holdout still retained).
+- **Test robustness**: fake LightGBM regressors in `tests/unit/test_heating_correction_ml_calibration.py` now inherit sklearn estimator mixins to remove deprecation warning flood and future sklearn incompatibility risk.
+
+#### **Why**
+- Review identified a genuine evaluation-risk mismatch: HPO/CV consumed data intended to remain a final holdout.
+- Edge-case handling and cleaner test compatibility reduce operational noise and future maintenance risk.
+
+### ✅ ML Calibration Improvements + PV Rescue Decoupling — 2026-05-17
+
+#### **What changed**
+- **PV Trajectory Rescue**: `src/pv_trajectory.py` rescue condition decoupled from `min_steps`. New `PV_TRAJ_RESCUE_MIN_HOURS` config (default 1) controls independently how many forecast hours above threshold are needed for rescue. Fixes bug where gradual PV decline (1930W→1440W) caused premature trajectory collapse and unwanted overshoot correction (−0.98°C blend).
+- **ML Calibration Pipeline** (`src/heating_correction_ml_calibration.py`):
+  - Feature pruning: drops features with PI ≤ threshold, retrains, accepts only if MAE regression ≤ 0.5%
+  - LightGBM regularisation: `reg_alpha`/`reg_lambda` forwarded to model
+  - Optuna HPO: config-gated, searches 6 hyperparameters over TimeSeriesSplit(3)
+  - Time-series CV: config-gated, reports MAE±std and R²±std across folds
+- **Config plumbing**: 10 new config vars across `src/config.py`, `ml_heating_underfloor/config.yaml` (with tooltips + schema), `config_adapter.py`
+- **Tests**: 5 new rescue_min_hours tests in `test_pv_trajectory.py`, 9 new tests for config defaults + regularisation + pruning in `test_heating_correction_ml_calibration.py`
+
+#### **Why**
+- R²=0.8541 with 40 features (11 with PI ≤ 0) suggested overfitting. Feature pruning + regularisation should improve generalisation. Optuna and CV provide optional deeper optimisation.
+- The overshoot correction bug was caused by the rescue condition being tied to min_steps=4, requiring 4 future hours above PV threshold — too strict for gradual afternoon decline.
+
 ### ✅ Refine pv_traj_disable_overshoot_correction boundary at min steps — 2026-05-16
 
 #### **What changed**

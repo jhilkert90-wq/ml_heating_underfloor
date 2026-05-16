@@ -25,6 +25,15 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+try:
+    from sklearn.base import BaseEstimator, RegressorMixin
+except ImportError:  # pragma: no cover - optional dependency fallback
+    class BaseEstimator:  # type: ignore[no-redef]
+        pass
+
+    class RegressorMixin:  # type: ignore[no-redef]
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -563,3 +572,400 @@ class TestFeatureSet:
 
         # Should not raise; returns a bool
         assert isinstance(result, bool)
+
+
+# ---------------------------------------------------------------------------
+# Config: new ML calibration config vars exist with expected defaults
+# ---------------------------------------------------------------------------
+
+class TestMLCalibrationConfigDefaults:
+    """Verify new config vars for feature pruning, regularisation, Optuna, CV."""
+
+    def test_feature_pruning_enabled_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("HEATING_ML_FEATURE_PRUNING_ENABLED", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.HEATING_ML_FEATURE_PRUNING_ENABLED is True
+        finally:
+            if orig is not None:
+                os.environ["HEATING_ML_FEATURE_PRUNING_ENABLED"] = orig
+            importlib.reload(cfg)
+
+    def test_prune_pi_threshold_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("HEATING_ML_PRUNE_PI_THRESHOLD", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.HEATING_ML_PRUNE_PI_THRESHOLD == pytest.approx(0.0)
+        finally:
+            if orig is not None:
+                os.environ["HEATING_ML_PRUNE_PI_THRESHOLD"] = orig
+            importlib.reload(cfg)
+
+    def test_reg_alpha_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("HEATING_ML_REG_ALPHA", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.HEATING_ML_REG_ALPHA == pytest.approx(0.1)
+        finally:
+            if orig is not None:
+                os.environ["HEATING_ML_REG_ALPHA"] = orig
+            importlib.reload(cfg)
+
+    def test_reg_lambda_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("HEATING_ML_REG_LAMBDA", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.HEATING_ML_REG_LAMBDA == pytest.approx(1.0)
+        finally:
+            if orig is not None:
+                os.environ["HEATING_ML_REG_LAMBDA"] = orig
+            importlib.reload(cfg)
+
+    def test_optuna_disabled_by_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("HEATING_ML_OPTUNA_ENABLED", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.HEATING_ML_OPTUNA_ENABLED is False
+        finally:
+            if orig is not None:
+                os.environ["HEATING_ML_OPTUNA_ENABLED"] = orig
+            importlib.reload(cfg)
+
+    def test_cv_disabled_by_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("HEATING_ML_CV_ENABLED", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.HEATING_ML_CV_ENABLED is False
+        finally:
+            if orig is not None:
+                os.environ["HEATING_ML_CV_ENABLED"] = orig
+            importlib.reload(cfg)
+
+    def test_rescue_min_hours_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("PV_TRAJ_RESCUE_MIN_HOURS", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.PV_TRAJ_RESCUE_MIN_HOURS == 1
+        finally:
+            if orig is not None:
+                os.environ["PV_TRAJ_RESCUE_MIN_HOURS"] = orig
+            importlib.reload(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Feature pruning logic (unit-level)
+# ---------------------------------------------------------------------------
+
+class TestFeaturePruningLogic:
+    """Test the feature pruning step in calibration (steps 10c)."""
+
+    def test_regularization_params_passed_to_lgbm(self):
+        """reg_alpha and reg_lambda from config are forwarded to LGBMRegressor."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import calibrate_heating_correction_ml
+        df = _make_df(800, at_val=8.0)
+        captured_params = {}
+
+        class _FakeLGBMRegressor(BaseEstimator, RegressorMixin):
+            def __init__(self, **kwargs):
+                captured_params.update(kwargs)
+                self.feature_importances_ = np.ones(40)
+
+            def fit(self, X, y, **kw):
+                pass
+
+            def predict(self, X):
+                return np.zeros(len(X))
+
+        with patch(
+            "src.heating_correction_ml_calibration"
+            ".fetch_historical_data_for_calibration",
+            return_value=df,
+        ), patch(
+            "src.heating_correction_ml_calibration._read_baseline_thermal_params",
+            return_value=(0.830, 0.124, 4.39),
+        ), patch(
+            "src.heating_correction_ml_calibration.config"
+        ) as mock_cfg:
+            mock_cfg.HEATING_ML_CALIBRATION_START_DATE = ""
+            mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
+            mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
+            mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1"
+            mock_cfg.HEATING_ML_TV_LAG_HOURS = "0.5"
+            mock_cfg.CYCLE_INTERVAL_MINUTES = 10
+            mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
+            mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+            mock_cfg.HEATING_ML_MIN_TRAINING_SAMPLES = 50
+            mock_cfg.HEATING_ML_RETRAIN_VAL_FRACTION = 0.25
+            mock_cfg.OUTLET_EFFECTIVENESS = 0.830
+            mock_cfg.HEAT_LOSS_COEFFICIENT = 0.124
+            mock_cfg.THERMAL_TIME_CONSTANT = 4.39
+            mock_cfg.HEATING_ML_CORRECTION_MODEL_PATH = "/tmp/hml_reg.joblib"
+            mock_cfg.HEATING_ML_CORRECTION_METADATA_PATH = "/tmp/hml_reg_meta.json"
+            mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
+            mock_cfg.OUTDOOR_TEMP_ENTITY_ID = "sensor.outdoor"
+            mock_cfg.OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
+            mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
+            mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
+            mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+            mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv"
+            mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
+            mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
+            # New config vars
+            mock_cfg.HEATING_ML_REG_ALPHA = 0.5
+            mock_cfg.HEATING_ML_REG_LAMBDA = 2.0
+            mock_cfg.HEATING_ML_FEATURE_PRUNING_ENABLED = False
+            mock_cfg.HEATING_ML_OPTUNA_ENABLED = False
+            mock_cfg.HEATING_ML_CV_ENABLED = False
+
+            mock_lgb = MagicMock()
+            mock_lgb.LGBMRegressor = _FakeLGBMRegressor
+
+            with patch.dict("sys.modules", {"lightgbm": mock_lgb}), \
+                 patch("joblib.dump"), \
+                 patch("os.replace"):
+                try:
+                    calibrate_heating_correction_ml()
+                except Exception:
+                    pass
+
+        assert captured_params.get("reg_alpha") == 0.5
+        assert captured_params.get("reg_lambda") == 2.0
+
+    def test_pruning_disabled_skips_retrain(self):
+        """When HEATING_ML_FEATURE_PRUNING_ENABLED is False, no pruning retrain occurs."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import calibrate_heating_correction_ml
+        df = _make_df(800, at_val=8.0)
+        fit_call_count = [0]
+
+        class _CountingLGBMRegressor(BaseEstimator, RegressorMixin):
+            def __init__(self, **kwargs):
+                self.feature_importances_ = np.ones(40)
+
+            def fit(self, X, y, **kw):
+                fit_call_count[0] += 1
+
+            def predict(self, X):
+                return np.zeros(len(X))
+
+        with patch(
+            "src.heating_correction_ml_calibration"
+            ".fetch_historical_data_for_calibration",
+            return_value=df,
+        ), patch(
+            "src.heating_correction_ml_calibration._read_baseline_thermal_params",
+            return_value=(0.830, 0.124, 4.39),
+        ), patch(
+            "src.heating_correction_ml_calibration.config"
+        ) as mock_cfg:
+            mock_cfg.HEATING_ML_CALIBRATION_START_DATE = ""
+            mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
+            mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
+            mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1"
+            mock_cfg.HEATING_ML_TV_LAG_HOURS = "0.5"
+            mock_cfg.CYCLE_INTERVAL_MINUTES = 10
+            mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
+            mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+            mock_cfg.HEATING_ML_MIN_TRAINING_SAMPLES = 50
+            mock_cfg.HEATING_ML_RETRAIN_VAL_FRACTION = 0.25
+            mock_cfg.OUTLET_EFFECTIVENESS = 0.830
+            mock_cfg.HEAT_LOSS_COEFFICIENT = 0.124
+            mock_cfg.THERMAL_TIME_CONSTANT = 4.39
+            mock_cfg.HEATING_ML_CORRECTION_MODEL_PATH = "/tmp/hml_np.joblib"
+            mock_cfg.HEATING_ML_CORRECTION_METADATA_PATH = "/tmp/hml_np_meta.json"
+            mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
+            mock_cfg.OUTDOOR_TEMP_ENTITY_ID = "sensor.outdoor"
+            mock_cfg.OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
+            mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
+            mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
+            mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+            mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv"
+            mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
+            mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
+            # New config vars: pruning disabled
+            mock_cfg.HEATING_ML_REG_ALPHA = 0.1
+            mock_cfg.HEATING_ML_REG_LAMBDA = 1.0
+            mock_cfg.HEATING_ML_FEATURE_PRUNING_ENABLED = False
+            mock_cfg.HEATING_ML_OPTUNA_ENABLED = False
+            mock_cfg.HEATING_ML_CV_ENABLED = False
+
+            mock_lgb = MagicMock()
+            mock_lgb.LGBMRegressor = _CountingLGBMRegressor
+
+            with patch.dict("sys.modules", {"lightgbm": mock_lgb}), \
+                 patch("joblib.dump"), \
+                 patch("os.replace"):
+                try:
+                    calibrate_heating_correction_ml()
+                except Exception:
+                    pass
+
+        # Only 1 fit call (initial), no pruning retrain
+        assert fit_call_count[0] == 1
+
+
+class TestHoldoutIsolation:
+    """Regression tests for strict holdout isolation in HPO/CV paths."""
+
+    def test_optuna_and_cv_do_not_use_holdout_rows(self):
+        """Optuna objective and CV diagnostics must use fit split only."""
+        try:
+            import numpy as np
+            import pandas as pd
+            import types
+            import importlib
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        import src.heating_correction_ml_calibration as hml_cal
+        hml_cal = importlib.reload(hml_cal)
+        calibrate_heating_correction_ml = hml_cal.calibrate_heating_correction_ml
+
+        df = _make_df(800, at_val=8.0)
+        sentinel = 9999.0
+        # Last 25% becomes temporal holdout with val_fraction=0.25.
+        holdout_start = int(len(df) * 0.75)
+        df.loc[df.index[holdout_start:], "indoor_temp"] = sentinel
+
+        fit_call_count = [0]
+        fit_max_values = []
+
+        class _FakeTrial:
+            def suggest_float(self, name, low, high, log=False):
+                return float((low + high) / 2.0)
+
+            def suggest_int(self, name, low, high):
+                return int((low + high) // 2)
+
+        class _FakeStudy:
+            def __init__(self):
+                self.best_params = {}
+                self.best_value = 0.0
+
+            def optimize(self, objective, n_trials=1, show_progress_bar=False):
+                self.best_value = float(objective(_FakeTrial()))
+
+        class _FakeOptunaLogging:
+            WARNING = 0
+
+            @staticmethod
+            def set_verbosity(level):
+                return None
+
+        fake_optuna = types.ModuleType("optuna")
+        fake_optuna.logging = _FakeOptunaLogging
+        fake_optuna.create_study = lambda direction="minimize": _FakeStudy()
+
+        class _FakeLGBMRegressor(BaseEstimator, RegressorMixin):
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.feature_importances_ = None
+
+            def fit(self, X, y, **kw):
+                fit_call_count[0] += 1
+                x_arr = np.asarray(X)
+                fit_max_values.append(float(np.max(x_arr[:, 0])))
+                self.feature_importances_ = np.ones(x_arr.shape[1], dtype=int)
+                return self
+
+            def predict(self, X):
+                return np.zeros(len(X), dtype=float)
+
+        tmp_dir = tempfile.gettempdir()
+        cfg_overrides = {
+            "HEATING_ML_CALIBRATION_START_DATE": "",
+            "HEATING_ML_COLD_THRESHOLD_C": 18.0,
+            "HEATING_ML_LABEL_HORIZON_H": 4,
+            "HEATING_ML_AT_FORECAST_HOURS": "1",
+            "HEATING_ML_PV_FORECAST_HOURS": "1",
+            "HEATING_ML_FIREPLACE_LAG_HOURS": "1",
+            "HEATING_ML_TV_LAG_HOURS": "0.5",
+            "CYCLE_INTERVAL_MINUTES": 10,
+            "HLC_DEFAULT_TARGET_TEMP": 21.0,
+            "SPECIFIC_HEAT_CAPACITY": 4.186,
+            "HEATING_ML_MIN_TRAINING_SAMPLES": 50,
+            "HEATING_ML_RETRAIN_VAL_FRACTION": 0.25,
+            "OUTLET_EFFECTIVENESS": 0.830,
+            "HEAT_LOSS_COEFFICIENT": 0.124,
+            "THERMAL_TIME_CONSTANT": 4.39,
+            "HEATING_ML_CORRECTION_MODEL_PATH": os.path.join(tmp_dir, "hml_holdout.joblib"),
+            "HEATING_ML_CORRECTION_METADATA_PATH": os.path.join(tmp_dir, "hml_holdout_meta.json"),
+            "INDOOR_TEMP_ENTITY_ID": "sensor.indoor",
+            "OUTDOOR_TEMP_ENTITY_ID": "sensor.outdoor",
+            "OUTLET_TEMP_ENTITY_ID": "sensor.outlet",
+            "INLET_TEMP_ENTITY_ID": "sensor.inlet",
+            "FLOW_RATE_ENTITY_ID": "input_number.flow",
+            "POWER_CONSUMPTION_ENTITY_ID": "sensor.power",
+            "PV_POWER_ENTITY_ID": "sensor.pv",
+            "FIREPLACE_STATUS_ENTITY_ID": "binary_sensor.fireplace_active",
+            "TV_STATUS_ENTITY_ID": "input_boolean.fernseher",
+            "HEATING_ML_REG_ALPHA": 0.1,
+            "HEATING_ML_REG_LAMBDA": 1.0,
+            "HEATING_ML_FEATURE_PRUNING_ENABLED": False,
+            "HEATING_ML_OPTUNA_ENABLED": True,
+            "HEATING_ML_OPTUNA_N_TRIALS": 1,
+            "HEATING_ML_CV_ENABLED": True,
+            "HEATING_ML_CV_N_SPLITS": 3,
+        }
+
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            cfg_stub = types.SimpleNamespace(**cfg_overrides)
+            stack.enter_context(patch(
+                "src.heating_correction_ml_calibration"
+                ".fetch_historical_data_for_calibration",
+                return_value=df,
+            ))
+            stack.enter_context(patch(
+                "src.heating_correction_ml_calibration._read_baseline_thermal_params",
+                return_value=(0.830, 0.124, 4.39),
+            ))
+            stack.enter_context(
+                patch.object(hml_cal, "config", cfg_stub)
+            )
+
+            mock_lgb = MagicMock()
+            mock_lgb.LGBMRegressor = _FakeLGBMRegressor
+            mock_lgb.early_stopping = lambda *a, **k: None
+            mock_lgb.log_evaluation = lambda *a, **k: None
+
+            with patch.dict(
+                "sys.modules",
+                {"lightgbm": mock_lgb, "optuna": fake_optuna},
+            ), patch("joblib.dump"), patch("os.replace"):
+                result = calibrate_heating_correction_ml()
+
+        assert result is True
+        # Optuna + CV + final fit should yield multiple training fits.
+        assert fit_call_count[0] >= 5
+        # Regression assertion: no training fit may include holdout sentinel rows.
+        assert all(v < sentinel for v in fit_max_values)

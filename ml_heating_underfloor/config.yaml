@@ -190,6 +190,29 @@ options:
   # Rolling observation buffer size: keep the last N labeled samples for online retraining.
   # Default: 500.
   heating_ml_buffer_max_n: 500
+  # Enable automatic feature pruning based on permutation importance.
+  # After initial training, features with PI ≤ threshold are dropped and the
+  # model is retrained.  Accepted only if MAE does not regress beyond 0.5%.
+  heating_ml_feature_pruning_enabled: true
+  # Permutation importance cutoff.  Features at or below this value are pruned.
+  # Default 0.0 removes only noise/harmful features (negative or zero PI).
+  heating_ml_prune_pi_threshold: 0.0
+  # L1 regularisation for LightGBM (reduces overfitting).  Default: 0.1.
+  heating_ml_reg_alpha: 0.1
+  # L2 regularisation for LightGBM (reduces overfitting).  Default: 1.0.
+  heating_ml_reg_lambda: 1.0
+  # Enable Optuna-based hyper-parameter optimisation during calibration.
+  # Adds ~30–60 s of training time.  Default: false.
+  heating_ml_optuna_enabled: false
+  # Number of Optuna trials per calibration run.  Default: 20.
+  heating_ml_optuna_n_trials: 20
+  # Enable additional time-series cross-validation diagnostics.
+  # When true, computes TimeSeriesSplit metrics on the fit split while still
+  # keeping the dedicated temporal holdout for final validation.
+  # Default: false.
+  heating_ml_cv_enabled: false
+  # Number of CV splits (folds) for time-series cross-validation.  Default: 3.
+  heating_ml_cv_n_splits: 3
 
   # === InfluxDB Configuration ===
   # URL of your InfluxDB instance, including the protocol and port
@@ -521,8 +544,13 @@ options:
   pv_traj_disable_price_in_forecast_mode: true
   # Keep trajectory active during brief PV drops (e.g. passing rain cloud).
   # When true (default), a drop below pv_traj_threshold_w is tolerated if at
-  # least pv_traj_min_steps forecast hours still exceed the threshold.
+  # least pv_traj_rescue_min_hours forecast hours still exceed the threshold.
   pv_traj_forecast_rescue_enabled: true
+  # Minimum forecast hours above pv_traj_threshold_w required for the rescue
+  # to fire.  Default: 1 — even a single future hour above threshold keeps the
+  # trajectory active during gradual PV decline (e.g. late afternoon).
+  # Set higher (e.g. 2–4) for stricter rescue that only fires during brief dips.
+  pv_traj_rescue_min_hours: 1
   # When true, disable overshoot/undershoot outlet correction only while
   # forecast-driven trajectory scaling is active and trajectory_steps is above
   # pv_traj_min_steps. At trajectory_steps == pv_traj_min_steps, correction is
@@ -622,6 +650,14 @@ schema:
   heating_ml_retrain_val_fraction: "float(0.05,0.5)"
   heating_ml_retrain_trigger_k: "int(10,500)"
   heating_ml_buffer_max_n: "int(100,5000)"
+  heating_ml_feature_pruning_enabled: "bool"
+  heating_ml_prune_pi_threshold: "float(-1.0,1.0)"
+  heating_ml_reg_alpha: "float(0.0,10.0)"
+  heating_ml_reg_lambda: "float(0.0,10.0)"
+  heating_ml_optuna_enabled: "bool"
+  heating_ml_optuna_n_trials: "int(5,100)"
+  heating_ml_cv_enabled: "bool"
+  heating_ml_cv_n_splits: "int(2,10)"
   # InfluxDB Configuration
   influx_url: "str"
   influx_token: "str"
@@ -777,6 +813,7 @@ schema:
   pv_traj_zero_w: "float(0.0,500.0)"
   pv_traj_disable_price_in_forecast_mode: "bool"
   pv_traj_forecast_rescue_enabled: "bool"
+  pv_traj_rescue_min_hours: "int(1,12)"
   pv_traj_disable_overshoot_correction: "bool"
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"

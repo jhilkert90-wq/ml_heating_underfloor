@@ -232,10 +232,13 @@ class TestForecastRescue:
         assert steps == 2  # no rescue hours above threshold
 
     def test_rescue_active_insufficient_rescue_hours(self):
-        """Rescue enabled but only 1 forecast hour above threshold (need min_steps=2) → min_steps."""
+        """Rescue enabled but only 1 forecast hour above threshold (need rescue_min_hours=2) → min_steps."""
         # Only 1 hour above threshold
         fc = [200.0] * 9 + [4000.0, 0.0, 0.0]
-        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+        with _apply_patches(_fc_patches({
+            "PV_TRAJ_FORECAST_RESCUE_ENABLED": True,
+            "PV_TRAJ_RESCUE_MIN_HOURS": 2,
+        })):
             steps = compute_forecast_driven_trajectory_steps(500.0, fc)
         assert steps == 2
 
@@ -244,7 +247,7 @@ class TestForecastRescue:
         # 2 hours above threshold (indices 3 and 4), then night; pv_now low
         fc = [200.0, 200.0, 200.0, 4000.0, 3500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
-            # pv_now=800 < 3000, but 2 ≥ min_steps → rescued
+            # pv_now=800 < 3000, rescue_min_hours defaults to 1, 2 ≥ 1 → rescued
             # remaining_pv_hours: 200>50→1, 200>50→2, 200>50→3, 4000>50→4, 3500>50→5, 0≤50→stop → 5
             # steps = clamp(5+2, 2, 12) = 7
             steps = compute_forecast_driven_trajectory_steps(800.0, fc)
@@ -267,3 +270,52 @@ class TestForecastRescue:
         with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
             steps = compute_forecast_driven_trajectory_steps(10.0, self._FC_RAIN_THEN_SUN)
         assert steps == 2  # night mode, not rescued
+
+    # --- Decoupled rescue_min_hours tests ---
+
+    def test_rescue_min_hours_default_1_rescues_single_hour(self):
+        """Default rescue_min_hours=1: a single forecast hour above threshold rescues."""
+        fc = [200.0] * 9 + [4000.0, 0.0, 0.0]
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+            # rescue_min_hours defaults to 1, rescue_hours=1 → 1 ≥ 1 → rescued
+            # remaining_pv_hours: 10 entries > 50 W → 10
+            # steps = clamp(10+2, 2, 12) = 12
+            steps = compute_forecast_driven_trajectory_steps(500.0, fc)
+        assert steps == 12
+
+    def test_rescue_min_hours_3_requires_3_forecast_hours(self):
+        """rescue_min_hours=3: need at least 3 forecast hours above threshold."""
+        fc = [200.0, 200.0, 4000.0, 5000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        # 2 hours above threshold (4000, 5000) < rescue_min_hours=3 → not rescued
+        with _apply_patches(_fc_patches({
+            "PV_TRAJ_FORECAST_RESCUE_ENABLED": True,
+            "PV_TRAJ_RESCUE_MIN_HOURS": 3,
+        })):
+            steps = compute_forecast_driven_trajectory_steps(500.0, fc)
+        assert steps == 2  # not rescued
+
+    def test_rescue_min_hours_3_exactly_3_hours_rescued(self):
+        """rescue_min_hours=3: exactly 3 forecast hours above threshold → rescued."""
+        fc = [200.0, 4000.0, 5000.0, 3500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        # 3 hours above threshold (4000, 5000, 3500) >= rescue_min_hours=3 → rescued
+        # remaining_pv_hours: entries > 50 → 200, 4000, 5000, 3500 → 4
+        # steps = clamp(4+2, 2, 12) = 6
+        with _apply_patches(_fc_patches({
+            "PV_TRAJ_FORECAST_RESCUE_ENABLED": True,
+            "PV_TRAJ_RESCUE_MIN_HOURS": 3,
+        })):
+            steps = compute_forecast_driven_trajectory_steps(500.0, fc)
+        assert steps == 6
+
+    def test_rescue_min_hours_independent_of_min_steps(self):
+        """rescue_min_hours and min_steps are independent — they do not affect each other."""
+        fc = [200.0] * 8 + [4000.0, 5000.0, 0.0, 0.0]
+        # rescue_hours=2, rescue_min_hours=1 → rescued (even though min_steps=4)
+        with _apply_patches(_fc_patches({
+            "PV_TRAJ_FORECAST_RESCUE_ENABLED": True,
+            "PV_TRAJ_RESCUE_MIN_HOURS": 1,
+            "PV_TRAJ_MIN_STEPS": 4,
+        })):
+            steps = compute_forecast_driven_trajectory_steps(500.0, fc)
+        # remaining_pv_hours: 10 > 50 → 10; steps = clamp(10+4, 4, 12) = 12
+        assert steps == 12

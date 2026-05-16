@@ -1,5 +1,48 @@
 # ML Heating System - Current Progress
 
+## ✅ Full Test Pass + Optuna/CV Holdout Regression Guard (2026-05-17)
+
+**Status:** COMPLETED — implemented dedicated holdout-isolation regression test, fixed a cross-module bounds mismatch discovered during full-suite run, and verified unit-suite health.
+
+### Changes
+1. **`tests/unit/test_heating_correction_ml_calibration.py`**: Added `TestHoldoutIsolation::test_optuna_and_cv_do_not_use_holdout_rows` to assert Optuna/CV training fits never include holdout sentinel rows.
+2. **`src/thermal_config.py`**: Updated `pv_heat_weight` lower bound from `0.00001` to `0.0001` (both parameter-bound sets) to match current schema and unit expectations.
+3. **Validation runs**:
+  - `python -m pytest tests/unit/test_heating_correction_ml_calibration.py -q --tb=short` → pass
+  - `python -m pytest tests/unit -q --tb=short --ignore=tests/unit/test_thermal_equilibrium_model_properties.py` → **1327 passed, 1 skipped**
+  - Full `tests/` run still blocked by environment prerequisites: missing `hypothesis` package and missing local `docker` CLI for image-smoke integration tests.
+
+**Files changed:** `tests/unit/test_heating_correction_ml_calibration.py`, `src/thermal_config.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+## ✅ Post-Implementation Review Fixes (2026-05-17)
+
+**Status:** COMPLETED — fixed leakage and edge-case issues identified during review of the latest session changes.
+
+### Changes
+1. **`src/heating_correction_ml_calibration.py`**:
+  - Fixed holdout leakage: Optuna HPO + CV now run on `df_fit` only.
+  - Added CV edge-case guard: gracefully skips when fit split is too short for `TimeSeriesSplit`.
+  - Set permutation importance `n_jobs=1` for stable execution in test/constrained environments.
+2. **`ml_heating_underfloor/config.yaml`**: clarified `heating_ml_cv_enabled` tooltip to match implementation (additional diagnostics + preserved holdout).
+3. **`tests/unit/test_heating_correction_ml_calibration.py`**: fake regressors updated to sklearn-compatible estimator mixins to remove deprecation warning flood / future break risk.
+4. **Validation**: `python -m pytest tests/unit/test_heating_correction_ml_calibration.py tests/unit/test_pv_trajectory.py tests/unit/test_overshoot_logic.py -q --tb=short` → **63 passed**.
+
+**Files changed:** `src/heating_correction_ml_calibration.py`, `ml_heating_underfloor/config.yaml`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+## ✅ ML Calibration Improvements + PV Rescue Decoupling (2026-05-17)
+
+**Status:** COMPLETED — ML calibration pipeline enhanced with feature pruning, regularisation, Optuna HPO, and time-series CV. PV trajectory rescue decoupled from min_steps to fix overshoot correction bug.
+
+### Changes
+1. **`src/pv_trajectory.py`**: Rescue condition uses `PV_TRAJ_RESCUE_MIN_HOURS` (default 1) instead of `min_steps` — prevents premature trajectory collapse during gradual PV decline.
+2. **`src/heating_correction_ml_calibration.py`**: Added feature pruning (PI-based, retrain + MAE regression guard), `reg_alpha`/`reg_lambda`, Optuna HPO, TimeSeriesCV — all config-gated.
+3. **`src/config.py`**: Added 10 new config vars: `PV_TRAJ_RESCUE_MIN_HOURS`, `HEATING_ML_FEATURE_PRUNING_ENABLED`, `HEATING_ML_PRUNE_PI_THRESHOLD`, `HEATING_ML_REG_ALPHA`, `HEATING_ML_REG_LAMBDA`, `HEATING_ML_OPTUNA_ENABLED`, `HEATING_ML_OPTUNA_N_TRIALS`, `HEATING_ML_CV_ENABLED`, `HEATING_ML_CV_N_SPLITS`.
+4. **`ml_heating_underfloor/config.yaml`**: Options + schema + tooltips for all new config vars.
+5. **`config_adapter.py`**: Env var mappings for all new config vars.
+6. **Tests**: Updated `test_pv_trajectory.py` (5 new rescue_min_hours tests), updated `test_heating_correction_ml_calibration.py` (9 new config/pruning/regularisation tests).
+
+**Files changed:** `src/pv_trajectory.py`, `src/heating_correction_ml_calibration.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, `tests/unit/test_pv_trajectory.py`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Refine forecast-mode correction suppression boundary (2026-05-16)
 
 **Status:** COMPLETED — overshoot/undershoot suppression in forecast mode now applies only while `TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS`; correction is automatically re-enabled at the minimum trajectory floor.

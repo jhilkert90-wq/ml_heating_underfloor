@@ -300,6 +300,13 @@ PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE: bool = (
 PV_TRAJ_FORECAST_RESCUE_ENABLED: bool = (
     os.getenv("PV_TRAJ_FORECAST_RESCUE_ENABLED", "true").lower() == "true"
 )
+# Minimum forecast hours above PV_TRAJ_THRESHOLD_W required for the forecast
+# rescue to fire.  Previously hardcoded to PV_TRAJ_MIN_STEPS, which caused the
+# rescue to fail during gradual late-afternoon PV decline.  Default: 1 — even a
+# single future hour above threshold keeps the trajectory active.
+PV_TRAJ_RESCUE_MIN_HOURS: int = int(
+    os.getenv("PV_TRAJ_RESCUE_MIN_HOURS", "1")
+)
 # When true, skip the overshoot/undershoot outlet-temperature correction only
 # while forecast mode is active AND dynamic trajectory steps are above the
 # minimum floor (TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS). At the minimum floor,
@@ -864,6 +871,38 @@ HEATING_ML_RETRAIN_TRIGGER_K: int = int(
 )
 # Rolling buffer size: keep the last N labeled observations for retraining.
 HEATING_ML_BUFFER_MAX_N: int = int(os.getenv("HEATING_ML_BUFFER_MAX_N", "500"))
+# --- Feature pruning (permutation importance-based) ---
+# When true, features with permutation importance <= the threshold are removed
+# and the model is retrained on the pruned feature set.  Only accepted if the
+# pruned model's MAE does not regress beyond 0.5%.
+HEATING_ML_FEATURE_PRUNING_ENABLED: bool = (
+    os.getenv("HEATING_ML_FEATURE_PRUNING_ENABLED", "true").lower() == "true"
+)
+# Permutation importance cutoff.  Features at or below this value are pruned.
+HEATING_ML_PRUNE_PI_THRESHOLD: float = float(
+    os.getenv("HEATING_ML_PRUNE_PI_THRESHOLD", "0.0")
+)
+# --- LightGBM regularization ---
+HEATING_ML_REG_ALPHA: float = float(
+    os.getenv("HEATING_ML_REG_ALPHA", "0.1")
+)
+HEATING_ML_REG_LAMBDA: float = float(
+    os.getenv("HEATING_ML_REG_LAMBDA", "1.0")
+)
+# --- Optuna hyper-parameter optimisation (optional, adds training time) ---
+HEATING_ML_OPTUNA_ENABLED: bool = (
+    os.getenv("HEATING_ML_OPTUNA_ENABLED", "false").lower() == "true"
+)
+HEATING_ML_OPTUNA_N_TRIALS: int = int(
+    os.getenv("HEATING_ML_OPTUNA_N_TRIALS", "20")
+)
+# --- Time-series cross-validation ---
+HEATING_ML_CV_ENABLED: bool = (
+    os.getenv("HEATING_ML_CV_ENABLED", "false").lower() == "true"
+)
+HEATING_ML_CV_N_SPLITS: int = int(
+    os.getenv("HEATING_ML_CV_N_SPLITS", "3")
+)
 
 
 def _parse_heating_start_date(date_str: str) -> "Optional[datetime]":
