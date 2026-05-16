@@ -192,3 +192,149 @@ jobs:
             BUILD_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=${{ matrix.arch }}   # Separate cache per architecture
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  test-image:
+    name: Smoke-test built image (amd64)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image version
+        id: version
+        run: |
+          if [[ -n "${{ needs.build.outputs.version }}" ]]; then
+            echo "version=${{ needs.build.outputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(grep '^version:' ml_heating_underfloor/config.yaml | sed 's/version: *[\"]*\([^\"]*\)[\"]*$/\1/' | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pull amd64 image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-amd64:${{ steps.version.outputs.version }}
+
+      - name: Check OCI / HA add-on labels
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-amd64:${{ steps.version.outputs.version }}"
+          EXPECTED="${{ steps.version.outputs.version }}"
+
+          HA_TYPE=$(docker inspect "$IMAGE" --format '{{ index .Config.Labels "io.hass.type" }}')
+          HA_VER=$(docker inspect "$IMAGE" --format '{{ index .Config.Labels "io.hass.version" }}')
+          OCI_VER=$(docker inspect "$IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
+
+          echo "io.hass.type    = ${HA_TYPE}"
+          echo "io.hass.version = ${HA_VER}"
+          echo "oci.version     = ${OCI_VER}"
+
+          [[ "${HA_TYPE}" == "addon" ]]       || { echo "::error::io.hass.type is not 'addon'"; exit 1; }
+          [[ "${HA_VER}"  == "${EXPECTED}" ]] || { echo "::error::io.hass.version '${HA_VER}' != '${EXPECTED}'"; exit 1; }
+          [[ "${OCI_VER}" == "${EXPECTED}" ]] || { echo "::error::org.opencontainers.image.version '${OCI_VER}' != '${EXPECTED}'"; exit 1; }
+          echo "✅ Labels OK"
+
+      - name: ML dependency smoke test
+        run: |
+          docker run --rm \
+            --entrypoint python3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-amd64:${{ steps.version.outputs.version }} \
+            -c "import lightgbm, pandas, numpy, sklearn, streamlit; print('ML deps OK')"
+
+      - name: Core module smoke test
+        run: |
+          docker run --rm \
+            --entrypoint python3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-amd64:${{ steps.version.outputs.version }} \
+            -c "import sys; sys.path.insert(0,'/app'); from src.config import POLL_INTERVAL; from src.thermal_equilibrium_model import ThermalEquilibriumModel; print('Core modules OK')"
+
+      - name: Config adapter smoke test
+        run: |
+          docker run --rm \
+            --entrypoint python3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-amd64:${{ steps.version.outputs.version }} \
+            -c "import sys; sys.path.insert(0,'/app'); from config_adapter import convert_addon_to_env; print('Config adapter OK')"
+
+      - name: Required files check
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-amd64:${{ steps.version.outputs.version }}"
+          for f in /app/run.sh /app/validate_container.py /app/src/main.py /app/config_adapter.py; do
+            docker run --rm --entrypoint test "$IMAGE" -f "$f" \
+              && echo "✅ $f exists" \
+              || { echo "::error::Required file missing: $f"; exit 1; }
+          done
+
+  create-release:
+    name: Create GitHub Release
+    needs: test-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' ml_heating_underfloor/config.yaml \
+            | sed 's/version: *[\"]*\([^\"]*\)[\"]*$/\1/' | tr -d ' ')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if tag already exists
+        id: tag_check
+        run: |
+          if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.version.outputs.tag }} already exists — skipping release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract release notes from addon changelog
+        if: steps.tag_check.outputs.exists == 'false'
+        id: notes
+        run: |
+          NOTES=$(python3 scripts/extract_changelog_notes.py ml_heating_underfloor/CHANGELOG.md || true)
+          if [[ -z "$NOTES" ]]; then
+            NOTES="Release ${{ steps.version.outputs.version }}"
+          fi
+          # Write to file to avoid shell quoting issues with multi-line content
+          printf '%s' "$NOTES" > /tmp/release_notes.md
+          echo "Release notes written ($(wc -l < /tmp/release_notes.md) lines)"
+
+      - name: Create and push git tag
+        if: steps.tag_check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" \
+            -m "Release ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release
+        if: steps.tag_check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --notes-file /tmp/release_notes.md \
+            --latest \
+            --target main
