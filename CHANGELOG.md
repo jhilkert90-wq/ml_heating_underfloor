@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- CI docker smoke test now imports `CYCLE_INTERVAL_MINUTES` from `src.config` instead of removed `POLL_INTERVAL`, and validates `EnhancedModelWrapper` (current class name) in the "Core module smoke test" step in `.github/workflows/build.yaml`.
+- Integration smoke test expectation in `tests/integration/test_image_smoke.py` now matches the same valid config import and wrapper class name to prevent false CI failures.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

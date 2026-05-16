@@ -1,5 +1,17 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Fix docker workflow core-module smoke test import — 2026-05-16
+
+#### **What changed**
+- `.github/workflows/build.yaml`: In the `test-image` job "Core module smoke test" step, replaced `from src.config import POLL_INTERVAL` with `from src.config import CYCLE_INTERVAL_MINUTES`, and aligned wrapper import to `EnhancedModelWrapper`.
+- `tests/integration/test_image_smoke.py`: Updated `test_core_modules()` container import script to use the same valid config symbol and wrapper class name.
+
+#### **Why**
+- GitHub Actions run `25956950704` failed in job `Smoke-test built image (amd64)` with `ImportError: cannot import name 'POLL_INTERVAL' from 'src.config'`. The symbol no longer exists in `src/config.py`, so the smoke test itself was broken while application modules were otherwise importable.
+
+#### **Files**
+`.github/workflows/build.yaml`, `tests/integration/test_image_smoke.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### ✅ Fix calibration UserWarning spam — 2026-05-16
 
 #### **What changed**

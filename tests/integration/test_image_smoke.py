@@ -109,9 +109,9 @@ def test_core_modules():
     """Core application modules must be importable from /app."""
     script = (
         "import sys; sys.path.insert(0, '/app'); "
-        "from src.config import POLL_INTERVAL; "
+        "from src.config import CYCLE_INTERVAL_MINUTES; "
         "from src.thermal_equilibrium_model import ThermalEquilibriumModel; "
-        "from src.model_wrapper import ModelWrapper; "
+        "from src.model_wrapper import EnhancedModelWrapper; "
         "print('Core modules OK')"
     )
     result = _docker_run("-c", script, entrypoint="python3")

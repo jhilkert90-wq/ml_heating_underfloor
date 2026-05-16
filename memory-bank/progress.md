@@ -1,5 +1,16 @@
 # ML Heating System - Current Progress
 
+## ✅ Fix docker build workflow core smoke-test import (2026-05-16)
+
+**Status:** COMPLETED — fixed failing GitHub Actions docker smoke test by replacing removed `src.config` symbol `POLL_INTERVAL` with existing `CYCLE_INTERVAL_MINUTES`, and by validating the correct wrapper class name (`EnhancedModelWrapper`).
+
+### Changes
+1. **`.github/workflows/build.yaml`**: Updated the "Core module smoke test" one-liner import in the `test-image` job from `from src.config import POLL_INTERVAL` to `from src.config import CYCLE_INTERVAL_MINUTES`, and from `ModelWrapper` to `EnhancedModelWrapper`.
+2. **`tests/integration/test_image_smoke.py`**: Updated the same core-module smoke import assertion to keep repository integration tests aligned with the workflow check (`CYCLE_INTERVAL_MINUTES` + `EnhancedModelWrapper`).
+3. **Documentation updates**: Added matching entries to `CHANGELOG.md`, `memory-bank/progress.md`, and `memory-bank/activeContext.md`.
+
+**Files changed:** `.github/workflows/build.yaml`, `tests/integration/test_image_smoke.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Fix calibration UserWarning spam (2026-05-16)
 
 **Status:** COMPLETED — removed `.values` from `X_fit`/`X_val` in `heating_correction_ml_calibration.py` so training and permutation_importance use DataFrames with named columns, eliminating hundreds of sklearn `UserWarning: X does not have valid feature names` messages per calibration run.
