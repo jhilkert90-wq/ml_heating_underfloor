@@ -1,6 +1,17 @@
 # Active Context - Current Work & Decision State
 
-### ✅ ML correction model improvement — 8 new features + feature importance — 2026-05-16
+### ✅ Fix calibration UserWarning spam — 2026-05-16
+
+#### **What changed**
+- `src/heating_correction_ml_calibration.py`: `X_fit = df_fit[feature_cols].astype(float)` and `X_val = df_val[feature_cols].astype(float)` — removed `.values` so LightGBM trains with named DataFrame columns rather than anonymous numpy arrays.
+
+#### **Why**
+- `permutation_importance` called `model.predict()` with numpy slices of `X_val`; since the model had auto-generated feature names (LightGBM assigned them even when trained with numpy in newer versions), sklearn emitted `UserWarning: X does not have valid feature names` ~400+ times per calibration run (40 features × 10 repeats). Training with named DataFrames makes training/inference format consistent and eliminates the warning.
+
+#### **Files**
+`src/heating_correction_ml_calibration.py`
+
+
 
 #### **What changed**
 - **Config plumbing**: `WIND_SPEED_ENTITY_ID` (default `sensor.wind_speed`) added to `src/config.py`, `config_adapter.py`, `config.yaml`, `influx_service.py`, `physics_calibration.py`.

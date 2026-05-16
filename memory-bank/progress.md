@@ -1,6 +1,15 @@
 # ML Heating System - Current Progress
 
-## ✅ ML correction model improvement — 8 new features + feature importance (2026-05-16)
+## ✅ Fix calibration UserWarning spam (2026-05-16)
+
+**Status:** COMPLETED — removed `.values` from `X_fit`/`X_val` in `heating_correction_ml_calibration.py` so training and permutation_importance use DataFrames with named columns, eliminating hundreds of sklearn `UserWarning: X does not have valid feature names` messages per calibration run.
+
+### Changes
+1. **`src/heating_correction_ml_calibration.py`**: Changed `df_fit[feature_cols].values.astype(float)` → `df_fit[feature_cols].astype(float)` (and same for `X_val`). Training format now matches inference format (both use named DataFrames).
+
+**Files changed:** `src/heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
 
 **Status:** COMPLETED — 8 new features added to calibration + inference, feature importance logging, sklearn warning fixed, 1327/1328 tests pass (1 pre-existing failure)
 

@@ -611,9 +611,9 @@ def calibrate_heating_correction_ml(
     df_val = df_train.iloc[-n_val:].copy()
     df_fit = df_train.iloc[:-n_val].copy()
 
-    X_fit = df_fit[feature_cols].values.astype(float)
+    X_fit = df_fit[feature_cols].astype(float)
     y_fit = df_fit["label"].values
-    X_val = df_val[feature_cols].values.astype(float)
+    X_val = df_val[feature_cols].astype(float)
     y_val = df_val["label"].values
 
     # ── 9. Train LightGBM regressor ─────────────────────────────────────
