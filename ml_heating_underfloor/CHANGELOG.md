@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.43] - 2026-05-16
+
+### Fixed
+- **Calibration `UserWarning` spam**: `heating_correction_ml_calibration.py` now passes DataFrames (with named columns) to `LGBMRegressor.fit()` and `permutation_importance()` instead of stripping names via `.values`. This eliminates hundreds of `UserWarning: X does not have valid feature names` messages that appeared during every permutation-importance run, and ensures training format is consistent with inference (`HeatingCorrectionMLModel.predict()` already used a named DataFrame).
+
 ## [0.2.41] - 2026-05-15
 
 ### Fixed
