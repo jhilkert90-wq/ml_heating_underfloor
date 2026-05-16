@@ -202,6 +202,49 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
                 os.environ["PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION"] = original
             importlib.reload(cfg_module)
 
+    def test_skip_only_when_trajectory_steps_above_min_steps(self):
+        """Skip remains active only when TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        config.PV_TRAJ_MIN_STEPS = 2
+        config.TRAJECTORY_STEPS = 4
+        try:
+            result = self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+            config.PV_TRAJ_MIN_STEPS = 2
+            config.TRAJECTORY_STEPS = 4
+        self.assertEqual(result, 35.0)
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_not_called()
+        self.wrapper._calculate_physics_based_correction.assert_not_called()
+
+    def test_min_steps_boundary_reenables_correction_path(self):
+        """At TRAJECTORY_STEPS == PV_TRAJ_MIN_STEPS, correction path must run."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        config.PV_TRAJ_MIN_STEPS = 2
+        config.TRAJECTORY_STEPS = 2
+        mock_traj = {
+            "trajectory": [21.0, 21.1],
+            "times": [0.5, 1.0],
+            "reaches_target_at": None,
+        }
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = mock_traj
+        try:
+            result = self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+            config.PV_TRAJ_MIN_STEPS = 2
+            config.TRAJECTORY_STEPS = 4
+        self.assertEqual(
+            result,
+            self.wrapper._calculate_physics_based_correction.return_value
+        )
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
+        self.wrapper._calculate_physics_based_correction.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

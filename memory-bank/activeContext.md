@@ -1,5 +1,27 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Refine pv_traj_disable_overshoot_correction boundary at min steps — 2026-05-16
+
+#### **What changed**
+- `src/model_wrapper.py`: `_verify_trajectory_and_correct` early-return guard was narrowed. Suppression now requires:
+  - `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION == true`
+  - `PV_TRAJ_FORECAST_MODE_ENABLED == true`
+  - `TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS`
+- At `TRAJECTORY_STEPS == PV_TRAJ_MIN_STEPS`, overshoot/undershoot correction is re-enabled and normal trajectory verification/correction logic executes.
+- `tests/unit/test_overshoot_logic.py`: Added two tests in `TestDisableOvershootCorrectionInForecastMode` for:
+  - skip when `TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS`
+  - correction path execution when `TRAJECTORY_STEPS == PV_TRAJ_MIN_STEPS`
+- Wording updated to match new behavior in:
+  - `src/config.py`
+  - `ml_heating_underfloor/config.yaml`
+  - `ml_heating_underfloor/translations/en.yaml`
+
+#### **Why**
+- Dynamic forecast scaling intentionally extends the planning horizon during available PV. However, when the horizon has already collapsed to the minimum (`PV_TRAJ_MIN_STEPS`), disabling correction becomes counterproductive for comfort control. Re-enabling correction at the floor keeps protection active exactly when forecast lookahead benefit is minimal.
+
+#### **Files**
+`src/model_wrapper.py`, `tests/unit/test_overshoot_logic.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### ✅ Add pv_traj_disable_overshoot_correction switch — 2026-05-16
 
 #### **What changed**
