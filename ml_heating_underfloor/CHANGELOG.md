@@ -1,5 +1,14 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.45] - 2026-05-16
+
+### Added
+- **`pv_traj_disable_overshoot_correction` config switch**: New boolean option (default `false`) in `config.yaml` that, when enabled together with `pv_traj_forecast_mode_enabled: true`, skips the overshoot/undershoot outlet-temperature correction inside `_verify_trajectory_and_correct`. The forecast-driven trajectory scaling already adapts the planning horizon to remaining solar hours; the new switch prevents conflicting adjustments when both mechanisms are active simultaneously.
+
+### Fixed
+- CI docker smoke test now imports `CYCLE_INTERVAL_MINUTES` from `src.config` instead of removed `POLL_INTERVAL`, and validates `EnhancedModelWrapper` (current class name) in the "Core module smoke test" step in `.github/workflows/build.yaml`.
+- Integration smoke test expectation in `tests/integration/test_image_smoke.py` now matches the same valid config import and wrapper class name to prevent false CI failures.
+
 ## [0.2.43] - 2026-05-16
 
 ### Fixed
