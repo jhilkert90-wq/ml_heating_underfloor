@@ -1,6 +1,22 @@
 # Active Context - Current Work & Decision State
 
-### ✅ Fix docker workflow core-module smoke test import — 2026-05-16
+### ✅ Add pv_traj_disable_overshoot_correction switch — 2026-05-16
+
+#### **What changed**
+- `ml_heating_underfloor/config.yaml`: Added `pv_traj_disable_overshoot_correction: false` option (and schema `"bool"`) under the Forecast-Driven Trajectory Scaling section.
+- `ml_heating_underfloor/translations/en.yaml`: Added English name/description for the new option.
+- `config_adapter.py`: Mapped `pv_traj_disable_overshoot_correction` → `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` env var.
+- `src/config.py`: Added `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION: bool` (default `false`).
+- `src/model_wrapper.py`: Added early-return guard in `_verify_trajectory_and_correct` — when both `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` and `PV_TRAJ_FORECAST_MODE_ENABLED` are `true`, the function logs a debug message and returns `outlet_temp` unchanged, skipping all trajectory prediction and correction logic.
+- `tests/unit/test_overshoot_logic.py`: Added `TestDisableOvershootCorrectionInForecastMode` (4 tests, all pass).
+
+#### **Why**
+- When forecast-driven trajectory scaling (`PV_TRAJ_FORECAST_MODE_ENABLED`) is active, the planning horizon is dynamically derived from remaining PV forecast hours. Applying an additional overshoot/undershoot correction on top can create conflicting adjustments (e.g. the horizon says "heat longer" but the correction says "reduce outlet"). The new switch gives operators control to suppress the correction in this scenario.
+
+#### **Files**
+`ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `config_adapter.py`, `src/config.py`, `src/model_wrapper.py`, `tests/unit/test_overshoot_logic.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
 
 #### **What changed**
 - `.github/workflows/build.yaml`: In the `test-image` job "Core module smoke test" step, replaced `from src.config import POLL_INTERVAL` with `from src.config import CYCLE_INTERVAL_MINUTES`, and aligned wrapper import to `EnhancedModelWrapper`.

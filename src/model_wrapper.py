@@ -1628,6 +1628,22 @@ class EnhancedModelWrapper:
                     or [thermal_features.get("pv_power", 0.0)]
                 )
 
+            # Guard: when forecast-driven trajectory scaling is active and the
+            # user has opted to suppress corrections, return the outlet
+            # temperature unchanged.  The dynamic planning horizon already
+            # adapts to remaining solar hours; an additional correction step
+            # can create conflicting adjustments.
+            if (
+                getattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", False)
+                and getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+            ):
+                logging.debug(
+                    "⏭️ Skipping overshoot/undershoot correction: "
+                    "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION=true and "
+                    "PV_TRAJ_FORECAST_MODE_ENABLED=true"
+                )
+                return outlet_temp
+
             fireplace_on = thermal_features.get("fireplace_on", 0.0)
             fireplace_power_kw, fp_decay_kw = self._calculate_fireplace_power_kw(
                 current_indoor=current_indoor,
