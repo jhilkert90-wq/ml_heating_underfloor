@@ -7,25 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **ML Calibration Feature Pruning**: Automatic removal of features with permutation importance ≤ threshold (default 0.0), with retrain and MAE regression guard (≤ 0.5%). Configurable via `heating_ml_feature_pruning_enabled` and `heating_ml_prune_pi_threshold`.
-- **LightGBM Regularisation**: Configurable L1/L2 regularisation (`heating_ml_reg_alpha`, `heating_ml_reg_lambda`) to reduce overfitting. Defaults: α=0.1, λ=1.0.
-- **Optuna Hyper-Parameter Optimisation**: Optional Optuna-based HPO during ML calibration (`heating_ml_optuna_enabled`). Searches learning rate, depth, leaves, min_child_samples, and regularisation over configurable trial count.
-- **Time-Series Cross-Validation**: Optional TimeSeriesSplit-based CV for more robust validation metrics (`heating_ml_cv_enabled`, `heating_ml_cv_n_splits`).
-- **PV Trajectory Rescue Decoupling**: New `pv_traj_rescue_min_hours` config (default 1) decouples the forecast rescue threshold from `pv_traj_min_steps`. Fixes bug where gradual late-afternoon PV decline caused premature trajectory collapse and unwanted overshoot correction.
-- **Holdout-Isolation Regression Test**: Added a dedicated unit test asserting Optuna/CV training fits do not consume temporal holdout rows.
-
-### Fixed
-- **Overshoot Correction Bug**: During PV trajectory rescue, the rescue condition was compared against `min_steps` (default 4), requiring 4 future forecast hours above PV threshold. A gradual PV decline (e.g. 1930W→1440W) with only 1 remaining hour above threshold caused rescue to fail, trajectory to collapse to min_steps, and overshoot correction to fire incorrectly with a −0.98°C blend. Now uses independent `rescue_min_hours` (default 1).
-- **Calibration Holdout Leakage**: Optuna HPO and optional time-series CV now run on the fit split only, keeping the temporal holdout untouched for final validation metrics.
-- **Calibration Edge-Case Robustness**: Optional CV now skips cleanly when the fit split is too short for `TimeSeriesSplit` instead of failing.
-- **PV Heat Weight Bounds Mismatch**: Aligned `pv_heat_weight` lower bound to `0.0001` in thermal config bounds to match tests and add-on schema.
-
-### Changed
-- **Permutation Importance Execution**: Switched permutation importance to single-process execution (`n_jobs=1`) for better stability with mocked/non-picklable estimators in test and constrained runtime environments.
-- **CV Tooltip Clarification**: Updated `heating_ml_cv_enabled` tooltip text in add-on config to match implementation (additional CV diagnostics plus dedicated temporal holdout, not replacement).
-- **Unit Test Compatibility**: ML calibration fake regressors now use sklearn-compatible estimator mixins, removing deprecation-warning noise and future sklearn 1.8 breakage risk.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
