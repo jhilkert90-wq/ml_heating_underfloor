@@ -9,7 +9,7 @@
 - `permutation_importance` called `model.predict()` with numpy slices of `X_val`; since the model had auto-generated feature names (LightGBM assigned them even when trained with numpy in newer versions), sklearn emitted `UserWarning: X does not have valid feature names` ~400+ times per calibration run (40 features × 10 repeats). Training with named DataFrames makes training/inference format consistent and eliminates the warning.
 
 #### **Files**
-`src/heating_correction_ml_calibration.py`
+`src/heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
 
 
