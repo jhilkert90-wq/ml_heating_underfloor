@@ -523,6 +523,11 @@ options:
   # When true (default), a drop below pv_traj_threshold_w is tolerated if at
   # least pv_traj_min_steps forecast hours still exceed the threshold.
   pv_traj_forecast_rescue_enabled: true
+  # When true, disable overshoot/undershoot outlet correction whenever the
+  # forecast-driven trajectory scaling is active. The dynamic horizon already
+  # accounts for available solar hours, so an additional correction step can
+  # cause conflicting adjustments. Default: false (correction remains active).
+  pv_traj_disable_overshoot_correction: false
 
   # === Outlet Smoothing ===
   # EMA smoothing factor (0.0 = max smoothing, 1.0 = no smoothing)
@@ -772,6 +777,7 @@ schema:
   pv_traj_zero_w: "float(0.0,500.0)"
   pv_traj_disable_price_in_forecast_mode: "bool"
   pv_traj_forecast_rescue_enabled: "bool"
+  pv_traj_disable_overshoot_correction: "bool"
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"

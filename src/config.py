@@ -300,6 +300,13 @@ PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE: bool = (
 PV_TRAJ_FORECAST_RESCUE_ENABLED: bool = (
     os.getenv("PV_TRAJ_FORECAST_RESCUE_ENABLED", "true").lower() == "true"
 )
+# When true, skip the overshoot/undershoot outlet-temperature correction
+# whenever PV_TRAJ_FORECAST_MODE_ENABLED is active.  The dynamic planning
+# horizon already accounts for remaining solar hours; an additional correction
+# step can create conflicting adjustments.  Default: false (correction active).
+PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION: bool = (
+    os.getenv("PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", "false").lower() == "true"
+)
 
 # --- Output Sensors ---
 FEATURES_ENTITY_ID: str = os.getenv(

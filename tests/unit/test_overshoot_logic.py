@@ -121,5 +121,87 @@ class TestOvershootLogic(unittest.TestCase):
         # Should return corrected value
         self.assertEqual(result, 35.0, "Should apply correction for immediate overshoot")
 
+
+class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
+    """Tests for PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION guard in _verify_trajectory_and_correct."""
+
+    def setUp(self):
+        self.wrapper = ModelWrapper()
+        self.wrapper.thermal_model = MagicMock()
+        config.CYCLE_INTERVAL_MINUTES = 30
+        config.TRAJECTORY_STEPS = 4
+        self.wrapper._get_forecast_conditions = MagicMock(
+            return_value=(8.6, 0, [], [])
+        )
+        self.wrapper._calculate_physics_based_correction = MagicMock(return_value=32.0)
+
+    def _call(self, outlet_temp=35.0):
+        return self.wrapper._verify_trajectory_and_correct(
+            outlet_temp=outlet_temp,
+            current_indoor=21.0,
+            target_indoor=21.5,
+            outdoor_temp=8.6,
+            thermal_features={"pv_power": 0, "fireplace_on": 0, "tv_on": 0},
+        )
+
+    def test_flag_true_and_forecast_mode_true_skips_correction(self):
+        """When both flags are true, correction is skipped and outlet_temp returned unchanged."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        try:
+            result = self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+        self.assertEqual(result, 35.0)
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_not_called()
+        self.wrapper._calculate_physics_based_correction.assert_not_called()
+
+    def test_flag_true_forecast_mode_false_does_not_skip(self):
+        """When disable flag is true but forecast mode is off, correction still runs."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+        mock_traj = {
+            "trajectory": [22.0, 22.1, 22.2, 22.3],
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = mock_traj
+        try:
+            self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
+
+    def test_flag_false_forecast_mode_true_does_not_skip(self):
+        """When forecast mode is on but disable flag is false, correction still runs."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        mock_traj = {
+            "trajectory": [22.0, 22.1, 22.2, 22.3],
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = mock_traj
+        try:
+            self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
+
+    def test_default_flag_value_is_false(self):
+        """Default value of PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION is False."""
+        import importlib
+        import src.config as cfg_module
+        original = os.environ.pop("PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", None)
+        try:
+            importlib.reload(cfg_module)
+            self.assertFalse(cfg_module.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION)
+        finally:
+            if original is not None:
+                os.environ["PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION"] = original
+            importlib.reload(cfg_module)
+
+
 if __name__ == '__main__':
     unittest.main()

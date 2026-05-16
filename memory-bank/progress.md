@@ -1,5 +1,31 @@
 # ML Heating System - Current Progress
 
+## ✅ Add pv_traj_disable_overshoot_correction switch (2026-05-16)
+
+**Status:** COMPLETED — added new `pv_traj_disable_overshoot_correction` boolean config option that suppresses the overshoot/undershoot correction in `_verify_trajectory_and_correct` when forecast-driven trajectory scaling is active.
+
+### Changes
+1. **`ml_heating_underfloor/config.yaml`**: Added `pv_traj_disable_overshoot_correction: false` option under Forecast-Driven Trajectory Scaling section, plus matching schema entry `"bool"`.
+2. **`ml_heating_underfloor/translations/en.yaml`**: Added English translation entry with name and description.
+3. **`config_adapter.py`**: Mapped `pv_traj_disable_overshoot_correction` → `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` env var.
+4. **`src/config.py`**: Added `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` env var (default `false`).
+5. **`src/model_wrapper.py`**: Added early-return guard in `_verify_trajectory_and_correct` that skips correction when both `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` and `PV_TRAJ_FORECAST_MODE_ENABLED` are true.
+6. **`tests/unit/test_overshoot_logic.py`**: Added `TestDisableOvershootCorrectionInForecastMode` with 4 tests covering all flag combinations and default value.
+7. **Documentation**: Updated `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+**Files changed:** `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `config_adapter.py`, `src/config.py`, `src/model_wrapper.py`, `tests/unit/test_overshoot_logic.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
+
+**Status:** COMPLETED — fixed failing GitHub Actions docker smoke test by replacing removed `src.config` symbol `POLL_INTERVAL` with existing `CYCLE_INTERVAL_MINUTES`, and by validating the correct wrapper class name (`EnhancedModelWrapper`).
+
+### Changes
+1. **`.github/workflows/build.yaml`**: Updated the "Core module smoke test" one-liner import in the `test-image` job from `from src.config import POLL_INTERVAL` to `from src.config import CYCLE_INTERVAL_MINUTES`, and from `ModelWrapper` to `EnhancedModelWrapper`.
+2. **`tests/integration/test_image_smoke.py`**: Updated the same core-module smoke import assertion to keep repository integration tests aligned with the workflow check (`CYCLE_INTERVAL_MINUTES` + `EnhancedModelWrapper`).
+3. **Documentation updates**: Added matching entries to `CHANGELOG.md`, `memory-bank/progress.md`, and `memory-bank/activeContext.md`.
+
+**Files changed:** `.github/workflows/build.yaml`, `tests/integration/test_image_smoke.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Fix calibration UserWarning spam (2026-05-16)
 
 **Status:** COMPLETED — removed `.values` from `X_fit`/`X_val` in `heating_correction_ml_calibration.py` so training and permutation_importance use DataFrames with named columns, eliminating hundreds of sklearn `UserWarning: X does not have valid feature names` messages per calibration run.

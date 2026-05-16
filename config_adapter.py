@@ -558,6 +558,9 @@ def convert_addon_to_env(config):
         'PV_TRAJ_FORECAST_RESCUE_ENABLED': str(
             config.get('pv_traj_forecast_rescue_enabled', True)
         ).lower(),
+        'PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION': str(
+            config.get('pv_traj_disable_overshoot_correction', False)
+        ).lower(),
 
         # --- Outlet Smoothing ---
         'OUTLET_SMOOTHING_ALPHA': str(
