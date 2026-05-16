@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Refined forecast-mode correction suppression: `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` now skips overshoot/undershoot correction only while `PV_TRAJ_FORECAST_MODE_ENABLED=true` **and** `TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS`; at `TRAJECTORY_STEPS == PV_TRAJ_MIN_STEPS` correction is re-enabled.
+
+### Fixed
+- Added boundary-focused regression coverage for forecast-mode correction suppression to verify both `TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS` (skip) and `TRAJECTORY_STEPS == PV_TRAJ_MIN_STEPS` (correction path executes).
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

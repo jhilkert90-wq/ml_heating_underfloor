@@ -659,7 +659,7 @@ configuration:
     description: "When enabled, allows the forecast-driven trajectory mode to 'rescue' the planning horizon if PV production drops unexpectedly mid-day by extending the hold duration. Default: true."
   pv_traj_disable_overshoot_correction:
     name: "Disable Overshoot/Undershoot Correction in Forecast Mode [Advanced]"
-    description: "When enabled, the overshoot and undershoot outlet-temperature correction is skipped whenever forecast-driven trajectory scaling is active. The dynamic horizon already adapts the planning window to available solar hours, so an additional correction step can cause conflicting adjustments. Disable with caution: leaving correction active is the safer default. Default: false."
+    description: "When enabled, the overshoot and undershoot outlet-temperature correction is skipped only while forecast-driven trajectory scaling is active and trajectory_steps is above pv_traj_min_steps. At trajectory_steps == pv_traj_min_steps, correction is re-enabled. Disable with caution: leaving correction active is the safer default. Default: false."
 
   # === Outlet Smoothing ===
   outlet_smoothing_alpha:

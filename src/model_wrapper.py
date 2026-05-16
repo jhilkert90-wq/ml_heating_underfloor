@@ -1628,19 +1628,22 @@ class EnhancedModelWrapper:
                     or [thermal_features.get("pv_power", 0.0)]
                 )
 
-            # Guard: when forecast-driven trajectory scaling is active and the
-            # user has opted to suppress corrections, return the outlet
-            # temperature unchanged.  The dynamic planning horizon already
-            # adapts to remaining solar hours; an additional correction step
-            # can create conflicting adjustments.
+            # Guard: when forecast-driven trajectory scaling is active, the
+            # user has opted to suppress corrections, and the dynamic horizon
+            # is still above the minimum floor, return outlet temperature
+            # unchanged. At the minimum horizon floor, correction is re-enabled
+            # to preserve comfort protection near/after sunset.
             if (
                 getattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", False)
                 and getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+                and int(getattr(config, "TRAJECTORY_STEPS", 4))
+                > int(getattr(config, "PV_TRAJ_MIN_STEPS", 2))
             ):
                 logging.debug(
                     "⏭️ Skipping overshoot/undershoot correction: "
                     "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION=true and "
-                    "PV_TRAJ_FORECAST_MODE_ENABLED=true"
+                    "PV_TRAJ_FORECAST_MODE_ENABLED=true and "
+                    "TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS"
                 )
                 return outlet_temp
 

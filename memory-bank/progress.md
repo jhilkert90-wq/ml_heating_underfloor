@@ -1,5 +1,22 @@
 # ML Heating System - Current Progress
 
+## ✅ Refine forecast-mode correction suppression boundary (2026-05-16)
+
+**Status:** COMPLETED — overshoot/undershoot suppression in forecast mode now applies only while `TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS`; correction is automatically re-enabled at the minimum trajectory floor.
+
+### Changes
+1. **`src/model_wrapper.py`**: Updated `_verify_trajectory_and_correct` early-return guard to require `TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS` in addition to `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` and `PV_TRAJ_FORECAST_MODE_ENABLED`.
+2. **`tests/unit/test_overshoot_logic.py`**: Added two regression tests for the boundary behavior:
+   - skip remains active when steps are above min
+   - correction path executes when steps equal min
+3. **Config/docs wording alignment**:
+   - `src/config.py`
+   - `ml_heating_underfloor/config.yaml`
+   - `ml_heating_underfloor/translations/en.yaml`
+4. **Documentation updates**: Updated `CHANGELOG.md`, `memory-bank/progress.md`, and `memory-bank/activeContext.md`.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_overshoot_logic.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Add pv_traj_disable_overshoot_correction switch (2026-05-16)
 
 **Status:** COMPLETED — added new `pv_traj_disable_overshoot_correction` boolean config option that suppresses the overshoot/undershoot correction in `_verify_trajectory_and_correct` when forecast-driven trajectory scaling is active.
