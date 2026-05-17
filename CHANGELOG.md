@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Streamlit dashboard **Settings** page with grouped expanders, German labels, English tooltips, confirmation flow, and Supervisor API-backed option load/save support.
-- Shared dashboard settings metadata/service helpers plus unit coverage for settings metadata loading and Supervisor API request payloads.
-
-### Changed
-- Added a full `ml_heating_underfloor/translations/de.yaml` file and prefixed English/German add-on option labels so Home Assistant's flat config UI is visually grouped by section.
-- Hardened dashboard settings option handling by filtering unknown keys from Supervisor/local payloads and by making boolean/numeric widget coercion robust against string and out-of-range values.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
