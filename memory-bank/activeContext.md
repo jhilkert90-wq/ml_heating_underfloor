@@ -1,5 +1,38 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Post-Review Hardening: Settings Edge Cases — 2026-05-17
+
+#### **What changed**
+- Reviewed the new dashboard settings stack and fixed edge-case handling:
+  - `dashboard/settings_service.py` now sanitizes option payloads so unknown keys from local/Supervisor sources are ignored.
+  - Save path now posts only known add-on options, while load paths still merge defaults for missing values.
+  - Supervisor base URL is resolved at call time instead of import time.
+- `dashboard/components/settings.py` now robustly handles malformed persisted values:
+  - string-aware boolean coercion (`"true"/"false"/"1"/"0"`),
+  - safe int/float parsing with fallback to defaults,
+  - numeric clamping to schema min/max before widget render.
+- `tests/unit/test_dashboard_settings.py` gained regression tests for unknown-key filtering and boolean coercion.
+
+#### **Why**
+- The first implementation assumed clean typed payloads. In practice, persisted/local config values can be stale, string-typed, or include unknown keys after version changes.
+- These guards prevent runtime widget errors and avoid sending unsupported keys back to Supervisor.
+
+### ✅ Dashboard Settings Page + German Translation Coverage — 2026-05-17
+
+#### **What changed**
+- Added a new dashboard settings view in `dashboard/components/settings.py` and wired it into `dashboard/app.py` sidebar navigation.
+- Added shared dashboard helpers:
+  - `dashboard/config_schema.py` parses add-on defaults, schema types, section groupings, and translation labels directly from the repository config/translation files.
+  - `dashboard/settings_service.py` loads and saves add-on options through the Home Assistant Supervisor API (`/addons/self/options`), with local fallback loading when Supervisor access is unavailable.
+- Added `tests/unit/test_dashboard_settings.py` to verify settings metadata coverage, section mapping, default extraction, and Supervisor API request behavior.
+- Updated translation files:
+  - `ml_heating_underfloor/translations/en.yaml` now includes section prefixes and the missing labels/descriptions for newer options.
+  - New `ml_heating_underfloor/translations/de.yaml` provides German labels for all add-on options while preserving English descriptions for tooltips.
+
+#### **Why**
+- The native Home Assistant add-on options UI is flat, so prefixed labels improve immediate readability there.
+- The new dashboard Settings page provides the missing grouped UX: German labels, English hover help, collapsible sections, and direct option persistence without editing the flat add-on config manually.
+
 ### ✅ Full-Test Follow-Up: Holdout Guard + Bounds Alignment — 2026-05-17
 
 #### **What changed**
