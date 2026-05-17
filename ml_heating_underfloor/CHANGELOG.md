@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.49] - 2026-05-17
+
+### Fixed
+- Fixed Docker image packaging to include `ml_heating_underfloor/config.yaml` and translation files under `/app/ml_heating_underfloor`, preventing dashboard startup `FileNotFoundError` in container runtime.
+
 ## [0.2.48] - 2026-05-17
 
 ### Added
