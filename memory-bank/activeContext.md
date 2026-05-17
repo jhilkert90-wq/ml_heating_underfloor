@@ -1,5 +1,19 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Training Data Export for ML Calibration — 2026-05-17
+
+#### **What changed**
+- Created `src/calibration_data_export.py` with shared `export_training_data()` helper
+- Integrated into `src/heating_correction_ml_calibration.py` and `src/cooling_ml_calibration.py` — both now export `{model_kind}_training_data.csv.gz` after calibration
+- Added 9 dedicated unit tests in `tests/unit/test_calibration_data_export.py`
+
+#### **Why**
+- Offline Optuna HPO / notebook autotuning requires the actual training data (features + labels), which was previously discarded after model training
+- The joblib model file only contains trained weights, not the data needed to retrain with different hyperparameters
+
+#### **Files modified**
+- `src/calibration_data_export.py` (new), `src/heating_correction_ml_calibration.py`, `src/cooling_ml_calibration.py`, `tests/unit/test_calibration_data_export.py` (new)
+
 ### ✅ Fix container dashboard config path packaging — 2026-05-17
 
 #### **What changed**

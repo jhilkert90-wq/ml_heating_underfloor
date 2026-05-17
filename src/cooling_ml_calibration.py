@@ -35,6 +35,16 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Module-level import of shared training-data export helper.
+try:
+    from .calibration_data_export import export_training_data
+except ImportError:
+    try:
+        from calibration_data_export import export_training_data  # type: ignore
+    except ImportError:
+        def export_training_data(*args, **kwargs):  # type: ignore
+            return None
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -485,6 +495,10 @@ def calibrate_cooling_ml(
         "=== COOLING ML CALIBRATION COMPLETE: model → %s | AUC=%.4f threshold=%.4f ===",
         model_path, auc, threshold,
     )
+
+    # ── 13. Export training data for offline HPO / analysis ──────────────
+    export_training_data(df_train, feature_cols, "cooling")
+
     return True
 
 

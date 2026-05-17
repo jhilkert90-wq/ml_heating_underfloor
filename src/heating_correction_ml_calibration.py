@@ -43,6 +43,16 @@ except ImportError:
     except ImportError:
         config = None  # type: ignore
 
+# Module-level import of shared training-data export helper.
+try:
+    from .calibration_data_export import export_training_data
+except ImportError:
+    try:
+        from calibration_data_export import export_training_data  # type: ignore
+    except ImportError:
+        def export_training_data(*args, **kwargs):  # type: ignore
+            return None
+
 # Module-level import of data-fetching helper so tests can patch it.
 # Falls back gracefully to a stub that always returns None when the
 # full src package is not on the path (e.g. standalone usage).
@@ -946,4 +956,11 @@ def calibrate_heating_correction_ml(
         "model → %s | MAE=%.4f R²=%.4f ===",
         model_path, val_mae, val_r2,
     )
+
+    # ── 12. Export training data for offline HPO / analysis ──────────────
+    # Use all columns present in df_train (not just the pruned feature_cols)
+    # so offline notebooks can experiment with different pruning thresholds.
+    all_available_cols = [c for c in df_train.columns if c != "label"]
+    export_training_data(df_train, all_available_cols, "heating")
+
     return True

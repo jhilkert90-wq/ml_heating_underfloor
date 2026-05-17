@@ -1,5 +1,24 @@
 # ML Heating System - Current Progress
 
+## ✅ Training Data Export for ML Calibration (2026-05-17)
+
+**Status:** COMPLETED — added training data export to both heating and cooling calibration pipelines.
+
+### Changes
+1. **`src/calibration_data_export.py`** (new)
+   - Shared `export_training_data()` helper: saves `feature_cols + label` as gzip CSV next to `unified_thermal_state.json`
+   - Atomic write (`.tmp` → `os.replace`), non-blocking (failure = warning, never fails calibration)
+2. **`src/heating_correction_ml_calibration.py`**
+   - Added import + call to `export_training_data(df_train, feature_cols, "heating")` after model/metadata save
+3. **`src/cooling_ml_calibration.py`**
+   - Added import + call to `export_training_data(df_train, feature_cols, "cooling")` after model/metadata save
+4. **`tests/unit/test_calibration_data_export.py`** (new)
+   - 9 unit tests: happy path, missing config, exception handling, column filtering, directory creation, overwrite
+5. **Validation**
+   - 9/9 new tests pass; 1358 total tests pass, 1 skip, no regressions
+
+**Files changed:** `src/calibration_data_export.py`, `src/heating_correction_ml_calibration.py`, `src/cooling_ml_calibration.py`, `tests/unit/test_calibration_data_export.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Fix dashboard config FileNotFoundError in container (2026-05-17)
 
 **Status:** COMPLETED — fixed missing packaged config assets in Docker image so dashboard metadata loading no longer fails at `/app/ml_heating_underfloor/config.yaml`.
