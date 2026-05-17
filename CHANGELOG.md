@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Added a full `ml_heating_underfloor/translations/de.yaml` file and prefixed English/German add-on option labels so Home Assistant's flat config UI is visually grouped by section.
+- Hardened dashboard settings option handling by filtering unknown keys from Supervisor/local payloads and by making boolean/numeric widget coercion robust against string and out-of-range values.
 
 ## [0.2.0] - 2026-02-10
 

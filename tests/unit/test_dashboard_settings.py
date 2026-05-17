@@ -4,7 +4,6 @@ Tests for dashboard settings metadata and Supervisor API helpers.
 
 import os
 import sys
-from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +16,7 @@ sys.path.insert(
 from config_schema import GROUP_DEFINITIONS, load_settings_metadata
 from settings_service import (
     SettingsServiceError,
+    _sanitize_options,
     fetch_addon_options,
     get_default_options,
     update_addon_options,
@@ -103,6 +103,20 @@ class TestSettingsService:
         assert calls["headers"]["Authorization"] == "Bearer test-token"
         assert calls["timeout"] == 10
 
+    def test_fetch_addon_options_ignores_unknown_keys(self, monkeypatch):
+        def fake_get(url, headers=None, timeout=None):
+            return DummyResponse(
+                {"data": {"options": {"debug": True, "unknown_setting": "x"}}}
+            )
+
+        monkeypatch.setenv("SUPERVISOR_TOKEN", "test-token")
+        monkeypatch.setattr("settings_service.requests.get", fake_get)
+
+        options = fetch_addon_options()
+
+        assert options["debug"] is True
+        assert "unknown_setting" not in options
+
     def test_fetch_addon_options_requires_supervisor_token(self, monkeypatch):
         monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
 
@@ -130,3 +144,24 @@ class TestSettingsService:
             "options": {"debug": True, "dashboard_theme": "dark"}
         }
         assert calls["timeout"] == 10
+
+    def test_sanitize_options_drops_unknown_keys(self):
+        sanitized = _sanitize_options(
+            {"debug": True, "dashboard_theme": "dark", "unknown_setting": 123}
+        )
+
+        assert sanitized["debug"] is True
+        assert sanitized["dashboard_theme"] == "dark"
+        assert "unknown_setting" not in sanitized
+
+
+class TestSettingsComponentHelpers:
+    streamlit = pytest.importorskip("streamlit", reason="streamlit not installed")
+
+    def test_coerce_bool_handles_string_values(self):
+        from components.settings import _coerce_bool
+
+        assert _coerce_bool("true") is True
+        assert _coerce_bool("1") is True
+        assert _coerce_bool("false") is False
+        assert _coerce_bool("0") is False

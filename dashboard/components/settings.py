@@ -17,6 +17,24 @@ from settings_service import (
 )
 
 
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off", ""}:
+            return False
+    return bool(value)
+
+
+def _clamp_numeric(value: float | int, min_value: float | int, max_value: float | int) -> float | int:
+    return max(min_value, min(max_value, value))
+
+
 def _load_current_options() -> tuple[dict[str, Any], str]:
     try:
         return fetch_addon_options(), "Supervisor API"
@@ -44,7 +62,7 @@ def _render_field(field: FieldMetadata, value: Any) -> Any:
     if field.widget_type == "bool":
         return st.checkbox(
             field.de_label,
-            value=bool(value),
+            value=_coerce_bool(value if value is not None else field.default),
             help=field.description,
             key=widget_key,
         )
@@ -59,7 +77,12 @@ def _render_field(field: FieldMetadata, value: Any) -> Any:
             key=widget_key,
         )
     if field.widget_type == "int":
-        current = int(value if value is not None else field.default)
+        raw_value = value if value is not None else field.default
+        try:
+            current = int(raw_value)
+        except (TypeError, ValueError):
+            current = int(field.default)
+        current = int(_clamp_numeric(current, int(field.min_value), int(field.max_value)))
         return st.number_input(
             field.de_label,
             min_value=int(field.min_value),
@@ -70,7 +93,14 @@ def _render_field(field: FieldMetadata, value: Any) -> Any:
             key=widget_key,
         )
     if field.widget_type == "float":
-        current = float(value if value is not None else field.default)
+        raw_value = value if value is not None else field.default
+        try:
+            current = float(raw_value)
+        except (TypeError, ValueError):
+            current = float(field.default)
+        current = float(
+            _clamp_numeric(current, float(field.min_value), float(field.max_value))
+        )
         return st.number_input(
             field.de_label,
             min_value=float(field.min_value),

@@ -1,5 +1,26 @@
 # ML Heating System - Current Progress
 
+## ✅ Post-Review Hardening: Settings Edge Cases (2026-05-17)
+
+**Status:** COMPLETED — reviewed the newly added dashboard settings functionality, fixed edge-case mismatches, and revalidated with targeted and full test runs.
+
+### Changes
+1. **`dashboard/settings_service.py`**
+   - Added option sanitization so unknown keys from Supervisor/local payloads are ignored.
+   - Kept default-merging behavior for load paths while ensuring save payloads only include known option keys.
+   - Switched Supervisor base URL resolution to runtime (`_get_supervisor_base_url`) for environment consistency.
+2. **`dashboard/components/settings.py`**
+   - Added robust bool coercion for string-like values (`"true"`, `"false"`, `"1"`, `"0"`, etc.).
+   - Added safe numeric parsing + clamp-to-schema bounds before rendering int/float inputs to avoid widget failures with malformed persisted values.
+3. **`tests/unit/test_dashboard_settings.py`**
+   - Added tests for unknown-key filtering and bool coercion helpers.
+4. **Validation**
+   - `python -m pytest tests/unit/test_dashboard_settings.py -q --tb=short` → pass
+   - `python -m pytest tests/unit/test_dashboard_settings.py tests/unit/test_dashboard_components.py tests/unit/test_dashboard_data_service.py -q --tb=short` → pass
+   - `python -m pytest tests/ -q --tb=short` → pass
+
+**Files changed:** `dashboard/settings_service.py`, `dashboard/components/settings.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Dashboard Settings Page + German Translation Coverage (2026-05-17)
 
 **Status:** COMPLETED — added a grouped Streamlit settings UI backed by the Supervisor API and introduced prefixed English/German add-on translations for the Home Assistant configuration screen.

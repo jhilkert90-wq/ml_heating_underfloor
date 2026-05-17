@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Post-Review Hardening: Settings Edge Cases — 2026-05-17
+
+#### **What changed**
+- Reviewed the new dashboard settings stack and fixed edge-case handling:
+  - `dashboard/settings_service.py` now sanitizes option payloads so unknown keys from local/Supervisor sources are ignored.
+  - Save path now posts only known add-on options, while load paths still merge defaults for missing values.
+  - Supervisor base URL is resolved at call time instead of import time.
+- `dashboard/components/settings.py` now robustly handles malformed persisted values:
+  - string-aware boolean coercion (`"true"/"false"/"1"/"0"`),
+  - safe int/float parsing with fallback to defaults,
+  - numeric clamping to schema min/max before widget render.
+- `tests/unit/test_dashboard_settings.py` gained regression tests for unknown-key filtering and boolean coercion.
+
+#### **Why**
+- The first implementation assumed clean typed payloads. In practice, persisted/local config values can be stale, string-typed, or include unknown keys after version changes.
+- These guards prevent runtime widget errors and avoid sending unsupported keys back to Supervisor.
+
 ### ✅ Dashboard Settings Page + German Translation Coverage — 2026-05-17
 
 #### **What changed**
