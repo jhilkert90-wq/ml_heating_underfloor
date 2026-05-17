@@ -1,5 +1,24 @@
 # ML Heating System - Current Progress
 
+## ✅ Dashboard Settings Page + German Translation Coverage (2026-05-17)
+
+**Status:** COMPLETED — added a grouped Streamlit settings UI backed by the Supervisor API and introduced prefixed English/German add-on translations for the Home Assistant configuration screen.
+
+### Changes
+1. **Dashboard settings UI**:
+   - Added `dashboard/components/settings.py` with grouped expanders, German labels, English tooltips, review-before-save confirmation, and Supervisor API persistence.
+   - Updated `dashboard/app.py` to expose the new **Settings** page in the sidebar navigation.
+2. **Shared settings helpers**:
+   - Added `dashboard/config_schema.py` to load config defaults, schema metadata, section grouping, and translation labels from add-on files.
+   - Added `dashboard/settings_service.py` to fetch/save add-on options via `/addons/self/options`, with local fallback loading for non-Supervisor contexts.
+3. **Translations**:
+   - Added `ml_heating_underfloor/translations/de.yaml` covering all add-on options with German labels and English descriptions.
+   - Updated `ml_heating_underfloor/translations/en.yaml` to add visual section prefixes and fill the previously missing entries for recent config options.
+4. **Tests**:
+   - Added `tests/unit/test_dashboard_settings.py` for settings metadata coverage, group mapping, defaults, and Supervisor API request behavior.
+
+**Files changed:** `dashboard/app.py`, `dashboard/components/settings.py`, `dashboard/config_schema.py`, `dashboard/settings_service.py`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Full Test Pass + Optuna/CV Holdout Regression Guard (2026-05-17)
 
 **Status:** COMPLETED — implemented dedicated holdout-isolation regression test, fixed a cross-module bounds mismatch discovered during full-suite run, and verified unit-suite health.
