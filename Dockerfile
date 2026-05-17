@@ -69,6 +69,7 @@ RUN pip3 install --no-cache-dir --upgrade pip \
 COPY src/ /app/src/
 COPY notebooks/ /app/notebooks/
 COPY dashboard/ /app/dashboard/
+COPY ml_heating_underfloor/ /app/ml_heating_underfloor/
 
 # Copy configuration adapter and utilities
 COPY config_adapter.py /app/

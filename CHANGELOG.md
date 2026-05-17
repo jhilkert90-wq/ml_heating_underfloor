@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed Docker image packaging to include `ml_heating_underfloor/config.yaml` and translation files under `/app/ml_heating_underfloor`, preventing dashboard startup `FileNotFoundError` in container runtime.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
