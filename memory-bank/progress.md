@@ -1,5 +1,20 @@
 # ML Heating System - Current Progress
 
+## ✅ Fix dashboard config FileNotFoundError in container (2026-05-17)
+
+**Status:** COMPLETED — fixed missing packaged config assets in Docker image so dashboard metadata loading no longer fails at `/app/ml_heating_underfloor/config.yaml`.
+
+### Changes
+1. **`Dockerfile`**
+   - Added `COPY ml_heating_underfloor/ /app/ml_heating_underfloor/` so `config.yaml` and translations are available at runtime where dashboard config parsing expects them.
+2. **`tests/unit/test_dockerfile_contents.py`** (new)
+   - Added regression test asserting Dockerfile keeps the config-bundle copy directive.
+3. **Validation**
+   - `python -m pytest tests/unit/test_dockerfile_contents.py tests/unit/test_dashboard_settings.py -q --tb=short` → pass
+   - `python -m pytest tests/ -q --tb=short` → pass
+
+**Files changed:** `Dockerfile`, `tests/unit/test_dockerfile_contents.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Post-Review Hardening: Settings Edge Cases (2026-05-17)
 
 **Status:** COMPLETED — reviewed the newly added dashboard settings functionality, fixed edge-case mismatches, and revalidated with targeted and full test runs.

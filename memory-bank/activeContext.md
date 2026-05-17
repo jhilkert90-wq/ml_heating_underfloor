@@ -1,5 +1,15 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Fix container dashboard config path packaging — 2026-05-17
+
+#### **What changed**
+- Updated `Dockerfile` to copy `ml_heating_underfloor/` into `/app/ml_heating_underfloor/` in the runtime image.
+- Added `tests/unit/test_dockerfile_contents.py` to enforce the Dockerfile copy directive in CI/unit validation.
+
+#### **Why**
+- Dashboard settings metadata loader reads `/app/ml_heating_underfloor/config.yaml` and translation files inside the container.
+- The image previously omitted that folder, causing `FileNotFoundError: [Errno 2] No such file or directory: '/app/ml_heating_underfloor/config.yaml'`.
+
 ### ✅ Post-Review Hardening: Settings Edge Cases — 2026-05-17
 
 #### **What changed**
