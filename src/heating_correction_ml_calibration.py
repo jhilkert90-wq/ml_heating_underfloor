@@ -18,7 +18,7 @@ Pipeline
     future indoor error?
         label[t] = -(T_indoor[t + N_steps] - T_target[t]) / S_H
     where S_H = (η/(η+U)) × (1 − exp(−H/τ_room)) is computed from the
-    persisted ``baseline_parameters``.
+    unified thermal state (channel-aware when heat-source channels are enabled).
 6.  Train LightGBM regressor (objective = "regression_l1" / MAE).
 7.  Save model (joblib) + metadata JSON.
 """
@@ -87,24 +87,90 @@ def _compute_s_h(eta: float, u_loss: float, tau_room: float, h: float) -> float:
 
 
 def _read_baseline_thermal_params(config) -> tuple[float, float, float]:
-    """Read η, U, τ from persisted baseline_parameters or config defaults.
+    """Read η, U, τ from unified thermal state with channel-aware precedence.
 
     Returns (outlet_effectiveness, heat_loss_coefficient, thermal_time_constant).
+
+    Precedence:
+    1) Active heat-pump channel parameters (when channels are enabled)
+    2) Baseline + learning adjustments (computed parameters)
+    3) Config defaults
     """
     try:
         from src.unified_thermal_state import get_thermal_state_manager
         state_manager = get_thermal_state_manager()
-        params = getattr(state_manager, "baseline_parameters", {}) or {}
-        eta = float(params.get("outlet_effectiveness")
-                    or getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
-        u = float(params.get("heat_loss_coefficient")
-                  or getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
-        tau = float(params.get("thermal_time_constant")
-                    or getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+
+        eta_default = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
+        u_default = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+        tau_default = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+
+        def _to_float_or(value, fallback: float) -> float:
+            try:
+                if value is None:
+                    return fallback
+                return float(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        get_computed = getattr(state_manager, "get_computed_parameters", None)
+        computed = get_computed() if callable(get_computed) else {}
+        eta_computed = _to_float_or(computed.get("outlet_effectiveness"), eta_default)
+        u_computed = _to_float_or(computed.get("heat_loss_coefficient"), u_default)
+        tau_computed = _to_float_or(computed.get("thermal_time_constant"), tau_default)
+
+        # 1) If channels are enabled and heat_pump channel has parameters,
+        # use those first because they represent the actively learned source.
+        channels_enabled = bool(
+            getattr(config, "ENABLE_HEAT_SOURCE_CHANNELS", False)
+        )
+        if channels_enabled:
+            get_ch_state = getattr(state_manager, "get_heat_source_channel_state", None)
+            channels = get_ch_state() if callable(get_ch_state) else {}
+            hp_state = (channels or {}).get("heat_pump", {})
+            hp_params = hp_state.get("parameters", {})
+            hp_history = hp_state.get("history", [])
+            hp_history_count = int(hp_state.get("history_count", len(hp_history) or 0))
+
+            # Treat channel as active only when there is evidence it has participated.
+            hp_active = hp_history_count > 0 or bool(hp_history)
+            if hp_active and hp_params:
+                eta = _to_float_or(hp_params.get("outlet_effectiveness"), eta_computed)
+                u = _to_float_or(hp_params.get("heat_loss_coefficient"), u_computed)
+                tau = _to_float_or(hp_params.get("thermal_time_constant"), tau_computed)
+                logger.info(
+                    "S_H params source: heat_source_channels.heat_pump.parameters"
+                )
+                return eta, u, tau
+
+        # 2) Otherwise use baseline + adjustment deltas from unified state.
+        if computed:
+            eta = eta_computed
+            u = u_computed
+            tau = tau_computed
+            logger.info(
+                "S_H params source: unified_state baseline + parameter_adjustments"
+            )
+            return eta, u, tau
+
+        # Legacy/state-shape fallback if get_computed_parameters is unavailable.
+        state = getattr(state_manager, "state", {}) or {}
+        baseline = state.get("baseline_parameters", {}) or {}
+        learning_state = state.get("learning_state", {}) or {}
+        adjustments = learning_state.get("parameter_adjustments", {}) or {}
+        eta = float(baseline.get("outlet_effectiveness", eta_default)) + float(
+            adjustments.get("outlet_effectiveness_delta", 0.0)
+        )
+        u = float(baseline.get("heat_loss_coefficient", u_default)) + float(
+            adjustments.get("heat_loss_coefficient_delta", 0.0)
+        )
+        tau = float(baseline.get("thermal_time_constant", tau_default)) + float(
+            adjustments.get("thermal_time_constant_delta", 0.0)
+        )
+        logger.info("S_H params source: unified_state legacy state dict")
         return eta, u, tau
     except Exception:
         logger.warning(
-            "Could not read baseline_parameters; using config defaults for S_H"
+            "Could not read unified thermal state; using config defaults for S_H"
         )
         eta = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
         u = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
@@ -681,24 +747,28 @@ def calibrate_heating_correction_ml(
                     "verbose": -1,
                 }
                 # Use fit split only to avoid leaking holdout-period data into HPO.
-                X_all = df_fit[feature_cols].astype(float).values
-                y_all = df_fit["label"].values
+                X_all = df_fit[feature_cols].astype(float)
+                y_all = df_fit["label"].astype(float)
                 max_splits = max(2, min(3, len(X_all) - 1))
                 if len(X_all) < 3:
                     return float("inf")
                 tscv = TimeSeriesSplit(n_splits=max_splits)
                 maes = []
                 for tr_idx, va_idx in tscv.split(X_all):
+                    X_tr = X_all.iloc[tr_idx]
+                    y_tr = y_all.iloc[tr_idx].values
+                    X_va = X_all.iloc[va_idx]
+                    y_va = y_all.iloc[va_idx].values
                     m = lgb.LGBMRegressor(**params)
                     m.fit(
-                        X_all[tr_idx], y_all[tr_idx],
-                        eval_set=[(X_all[va_idx], y_all[va_idx])],
+                        X_tr, y_tr,
+                        eval_set=[(X_va, y_va)],
                         callbacks=[
                             lgb.early_stopping(20, verbose=False),
                         ],
                     )
-                    preds = m.predict(X_all[va_idx])
-                    maes.append(float(np.mean(np.abs(preds - y_all[va_idx]))))
+                    preds = m.predict(X_va)
+                    maes.append(float(np.mean(np.abs(preds - y_va))))
                 return float(np.mean(maes))
 
             study = optuna.create_study(direction="minimize")
@@ -742,8 +812,8 @@ def calibrate_heating_correction_ml(
             from sklearn.model_selection import TimeSeriesSplit  # type: ignore
             n_splits = int(getattr(config, "HEATING_ML_CV_N_SPLITS", 3))
             # Compute CV diagnostics on fit split only; keep holdout untouched.
-            X_all = df_fit[feature_cols].astype(float).values
-            y_all = df_fit["label"].values
+            X_all = df_fit[feature_cols].astype(float)
+            y_all = df_fit["label"].astype(float)
             n_splits = min(n_splits, len(X_all) - 1)
             if n_splits < 2:
                 logger.warning(
@@ -754,17 +824,21 @@ def calibrate_heating_correction_ml(
                 tscv = TimeSeriesSplit(n_splits=n_splits)
                 cv_maes, cv_r2s = [], []
                 for tr_idx, va_idx in tscv.split(X_all):
+                    X_tr = X_all.iloc[tr_idx]
+                    y_tr = y_all.iloc[tr_idx].values
+                    X_va = X_all.iloc[va_idx]
+                    y_va = y_all.iloc[va_idx].values
                     m = lgb.LGBMRegressor(**lgb_params)
                     m.fit(
-                        X_all[tr_idx], y_all[tr_idx],
-                        eval_set=[(X_all[va_idx], y_all[va_idx])],
+                        X_tr, y_tr,
+                        eval_set=[(X_va, y_va)],
                         callbacks=[lgb.early_stopping(20, verbose=False)],
                     )
-                    preds = m.predict(X_all[va_idx])
-                    fold_mae = float(np.mean(np.abs(preds - y_all[va_idx])))
-                    fold_ss_res = float(np.sum((y_all[va_idx] - preds) ** 2))
+                    preds = m.predict(X_va)
+                    fold_mae = float(np.mean(np.abs(preds - y_va)))
+                    fold_ss_res = float(np.sum((y_va - preds) ** 2))
                     fold_ss_tot = float(
-                        np.sum((y_all[va_idx] - float(np.mean(y_all[va_idx]))) ** 2)
+                        np.sum((y_va - float(np.mean(y_va))) ** 2)
                     )
                     fold_r2 = (
                         1.0 - fold_ss_res / fold_ss_tot

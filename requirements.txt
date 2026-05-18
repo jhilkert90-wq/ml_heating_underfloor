@@ -13,6 +13,7 @@ scipy>=1.11.0
 # Machine Learning
 scikit-learn>=1.0.0
 lightgbm
+optuna>=4.0.0
 joblib
 
 # Database and API Communication

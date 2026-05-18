@@ -1,5 +1,50 @@
 # ML Heating System - Current Progress
 
+## ✅ Heating ML Calibration Runtime Fixes (S_H Source + Optuna + Warning Cleanup) (2026-05-18)
+
+**Status:** COMPLETED — fixed S_H parameter sourcing to use unified thermal state correctly, removed sklearn feature-name warnings in CV/HPO, and enabled Optuna in addon runtime dependencies.
+
+### Changes
+1. **`src/heating_correction_ml_calibration.py`**
+   - Reworked `_read_baseline_thermal_params()` to be channel-aware:
+   - If heat-source channels are enabled and `heat_pump` channel shows activity history, use channel params for `eta`, `u`, `tau`.
+     - Otherwise use unified-state computed parameters (`baseline_parameters + parameter_adjustments`).
+     - Fall back to config defaults only when unified state access fails.
+   - Updated Optuna objective and optional time-series CV loops to use DataFrame `.iloc` slicing instead of unnamed ndarray slices to keep feature names and avoid sklearn warnings.
+2. **`requirements.txt`**
+   - Added `optuna>=4.0.0` so Home Assistant addon image includes Optuna without manual pip install.
+3. **`tests/unit/test_heating_correction_ml_calibration.py`**
+   - Added regression tests validating S_H source precedence:
+     - heat-pump channel parameters preferred when channels are enabled
+     - computed baseline+adjustments used when channel parameters are unavailable
+
+### Validation
+- `python -m pytest tests/unit/test_heating_correction_ml_calibration.py -q --tb=short` → **27 passed**
+
+**Files changed:** `src/heating_correction_ml_calibration.py`, `requirements.txt`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+## ✅ Autotuning Notebook — 3-Phase HPO Pipeline (2026-05-17)
+
+**Status:** COMPLETED — created and validated `notebooks/analysis/06_heating_autotuning.ipynb`.
+
+### Results
+- **MAE:** 0.1466 → 0.0906 (−38.2%)
+- **R²:** 0.8611 → 0.9370 (+8.8%)
+- **Features:** 40 → 17 (permutation importance pruning)
+- **Horizon:** 4h → 2h (horizon search)
+
+### Pipeline
+1. Phase 1: Label horizon search (1–6h) → best=2h
+2. Phase 2: Optuna HPO (100 trials, LightGBM, expanding-window 5-fold CV) → best trial #63
+3. Phase 3: Feature selection (permutation importance + 20-trial threshold search) → 17/41 features kept
+4. Final holdout evaluation + model/metadata save + config.yaml snippet
+
+### Files changed
+- `notebooks/analysis/06_heating_autotuning.ipynb` (new, 19 cells)
+- `Logs_and_models/heating_correction_ml_model_tuned.joblib` (new)
+- `Logs_and_models/heating_correction_ml_metadata_tuned.json` (new)
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Training Data Export for ML Calibration (2026-05-17)
 
 **Status:** COMPLETED — added training data export to both heating and cooling calibration pipelines.

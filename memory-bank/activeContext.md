@@ -1,5 +1,37 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Heating ML calibration runtime alignment (S_H source + Optuna readiness) — 2026-05-18
+
+#### **What changed**
+- Fixed `src/heating_correction_ml_calibration.py` S_H source logic:
+  - now reads `learning_state.heat_source_channels.heat_pump.parameters` only when heat-source channels are enabled and the heat-pump channel has activity history
+  - otherwise uses unified-state computed parameters (`baseline_parameters + parameter_adjustments`)
+  - only falls back to config defaults if unified state cannot be read
+- Removed sklearn warning source (`X does not have valid feature names`) by preserving DataFrame feature names in Optuna CV and time-series CV folds (`.iloc` slicing instead of unnamed ndarray slices)
+- Added `optuna>=4.0.0` to `requirements.txt` so add-on runtime has Optuna installed when HPO is enabled
+- Added unit tests for S_H source precedence and inactive-channel fallback in `tests/unit/test_heating_correction_ml_calibration.py`
+
+#### **Why**
+- HA logs showed S_H calibration path using config-derived values instead of actual unified thermal state values
+- HA logs also showed repeated sklearn feature-name warnings during calibration diagnostics
+- HA add-on calibration emitted `optuna not installed` despite Optuna-enabled workflow
+
+#### **Files modified**
+- `src/heating_correction_ml_calibration.py`, `requirements.txt`, `tests/unit/test_heating_correction_ml_calibration.py`
+
+### ✅ Autotuning Notebook — 3-Phase HPO Pipeline — 2026-05-17
+
+#### **What changed**
+- Created `notebooks/analysis/06_heating_autotuning.ipynb`: 3-phase Optuna HPO (horizon search → hyperparameter optimization → feature selection)
+- Generated tuned model (`heating_correction_ml_model_tuned.joblib`) and metadata, plus config.yaml snippet
+- Results: MAE 0.1466→0.0906 (−38%), R² 0.8611→0.9370, features 40→17, horizon 4h→2h
+
+#### **Why**
+- User requested autotuning of training parameters from exported training data to improve R² and lower MAE
+
+#### **Files modified**
+- `notebooks/analysis/06_heating_autotuning.ipynb` (new), `Logs_and_models/heating_correction_ml_model_tuned.joblib` (new), `Logs_and_models/heating_correction_ml_metadata_tuned.json` (new)
+
 ### ✅ Training Data Export for ML Calibration — 2026-05-17
 
 #### **What changed**
