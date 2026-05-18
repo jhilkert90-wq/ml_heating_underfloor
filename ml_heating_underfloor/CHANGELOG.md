@@ -1,5 +1,12 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.51] - 2026-05-18
+
+### Added
+- **Training Data Export**: Both heating and cooling ML calibration pipelines now export the full training DataFrame as compressed CSV (`heating_training_data.csv.gz` / `cooling_training_data.csv.gz`) next to `unified_thermal_state.json` after each calibration run, enabling offline Optuna HPO and notebook-based autotuning
+- Shared `src/calibration_data_export.py` module with atomic-write export helper
+- 9 unit tests for `export_training_data()` covering happy path, missing config, exception handling, column filtering, directory creation, and file overwrite
+
 ## [0.2.50] - 2026-05-17
 
 ### Added
