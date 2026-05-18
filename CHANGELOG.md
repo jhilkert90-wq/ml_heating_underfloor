@@ -11,18 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Training Data Export**: Both heating and cooling ML calibration pipelines now export the full training DataFrame as compressed CSV (`heating_training_data.csv.gz` / `cooling_training_data.csv.gz`) next to `unified_thermal_state.json` after each calibration run, enabling offline Optuna HPO and notebook-based autotuning
 - Shared `src/calibration_data_export.py` module with atomic-write export helper
 - 9 unit tests for `export_training_data()` covering happy path, missing config, exception handling, column filtering, directory creation, and file overwrite
-- **Autotuning Notebook** (`notebooks/analysis/06_heating_autotuning.ipynb`): 3-phase Optuna HPO pipeline (label horizon → LightGBM hyperparams → feature selection) with synthetic `open_window` feature, expanding-window CV, and automated config.yaml snippet generation. Achieved MAE 0.1466→0.0906 (−38%), R² 0.8611→0.9370 (+9%), features 40→17, horizon 4h→2h
-
-### Changed
-- Added `optuna>=4.0.0` to runtime dependencies (`requirements.txt`) so Home Assistant add-on calibration can run HPO when `heating_ml_optuna_enabled=true`
-
-### Fixed
-- **S_H parameter source bug** in heating ML calibration: S_H estimation now reads the unified thermal state correctly instead of unintentionally falling back to HA config defaults
-	- uses `learning_state.heat_source_channels.heat_pump.parameters` when heat-source channels are enabled and channel parameters are available
-	- uses channel parameters only when the heat-pump channel has activity history; otherwise falls back to baseline + adjustments
-	- otherwise uses `baseline_parameters + parameter_adjustments` (computed parameters)
-- **Feature-name warning spam** (`X does not have valid feature names`) in heating ML calibration CV/HPO paths by keeping pandas DataFrame slices (with column names) through fold training and prediction
-- Added unit regression coverage for unified-state S_H parameter source precedence in `tests/unit/test_heating_correction_ml_calibration.py`
 
 ## [0.2.0] - 2026-02-10
 
