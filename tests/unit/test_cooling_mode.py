@@ -617,7 +617,7 @@ class TestCoolingInletGuard:
         )
 
     @patch("src.model_wrapper._is_heat_pump_active", return_value=False)
-    def test_running_gate_enters_recovery_when_hp_is_idle_and_gate_closed(
+    def test_enters_recovery_when_hp_idle_and_gate_closed(
         self, _mock_hp_active, wrapper
     ):
         wrapper.set_climate_mode("cooling")
@@ -641,7 +641,7 @@ class TestCoolingInletGuard:
         assert wrapper._cooling_cycle_state == "recovery"
 
     @patch("src.model_wrapper._is_heat_pump_active", return_value=True)
-    def test_running_gate_keeps_required_outlet_when_hp_is_running(
+    def test_keeps_required_outlet_when_hp_running(
         self, _mock_hp_active, wrapper
     ):
         wrapper.set_climate_mode("cooling")
