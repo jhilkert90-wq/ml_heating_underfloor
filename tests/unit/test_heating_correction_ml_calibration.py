@@ -1097,7 +1097,12 @@ def _run_calibration_capture_X(df, model_path="/tmp/test_slab.joblib"):
     captured_X = {}
 
     class _FitCaptured(RuntimeError):
-        """Raised to stop calibration once fit input has been captured."""
+        """Internal sentinel used to stop calibration immediately after fit capture.
+
+        This is intentionally raised from the mocked model.fit() so this helper
+        can assert feature-column wiring at the fit boundary without depending
+        on later calibration stages.
+        """
 
     with patch(
         "src.heating_correction_ml_calibration"
@@ -1211,4 +1216,3 @@ class TestSlabThermalStateFeatures:
         assert "is_equilibrium" in captured_X["X"].columns
         # Constant RLT → all rows in equilibrium (after NaN from diff are dropped)
         assert (captured_X["X"]["is_equilibrium"] == 1.0).all()
-

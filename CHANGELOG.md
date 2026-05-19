@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `heating_correction_ml_model.py`: `_extract_heating_feature()` now handles `d_inlet_temp_60min` and `is_equilibrium` — previously both fell through to the catch-all `return 0.0` path, silently zeroing both features at inference regardless of actual slab state.
 - `physics_features.py`: `d_inlet_temp_60min` now derives lag steps from `HISTORY_STEP_MINUTES` (with `CYCLE_INTERVAL_MINUTES` fallback) so the feature consistently represents a true 60-minute delta even when cycle cadence changes.
 - `physics_features.py`: inlet-history fallback series from Influx (`[30.0, ...]`) are now treated as unavailable history, forcing a neutral `d_inlet_temp_60min=0.0` to avoid artificial slab-trend signals and false non-equilibrium states.
+- `influx_service.py`: added shared `INLET_HISTORY_FALLBACK_DEFAULT` constant and reused it in slab-trend detection to prevent drift between fallback source and consumer logic.
 - `tests/unit/test_heating_correction_ml_calibration.py`: `_run_calibration_capture_X` now fails if `model.fit()` is not reached and no longer swallows all exceptions, preventing false-positive feature-wiring tests.
 - Cooling control no longer issues script-driven shutdown by forcing inlet target while the heat pump is already running; shutdown is now left to device-side behavior.
 

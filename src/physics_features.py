@@ -25,12 +25,12 @@ import pandas as pd
 try:
     from . import config
     from .ha_client import HAClient
-    from .influx_service import InfluxService
+    from .influx_service import InfluxService, INLET_HISTORY_FALLBACK_DEFAULT
     from .sensor_buffer import SensorBuffer
 except ImportError:
     import config  # type: ignore
     from ha_client import HAClient  # type: ignore
-    from influx_service import InfluxService  # type: ignore
+    from influx_service import InfluxService, INLET_HISTORY_FALLBACK_DEFAULT  # type: ignore
     from sensor_buffer import SensorBuffer  # type: ignore
 
 
@@ -428,7 +428,7 @@ def build_physics_features(
     # positive → slab absorbing heat; near zero → equilibrium; negative → cool-down.
     # If inlet history falls back to all-default values (e.g. query failure),
     # treat history as unavailable and force neutral trend.
-    inlet_history_default = 30.0
+    inlet_history_default = INLET_HISTORY_FALLBACK_DEFAULT
     has_only_default_inlet_history = (
         len(inlet_lag_history) > 0
         and all(

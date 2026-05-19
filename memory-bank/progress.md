@@ -7,17 +7,19 @@
 ### Changes
 1. **`src/physics_features.py`**
    - Replaced hard-coded 10-minute inlet lag logic with cadence-aware computation using `HISTORY_STEP_MINUTES` (fallback `CYCLE_INTERVAL_MINUTES`) and derived `steps_per_hour`.
-   - Added guard to detect all-default fallback inlet history (`30.0` padded series) and force neutral slab trend (`d_inlet_temp_60min = 0.0`), preventing artificial non-equilibrium signals.
-2. **`tests/unit/test_physics_features.py`**
+   - Added guard to detect all-default fallback inlet history and force neutral slab trend (`d_inlet_temp_60min = 0.0`), preventing artificial non-equilibrium signals.
+2. **`src/influx_service.py`**
+   - Added `INLET_HISTORY_FALLBACK_DEFAULT` constant and reused it in `fetch_inlet_history()`, so slab-state fallback detection shares one source of truth.
+3. **`tests/unit/test_physics_features.py`**
    - Added regression test for dynamic 60-minute lag indexing when history cadence changes.
    - Added regression test verifying default-filled inlet history yields neutral slab trend and equilibrium.
-3. **`tests/unit/test_heating_correction_ml_calibration.py`**
+4. **`tests/unit/test_heating_correction_ml_calibration.py`**
    - Hardened `_run_calibration_capture_X` to stop on captured `fit()`, explicitly fail if `fit()` is never called, and avoid blanket exception suppression.
 
 ### Validation
 - `python -m pytest tests/unit/test_physics_features.py tests/unit/test_heating_correction_ml_calibration.py -q --tb=short` → **42 passed**
 
-**Files changed:** `src/physics_features.py`, `tests/unit/test_physics_features.py`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+**Files changed:** `src/physics_features.py`, `src/influx_service.py`, `tests/unit/test_physics_features.py`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
 ## ✅ Fix inference dispatch for d_inlet_temp_60min / is_equilibrium (2026-05-19)
 
