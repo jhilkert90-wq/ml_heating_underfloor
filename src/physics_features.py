@@ -195,6 +195,8 @@ def build_physics_features(
     outlet_history = influx_service.fetch_outlet_history(extended_steps)
     indoor_history = influx_service.fetch_indoor_history(extended_steps)
     pv_history = influx_service.fetch_pv_history(extended_steps)
+    # Need 7 steps for 60-min inlet lag (6 cycles × 10 min + 1 for indexing)
+    inlet_lag_history = influx_service.fetch_inlet_history(7)
     
     if len(indoor_history) < 6 or len(outlet_history) < 3:
         logging.error(
@@ -410,6 +412,14 @@ def build_physics_features(
     thermal_power_kw = thermo_metrics["thermal_power_kw"]
     cop_realtime = thermo_metrics["cop_realtime"]
 
+    # Thermal loading trend of the floor slab over 60 min (6 cycles × 10 min):
+    # positive → slab absorbing heat; near zero → equilibrium; negative → cool-down.
+    # inlet_lag_history is padded with inlet_temp_f as default, so d_inlet_temp_60min
+    # evaluates to 0.0 automatically when history is not yet available.
+    d_inlet_temp_60min = inlet_temp_f - float(inlet_lag_history[-6])
+    # Binary equilibrium flag: |ΔT_rl over 60 min| < 0.3 K → thermal steady state
+    is_equilibrium = 1.0 if abs(d_inlet_temp_60min) < 0.3 else 0.0
+
     # Get calibrated temperature forecasts using delta correction (support up to _n_fc_full hours)
     try:
         # Check if delta calibration is enabled and available
@@ -580,5 +590,10 @@ def build_physics_features(
         'wind_speed': wind_speed,
         'is_weekend': 1.0 if datetime.now().weekday() >= 5 else 0.0,
         'indoor_margin_rate': 0.0,  # computed by calibration from history; 0.0 at inference
+        # === SLAB THERMAL STATE FEATURES ===
+        # Change in return temp over 60 min: thermal loading trend of the floor slab
+        'd_inlet_temp_60min': d_inlet_temp_60min,
+        # Binary flag: 1.0 when |ΔT_rl over 60 min| < 0.3 K → system in thermal steady state
+        'is_equilibrium': is_equilibrium,
     }
     return pd.DataFrame([features]), outlet_history

@@ -274,6 +274,12 @@ class InfluxService:
             config.PV_POWER_ENTITY_ID, steps, 0.0
         )
 
+    def fetch_inlet_history(self, steps: int) -> list[float]:
+        """Fetches the historical return (inlet) temperature."""
+        return self.fetch_history(
+            config.INLET_TEMP_ENTITY_ID, steps, 30.0
+        )
+
     def fetch_recent_history(
         self,
         entities: list[str],

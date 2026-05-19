@@ -43,6 +43,7 @@ def mock_influx_service():
     service.fetch_outlet_history.return_value = [35.0, 36.0, 37.0, 38.0, 39.0, 40.0]
     service.fetch_indoor_history.return_value = [19.0, 19.2, 19.4, 19.6, 19.8, 20.0]
     service.fetch_pv_history.return_value = [100.0, 200.0, 300.0, 400.0, 500.0, 600.0]
+    service.fetch_inlet_history.return_value = [34.0, 34.2, 34.4, 34.6, 34.8, 35.0, 35.0]
     return service
 
 
@@ -57,7 +58,8 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     expected_cols_without_raw_history = 58 - 3 * (6 - config.TRAJECTORY_STEPS) + 1
     # Add +1 for the newly added pv_power_history_electrical column.
     # Add +3 for ML correction features: wind_speed, is_weekend, indoor_margin_rate.
-    expected_cols = expected_cols_without_raw_history + 1 + 3  # 3 groups: temp, pv, cloud_cover
+    # Add +2 for slab thermal state features: d_inlet_temp_60min, is_equilibrium.
+    expected_cols = expected_cols_without_raw_history + 1 + 3 + 2  # 3 groups: temp, pv, cloud_cover
     assert len(features_df.columns) == expected_cols
     
     # Verify original features
@@ -84,6 +86,12 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     # COP = 5.81 / 1.5 = 3.87 approx
     expected_cop = expected_power / 1.5
     assert abs(features_df['cop_realtime'][0] - expected_cop) < 0.01
+
+    # Verify slab thermal state features
+    # inlet_lag_history[-6] = 34.2, inlet_temp_f = 35.0 → d_inlet_temp_60min = 0.8
+    assert abs(features_df['d_inlet_temp_60min'][0] - 0.8) < 0.01
+    # |0.8| >= 0.3 → is_equilibrium = 0.0
+    assert features_df['is_equilibrium'][0] == 0.0
 
 
 def test_build_physics_features_cooling_demand_uses_forecast_above_target(

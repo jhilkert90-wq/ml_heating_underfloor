@@ -1,5 +1,21 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Slab thermal state features added to heating correction ML pipeline — 2026-05-19
+
+#### **What changed**
+- Added `d_inlet_temp_60min` (ΔT_rl over 60 min) and `is_equilibrium` (binary flag, 1.0 when |ΔT_rl| < 0.3 K) to both inference (`physics_features.py`) and training (`heating_correction_ml_calibration.py`).
+- Added `fetch_inlet_history(steps)` to `InfluxService` for clean inlet temperature history access.
+- Inference: inlet lag history fetched via `influx_service.fetch_inlet_history(7)`; default value = `inlet_temp_f` so d_inlet = 0.0 on startup.
+- Training: `df["d_inlet_temp_60min"] = df["RLT"].diff(steps_per_hour)`; NaN rows from `diff` are dropped by existing `dropna()` in step 7.
+
+#### **Why**
+- Give the heating correction model explicit signals about slab thermal state: direction/speed of slab loading and whether the system is already in equilibrium.
+- Expected improvement: MAE from ~0.15 K → < 0.10 K, R² from 0.86 → 0.89+ by reducing systematic errors during equilibrium and passive cool-down phases.
+
+#### **Files modified**
+- `src/influx_service.py`, `src/physics_features.py`, `src/heating_correction_ml_calibration.py`
+- `tests/unit/test_physics_features.py`, `tests/unit/test_heating_correction_ml_calibration.py`
+
 ### ✅ Cooling cycle gate behavior aligned to strict start conditions — 2026-05-19
 
 #### **What changed**

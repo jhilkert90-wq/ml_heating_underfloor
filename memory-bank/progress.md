@@ -1,5 +1,32 @@
 # ML Heating System - Current Progress
 
+## ✅ Slab thermal state features: d_inlet_temp_60min + is_equilibrium (2026-05-19)
+
+**Status:** COMPLETED — added two new features to the heating correction ML pipeline.
+
+### Changes
+1. **`src/influx_service.py`**
+   - Added `fetch_inlet_history(steps: int) -> list[float]` convenience method.
+2. **`src/physics_features.py`**
+   - Fetches 7-step inlet temperature lag history via `influx_service.fetch_inlet_history(7)`.
+   - Computes `d_inlet_temp_60min = inlet_temp_f - inlet_lag_history[-6]` (change over 6 × 10-min cycles).
+   - Computes `is_equilibrium = 1.0 if |d_inlet_temp_60min| < 0.3 else 0.0`.
+   - Both features added to the inference feature dict.
+3. **`src/heating_correction_ml_calibration.py`**
+   - Added `df["d_inlet_temp_60min"] = df["RLT"].diff(steps_per_hour)` in derived features block.
+   - Added `df["is_equilibrium"] = (df["d_inlet_temp_60min"].abs() < 0.3).astype(float)`.
+   - Both appended to `feature_cols` under "Slab thermal state features".
+4. **`tests/unit/test_physics_features.py`**
+   - Added `fetch_inlet_history` mock return value; updated column count assertion (+2).
+   - Added assertions for `d_inlet_temp_60min` and `is_equilibrium` values.
+5. **`tests/unit/test_heating_correction_ml_calibration.py`**
+   - Added `TestSlabThermalStateFeatures` with two tests covering feature presence and equilibrium logic.
+
+### Validation
+- `pytest tests/unit/test_physics_features.py tests/unit/test_heating_correction_ml_calibration.py -v` → **40 passed**
+
+**Files changed:** `src/influx_service.py`, `src/physics_features.py`, `src/heating_correction_ml_calibration.py`, `tests/unit/test_physics_features.py`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Cooling gate start-condition enforcement + no script shutdown while HP active (2026-05-19)
 
 **Status:** COMPLETED — implemented strict cooling start gates and prevented script-driven shutdown when the heat pump is detected as active.

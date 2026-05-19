@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`d_inlet_temp_60min` feature**: Change in return temperature (inlet) over 60 minutes (6 cycles × 10 min), added to both inference (`physics_features.py`) and training (`heating_correction_ml_calibration.py`). Represents the thermal loading trend of the floor slab: positive → slab absorbing heat, near zero → equilibrium, negative → cool-down.
+- **`is_equilibrium` feature**: Binary flag (0.0/1.0) set to 1.0 when `|d_inlet_temp_60min| < 0.3 K`, indicating thermal steady state. Added to both inference and training pipelines.
+- `fetch_inlet_history(steps)` convenience method on `InfluxService`, consistent with `fetch_outlet_history` / `fetch_indoor_history` / `fetch_pv_history`.
+
 ### Changed
 - Cooling cycle start gating now uses strict start conditions (`inlet - required_outlet > MIN_COOLING_DELTA_K` and `inlet + delta_t_floor > COOLING_CLAMP_MIN_ABS + COOLING_SHUTDOWN_MARGIN_K`) while allowing pass-through required outlet when the heat pump is already active.
 
