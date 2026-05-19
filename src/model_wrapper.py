@@ -609,78 +609,51 @@ class EnhancedModelWrapper:
                         _inlet_guard + _learned_dtf
                     ) > _effective_min
 
-                    if self._cooling_cycle_state == "running":
-                        # Check if HP should enter recovery.
-                        # Only transition to RECOVERY when the HP was actually
-                        # running this cycle.  Use the same _is_heat_pump_active()
-                        # helper that _learn_from_recent and temperature_control
-                        # use so the detection logic is consistent across the
-                        # codebase (checks thermal_power, delta_t, and outlet vs
-                        # inlet/indoor signals together).
-                        # If the HP was already idle the model wanting outlet
-                        # close to inlet just means "circulator-only is enough" —
-                        # entering RECOVERY here would create a deadlock: mild
-                        # cooling need → RECOVERY, then RECOVERY→RUNNING also
-                        # requires a 2K gap that will never be satisfied while
-                        # cooling demand is low.
-                        _features_ctx = getattr(self, "_current_features", {}) or {}
-                        _hp_ctx = {
-                            "climate_mode": "cooling",
-                            "thermal_power": float(
-                                _features_ctx.get("thermal_power_kw", 0.0)
-                            ),
-                            "delta_t": float(_features_ctx.get("delta_t", 0.0)),
-                            "outlet_temp": float(
-                                _features_ctx.get("outlet_temp", 0.0)
-                            ),
-                            "current_indoor": float(
-                                _features_ctx.get("indoor_temp_lag_30m", 0.0)
-                            ),
-                            "inlet_temp": float(
-                                _features_ctx.get("inlet_temp", 0.0)
-                            ),
-                        }
-                        _hp_was_running = _is_heat_pump_active(_hp_ctx)
-                        _idle_threshold = (
-                            _inlet_guard - config.MIN_COOLING_DELTA_K
-                        )
-                        if _hp_was_running and optimal_outlet_temp > _idle_threshold:
-                            self._cooling_cycle_state = "recovery"
+                    _features_ctx = getattr(self, "_current_features", {}) or {}
+                    _hp_ctx = {
+                        "climate_mode": "cooling",
+                        "thermal_power": float(
+                            _features_ctx.get("thermal_power_kw", 0.0)
+                        ),
+                        "delta_t": float(_features_ctx.get("delta_t", 0.0)),
+                        "outlet_temp": float(
+                            _features_ctx.get("outlet_temp", _inlet_guard)
+                        ),
+                        "current_indoor": float(
+                            _features_ctx.get("indoor_temp_lag_30m", current_indoor)
+                        ),
+                        "inlet_temp": float(
+                            _features_ctx.get("inlet_temp", 0.0)
+                        ),
+                    }
+                    _hp_is_running = _is_heat_pump_active(_hp_ctx)
+
+                    if _hp_is_running:
+                        if self._cooling_cycle_state != "running":
                             logging.info(
-                                "❄️ Cooling cycle gate: RUNNING → RECOVERY "
-                                "(outlet %.1f°C too close to inlet %.1f°C, "
-                                "delta %.1fK < %.1fK, delta_t=%.2fK, "
-                                "thermal_power=%.2fkW). "
-                                "Sending inlet_temp to keep HP off.",
-                                optimal_outlet_temp, _inlet_guard,
-                                _inlet_guard - optimal_outlet_temp,
-                                config.MIN_COOLING_DELTA_K,
+                                "❄️ Cooling cycle gate: RECOVERY → RUNNING "
+                                "(HP detected active: delta_t=%.2fK, "
+                                "thermal_power=%.2fkW).",
                                 _hp_ctx["delta_t"],
                                 _hp_ctx["thermal_power"],
                             )
-                            optimal_outlet_temp = _inlet_guard
-                        elif optimal_outlet_temp > _idle_threshold:
-                            # HP was not running but model wants outlet close
-                            # to inlet: circulator-only is sufficient.
-                            # Clamp to inlet_temp without entering RECOVERY so
-                            # the HP can start immediately when demand rises.
-                            logging.debug(
-                                "❄️ Cooling cycle gate: RUNNING — HP idle, "
-                                "mild cooling demand (outlet %.1f°C, inlet %.1f°C, "
-                                "delta %.1fK < %.1fK, delta_t=%.2fK, "
-                                "thermal_power=%.2fkW). "
-                                "Clamping to inlet without entering RECOVERY.",
-                                optimal_outlet_temp, _inlet_guard,
+                        self._cooling_cycle_state = "running"
+                        if not (_gradient_ok and _margin_ok):
+                            logging.info(
+                                "❄️ Cooling cycle gate: RUNNING (HP active) "
+                                "despite closed start gate "
+                                "(required_outlet %.1f°C, inlet %.1f°C, "
+                                "inlet-outlet %.1fK, inlet+Δt_floor=%.1f°C, "
+                                "gradient_ok=%s, margin_ok=%s).",
+                                optimal_outlet_temp,
+                                _inlet_guard,
                                 _inlet_guard - optimal_outlet_temp,
-                                config.MIN_COOLING_DELTA_K,
-                                _hp_ctx["delta_t"],
-                                _hp_ctx["thermal_power"],
+                                _inlet_guard + _learned_dtf,
+                                _gradient_ok,
+                                _margin_ok,
                             )
-                            optimal_outlet_temp = _inlet_guard
-                    else:
-                        # RECOVERY state: check if conditions allow restart
-                        if _gradient_ok and _margin_ok:
-                            self._cooling_cycle_state = "running"
+                    elif _gradient_ok and _margin_ok:
+                        if self._cooling_cycle_state != "running":
                             logging.info(
                                 "❄️ Cooling cycle gate: RECOVERY → RUNNING "
                                 "(inlet %.1f°C − outlet %.1f°C = %.1fK > "
@@ -692,6 +665,23 @@ class EnhancedModelWrapper:
                                 _inlet_guard + _learned_dtf,
                                 _effective_min,
                             )
+                        self._cooling_cycle_state = "running"
+                    else:
+                        if self._cooling_cycle_state != "recovery":
+                            logging.info(
+                                "❄️ Cooling cycle gate: RUNNING → RECOVERY "
+                                "(HP idle and start gate closed: "
+                                "required_outlet %.1f°C, inlet %.1f°C, "
+                                "inlet-outlet %.1fK, inlet+Δt_floor=%.1f°C, "
+                                "gradient_ok=%s, margin_ok=%s). "
+                                "Sending inlet_temp.",
+                                optimal_outlet_temp,
+                                _inlet_guard,
+                                _inlet_guard - optimal_outlet_temp,
+                                _inlet_guard + _learned_dtf,
+                                _gradient_ok,
+                                _margin_ok,
+                            )
                         else:
                             logging.info(
                                 "❄️ Cooling cycle gate: RECOVERY — waiting "
@@ -702,9 +692,11 @@ class EnhancedModelWrapper:
                                 _inlet_guard,
                                 _inlet_guard + _learned_dtf,
                                 optimal_outlet_temp,
-                                _gradient_ok, _margin_ok,
+                                _gradient_ok,
+                                _margin_ok,
                             )
-                            optimal_outlet_temp = _inlet_guard
+                        self._cooling_cycle_state = "recovery"
+                        optimal_outlet_temp = _inlet_guard
 
                     # Persist gate state so it survives add-on restarts.
                     try:

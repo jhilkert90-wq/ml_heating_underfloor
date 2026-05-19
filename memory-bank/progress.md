@@ -1,5 +1,28 @@
 # ML Heating System - Current Progress
 
+## ✅ Cooling gate start-condition enforcement + no script shutdown while HP active (2026-05-19)
+
+**Status:** COMPLETED — implemented strict cooling start gates and prevented script-driven shutdown when the heat pump is detected as active.
+
+### Changes
+1. **`src/model_wrapper.py`**
+   - Reworked cooling gate flow to enforce start permission only when both configured gates pass:
+     - `inlet - required_outlet > MIN_COOLING_DELTA_K`
+     - `inlet + delta_t_floor > COOLING_CLAMP_MIN_ABS + COOLING_SHUTDOWN_MARGIN_K`
+   - Added active-HP override behavior so running operation keeps computed required outlet even when start gate is closed.
+   - Updated HP activity context defaults (`outlet_temp` fallback to inlet, indoor fallback to current_indoor) to avoid false active detection from missing values.
+2. **`tests/unit/test_cooling_mode.py`**
+   - Updated gate transition expectations for idle/running HP behavior.
+   - Added recovery-to-running test when HP is detected active.
+   - Updated exact-threshold boundary test to reflect strict `>` gate semantics.
+
+### Validation
+- `python -m pytest tests/unit/test_cooling_mode.py -q --tb=short` → **47 passed**
+- `python -m pytest tests/unit/test_cooling_bugfixes.py tests/unit/test_pre_cooling_integration.py -q --tb=short` → **47 passed**
+- `python -m pytest tests/ -q --tb=short` → **1399 passed**
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Heating ML Calibration Runtime Fixes (S_H Source + Optuna + Warning Cleanup) (2026-05-18)
 
 **Status:** COMPLETED — fixed S_H parameter sourcing to use unified thermal state correctly, removed sklearn feature-name warnings in CV/HPO, and enabled Optuna in addon runtime dependencies.
