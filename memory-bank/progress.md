@@ -1,5 +1,20 @@
 # ML Heating System - Current Progress
 
+## ✅ Fix inference dispatch for d_inlet_temp_60min / is_equilibrium (2026-05-19)
+
+**Status:** COMPLETED — wired missing `_extract_heating_feature()` handlers so the two new slab thermal state features are correctly passed to the ML model at inference.
+
+### Changes
+1. **`src/heating_correction_ml_model.py`**
+   - Added `if col == "d_inlet_temp_60min"` and `if col == "is_equilibrium"` handlers under *Slab thermal state features* section; both do a direct `physics.get()` pass-through with 0.0 fallback.
+2. **`tests/unit/test_heating_correction_ml_model.py`**
+   - Added 6 tests in `TestExtractHeatingFeature` for positive value, negative value, and missing-key fallback for each of the two new features.
+
+### Validation
+- `pytest tests/unit/test_heating_correction_ml_model.py -q` → **56 passed**
+
+**Files changed:** `src/heating_correction_ml_model.py`, `tests/unit/test_heating_correction_ml_model.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Slab thermal state features: d_inlet_temp_60min + is_equilibrium (2026-05-19)
 
 **Status:** COMPLETED — added two new features to the heating correction ML pipeline.

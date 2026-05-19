@@ -1,5 +1,17 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Fix inference dispatch for d_inlet_temp_60min and is_equilibrium — 2026-05-19
+
+#### **What changed**
+- Added `d_inlet_temp_60min` and `is_equilibrium` handlers to `_extract_heating_feature()` in `src/heating_correction_ml_model.py`. Without these, both features silently returned `0.0` at inference despite being correctly computed in `physics_features.py` and stored in the physics dict.
+- Added 6 unit tests in `tests/unit/test_heating_correction_ml_model.py` covering pass-through, negative values, and missing-key fallback for both features.
+
+#### **Why**
+- The inference dispatch function (`_extract_heating_feature`) requires an explicit handler for every feature column name. The two new slab thermal state features were added to training and the physics dict but their dispatch cases were omitted, causing model weights for these columns to be wasted at runtime.
+
+#### **Files modified**
+- `src/heating_correction_ml_model.py`, `tests/unit/test_heating_correction_ml_model.py`
+
 ### ✅ Slab thermal state features added to heating correction ML pipeline — 2026-05-19
 
 #### **What changed**

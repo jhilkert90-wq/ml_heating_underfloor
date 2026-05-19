@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cooling cycle start gating now uses strict start conditions (`inlet - required_outlet > MIN_COOLING_DELTA_K` and `inlet + delta_t_floor > COOLING_CLAMP_MIN_ABS + COOLING_SHUTDOWN_MARGIN_K`) while allowing pass-through required outlet when the heat pump is already active.
 
 ### Fixed
+- `heating_correction_ml_model.py`: `_extract_heating_feature()` now handles `d_inlet_temp_60min` and `is_equilibrium` — previously both fell through to the catch-all `return 0.0` path, silently zeroing both features at inference regardless of actual slab state.
 - Cooling control no longer issues script-driven shutdown by forcing inlet target while the heat pump is already running; shutdown is now left to device-side behavior.
 
 ## [0.2.0] - 2026-02-10
