@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Review follow-up for slab-state features and calibration test reliability — 2026-05-19
+
+#### **What changed**
+- Updated `src/physics_features.py` so `d_inlet_temp_60min` uses a derived 60-minute lag from config cadence (`HISTORY_STEP_MINUTES`, fallback `CYCLE_INTERVAL_MINUTES`) instead of fixed `[-6]` indexing tied to 10-minute loops.
+- Added fallback detection for default-filled inlet history (`30.0` padded values from Influx fallback) and force `d_inlet_temp_60min=0.0`, which keeps `is_equilibrium` from being driven low by synthetic trends.
+- Strengthened `_run_calibration_capture_X()` in `tests/unit/test_heating_correction_ml_calibration.py` to require `model.fit()` execution and remove blanket exception swallowing.
+- Added targeted tests in `tests/unit/test_physics_features.py` for cadence-aware lag behavior and default-history neutralization.
+
+#### **Why**
+- PR review identified two inference correctness risks (fixed 10-minute assumption and fallback history artifacts) and one test reliability issue (false-positive calibration tests when fit is never reached).
+- These changes keep slab-state features semantically correct across timing configs and make calibration feature-column tests fail fast on real regressions.
+
+#### **Files modified**
+- `src/physics_features.py`
+- `tests/unit/test_physics_features.py`
+- `tests/unit/test_heating_correction_ml_calibration.py`
+
 ### ✅ Fix inference dispatch for d_inlet_temp_60min and is_equilibrium — 2026-05-19
 
 #### **What changed**
