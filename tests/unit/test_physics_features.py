@@ -88,10 +88,40 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     assert abs(features_df['cop_realtime'][0] - expected_cop) < 0.01
 
     # Verify slab thermal state features
+    # Default HISTORY_STEP_MINUTES=10 → steps_per_hour=6.
     # inlet_lag_history[-6] = 34.2, inlet_temp_f = 35.0 → d_inlet_temp_60min = 0.8
     assert abs(features_df['d_inlet_temp_60min'][0] - 0.8) < 0.01
     # |0.8| >= 0.3 → is_equilibrium = 0.0
     assert features_df['is_equilibrium'][0] == 0.0
+
+
+def test_build_physics_features_uses_history_step_minutes_for_60min_delta(
+    mock_ha_client, mock_influx_service, monkeypatch
+):
+    """d_inlet_temp_60min should track 60min based on HISTORY_STEP_MINUTES."""
+    monkeypatch.setattr(config, "HISTORY_STEP_MINUTES", 15)
+    mock_influx_service.fetch_inlet_history.return_value = [34.0, 34.5, 35.0, 35.5, 36.0]
+
+    features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
+
+    assert features_df is not None
+    mock_influx_service.fetch_inlet_history.assert_called_once_with(5)
+    # steps_per_hour=4 so value at [-4] is 34.5, inlet is 35.0 => 0.5 K
+    assert features_df["d_inlet_temp_60min"][0] == pytest.approx(0.5)
+    assert features_df["is_equilibrium"][0] == 0.0
+
+
+def test_build_physics_features_inlet_default_history_forces_neutral_trend(
+    mock_ha_client, mock_influx_service
+):
+    """All-default fallback inlet history should not create a fake trend."""
+    mock_influx_service.fetch_inlet_history.return_value = [30.0] * 7
+
+    features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
+
+    assert features_df is not None
+    assert features_df["d_inlet_temp_60min"][0] == 0.0
+    assert features_df["is_equilibrium"][0] == 1.0
 
 
 def test_build_physics_features_cooling_demand_uses_forecast_above_target(

@@ -195,8 +195,20 @@ def build_physics_features(
     outlet_history = influx_service.fetch_outlet_history(extended_steps)
     indoor_history = influx_service.fetch_indoor_history(extended_steps)
     pv_history = influx_service.fetch_pv_history(extended_steps)
-    # Need 7 steps for 60-min inlet lag (6 cycles × 10 min + 1 for indexing)
-    inlet_lag_history = influx_service.fetch_inlet_history(7)
+    # Need enough points to represent a 60-minute inlet lag at current history cadence.
+    history_step_minutes = max(
+        1,
+        int(
+            getattr(
+                config,
+                "HISTORY_STEP_MINUTES",
+                getattr(config, "CYCLE_INTERVAL_MINUTES", 10),
+            )
+        ),
+    )
+    steps_per_hour = max(1, int(round(60 / history_step_minutes)))
+    # +1 keeps indexing stable for the "now vs N-steps-ago" delta pattern.
+    inlet_lag_history = influx_service.fetch_inlet_history(steps_per_hour + 1)
     
     if len(indoor_history) < 6 or len(outlet_history) < 3:
         logging.error(
@@ -412,13 +424,22 @@ def build_physics_features(
     thermal_power_kw = thermo_metrics["thermal_power_kw"]
     cop_realtime = thermo_metrics["cop_realtime"]
 
-    # Thermal loading trend of the floor slab over 60 min (6 cycles × 10 min):
+    # Thermal loading trend of the floor slab over 60 min:
     # positive → slab absorbing heat; near zero → equilibrium; negative → cool-down.
-    # fetch_inlet_history always pads to exactly `steps` elements, so [-6] is safe.
-    # When history is unavailable the list is all-equal (inlet_temp_f default),
-    # causing d_inlet_temp_60min to evaluate to 0.0 automatically.
-    if len(inlet_lag_history) >= 6:
-        d_inlet_temp_60min = inlet_temp_f - float(inlet_lag_history[-6])
+    # If inlet history falls back to all-default values (e.g. query failure),
+    # treat history as unavailable and force neutral trend.
+    inlet_history_default = 30.0
+    has_only_default_inlet_history = (
+        len(inlet_lag_history) > 0
+        and all(
+            abs(float(v) - inlet_history_default) < 1e-9
+            for v in inlet_lag_history
+        )
+    )
+    if has_only_default_inlet_history:
+        d_inlet_temp_60min = 0.0
+    elif len(inlet_lag_history) >= steps_per_hour:
+        d_inlet_temp_60min = inlet_temp_f - float(inlet_lag_history[-steps_per_hour])
     else:
         d_inlet_temp_60min = 0.0  # fallback: inlet history not yet filled
     # Binary equilibrium flag: |ΔT_rl over 60 min| < 0.3 K → thermal steady state

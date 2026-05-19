@@ -1086,7 +1086,7 @@ class TestHoldoutIsolation:
 # ---------------------------------------------------------------------------
 
 def _run_calibration_capture_X(df, model_path="/tmp/test_slab.joblib"):
-    """Run calibrate_heating_correction_ml with df and return X passed to fit, or {}."""
+    """Run calibrate_heating_correction_ml with df and return X passed to fit."""
     try:
         import numpy as np
     except ImportError:
@@ -1095,6 +1095,9 @@ def _run_calibration_capture_X(df, model_path="/tmp/test_slab.joblib"):
     from src.heating_correction_ml_calibration import calibrate_heating_correction_ml
 
     captured_X = {}
+
+    class _FitCaptured(RuntimeError):
+        """Raised to stop calibration once fit input has been captured."""
 
     with patch(
         "src.heating_correction_ml_calibration"
@@ -1118,6 +1121,9 @@ def _run_calibration_capture_X(df, model_path="/tmp/test_slab.joblib"):
         mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
         mock_cfg.HEATING_ML_MIN_TRAINING_SAMPLES = 50
         mock_cfg.HEATING_ML_RETRAIN_VAL_FRACTION = 0.25
+        mock_cfg.HEATING_ML_OPTUNA_ENABLED = False
+        mock_cfg.HEATING_ML_CV_ENABLED = False
+        mock_cfg.HEATING_ML_FEATURE_PRUNING_ENABLED = False
         mock_cfg.OUTLET_EFFECTIVENESS = 0.830
         mock_cfg.HEAT_LOSS_COEFFICIENT = 0.124
         mock_cfg.THERMAL_TIME_CONSTANT = 4.39
@@ -1136,20 +1142,24 @@ def _run_calibration_capture_X(df, model_path="/tmp/test_slab.joblib"):
         mock_lgb = MagicMock()
         mock_model = MagicMock()
         mock_lgb.LGBMRegressor.return_value = mock_model
+        mock_lgb.early_stopping.return_value = object()
+        mock_lgb.log_evaluation.return_value = object()
         mock_model.predict.return_value = np.zeros(600)
 
         def _capture_fit(X, y, **kw):
             captured_X["X"] = X
+            raise _FitCaptured()
 
         mock_model.fit.side_effect = _capture_fit
 
         with patch.dict("sys.modules", {"lightgbm": mock_lgb}), \
              patch("joblib.dump"), \
              patch("os.replace"):
-            try:
+            with pytest.raises(_FitCaptured):
                 calibrate_heating_correction_ml()
-            except Exception:
-                pass
+
+    if "X" not in captured_X:
+        pytest.fail("Expected calibrate_heating_correction_ml() to call model.fit()")
 
     return captured_X
 
@@ -1172,16 +1182,16 @@ class TestSlabThermalStateFeatures:
         captured_X = _run_calibration_capture_X(df, "/tmp/test_slab_rising.joblib")
 
         # Verify d_inlet_temp_60min and is_equilibrium are present in X_fit
-        if "X" in captured_X and hasattr(captured_X["X"], "columns"):
-            cols = list(captured_X["X"].columns)
-            assert "d_inlet_temp_60min" in cols, (
-                "d_inlet_temp_60min missing from training feature columns"
-            )
-            assert "is_equilibrium" in cols, (
-                "is_equilibrium missing from training feature columns"
-            )
-            # With linearly increasing RLT (diff(6) ≈ 1.0), no row is in equilibrium
-            assert (captured_X["X"]["is_equilibrium"] == 0.0).all()
+        assert hasattr(captured_X["X"], "columns")
+        cols = list(captured_X["X"].columns)
+        assert "d_inlet_temp_60min" in cols, (
+            "d_inlet_temp_60min missing from training feature columns"
+        )
+        assert "is_equilibrium" in cols, (
+            "is_equilibrium missing from training feature columns"
+        )
+        # With linearly increasing RLT (diff(6) ≈ 1.0), no row is in equilibrium
+        assert (captured_X["X"]["is_equilibrium"] == 0.0).all()
 
     def test_is_equilibrium_is_1_when_rlt_stable(self):
         """is_equilibrium = 1.0 when RLT changes < 0.3 K over 60 min."""
@@ -1197,9 +1207,8 @@ class TestSlabThermalStateFeatures:
 
         captured_X = _run_calibration_capture_X(df, "/tmp/test_slab_stable.joblib")
 
-        if "X" in captured_X and hasattr(captured_X["X"], "columns"):
-            assert "is_equilibrium" in captured_X["X"].columns
-            # Constant RLT → all rows in equilibrium (after NaN from diff are dropped)
-            assert (captured_X["X"]["is_equilibrium"] == 1.0).all()
-
+        assert hasattr(captured_X["X"], "columns")
+        assert "is_equilibrium" in captured_X["X"].columns
+        # Constant RLT → all rows in equilibrium (after NaN from diff are dropped)
+        assert (captured_X["X"]["is_equilibrium"] == 1.0).all()
 
