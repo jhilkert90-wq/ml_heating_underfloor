@@ -23,6 +23,9 @@ except ImportError:
     from shadow_mode import get_effective_influx_features_bucket  # type: ignore
 
 
+INLET_HISTORY_FALLBACK_DEFAULT = 30.0
+
+
 class InfluxService:
     """A service for interacting with InfluxDB."""
 
@@ -272,6 +275,12 @@ class InfluxService:
         """Fetches the historical PV power."""
         return self.fetch_history(
             config.PV_POWER_ENTITY_ID, steps, 0.0
+        )
+
+    def fetch_inlet_history(self, steps: int) -> list[float]:
+        """Fetches the historical return (inlet) temperature."""
+        return self.fetch_history(
+            config.INLET_TEMP_ENTITY_ID, steps, INLET_HISTORY_FALLBACK_DEFAULT
         )
 
     def fetch_recent_history(

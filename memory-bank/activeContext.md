@@ -1,5 +1,52 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Review follow-up for slab-state features and calibration test reliability — 2026-05-19
+
+#### **What changed**
+- Updated `src/physics_features.py` so `d_inlet_temp_60min` uses a derived 60-minute lag from config cadence (`HISTORY_STEP_MINUTES`, fallback `CYCLE_INTERVAL_MINUTES`) instead of fixed `[-6]` indexing tied to 10-minute loops.
+- Added fallback detection for default-filled inlet history and force `d_inlet_temp_60min=0.0`, which keeps `is_equilibrium` from being driven low by synthetic trends.
+- Added shared `INLET_HISTORY_FALLBACK_DEFAULT` in `src/influx_service.py` and reused it in physics fallback detection to keep producer/consumer defaults aligned.
+- Strengthened `_run_calibration_capture_X()` in `tests/unit/test_heating_correction_ml_calibration.py` to require `model.fit()` execution and remove blanket exception swallowing.
+- Added targeted tests in `tests/unit/test_physics_features.py` for cadence-aware lag behavior and default-history neutralization.
+
+#### **Why**
+- PR review identified two inference correctness risks (fixed 10-minute assumption and fallback history artifacts) and one test reliability issue (false-positive calibration tests when fit is never reached).
+- These changes keep slab-state features semantically correct across timing configs and make calibration feature-column tests fail fast on real regressions.
+
+#### **Files modified**
+- `src/physics_features.py`
+- `src/influx_service.py`
+- `tests/unit/test_physics_features.py`
+- `tests/unit/test_heating_correction_ml_calibration.py`
+
+### ✅ Fix inference dispatch for d_inlet_temp_60min and is_equilibrium — 2026-05-19
+
+#### **What changed**
+- Added `d_inlet_temp_60min` and `is_equilibrium` handlers to `_extract_heating_feature()` in `src/heating_correction_ml_model.py`. Without these, both features silently returned `0.0` at inference despite being correctly computed in `physics_features.py` and stored in the physics dict.
+- Added 6 unit tests in `tests/unit/test_heating_correction_ml_model.py` covering pass-through, negative values, and missing-key fallback for both features.
+
+#### **Why**
+- The inference dispatch function (`_extract_heating_feature`) requires an explicit handler for every feature column name. The two new slab thermal state features were added to training and the physics dict but their dispatch cases were omitted, causing model weights for these columns to be wasted at runtime.
+
+#### **Files modified**
+- `src/heating_correction_ml_model.py`, `tests/unit/test_heating_correction_ml_model.py`
+
+### ✅ Slab thermal state features added to heating correction ML pipeline — 2026-05-19
+
+#### **What changed**
+- Added `d_inlet_temp_60min` (ΔT_rl over 60 min) and `is_equilibrium` (binary flag, 1.0 when |ΔT_rl| < 0.3 K) to both inference (`physics_features.py`) and training (`heating_correction_ml_calibration.py`).
+- Added `fetch_inlet_history(steps)` to `InfluxService` for clean inlet temperature history access.
+- Inference: inlet lag history fetched via `influx_service.fetch_inlet_history(7)`; default value = `inlet_temp_f` so d_inlet = 0.0 on startup.
+- Training: `df["d_inlet_temp_60min"] = df["RLT"].diff(steps_per_hour)`; NaN rows from `diff` are dropped by existing `dropna()` in step 7.
+
+#### **Why**
+- Give the heating correction model explicit signals about slab thermal state: direction/speed of slab loading and whether the system is already in equilibrium.
+- Expected improvement: MAE from ~0.15 K → < 0.10 K, R² from 0.86 → 0.89+ by reducing systematic errors during equilibrium and passive cool-down phases.
+
+#### **Files modified**
+- `src/influx_service.py`, `src/physics_features.py`, `src/heating_correction_ml_calibration.py`
+- `tests/unit/test_physics_features.py`, `tests/unit/test_heating_correction_ml_calibration.py`
+
 ### ✅ Cooling cycle gate behavior aligned to strict start conditions — 2026-05-19
 
 #### **What changed**

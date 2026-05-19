@@ -1079,3 +1079,140 @@ class TestHoldoutIsolation:
         assert fit_call_count[0] >= 5
         # Regression assertion: no training fit may include holdout sentinel rows.
         assert all(v < sentinel for v in fit_max_values)
+
+
+# ---------------------------------------------------------------------------
+# Slab thermal state features: d_inlet_temp_60min and is_equilibrium
+# ---------------------------------------------------------------------------
+
+def _run_calibration_capture_X(df, model_path="/tmp/test_slab.joblib"):
+    """Run calibrate_heating_correction_ml with df and return X passed to fit."""
+    try:
+        import numpy as np
+    except ImportError:
+        pytest.skip("numpy not installed")
+
+    from src.heating_correction_ml_calibration import calibrate_heating_correction_ml
+
+    captured_X = {}
+
+    class _FitCaptured(RuntimeError):
+        """Internal sentinel used to stop calibration immediately after fit capture.
+
+        This is intentionally raised from the mocked model.fit() so this helper
+        can assert feature-column wiring at the fit boundary without depending
+        on later calibration stages.
+        """
+
+    with patch(
+        "src.heating_correction_ml_calibration"
+        ".fetch_historical_data_for_calibration",
+        return_value=df,
+    ), patch(
+        "src.heating_correction_ml_calibration._read_baseline_thermal_params",
+        return_value=(0.830, 0.124, 4.39),
+    ), patch(
+        "src.heating_correction_ml_calibration.config"
+    ) as mock_cfg:
+        mock_cfg.HEATING_ML_CALIBRATION_START_DATE = ""
+        mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
+        mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
+        mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1,2"
+        mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1,2"
+        mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1"
+        mock_cfg.HEATING_ML_TV_LAG_HOURS = "1"
+        mock_cfg.CYCLE_INTERVAL_MINUTES = 10
+        mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
+        mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+        mock_cfg.HEATING_ML_MIN_TRAINING_SAMPLES = 50
+        mock_cfg.HEATING_ML_RETRAIN_VAL_FRACTION = 0.25
+        mock_cfg.HEATING_ML_OPTUNA_ENABLED = False
+        mock_cfg.HEATING_ML_CV_ENABLED = False
+        mock_cfg.HEATING_ML_FEATURE_PRUNING_ENABLED = False
+        mock_cfg.OUTLET_EFFECTIVENESS = 0.830
+        mock_cfg.HEAT_LOSS_COEFFICIENT = 0.124
+        mock_cfg.THERMAL_TIME_CONSTANT = 4.39
+        mock_cfg.HEATING_ML_CORRECTION_MODEL_PATH = model_path
+        mock_cfg.HEATING_ML_CORRECTION_METADATA_PATH = model_path.replace(".joblib", "_meta.json")
+        mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
+        mock_cfg.OUTDOOR_TEMP_ENTITY_ID = "sensor.outdoor"
+        mock_cfg.OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
+        mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
+        mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
+        mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+        mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv"
+        mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
+        mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
+
+        mock_lgb = MagicMock()
+        mock_model = MagicMock()
+        mock_lgb.LGBMRegressor.return_value = mock_model
+        mock_lgb.early_stopping.return_value = object()
+        mock_lgb.log_evaluation.return_value = object()
+        mock_model.predict.return_value = np.zeros(600)
+
+        def _capture_fit(X, y, **kw):
+            captured_X["X"] = X
+            raise _FitCaptured()
+
+        mock_model.fit.side_effect = _capture_fit
+
+        with patch.dict("sys.modules", {"lightgbm": mock_lgb}), \
+             patch("joblib.dump"), \
+             patch("os.replace"):
+            with pytest.raises(_FitCaptured):
+                calibrate_heating_correction_ml()
+
+    if "X" not in captured_X:
+        pytest.fail("Expected calibrate_heating_correction_ml() to call model.fit()")
+
+    return captured_X
+
+
+class TestSlabThermalStateFeatures:
+    """Verify d_inlet_temp_60min and is_equilibrium are derived and added to feature_cols."""
+
+    def test_d_inlet_temp_60min_computed_from_rlt_diff(self):
+        """d_inlet_temp_60min = RLT.diff(steps_per_hour): change over 60 min."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        df = _make_df(800, at_val=8.0)
+        # Set a linearly increasing RLT so diff(6) ≈ 1.0; all rows NOT in equilibrium
+        df["RLT"] = np.arange(800, dtype=float) * (1.0 / 6.0)
+
+        captured_X = _run_calibration_capture_X(df, "/tmp/test_slab_rising.joblib")
+
+        # Verify d_inlet_temp_60min and is_equilibrium are present in X_fit
+        assert hasattr(captured_X["X"], "columns")
+        cols = list(captured_X["X"].columns)
+        assert "d_inlet_temp_60min" in cols, (
+            "d_inlet_temp_60min missing from training feature columns"
+        )
+        assert "is_equilibrium" in cols, (
+            "is_equilibrium missing from training feature columns"
+        )
+        # With linearly increasing RLT (diff(6) ≈ 1.0), no row is in equilibrium
+        assert (captured_X["X"]["is_equilibrium"] == 0.0).all()
+
+    def test_is_equilibrium_is_1_when_rlt_stable(self):
+        """is_equilibrium = 1.0 when RLT changes < 0.3 K over 60 min."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        df = _make_df(800, at_val=8.0)
+        # Constant RLT → diff(6) = 0.0, so is_equilibrium = 1.0 for all rows
+        df["RLT"] = 27.0
+
+        captured_X = _run_calibration_capture_X(df, "/tmp/test_slab_stable.joblib")
+
+        assert hasattr(captured_X["X"], "columns")
+        assert "is_equilibrium" in captured_X["X"].columns
+        # Constant RLT → all rows in equilibrium (after NaN from diff are dropped)
+        assert (captured_X["X"]["is_equilibrium"] == 1.0).all()

@@ -248,6 +248,37 @@ class TestExtractHeatingFeature:
         v = self._call("is_overshoot", {"indoor_temp_lag_30m": 22.0}, target=21.0)
         assert v == pytest.approx(1.0)
 
+    # ── Slab thermal state features ────────────────────────────────────
+    def test_d_inlet_temp_60min(self):
+        """d_inlet_temp_60min maps directly from physics dict."""
+        v = self._call("d_inlet_temp_60min", {"d_inlet_temp_60min": 0.8})
+        assert v == pytest.approx(0.8)
+
+    def test_d_inlet_temp_60min_negative(self):
+        """d_inlet_temp_60min preserves negative values (cool-down)."""
+        v = self._call("d_inlet_temp_60min", {"d_inlet_temp_60min": -0.5})
+        assert v == pytest.approx(-0.5)
+
+    def test_d_inlet_temp_60min_missing(self):
+        """d_inlet_temp_60min returns 0.0 when absent."""
+        v = self._call("d_inlet_temp_60min", {})
+        assert v == pytest.approx(0.0)
+
+    def test_is_equilibrium_one(self):
+        """is_equilibrium = 1.0 when set in physics dict."""
+        v = self._call("is_equilibrium", {"is_equilibrium": 1.0})
+        assert v == pytest.approx(1.0)
+
+    def test_is_equilibrium_zero(self):
+        """is_equilibrium = 0.0 when set in physics dict."""
+        v = self._call("is_equilibrium", {"is_equilibrium": 0.0})
+        assert v == pytest.approx(0.0)
+
+    def test_is_equilibrium_missing(self):
+        """is_equilibrium returns 0.0 when absent."""
+        v = self._call("is_equilibrium", {})
+        assert v == pytest.approx(0.0)
+
 
 # ---------------------------------------------------------------------------
 # build_heating_feature_vector

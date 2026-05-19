@@ -263,6 +263,12 @@ def _extract_heating_feature(
             return 1.0 if float(indoor) > target_indoor else 0.0
         return 0.0
 
+    # ── Slab thermal state features ────────────────────────────────────
+    if col == "d_inlet_temp_60min":
+        return float(physics.get("d_inlet_temp_60min") or 0.0)
+    if col == "is_equilibrium":
+        return float(physics.get("is_equilibrium") or 0.0)
+
     logger.warning(
         "HeatingCorrectionMLModel: unknown feature column '%s', filling 0.0", col
     )

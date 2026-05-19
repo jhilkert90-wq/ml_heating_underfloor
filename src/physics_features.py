@@ -25,12 +25,12 @@ import pandas as pd
 try:
     from . import config
     from .ha_client import HAClient
-    from .influx_service import InfluxService
+    from .influx_service import InfluxService, INLET_HISTORY_FALLBACK_DEFAULT
     from .sensor_buffer import SensorBuffer
 except ImportError:
     import config  # type: ignore
     from ha_client import HAClient  # type: ignore
-    from influx_service import InfluxService  # type: ignore
+    from influx_service import InfluxService, INLET_HISTORY_FALLBACK_DEFAULT  # type: ignore
     from sensor_buffer import SensorBuffer  # type: ignore
 
 
@@ -195,6 +195,20 @@ def build_physics_features(
     outlet_history = influx_service.fetch_outlet_history(extended_steps)
     indoor_history = influx_service.fetch_indoor_history(extended_steps)
     pv_history = influx_service.fetch_pv_history(extended_steps)
+    # Need enough points to represent a 60-minute inlet lag at current history cadence.
+    history_step_minutes = max(
+        1,
+        int(
+            getattr(
+                config,
+                "HISTORY_STEP_MINUTES",
+                getattr(config, "CYCLE_INTERVAL_MINUTES", 10),
+            )
+        ),
+    )
+    steps_per_hour = max(1, int(round(60 / history_step_minutes)))
+    # +1 keeps indexing stable for the "now vs N-steps-ago" delta pattern.
+    inlet_lag_history = influx_service.fetch_inlet_history(steps_per_hour + 1)
     
     if len(indoor_history) < 6 or len(outlet_history) < 3:
         logging.error(
@@ -410,6 +424,27 @@ def build_physics_features(
     thermal_power_kw = thermo_metrics["thermal_power_kw"]
     cop_realtime = thermo_metrics["cop_realtime"]
 
+    # Thermal loading trend of the floor slab over 60 min:
+    # positive → slab absorbing heat; near zero → equilibrium; negative → cool-down.
+    # If inlet history falls back to all-default values (e.g. query failure),
+    # treat history as unavailable and force neutral trend.
+    inlet_history_default = INLET_HISTORY_FALLBACK_DEFAULT
+    has_only_default_inlet_history = (
+        len(inlet_lag_history) > 0
+        and all(
+            abs(float(v) - inlet_history_default) < 1e-9
+            for v in inlet_lag_history
+        )
+    )
+    if has_only_default_inlet_history:
+        d_inlet_temp_60min = 0.0
+    elif len(inlet_lag_history) >= steps_per_hour:
+        d_inlet_temp_60min = inlet_temp_f - float(inlet_lag_history[-steps_per_hour])
+    else:
+        d_inlet_temp_60min = 0.0  # fallback: inlet history not yet filled
+    # Binary equilibrium flag: |ΔT_rl over 60 min| < 0.3 K → thermal steady state
+    is_equilibrium = 1.0 if abs(d_inlet_temp_60min) < 0.3 else 0.0
+
     # Get calibrated temperature forecasts using delta correction (support up to _n_fc_full hours)
     try:
         # Check if delta calibration is enabled and available
@@ -580,5 +615,10 @@ def build_physics_features(
         'wind_speed': wind_speed,
         'is_weekend': 1.0 if datetime.now().weekday() >= 5 else 0.0,
         'indoor_margin_rate': 0.0,  # computed by calibration from history; 0.0 at inference
+        # === SLAB THERMAL STATE FEATURES ===
+        # Change in return temp over 60 min: thermal loading trend of the floor slab
+        'd_inlet_temp_60min': d_inlet_temp_60min,
+        # Binary flag: 1.0 when |ΔT_rl over 60 min| < 0.3 K → system in thermal steady state
+        'is_equilibrium': is_equilibrium,
     }
     return pd.DataFrame([features]), outlet_history

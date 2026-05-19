@@ -1,5 +1,68 @@
 # ML Heating System - Current Progress
 
+## ✅ Review follow-up: cadence-aware slab delta + strict calibration test helper (2026-05-19)
+
+**Status:** COMPLETED — addressed PR review follow-ups for slab thermal-state feature correctness and regression-test reliability.
+
+### Changes
+1. **`src/physics_features.py`**
+   - Replaced hard-coded 10-minute inlet lag logic with cadence-aware computation using `HISTORY_STEP_MINUTES` (fallback `CYCLE_INTERVAL_MINUTES`) and derived `steps_per_hour`.
+   - Added guard to detect all-default fallback inlet history and force neutral slab trend (`d_inlet_temp_60min = 0.0`), preventing artificial non-equilibrium signals.
+2. **`src/influx_service.py`**
+   - Added `INLET_HISTORY_FALLBACK_DEFAULT` constant and reused it in `fetch_inlet_history()`, so slab-state fallback detection shares one source of truth.
+3. **`tests/unit/test_physics_features.py`**
+   - Added regression test for dynamic 60-minute lag indexing when history cadence changes.
+   - Added regression test verifying default-filled inlet history yields neutral slab trend and equilibrium.
+4. **`tests/unit/test_heating_correction_ml_calibration.py`**
+   - Hardened `_run_calibration_capture_X` to stop on captured `fit()`, explicitly fail if `fit()` is never called, and avoid blanket exception suppression.
+
+### Validation
+- `python -m pytest tests/unit/test_physics_features.py tests/unit/test_heating_correction_ml_calibration.py -q --tb=short` → **42 passed**
+
+**Files changed:** `src/physics_features.py`, `src/influx_service.py`, `tests/unit/test_physics_features.py`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+## ✅ Fix inference dispatch for d_inlet_temp_60min / is_equilibrium (2026-05-19)
+
+**Status:** COMPLETED — wired missing `_extract_heating_feature()` handlers so the two new slab thermal state features are correctly passed to the ML model at inference.
+
+### Changes
+1. **`src/heating_correction_ml_model.py`**
+   - Added `if col == "d_inlet_temp_60min"` and `if col == "is_equilibrium"` handlers under *Slab thermal state features* section; both do a direct `physics.get()` pass-through with 0.0 fallback.
+2. **`tests/unit/test_heating_correction_ml_model.py`**
+   - Added 6 tests in `TestExtractHeatingFeature` for positive value, negative value, and missing-key fallback for each of the two new features.
+
+### Validation
+- `pytest tests/unit/test_heating_correction_ml_model.py -q` → **56 passed**
+
+**Files changed:** `src/heating_correction_ml_model.py`, `tests/unit/test_heating_correction_ml_model.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+## ✅ Slab thermal state features: d_inlet_temp_60min + is_equilibrium (2026-05-19)
+
+**Status:** COMPLETED — added two new features to the heating correction ML pipeline.
+
+### Changes
+1. **`src/influx_service.py`**
+   - Added `fetch_inlet_history(steps: int) -> list[float]` convenience method.
+2. **`src/physics_features.py`**
+   - Fetches 7-step inlet temperature lag history via `influx_service.fetch_inlet_history(7)`.
+   - Computes `d_inlet_temp_60min = inlet_temp_f - inlet_lag_history[-6]` (change over 6 × 10-min cycles).
+   - Computes `is_equilibrium = 1.0 if |d_inlet_temp_60min| < 0.3 else 0.0`.
+   - Both features added to the inference feature dict.
+3. **`src/heating_correction_ml_calibration.py`**
+   - Added `df["d_inlet_temp_60min"] = df["RLT"].diff(steps_per_hour)` in derived features block.
+   - Added `df["is_equilibrium"] = (df["d_inlet_temp_60min"].abs() < 0.3).astype(float)`.
+   - Both appended to `feature_cols` under "Slab thermal state features".
+4. **`tests/unit/test_physics_features.py`**
+   - Added `fetch_inlet_history` mock return value; updated column count assertion (+2).
+   - Added assertions for `d_inlet_temp_60min` and `is_equilibrium` values.
+5. **`tests/unit/test_heating_correction_ml_calibration.py`**
+   - Added `TestSlabThermalStateFeatures` with two tests covering feature presence and equilibrium logic.
+
+### Validation
+- `pytest tests/unit/test_physics_features.py tests/unit/test_heating_correction_ml_calibration.py -v` → **40 passed**
+
+**Files changed:** `src/influx_service.py`, `src/physics_features.py`, `src/heating_correction_ml_calibration.py`, `tests/unit/test_physics_features.py`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Cooling gate start-condition enforcement + no script shutdown while HP active (2026-05-19)
 
 **Status:** COMPLETED — implemented strict cooling start gates and prevented script-driven shutdown when the heat pump is detected as active.

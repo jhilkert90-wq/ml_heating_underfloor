@@ -472,6 +472,12 @@ def calibrate_heating_correction_ml(
     # Overshoot indicator: indoor > target
     df["is_overshoot"] = (df["indoor_temp"] > heating_target_c).astype(float)
 
+    # Slab thermal loading trend over 60 min (steps_per_hour cycles × 10 min):
+    # positive → slab absorbing heat; near zero → equilibrium; negative → cool-down
+    df["d_inlet_temp_60min"] = df["RLT"].diff(steps_per_hour)
+    # Binary flag: |ΔT_rl over 60 min| < 0.3 K → system in thermal steady state
+    df["is_equilibrium"] = (df["d_inlet_temp_60min"].abs() < 0.3).astype(float)
+
     # Fireplace and TV features (binary) — fill missing with 0
     for src_col in ["fireplace_on", "tv_on"]:
         if src_col in df.columns:
@@ -637,6 +643,12 @@ def calibrate_heating_correction_ml(
         "thermal_power_rolling_1h",
         "indoor_margin_rate",
         "is_overshoot",
+    ]
+
+    # Slab thermal state features
+    feature_cols += [
+        "d_inlet_temp_60min",  # ΔT_rl over 60 min: thermal loading trend of the floor slab
+        "is_equilibrium",      # 1.0 when |ΔT_rl| < 0.3 K → system in thermal steady state
     ]
 
     # Guard: only keep columns that exist and have > 5% coverage

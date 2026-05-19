@@ -7,10 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`d_inlet_temp_60min` feature**: Change in return temperature (inlet) over 60 minutes (6 cycles × 10 min), added to both inference (`physics_features.py`) and training (`heating_correction_ml_calibration.py`). Represents the thermal loading trend of the floor slab: positive → slab absorbing heat, near zero → equilibrium, negative → cool-down.
+- **`is_equilibrium` feature**: Binary flag (0.0/1.0) set to 1.0 when `|d_inlet_temp_60min| < 0.3 K`, indicating thermal steady state. Added to both inference and training pipelines.
+- `fetch_inlet_history(steps)` convenience method on `InfluxService`, consistent with `fetch_outlet_history` / `fetch_indoor_history` / `fetch_pv_history`.
+
 ### Changed
 - Cooling cycle start gating now uses strict start conditions (`inlet - required_outlet > MIN_COOLING_DELTA_K` and `inlet + delta_t_floor > COOLING_CLAMP_MIN_ABS + COOLING_SHUTDOWN_MARGIN_K`) while allowing pass-through required outlet when the heat pump is already active.
 
 ### Fixed
+- `heating_correction_ml_model.py`: `_extract_heating_feature()` now handles `d_inlet_temp_60min` and `is_equilibrium` — previously both fell through to the catch-all `return 0.0` path, silently zeroing both features at inference regardless of actual slab state.
+- `physics_features.py`: `d_inlet_temp_60min` now derives lag steps from `HISTORY_STEP_MINUTES` (with `CYCLE_INTERVAL_MINUTES` fallback) so the feature consistently represents a true 60-minute delta even when cycle cadence changes.
+- `physics_features.py`: inlet-history fallback series from Influx (`[30.0, ...]`) are now treated as unavailable history, forcing a neutral `d_inlet_temp_60min=0.0` to avoid artificial slab-trend signals and false non-equilibrium states.
+- `influx_service.py`: added shared `INLET_HISTORY_FALLBACK_DEFAULT` constant and reused it in slab-trend detection to prevent drift between fallback source and consumer logic.
+- `tests/unit/test_heating_correction_ml_calibration.py`: `_run_calibration_capture_X` now fails if `model.fit()` is not reached and no longer swallows all exceptions, preventing false-positive feature-wiring tests.
 - Cooling control no longer issues script-driven shutdown by forcing inlet target while the heat pump is already running; shutdown is now left to device-side behavior.
 
 ## [0.2.0] - 2026-02-10
