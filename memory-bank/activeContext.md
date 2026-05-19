@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Cooling cycle gate behavior aligned to strict start conditions — 2026-05-19
+
+#### **What changed**
+- Updated cooling gate logic in `src/model_wrapper.py` to enforce start permission using both configured conditions:
+  - `inlet - required_outlet > MIN_COOLING_DELTA_K`
+  - `inlet + delta_t_floor > COOLING_CLAMP_MIN_ABS + COOLING_SHUTDOWN_MARGIN_K`
+- Added active-HP allowance: when HP is detected running, the script keeps calculated required outlet (including low values) instead of forcing inlet.
+- Updated HP activity context defaults to avoid false running detection due to missing `outlet_temp`/indoor fields.
+- Updated `tests/unit/test_cooling_mode.py` for new gate transitions, strict-threshold behavior, and recovery reopening when HP is active.
+
+#### **Why**
+- Required behavior is to gate *starting* cooling with strict physics thresholds while not allowing script-driven shutdown of an already running heat pump.
+- This keeps startup conservative but lets device-side automatic shutdown decide stop conditions.
+
+#### **Files modified**
+- `src/model_wrapper.py`, `tests/unit/test_cooling_mode.py`
+
 ### ✅ Heating ML calibration runtime alignment (S_H source + Optuna readiness) — 2026-05-18
 
 #### **What changed**
