@@ -414,9 +414,13 @@ def build_physics_features(
 
     # Thermal loading trend of the floor slab over 60 min (6 cycles × 10 min):
     # positive → slab absorbing heat; near zero → equilibrium; negative → cool-down.
-    # inlet_lag_history is padded with inlet_temp_f as default, so d_inlet_temp_60min
-    # evaluates to 0.0 automatically when history is not yet available.
-    d_inlet_temp_60min = inlet_temp_f - float(inlet_lag_history[-6])
+    # fetch_inlet_history always pads to exactly `steps` elements, so [-6] is safe.
+    # When history is unavailable the list is all-equal (inlet_temp_f default),
+    # causing d_inlet_temp_60min to evaluate to 0.0 automatically.
+    if len(inlet_lag_history) >= 6:
+        d_inlet_temp_60min = inlet_temp_f - float(inlet_lag_history[-6])
+    else:
+        d_inlet_temp_60min = 0.0  # fallback: inlet history not yet filled
     # Binary equilibrium flag: |ΔT_rl over 60 min| < 0.3 K → thermal steady state
     is_equilibrium = 1.0 if abs(d_inlet_temp_60min) < 0.3 else 0.0
 
