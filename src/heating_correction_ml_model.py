@@ -50,6 +50,11 @@ from src import config
 
 logger = logging.getLogger(__name__)
 
+# Indoor temperature threshold above which solar overheat protection (roller
+# shutters / Jalousie) is assumed to be active – must match the value used
+# in heating_correction_ml_calibration._SHADING_ACTIVATION_TEMP_C.
+_SHADING_ACTIVATION_TEMP_C = 23.0
+
 
 # ---------------------------------------------------------------------------
 # Lazy-import helpers (joblib / numpy only needed when a model is loaded)
@@ -178,8 +183,9 @@ def _extract_heating_feature(
         return float(physics.get("delta_t") or 0.0)
     if col == "outlet_indoor_diff":
         return float(physics.get("outlet_indoor_diff") or 0.0)
-    if col == "thermal_power_kw":
-        return float(physics.get("thermal_power_kw") or 0.0)
+    if col == "thermal_power_w":
+        # thermal_power_kw (from physics dict) converted to W
+        return float(physics.get("thermal_power_kw") or 0.0) * 1000.0
 
     # ── External heat sources ──────────────────────────────────────────
     if col == "fireplace_on":
@@ -239,8 +245,10 @@ def _extract_heating_feature(
 
     # ── NEW: 8 additional ML correction features ──────────────────────
     if col == "wind_speed":
+        # PI=0.0000 — linear term; predictive value captured by heat_loss_interaction; retained for backward compat
         return float(physics.get("wind_speed") or 0.0)
     if col == "indoor_temp_gradient":
+        # PI=0.0000
         return float(physics.get("indoor_temp_gradient") or 0.0)
     if col == "living_room_temp":
         val = physics.get("living_room_temp")
@@ -255,11 +263,13 @@ def _extract_heating_feature(
     if col == "is_weekend":
         return float(physics.get("is_weekend") or 0.0)
     if col == "thermal_power_rolling_1h":
-        # At inference we only have the instantaneous value
-        return float(physics.get("thermal_power_kw") or 0.0)
+        # At inference we only have the instantaneous value; convert kW → W
+        return float(physics.get("thermal_power_kw") or 0.0) * 1000.0
     if col == "indoor_margin_rate":
+        # PI=0.0000
         return float(physics.get("indoor_margin_rate") or 0.0)
     if col == "is_overshoot":
+        # PI=0.0000
         indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
         if indoor is not None:
             return 1.0 if float(indoor) > target_indoor else 0.0
@@ -267,8 +277,10 @@ def _extract_heating_feature(
 
     # ── Slab thermal state features ────────────────────────────────────
     if col == "d_inlet_temp_60min":
+        # PI=0.0000
         return float(physics.get("d_inlet_temp_60min") or 0.0)
     if col == "is_equilibrium":
+        # PI=0.0000
         return float(physics.get("is_equilibrium") or 0.0)
 
     # ── physics-motivated features ─────────────────────────────────────
@@ -281,10 +293,10 @@ def _extract_heating_feature(
         outdoor = float(physics.get("outdoor_temp") or 0.0)
         return indoor - outdoor
     if col == "delta_T_indoor_lag1":
-        # AR momentum: ΔT over 1 cycle (10 min) captures thermal inertia
+        # PI=0.0000 — AR momentum: ΔT over 1 cycle (10 min) captures thermal inertia
         return float(physics.get("indoor_temp_delta_10m") or 0.0)
     if col == "Q_wp":
-        # Actual heat output in W: flow (L/min → L/s) × ΔT × c_p
+        # PI=0.0000 — Actual heat output in W: flow (L/min → L/s) × ΔT × c_p
         flow_lpm = physics.get("flow_rate")
         if not flow_lpm:
             return 0.0
@@ -302,7 +314,7 @@ def _extract_heating_feature(
             * specific_heat_j_per_kgk
         )
     if col == "solar_thermal_proxy":
-        # Passive solar gain proxy: PV power × cos(hour) encodes sun angle
+        # PI=-0.0000 — Passive solar gain proxy: PV power × cos(hour) encodes sun angle
         pv = physics.get("pv_now_electrical")
         if pv is None:
             pv = physics.get("pv_now")
@@ -321,6 +333,36 @@ def _extract_heating_feature(
         if fc is None:
             return 0.0
         return float(fc) - pv
+
+    # ── New physics interaction features ───────────────────────────────
+    if col == "shading_proxy":
+        # Continuous solar overheat-protection proxy: T_indoor > 23°C × PV_W
+        # Captures roller-shutter / Jalousie activation during Übergangszeit; units: K×W
+        indoor = physics.get("indoor_temp")
+        if indoor is None:
+            indoor = physics.get("indoor_temp_lag_30m")
+        if indoor is None:
+            return 0.0
+        pv = physics.get("pv_now_electrical")
+        if pv is None:
+            pv = physics.get("pv_now")
+        pv = float(pv) if pv is not None else 0.0
+        return max(0.0, float(indoor) - _SHADING_ACTIVATION_TEMP_C) * pv
+    if col == "heat_loss_interaction":
+        # Convective heat loss interaction: (T_indoor − T_outdoor) × wind_speed
+        # Wind increases effective U; effect scales with temperature gradient
+        indoor = physics.get("indoor_temp")
+        if indoor is None:
+            indoor = physics.get("indoor_temp_lag_30m")
+        if indoor is None:
+            return 0.0
+        outdoor = physics.get("outdoor_temp")
+        if outdoor is None:
+            return 0.0
+        wind = physics.get("wind_speed")
+        if wind is None:
+            return 0.0
+        return (float(indoor) - float(outdoor)) * float(wind)
 
     logger.warning(
         "HeatingCorrectionMLModel: unknown feature column '%s', filling 0.0", col

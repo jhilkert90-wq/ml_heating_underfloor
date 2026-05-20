@@ -1,5 +1,39 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Unit audit: all PV and thermal power features normalized to Watts — 2026-05-20
+
+#### **What changed**
+- `thermal_power_kw` feature column renamed to `thermal_power_w` (multiply by 1000 at both calibration time and inference time). `thermal_power_kw` kept as internal intermediate.
+- `thermal_power_rolling_1h` now computed from `thermal_power_w` (W) in calibration; inference returns `thermal_power_kw × 1000`.
+- `shading_proxy` formula: `PV_Generate` is in W (confirmed), so `/1000` division removed. Units changed from K×kW → K×W.
+- All other PV features (`PV_Generate`, `pv_roll_*`, `pv_forecast_*`, `solar_thermal_proxy`, `pv_forecast_delta`) were already in W ✓. `Q_wp` was already in W ✓.
+
+#### **Why**
+- User requirement: all PV and thermal power/energy features must be in Watts. `thermal_power_kw` contained kW values. `shading_proxy` divided PV_W by 1000 unnecessarily.
+
+#### **Files modified**
+- `src/heating_correction_ml_calibration.py`
+- `src/heating_correction_ml_model.py`
+- `tests/unit/test_heating_correction_ml_model.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+### ✅ S_H audit + shading_proxy + heat_loss_interaction — 2026-05-20
+
+#### **What changed**
+- Audited S_H: confirmed scalar constant (std=0 per training run); skipped as a feature per specification.
+- Added `shading_proxy = max(0, T_indoor−23) × PV_W` in both calibration (section 4d) and inference (`_extract_heating_feature`). Continuous solar overheat proxy for Übergangszeit (units: K×W).
+- Added `heat_loss_interaction = (T_indoor − AT) × wind_speed` in both files. Encodes convective U-factor wind dependence that linear `wind_speed` cannot capture.
+- Flagged 9 zero-PI features with `# PI=0.0000` comments in both files for visibility in future pruning.
+
+#### **Why**
+- Problem statement required auditing S_H per-sample variability before implementing; found it is a training-run scalar → adding as feature gives zero information.
+- `shading_proxy` and `heat_loss_interaction` encode physical mechanisms not covered by existing features; both append after all prior features (order preserved).
+
+#### **Files modified**
+- `src/heating_correction_ml_calibration.py`
+- `src/heating_correction_ml_model.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### ✅ PR #61 review feedback: deduplicate feature + align Q_wp units + parity/tests — 2026-05-20
 
 #### **What changed**

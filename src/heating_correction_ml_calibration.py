@@ -70,6 +70,12 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Indoor temperature threshold above which solar overheat protection (roller
+# shutters / Jalousie) is assumed to be active.  Value chosen to match the
+# typical comfort ceiling during the cold / transitional season.
+_SHADING_ACTIVATION_TEMP_C = 23.0
+
+
 def _json_default(obj):
     """JSON serialiser fallback for numpy scalars."""
     try:
@@ -422,6 +428,9 @@ def calibrate_heating_correction_ml(
         df["thermal_power_kw"] = df["power_w"] / 1000.0
     else:
         df["thermal_power_kw"] = 0.0
+    # Convert to W for the feature vector (kW × 1000); keep thermal_power_kw for
+    # intermediate use only (e.g. Q_wp formula already uses flow_rate directly).
+    df["thermal_power_w"] = df["thermal_power_kw"] * 1000.0
 
     df["outlet_indoor_diff"] = df["VLT"] - df["indoor_temp"]
     df["at_delta_indoor"] = df["AT"] - df["indoor_temp"]
@@ -461,8 +470,8 @@ def calibrate_heating_correction_ml(
     else:
         df["is_weekend"] = 0.0
 
-    # Rolling 1-hour thermal power
-    df["thermal_power_rolling_1h"] = df["thermal_power_kw"].rolling(
+    # Rolling 1-hour thermal power (in W)
+    df["thermal_power_rolling_1h"] = df["thermal_power_w"].rolling(
         steps_per_hour, min_periods=1
     ).mean()
 
@@ -580,6 +589,20 @@ def calibrate_heating_correction_ml(
     else:
         df["pv_forecast_delta"] = 0.0
 
+    # ── 4d. New physics interaction features ────────────────────────────
+
+    # Continuous shading proxy: indoor_temp > _SHADING_ACTIVATION_TEMP_C × PV intensity → solar overheat
+    # protection active (shutters closed, Übergangszeit); units: K × W
+    df["shading_proxy"] = (
+        (df["indoor_temp"] - _SHADING_ACTIVATION_TEMP_C).clip(lower=0.0) * df["PV_Generate"]
+    ).fillna(0.0)
+
+    # Wind × temperature-difference interaction: approximates convective heat loss
+    # term U_eff ≈ U_base + k×wind; linear wind_speed alone has no predictive value
+    df["heat_loss_interaction"] = (
+        (df["indoor_temp"] - df["AT"]) * df["wind_speed"]
+    ).fillna(0.0)
+
     # ── 5. Regression label construction ───────────────────────────────
     # Estimate S_H from calibrated thermal parameters
     eta, u_loss, tau_room = _read_baseline_thermal_params(config)
@@ -632,7 +655,7 @@ def calibrate_heating_correction_ml(
         "RLT",
         "delta_t",
         "outlet_indoor_diff",
-        "thermal_power_kw",
+        "thermal_power_w",      # thermal power in W (= thermal_power_kw × 1000)
         "fireplace_on",
         "tv_on",
     ]
@@ -669,29 +692,35 @@ def calibrate_heating_correction_ml(
 
     # NEW: 8 additional ML correction features
     feature_cols += [
-        "wind_speed",
-        "indoor_temp_gradient",
+        "wind_speed",               # PI=0.0000 — retained for model backward-compat; heat_loss_interaction captures its interaction effect
+        "indoor_temp_gradient",     # PI=0.0000
         "living_room_temp",
         "is_hp_active",
         "is_weekend",
-        "thermal_power_rolling_1h",
-        "indoor_margin_rate",
-        "is_overshoot",
+        "thermal_power_rolling_1h",  # rolling mean in W
+        "indoor_margin_rate",       # PI=0.0000
+        "is_overshoot",             # PI=0.0000
     ]
 
     # Slab thermal state features
     feature_cols += [
-        "d_inlet_temp_60min",  # ΔT_rl over 60 min: thermal loading trend of the floor slab
-        "is_equilibrium",      # 1.0 when |ΔT_rl| < 0.3 K → system in thermal steady state
+        "d_inlet_temp_60min",  # PI=0.0000 — ΔT_rl over 60 min: thermal loading trend of the floor slab
+        "is_equilibrium",      # PI=0.0000 — 1.0 when |ΔT_rl| < 0.3 K → system in thermal steady state
     ]
 
     # Physics-motivated features
     feature_cols += [
         "heat_loss_driving_force",  # T_indoor − T_outdoor: Newton heat loss driving force
-        "delta_T_indoor_lag1",      # ΔT indoor over 1 cycle: autoregressive momentum
-        "Q_wp",                     # Actual heat output in W: flow × ΔT × c_p
-        "solar_thermal_proxy",      # PV × cos(hour): passive solar gain proxy
+        "delta_T_indoor_lag1",      # PI=0.0000 — ΔT indoor over 1 cycle: autoregressive momentum
+        "Q_wp",                     # PI=0.0000 — Actual heat output in W: flow × ΔT × c_p
+        "solar_thermal_proxy",      # PI=-0.0000 — PV × cos(hour): passive solar gain proxy
         "pv_forecast_delta",        # pv_forecast_2h − pv_now: anticipatory solar signal
+    ]
+
+    # New physics interaction features (appended after all prior features)
+    feature_cols += [
+        "shading_proxy",          # max(0, T_indoor−23) × PV_W: continuous solar shading proxy (K×W)
+        "heat_loss_interaction",  # (T_indoor − AT) × wind_speed: convective heat loss interaction
     ]
 
     # Guard: only keep columns that exist and have > 5% coverage

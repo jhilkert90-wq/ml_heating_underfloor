@@ -224,9 +224,14 @@ class TestExtractHeatingFeature:
         assert v == pytest.approx(1.0)
 
     def test_thermal_power_rolling_1h(self):
-        """thermal_power_rolling_1h uses instantaneous thermal_power_kw at inference."""
+        """thermal_power_rolling_1h converts kW→W at inference (thermal_power_kw × 1000)."""
         v = self._call("thermal_power_rolling_1h", {"thermal_power_kw": 4.5})
-        assert v == pytest.approx(4.5)
+        assert v == pytest.approx(4500.0)
+
+    def test_thermal_power_w(self):
+        """thermal_power_w converts kW→W at inference (thermal_power_kw × 1000)."""
+        v = self._call("thermal_power_w", {"thermal_power_kw": 4.5})
+        assert v == pytest.approx(4500.0)
 
     def test_indoor_margin_rate(self):
         """indoor_margin_rate maps directly from physics dict."""
@@ -325,6 +330,28 @@ class TestExtractHeatingFeature:
         )
         assert v == pytest.approx(1000.0)
         assert self._call("pv_forecast_delta", {"pv_now_electrical": 600.0}) == pytest.approx(0.0)
+
+    def test_shading_proxy_uses_watts(self):
+        """shading_proxy = max(0, T−23) × PV_W; no division by 1000."""
+        # indoor=25°C → (25−23)=2 K; PV=3000 W → 2×3000 = 6000 K·W
+        v = self._call(
+            "shading_proxy",
+            {"indoor_temp": 25.0, "pv_now_electrical": 3000.0},
+        )
+        assert v == pytest.approx(6000.0)
+
+    def test_shading_proxy_zero_below_threshold(self):
+        """shading_proxy = 0 when indoor_temp ≤ 23°C."""
+        v = self._call(
+            "shading_proxy",
+            {"indoor_temp": 22.0, "pv_now_electrical": 5000.0},
+        )
+        assert v == pytest.approx(0.0)
+
+    def test_shading_proxy_missing_pv(self):
+        """shading_proxy = 0 when PV is unavailable."""
+        v = self._call("shading_proxy", {"indoor_temp": 25.0})
+        assert v == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
