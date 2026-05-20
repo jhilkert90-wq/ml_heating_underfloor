@@ -324,7 +324,7 @@ class TestExtractHeatingFeature:
             {"pv_now_electrical": 600.0, "pv_forecast_electrical_2h": 1600.0},
         )
         assert v == pytest.approx(1000.0)
-        assert self._call("pv_forecast_delta", {"pv_now": 600.0}) == pytest.approx(0.0)
+        assert self._call("pv_forecast_delta", {"pv_now_electrical": 600.0}) == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
