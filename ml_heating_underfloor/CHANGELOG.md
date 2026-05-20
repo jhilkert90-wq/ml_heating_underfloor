@@ -1,5 +1,21 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.53] - 2026-05-20
+
+### Added
+- **Physics-motivated features** for the heating correction ML model (`heating_correction_ml_model.py`, `heating_correction_ml_calibration.py`):
+  - `heat_loss_driving_force` (T_indoor − T_outdoor): Newton's law interaction term — primary heat loss driver
+  - `delta_T_indoor_lag1` (ΔT indoor over 1 cycle): autoregressive momentum term capturing thermal inertia of the floor slab
+  - `Q_wp` (flow_rate × ΔT × c_p): actual heat output in Watts — captures combined effect of flow and temperature difference
+  - `solar_thermal_proxy` (PV_Generate × cos_hour): passive solar gain proxy encoding sun angle and intensity
+  - `pv_forecast_delta` (pv_forecast_2h − pv_now): anticipatory solar signal for forward-looking correction
+
+### Fixed
+- Removed duplicated `control_deviation` feature from heating-correction ML calibration/inference feature construction to avoid redundant model inputs.
+- Updated `Q_wp` to derive from `SPECIFIC_HEAT_CAPACITY` (kJ/kgK → J/kgK conversion) so calibration and inference use consistent, dimensionally correct thermal constants.
+- Ensured calibration always derives `pv_forecast_2h` for `pv_forecast_delta`, even when `HEATING_ML_PV_FORECAST_HOURS` excludes `2`, preserving train/infer parity.
+- Added unit tests for new physics-motivated feature extraction and calibration feature-column presence/fallback behavior.
+
 ## [0.2.52] - 2026-05-19
 
 ### Added
