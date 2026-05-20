@@ -279,6 +279,53 @@ class TestExtractHeatingFeature:
         v = self._call("is_equilibrium", {})
         assert v == pytest.approx(0.0)
 
+    def test_heat_loss_driving_force_uses_indoor_and_outdoor(self):
+        v = self._call(
+            "heat_loss_driving_force",
+            {"indoor_temp": 21.5, "outdoor_temp": 7.0},
+        )
+        assert v == pytest.approx(14.5)
+
+    def test_delta_t_indoor_lag1(self):
+        v = self._call("delta_T_indoor_lag1", {"indoor_temp_delta_10m": -0.2})
+        assert v == pytest.approx(-0.2)
+        assert self._call("delta_T_indoor_lag1", {}) == pytest.approx(0.0)
+
+    def test_q_wp_uses_specific_heat_capacity_from_config(self):
+        with patch(
+            "src.heating_correction_ml_model.config.SPECIFIC_HEAT_CAPACITY", 4.182
+        ):
+            v = self._call(
+                "Q_wp",
+                {"flow_rate": 12.0, "outlet_temp": 35.0, "inlet_temp": 30.0},
+            )
+        # 12 L/min => 0.2 L/s; 0.2 * 5 K * 4182 J/kgK = 4182 W
+        assert v == pytest.approx(4182.0)
+
+    def test_q_wp_fallbacks(self):
+        assert self._call(
+            "Q_wp", {"flow_rate": 0.0, "outlet_temp": 35.0, "inlet_temp": 30.0}
+        ) == pytest.approx(0.0)
+        assert self._call(
+            "Q_wp", {"flow_rate": 12.0, "outlet_temp": 35.0}
+        ) == pytest.approx(0.0)
+
+    def test_solar_thermal_proxy(self):
+        v = self._call(
+            "solar_thermal_proxy",
+            {"pv_now_electrical": 1800.0, "hour_cos": 0.5},
+        )
+        assert v == pytest.approx(900.0)
+        assert self._call("solar_thermal_proxy", {}) == pytest.approx(0.0)
+
+    def test_pv_forecast_delta(self):
+        v = self._call(
+            "pv_forecast_delta",
+            {"pv_now_electrical": 600.0, "pv_forecast_electrical_2h": 1600.0},
+        )
+        assert v == pytest.approx(1000.0)
+        assert self._call("pv_forecast_delta", {"pv_now": 600.0}) == pytest.approx(0.0)
+
 
 # ---------------------------------------------------------------------------
 # build_heating_feature_vector

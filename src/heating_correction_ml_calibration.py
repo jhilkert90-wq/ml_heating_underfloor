@@ -545,8 +545,10 @@ def calibrate_heating_correction_ml(
     for h in pv_forecast_hours:
         shift = h * steps_per_hour
         df[f"pv_forecast_{h}h"] = df["PV_Generate"].shift(-shift)
+    if "pv_forecast_2h" not in df.columns:
+        df["pv_forecast_2h"] = df["PV_Generate"].shift(-2 * steps_per_hour)
 
-    # ── 4c. 6 new physics-motivated features ───────────────────────────
+    # ── 4c. Physics-motivated features ─────────────────────────────────
     # Newton's law: primary driver of heat loss is T_indoor − T_outdoor
     df["heat_loss_driving_force"] = df["indoor_temp"] - df["AT"]
 
@@ -554,14 +556,14 @@ def calibrate_heating_correction_ml(
     # indoor_temp_delta_10m used at inference); calibration data is at cycle resolution
     df["delta_T_indoor_lag1"] = df["indoor_temp"].diff(1).fillna(0.0)
 
-    # Signed distance from target: positive = room too cold, negative = too warm
-    df["control_deviation"] = heating_target_c - df["indoor_temp"]
-
     # Actual heat output in W: flow (L/min → L/s) × ΔT × c_p
     if "flow_rate" in df.columns:
+        specific_heat_j_per_kgk = specific_heat * 1000.0
         df["Q_wp"] = np.where(
             df["flow_rate"] > 0,
-            (df["flow_rate"] / 60.0) * (df["VLT"] - df["RLT"]) * 4182.0,
+            (df["flow_rate"] / 60.0)
+            * (df["VLT"] - df["RLT"])
+            * specific_heat_j_per_kgk,
             0.0,
         )
     else:
@@ -683,12 +685,11 @@ def calibrate_heating_correction_ml(
         "is_equilibrium",      # 1.0 when |ΔT_rl| < 0.3 K → system in thermal steady state
     ]
 
-    # 6 new physics-motivated features
+    # Physics-motivated features
     feature_cols += [
         "heat_loss_driving_force",  # T_indoor − T_outdoor: Newton heat loss driving force
         "delta_T_indoor_lag1",      # ΔT indoor over 1 cycle: autoregressive momentum
-        "control_deviation",        # T_setpoint − T_indoor: signed distance from target
-        "Q_wp",                     # Actual heat output in W: flow × ΔT × 4182
+        "Q_wp",                     # Actual heat output in W: flow × ΔT × c_p
         "solar_thermal_proxy",      # PV × cos(hour): passive solar gain proxy
         "pv_forecast_delta",        # pv_forecast_2h − pv_now: anticipatory solar signal
     ]
