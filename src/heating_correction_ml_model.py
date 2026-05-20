@@ -183,8 +183,9 @@ def _extract_heating_feature(
         return float(physics.get("delta_t") or 0.0)
     if col == "outlet_indoor_diff":
         return float(physics.get("outlet_indoor_diff") or 0.0)
-    if col == "thermal_power_kw":
-        return float(physics.get("thermal_power_kw") or 0.0)
+    if col == "thermal_power_w":
+        # thermal_power_kw (from physics dict) converted to W
+        return float(physics.get("thermal_power_kw") or 0.0) * 1000.0
 
     # ── External heat sources ──────────────────────────────────────────
     if col == "fireplace_on":
@@ -262,8 +263,8 @@ def _extract_heating_feature(
     if col == "is_weekend":
         return float(physics.get("is_weekend") or 0.0)
     if col == "thermal_power_rolling_1h":
-        # At inference we only have the instantaneous value
-        return float(physics.get("thermal_power_kw") or 0.0)
+        # At inference we only have the instantaneous value; convert kW → W
+        return float(physics.get("thermal_power_kw") or 0.0) * 1000.0
     if col == "indoor_margin_rate":
         # PI=0.0000
         return float(physics.get("indoor_margin_rate") or 0.0)
@@ -335,8 +336,8 @@ def _extract_heating_feature(
 
     # ── New physics interaction features ───────────────────────────────
     if col == "shading_proxy":
-        # Continuous solar overheat-protection proxy: T_indoor > 23°C × PV/1 kW
-        # Captures roller-shutter / Jalousie activation during Übergangszeit; units: K×kW
+        # Continuous solar overheat-protection proxy: T_indoor > 23°C × PV_W
+        # Captures roller-shutter / Jalousie activation during Übergangszeit; units: K×W
         indoor = physics.get("indoor_temp")
         if indoor is None:
             indoor = physics.get("indoor_temp_lag_30m")
@@ -346,7 +347,7 @@ def _extract_heating_feature(
         if pv is None:
             pv = physics.get("pv_now")
         pv = float(pv) if pv is not None else 0.0
-        return max(0.0, float(indoor) - _SHADING_ACTIVATION_TEMP_C) * (pv / 1000.0)
+        return max(0.0, float(indoor) - _SHADING_ACTIVATION_TEMP_C) * pv
     if col == "heat_loss_interaction":
         # Convective heat loss interaction: (T_indoor − T_outdoor) × wind_speed
         # Wind increases effective U; effect scales with temperature gradient

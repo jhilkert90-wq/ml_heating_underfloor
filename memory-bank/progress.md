@@ -1,5 +1,28 @@
 # ML Heating System - Current Progress
 
+## ✅ Unit audit: all PV and thermal power features now in Watts (2026-05-20)
+
+**Status:** COMPLETED
+
+### Changes
+1. **`src/heating_correction_ml_calibration.py`**
+   - Added `df["thermal_power_w"] = df["thermal_power_kw"] * 1000.0` after kW column.
+   - `thermal_power_rolling_1h` now uses `thermal_power_w` (W).
+   - Feature col `"thermal_power_kw"` → `"thermal_power_w"`.
+   - `shading_proxy` formula: removed `/1000.0` (PV already in W); units K×W.
+2. **`src/heating_correction_ml_model.py`**
+   - `thermal_power_kw` dispatch → `thermal_power_w` (returns `physics.get("thermal_power_kw") * 1000.0`).
+   - `thermal_power_rolling_1h` dispatch → also returns `thermal_power_kw * 1000.0`.
+   - `shading_proxy` dispatch: removed `/1000.0`.
+3. **`tests/unit/test_heating_correction_ml_model.py`**
+   - Updated `test_thermal_power_rolling_1h` (now expects 4500.0 not 4.5).
+   - Added `test_thermal_power_w`, `test_shading_proxy_uses_watts`, `test_shading_proxy_zero_below_threshold`, `test_shading_proxy_missing_pv`.
+
+### Validation
+- 97 passed (93 prior + 4 new)
+
+**Files changed:** `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `tests/unit/test_heating_correction_ml_model.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ S_H audit + shading_proxy + heat_loss_interaction features (2026-05-20)
 
 **Status:** COMPLETED

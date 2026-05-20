@@ -428,6 +428,9 @@ def calibrate_heating_correction_ml(
         df["thermal_power_kw"] = df["power_w"] / 1000.0
     else:
         df["thermal_power_kw"] = 0.0
+    # Convert to W for the feature vector (kW × 1000); keep thermal_power_kw for
+    # intermediate use only (e.g. Q_wp formula already uses flow_rate directly).
+    df["thermal_power_w"] = df["thermal_power_kw"] * 1000.0
 
     df["outlet_indoor_diff"] = df["VLT"] - df["indoor_temp"]
     df["at_delta_indoor"] = df["AT"] - df["indoor_temp"]
@@ -467,8 +470,8 @@ def calibrate_heating_correction_ml(
     else:
         df["is_weekend"] = 0.0
 
-    # Rolling 1-hour thermal power
-    df["thermal_power_rolling_1h"] = df["thermal_power_kw"].rolling(
+    # Rolling 1-hour thermal power (in W)
+    df["thermal_power_rolling_1h"] = df["thermal_power_w"].rolling(
         steps_per_hour, min_periods=1
     ).mean()
 
@@ -589,9 +592,9 @@ def calibrate_heating_correction_ml(
     # ── 4d. New physics interaction features ────────────────────────────
 
     # Continuous shading proxy: indoor_temp > _SHADING_ACTIVATION_TEMP_C × PV intensity → solar overheat
-    # protection active (shutters closed, Übergangszeit); units: K × kW
+    # protection active (shutters closed, Übergangszeit); units: K × W
     df["shading_proxy"] = (
-        (df["indoor_temp"] - _SHADING_ACTIVATION_TEMP_C).clip(lower=0.0) * (df["PV_Generate"] / 1000.0)
+        (df["indoor_temp"] - _SHADING_ACTIVATION_TEMP_C).clip(lower=0.0) * df["PV_Generate"]
     ).fillna(0.0)
 
     # Wind × temperature-difference interaction: approximates convective heat loss
@@ -652,7 +655,7 @@ def calibrate_heating_correction_ml(
         "RLT",
         "delta_t",
         "outlet_indoor_diff",
-        "thermal_power_kw",
+        "thermal_power_w",      # thermal power in W (= thermal_power_kw × 1000)
         "fireplace_on",
         "tv_on",
     ]
@@ -694,7 +697,7 @@ def calibrate_heating_correction_ml(
         "living_room_temp",
         "is_hp_active",
         "is_weekend",
-        "thermal_power_rolling_1h",
+        "thermal_power_rolling_1h",  # rolling mean in W
         "indoor_margin_rate",       # PI=0.0000
         "is_overshoot",             # PI=0.0000
     ]
@@ -716,7 +719,7 @@ def calibrate_heating_correction_ml(
 
     # New physics interaction features (appended after all prior features)
     feature_cols += [
-        "shading_proxy",          # max(0, T_indoor−23) × PV/1000: continuous solar shading proxy (K×kW)
+        "shading_proxy",          # max(0, T_indoor−23) × PV_W: continuous solar shading proxy (K×W)
         "heat_loss_interaction",  # (T_indoor − AT) × wind_speed: convective heat loss interaction
     ]
 
