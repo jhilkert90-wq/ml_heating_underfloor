@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ S_H audit + shading_proxy + heat_loss_interaction — 2026-05-20
+
+#### **What changed**
+- Audited S_H: confirmed scalar constant (std=0 per training run); skipped as a feature per specification.
+- Added `shading_proxy = max(0, T_indoor−23) × PV/1000` in both calibration (section 4d) and inference (`_extract_heating_feature`). Continuous solar overheat proxy for Übergangszeit (units: K×kW).
+- Added `heat_loss_interaction = (T_indoor − AT) × wind_speed` in both files. Encodes convective U-factor wind dependence that linear `wind_speed` cannot capture.
+- Flagged 9 zero-PI features with `# PI=0.0000` comments in both files for visibility in future pruning.
+
+#### **Why**
+- Problem statement required auditing S_H per-sample variability before implementing; found it is a training-run scalar → adding as feature gives zero information.
+- `shading_proxy` and `heat_loss_interaction` encode physical mechanisms not covered by existing features; both append after all prior features (order preserved).
+
+#### **Files modified**
+- `src/heating_correction_ml_calibration.py`
+- `src/heating_correction_ml_model.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### ✅ PR #61 review feedback: deduplicate feature + align Q_wp units + parity/tests — 2026-05-20
 
 #### **What changed**

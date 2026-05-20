@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`shading_proxy` feature**: Continuous solar shading proxy (`max(0, T_indoor−23) × PV/1000`, units K×kW) added to heating correction ML pipeline (calibration + inference). Captures solar overheat protection (Übergangszeit) more accurately than hard binary flags.
+- **`heat_loss_interaction` feature**: Wind × temperature-difference interaction (`(T_indoor − AT) × wind_speed`) added to heating correction ML pipeline. Encodes convective heat-loss effect that linear `wind_speed` alone cannot capture.
+
+### Changed
+- Zero-PI features from prior sessions flagged with `# PI=0.0000` comments in `heating_correction_ml_model.py` and `heating_correction_ml_calibration.py` for visibility in future pruning pass.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

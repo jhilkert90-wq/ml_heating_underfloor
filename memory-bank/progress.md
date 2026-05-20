@@ -1,5 +1,26 @@
 # ML Heating System - Current Progress
 
+## ✅ S_H audit + shading_proxy + heat_loss_interaction features (2026-05-20)
+
+**Status:** COMPLETED
+
+### Audit findings
+- **S_H as feature: SKIPPED** — S_H is a scalar constant for the whole training run (std=0). Adding it as a feature provides zero information to the model.
+- Full duplicate audit: all 8 prior-session features confirmed EXISTS in both files; no re-addition needed.
+- Feature 2 (`shading_proxy`): `solar_thermal_proxy` exists but PI=-0.0000 (ineffective). `shading_proxy` encodes a different physical mechanism (solar overheat protection) → implemented.
+- Feature 3 (`heat_loss_interaction`): `wind_speed` exists with PI=0.0000. Interaction with temperature gradient encodes convective heat loss → implemented.
+
+### Changes
+1. **`src/heating_correction_ml_calibration.py`**
+   - Added `shading_proxy` and `heat_loss_interaction` computed columns (section 4d).
+   - Appended both to `feature_cols` after all prior features.
+   - Added `# PI=0.0000` comments to `wind_speed`, `indoor_temp_gradient`, `indoor_margin_rate`, `is_overshoot`, `d_inlet_temp_60min`, `is_equilibrium`, `delta_T_indoor_lag1`, `Q_wp`, `solar_thermal_proxy`.
+2. **`src/heating_correction_ml_model.py`**
+   - Added `shading_proxy` and `heat_loss_interaction` inference branches in `_extract_heating_feature()`.
+   - Added `# PI=0.0000` comments to matching zero-importance feature branches.
+
+**Files changed:** `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Address PR #61 review feedback for heating ML physics features (2026-05-20)
 
 **Status:** COMPLETED — removed duplicated feature, aligned `Q_wp` with config-specific heat units, fixed PV-forecast parity, and added regression coverage.
