@@ -1216,3 +1216,101 @@ class TestSlabThermalStateFeatures:
         assert "is_equilibrium" in captured_X["X"].columns
         # Constant RLT → all rows in equilibrium (after NaN from diff are dropped)
         assert (captured_X["X"]["is_equilibrium"] == 1.0).all()
+
+
+class TestPhysicsMotivatedFeatures:
+    def test_physics_features_are_present_without_duplicate_control_deviation(self):
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        df = _make_df(800, at_val=8.0)
+        df["PV_Generate"] = np.linspace(0.0, 1500.0, len(df))
+        captured_X = _run_calibration_capture_X(df, "/tmp/test_physics_features.joblib")
+
+        cols = list(captured_X["X"].columns)
+        assert "heat_loss_driving_force" in cols
+        assert "delta_T_indoor_lag1" in cols
+        assert "Q_wp" in cols
+        assert "solar_thermal_proxy" in cols
+        assert "pv_forecast_delta" in cols
+        assert "control_deviation" not in cols
+        assert captured_X["X"]["Q_wp"].notna().all()
+
+    def test_pv_forecast_delta_computed_when_pv_forecast_2h_not_requested(self):
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import calibrate_heating_correction_ml
+        df = _make_df(800, at_val=8.0)
+        df["pv_leistung_gefiltert"] = np.random.default_rng(9).uniform(100, 1000, len(df))
+        captured_X = {}
+
+        class _FitCaptured(Exception):
+            pass
+
+        with patch(
+            "src.heating_correction_ml_calibration.fetch_historical_data_for_calibration",
+            return_value=df,
+        ), patch(
+            "src.heating_correction_ml_calibration._read_baseline_thermal_params",
+            return_value=(0.830, 0.124, 4.39),
+        ), patch("src.heating_correction_ml_calibration.config") as mock_cfg:
+            mock_cfg.HEATING_ML_CALIBRATION_START_DATE = ""
+            mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
+            mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
+            mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1,2"
+            mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1,3"
+            mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1"
+            mock_cfg.HEATING_ML_TV_LAG_HOURS = "1"
+            mock_cfg.CYCLE_INTERVAL_MINUTES = 10
+            mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
+            mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+            mock_cfg.HEATING_ML_MIN_TRAINING_SAMPLES = 50
+            mock_cfg.HEATING_ML_RETRAIN_VAL_FRACTION = 0.25
+            mock_cfg.HEATING_ML_OPTUNA_ENABLED = False
+            mock_cfg.HEATING_ML_CV_ENABLED = False
+            mock_cfg.HEATING_ML_FEATURE_PRUNING_ENABLED = False
+            mock_cfg.OUTLET_EFFECTIVENESS = 0.830
+            mock_cfg.HEAT_LOSS_COEFFICIENT = 0.124
+            mock_cfg.THERMAL_TIME_CONSTANT = 4.39
+            mock_cfg.HEATING_ML_CORRECTION_MODEL_PATH = "/tmp/test_pv_delta.joblib"
+            mock_cfg.HEATING_ML_CORRECTION_METADATA_PATH = "/tmp/test_pv_delta_meta.json"
+            mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
+            mock_cfg.OUTDOOR_TEMP_ENTITY_ID = "sensor.outdoor"
+            mock_cfg.OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
+            mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
+            mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
+            mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+            mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv_leistung_gefiltert"
+            mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
+            mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
+
+            mock_lgb = MagicMock()
+            mock_model = MagicMock()
+            mock_lgb.LGBMRegressor.return_value = mock_model
+            mock_lgb.early_stopping.return_value = object()
+            mock_lgb.log_evaluation.return_value = object()
+            mock_model.predict.return_value = np.zeros(600)
+
+            def _capture_fit(X, y, **kw):
+                captured_X["X"] = X
+                raise _FitCaptured()
+
+            mock_model.fit.side_effect = _capture_fit
+
+            with patch.dict("sys.modules", {"lightgbm": mock_lgb}), \
+                 patch("joblib.dump"), \
+                 patch("os.replace"):
+                with pytest.raises(_FitCaptured):
+                    calibrate_heating_correction_ml()
+
+        assert "X" in captured_X
+        assert "pv_forecast_2h" not in captured_X["X"].columns
+        assert "pv_forecast_delta" in captured_X["X"].columns
+        assert captured_X["X"]["pv_forecast_delta"].notna().all()

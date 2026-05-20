@@ -1,5 +1,43 @@
 # ML Heating System - Current Progress
 
+## ✅ Address PR #61 review feedback for heating ML physics features (2026-05-20)
+
+**Status:** COMPLETED — removed duplicated feature, aligned `Q_wp` with config-specific heat units, fixed PV-forecast parity, and added regression coverage.
+
+### Changes
+1. **`src/heating_correction_ml_model.py`**
+   - Removed duplicate `control_deviation` inference branch.
+   - Updated `Q_wp` to use `config.SPECIFIC_HEAT_CAPACITY` with kJ/kgK → J/kgK conversion for consistent units.
+2. **`src/heating_correction_ml_calibration.py`**
+   - Removed duplicate `control_deviation` training column.
+   - Updated `Q_wp` to use `specific_heat * 1000` instead of hard-coded `4182`.
+   - Ensured `pv_forecast_2h` is always derived for `pv_forecast_delta` even if forecast hours are configured without `2`.
+3. **Tests**
+   - Added feature-extraction tests in `tests/unit/test_heating_correction_ml_model.py` for `heat_loss_driving_force`, `delta_T_indoor_lag1`, `Q_wp`, `solar_thermal_proxy`, and `pv_forecast_delta`.
+   - Added calibration tests in `tests/unit/test_heating_correction_ml_calibration.py` validating derived physics-feature presence, duplicate removal, and `pv_forecast_delta` behavior with custom forecast-hour config.
+
+### Validation
+- `python -m pytest tests/unit/test_heating_correction_ml_model.py tests/unit/test_heating_correction_ml_calibration.py -q --tb=short` → **93 passed**
+
+**Files changed:** `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `tests/unit/test_heating_correction_ml_model.py`, `tests/unit/test_heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+## ✅ Add 6 new physics-motivated features to heating correction ML (2026-05-20)
+
+**Status:** COMPLETED — added 6 new feature columns to both inference dispatch and calibration training pipeline.
+
+### Changes
+1. **`src/heating_correction_ml_model.py`**
+   - Added 6 new `if col ==` branches in `_extract_heating_feature()` after `is_equilibrium`: `heat_loss_driving_force`, `delta_T_indoor_lag1`, `control_deviation`, `Q_wp`, `solar_thermal_proxy`, `pv_forecast_delta`.
+2. **`src/heating_correction_ml_calibration.py`**
+   - Added section 4c computing all 6 features from the historical DataFrame after the PV hindcast loop.
+   - Appended all 6 feature names to `feature_cols` in section 6, after the `is_equilibrium` entry.
+
+### Validation
+- All 6 features are present and computed in identical order in both files.
+- Fallback to `0.0` for missing/zero values (delta_T_indoor_lag1, Q_wp with zero flow, pv_forecast_delta when forecast unavailable).
+
+**Files changed:** `src/heating_correction_ml_model.py`, `src/heating_correction_ml_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Review follow-up: cadence-aware slab delta + strict calibration test helper (2026-05-19)
 
 **Status:** COMPLETED — addressed PR review follow-ups for slab thermal-state feature correctness and regression-test reliability.

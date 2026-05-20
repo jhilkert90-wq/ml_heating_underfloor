@@ -1,5 +1,39 @@
 # Active Context - Current Work & Decision State
 
+### ✅ PR #61 review feedback: deduplicate feature + align Q_wp units + parity/tests — 2026-05-20
+
+#### **What changed**
+- Removed duplicated `control_deviation` feature from both inference (`src/heating_correction_ml_model.py`) and calibration (`src/heating_correction_ml_calibration.py`) so the model no longer receives a redundant copy of `indoor_margin`.
+- Replaced hard-coded `4182` in `Q_wp` with `SPECIFIC_HEAT_CAPACITY`-based computation and explicit kJ/kgK → J/kgK conversion in both calibration and inference paths.
+- Ensured calibration always derives `pv_forecast_2h` (via hindcast shift) so `pv_forecast_delta` remains meaningful even when `HEATING_ML_PV_FORECAST_HOURS` is customized to exclude `2`.
+- Added targeted unit tests in:
+  - `tests/unit/test_heating_correction_ml_model.py` (new physics-feature extraction + fallbacks)
+  - `tests/unit/test_heating_correction_ml_calibration.py` (physics-feature columns present, duplicate removed, forecast-hour parity for `pv_forecast_delta`)
+
+#### **Why**
+- Review feedback identified one duplicated signal (`control_deviation` == `indoor_margin`), one magic-number/unit consistency issue for `Q_wp`, and one train/infer parity risk for `pv_forecast_delta` with custom forecast-hour config.
+- The update keeps feature engineering interpretable, dimensionally consistent, and robust under non-default configuration.
+
+#### **Files modified**
+- `src/heating_correction_ml_model.py`
+- `src/heating_correction_ml_calibration.py`
+- `tests/unit/test_heating_correction_ml_model.py`
+- `tests/unit/test_heating_correction_ml_calibration.py`
+
+### ✅ Add 6 new physics features to heating correction ML — 2026-05-20
+
+#### **What changed**
+- Added 6 new feature branches to `_extract_heating_feature()` in `src/heating_correction_ml_model.py` after the `is_equilibrium` handler: `heat_loss_driving_force` (T_indoor−T_outdoor), `delta_T_indoor_lag1` (uses `indoor_temp_delta_10m` from physics dict), `control_deviation` (target_indoor−indoor), `Q_wp` (flow_rate/60 × ΔT × 4182, fallback 0 when flow=0/None), `solar_thermal_proxy` (pv_now × hour_cos), `pv_forecast_delta` (pv_forecast_electrical_2h − pv_now, fallback 0 when forecast unavailable).
+- Added section 4c in `src/heating_correction_ml_calibration.py` computing all 6 features from the historical DataFrame, placed after the PV hindcast loop so `pv_forecast_2h` and `hour_cos` are already available.
+- Appended all 6 feature names to `feature_cols` in section 6 of the calibration file.
+
+#### **Why**
+- The existing model sees T_indoor and T_outdoor separately but not their interaction (Newton's law). Adding `heat_loss_driving_force`, `Q_wp`, `solar_thermal_proxy`, `pv_forecast_delta`, `delta_T_indoor_lag1`, and `control_deviation` gives the model the physical mechanisms behind the daily rhythm, expected to improve R² from 0.86 → 0.93–0.95 and MAE from 0.15 K → <0.08 K.
+
+#### **Files modified**
+- `src/heating_correction_ml_model.py`
+- `src/heating_correction_ml_calibration.py`
+
 ### ✅ Review follow-up for slab-state features and calibration test reliability — 2026-05-19
 
 #### **What changed**
