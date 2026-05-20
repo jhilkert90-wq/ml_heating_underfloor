@@ -30,7 +30,7 @@
 ### Audit findings
 - **S_H as feature: SKIPPED** — S_H is a scalar constant for the whole training run (std=0). Adding it as a feature provides zero information to the model.
 - Full duplicate audit: all 8 prior-session features confirmed EXISTS in both files; no re-addition needed.
-- Feature 2 (`shading_proxy`): `solar_thermal_proxy` exists but PI=-0.0000 (ineffective). `shading_proxy` encodes a different physical mechanism (solar overheat protection) → implemented.
+- Feature 2 (`shading_proxy`): `solar_thermal_proxy` exists but PI=0.0000 (ineffective). `shading_proxy` encodes a different physical mechanism (solar overheat protection) → implemented.
 - Feature 3 (`heat_loss_interaction`): `wind_speed` exists with PI=0.0000. Interaction with temperature gradient encodes convective heat loss → implemented.
 
 ### Changes

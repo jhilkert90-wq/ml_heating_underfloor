@@ -21,7 +21,7 @@
 
 #### **What changed**
 - Audited S_H: confirmed scalar constant (std=0 per training run); skipped as a feature per specification.
-- Added `shading_proxy = max(0, T_indoor−23) × PV/1000` in both calibration (section 4d) and inference (`_extract_heating_feature`). Continuous solar overheat proxy for Übergangszeit (units: K×kW).
+- Added `shading_proxy = max(0, T_indoor−23) × PV_W` in both calibration (section 4d) and inference (`_extract_heating_feature`). Continuous solar overheat proxy for Übergangszeit (units: K×W).
 - Added `heat_loss_interaction = (T_indoor − AT) × wind_speed` in both files. Encodes convective U-factor wind dependence that linear `wind_speed` cannot capture.
 - Flagged 9 zero-PI features with `# PI=0.0000` comments in both files for visibility in future pruning.
 
