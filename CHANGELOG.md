@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **6 new physics-motivated features** for the heating correction ML model (`heating_correction_ml_model.py`, `heating_correction_ml_calibration.py`):
+  - `heat_loss_driving_force` (T_indoor − T_outdoor): Newton's law interaction term — primary heat loss driver
+  - `delta_T_indoor_lag1` (ΔT indoor over 1 cycle): autoregressive momentum term capturing thermal inertia of the floor slab
+  - `control_deviation` (T_setpoint − T_indoor): signed distance from target temperature
+  - `Q_wp` (flow_rate × ΔT × 4182): actual heat output in Watts — captures combined effect of flow and temperature difference
+  - `solar_thermal_proxy` (PV_Generate × cos_hour): passive solar gain proxy encoding sun angle and intensity
+  - `pv_forecast_delta` (pv_forecast_2h − pv_now): anticipatory solar signal for forward-looking correction
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

@@ -269,6 +269,55 @@ def _extract_heating_feature(
     if col == "is_equilibrium":
         return float(physics.get("is_equilibrium") or 0.0)
 
+    # ── 6 new physics-motivated features ───────────────────────────────
+    if col == "heat_loss_driving_force":
+        # Newton's law: primary heat loss driver is T_indoor − T_outdoor
+        indoor = physics.get("indoor_temp")
+        if indoor is None:
+            indoor = physics.get("indoor_temp_lag_30m")
+        indoor = float(indoor) if indoor is not None else 0.0
+        outdoor = float(physics.get("outdoor_temp") or 0.0)
+        return indoor - outdoor
+    if col == "delta_T_indoor_lag1":
+        # AR momentum: ΔT over 1 cycle (10 min) captures thermal inertia
+        return float(physics.get("indoor_temp_delta_10m") or 0.0)
+    if col == "control_deviation":
+        # Signed distance from target: positive = too cold, negative = too warm
+        indoor = physics.get("indoor_temp")
+        if indoor is None:
+            indoor = physics.get("indoor_temp_lag_30m")
+        indoor = float(indoor) if indoor is not None else 0.0
+        return target_indoor - indoor
+    if col == "Q_wp":
+        # Actual heat output in W: flow (L/min → L/s) × ΔT × c_p
+        flow_lpm = physics.get("flow_rate")
+        if not flow_lpm:
+            return 0.0
+        flow_lps = float(flow_lpm) / 60.0
+        vlt = float(physics.get("outlet_temp") or 0.0)
+        rlt = float(physics.get("inlet_temp") or 0.0)
+        return flow_lps * (vlt - rlt) * 4182.0
+    if col == "solar_thermal_proxy":
+        # Passive solar gain proxy: PV power × cos(hour) encodes sun angle
+        pv = physics.get("pv_now_electrical")
+        if pv is None:
+            pv = physics.get("pv_now")
+        pv = float(pv) if pv is not None else 0.0
+        cos_hour = float(physics.get("hour_cos") or 0.0)
+        return pv * cos_hour
+    if col == "pv_forecast_delta":
+        # Anticipatory solar: upcoming PV gain minus current (floor slab lag ~60–90 min)
+        pv = physics.get("pv_now_electrical")
+        if pv is None:
+            pv = physics.get("pv_now")
+        pv = float(pv) if pv is not None else 0.0
+        fc = physics.get("pv_forecast_electrical_2h")
+        if fc is None:
+            fc = physics.get("pv_forecast_2h")
+        if fc is None:
+            return 0.0
+        return float(fc) - pv
+
     logger.warning(
         "HeatingCorrectionMLModel: unknown feature column '%s', filling 0.0", col
     )

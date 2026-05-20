@@ -546,6 +546,37 @@ def calibrate_heating_correction_ml(
         shift = h * steps_per_hour
         df[f"pv_forecast_{h}h"] = df["PV_Generate"].shift(-shift)
 
+    # ── 4c. 6 new physics-motivated features ───────────────────────────
+    # Newton's law: primary driver of heat loss is T_indoor − T_outdoor
+    df["heat_loss_driving_force"] = df["indoor_temp"] - df["AT"]
+
+    # AR momentum: ΔT over 1 cycle (lag=1 step) captures thermal inertia
+    df["delta_T_indoor_lag1"] = df["indoor_temp"].diff(1).fillna(0.0)
+
+    # Signed distance from target: positive = room too cold, negative = too warm
+    df["control_deviation"] = heating_target_c - df["indoor_temp"]
+
+    # Actual heat output in W: flow (L/min → L/s) × ΔT × c_p
+    if "flow_rate" in df.columns:
+        df["Q_wp"] = np.where(
+            df["flow_rate"] > 0,
+            (df["flow_rate"] / 60.0) * (df["VLT"] - df["RLT"]) * 4182.0,
+            0.0,
+        )
+    else:
+        df["Q_wp"] = 0.0
+
+    # Passive solar gain proxy: PV power × cos(hour) encodes sun position/angle
+    df["solar_thermal_proxy"] = df["PV_Generate"] * df["hour_cos"]
+
+    # Anticipatory solar: upcoming PV gain minus current (slab time constant ~60–90 min)
+    if "pv_forecast_2h" in df.columns:
+        df["pv_forecast_delta"] = (
+            df["pv_forecast_2h"] - df["PV_Generate"]
+        ).fillna(0.0)
+    else:
+        df["pv_forecast_delta"] = 0.0
+
     # ── 5. Regression label construction ───────────────────────────────
     # Estimate S_H from calibrated thermal parameters
     eta, u_loss, tau_room = _read_baseline_thermal_params(config)
@@ -649,6 +680,16 @@ def calibrate_heating_correction_ml(
     feature_cols += [
         "d_inlet_temp_60min",  # ΔT_rl over 60 min: thermal loading trend of the floor slab
         "is_equilibrium",      # 1.0 when |ΔT_rl| < 0.3 K → system in thermal steady state
+    ]
+
+    # 6 new physics-motivated features
+    feature_cols += [
+        "heat_loss_driving_force",  # T_indoor − T_outdoor: Newton heat loss driving force
+        "delta_T_indoor_lag1",      # ΔT indoor over 1 cycle: autoregressive momentum
+        "control_deviation",        # T_setpoint − T_indoor: signed distance from target
+        "Q_wp",                     # Actual heat output in W: flow × ΔT × 4182
+        "solar_thermal_proxy",      # PV × cos(hour): passive solar gain proxy
+        "pv_forecast_delta",        # pv_forecast_2h − pv_now: anticipatory solar signal
     ]
 
     # Guard: only keep columns that exist and have > 5% coverage
