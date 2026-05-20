@@ -50,6 +50,11 @@ from src import config
 
 logger = logging.getLogger(__name__)
 
+# Indoor temperature threshold above which solar overheat protection (roller
+# shutters / Jalousie) is assumed to be active – must match the value used
+# in heating_correction_ml_calibration._SHADING_ACTIVATION_TEMP_C.
+_SHADING_ACTIVATION_TEMP_C = 23.0
+
 
 # ---------------------------------------------------------------------------
 # Lazy-import helpers (joblib / numpy only needed when a model is loaded)
@@ -239,7 +244,7 @@ def _extract_heating_feature(
 
     # ── NEW: 8 additional ML correction features ──────────────────────
     if col == "wind_speed":
-        # PI=0.0000 — linear term; predictive value absorbed by heat_loss_interaction
+        # PI=0.0000 — linear term; predictive value captured by heat_loss_interaction; retained for backward compat
         return float(physics.get("wind_speed") or 0.0)
     if col == "indoor_temp_gradient":
         # PI=0.0000
@@ -341,7 +346,7 @@ def _extract_heating_feature(
         if pv is None:
             pv = physics.get("pv_now")
         pv = float(pv) if pv is not None else 0.0
-        return max(0.0, float(indoor) - 23.0) * (pv / 1000.0)
+        return max(0.0, float(indoor) - _SHADING_ACTIVATION_TEMP_C) * (pv / 1000.0)
     if col == "heat_loss_interaction":
         # Convective heat loss interaction: (T_indoor − T_outdoor) × wind_speed
         # Wind increases effective U; effect scales with temperature gradient

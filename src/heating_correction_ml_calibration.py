@@ -70,6 +70,12 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Indoor temperature threshold above which solar overheat protection (roller
+# shutters / Jalousie) is assumed to be active.  Value chosen to match the
+# typical comfort ceiling during the cold / transitional season.
+_SHADING_ACTIVATION_TEMP_C = 23.0
+
+
 def _json_default(obj):
     """JSON serialiser fallback for numpy scalars."""
     try:
@@ -582,10 +588,10 @@ def calibrate_heating_correction_ml(
 
     # ── 4d. New physics interaction features ────────────────────────────
 
-    # Continuous shading proxy: indoor_temp > 23°C × PV intensity → solar overheat
+    # Continuous shading proxy: indoor_temp > _SHADING_ACTIVATION_TEMP_C × PV intensity → solar overheat
     # protection active (shutters closed, Übergangszeit); units: K × kW
     df["shading_proxy"] = (
-        (df["indoor_temp"] - 23.0).clip(lower=0.0) * (df["PV_Generate"] / 1000.0)
+        (df["indoor_temp"] - _SHADING_ACTIVATION_TEMP_C).clip(lower=0.0) * (df["PV_Generate"] / 1000.0)
     ).fillna(0.0)
 
     # Wind × temperature-difference interaction: approximates convective heat loss
@@ -683,7 +689,7 @@ def calibrate_heating_correction_ml(
 
     # NEW: 8 additional ML correction features
     feature_cols += [
-        "wind_speed",               # PI=0.0000 — linear term; absorbed by heat_loss_interaction
+        "wind_speed",               # PI=0.0000 — retained for model backward-compat; heat_loss_interaction captures its interaction effect
         "indoor_temp_gradient",     # PI=0.0000
         "living_room_temp",
         "is_hp_active",
