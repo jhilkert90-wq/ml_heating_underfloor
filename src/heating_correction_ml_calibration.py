@@ -550,7 +550,8 @@ def calibrate_heating_correction_ml(
     # Newton's law: primary driver of heat loss is T_indoor − T_outdoor
     df["heat_loss_driving_force"] = df["indoor_temp"] - df["AT"]
 
-    # AR momentum: ΔT over 1 cycle (lag=1 step) captures thermal inertia
+    # AR momentum: ΔT over 1 row (= 1 cycle ≈ 10 min, matching physics dict's
+    # indoor_temp_delta_10m used at inference); calibration data is at cycle resolution
     df["delta_T_indoor_lag1"] = df["indoor_temp"].diff(1).fillna(0.0)
 
     # Signed distance from target: positive = room too cold, negative = too warm

@@ -293,10 +293,11 @@ def _extract_heating_feature(
         flow_lpm = physics.get("flow_rate")
         if not flow_lpm:
             return 0.0
-        flow_lps = float(flow_lpm) / 60.0
-        vlt = float(physics.get("outlet_temp") or 0.0)
-        rlt = float(physics.get("inlet_temp") or 0.0)
-        return flow_lps * (vlt - rlt) * 4182.0
+        vlt = physics.get("outlet_temp")
+        rlt = physics.get("inlet_temp")
+        if vlt is None or rlt is None:
+            return 0.0
+        return (float(flow_lpm) / 60.0) * (float(vlt) - float(rlt)) * 4182.0
     if col == "solar_thermal_proxy":
         # Passive solar gain proxy: PV power × cos(hour) encodes sun angle
         pv = physics.get("pv_now_electrical")
