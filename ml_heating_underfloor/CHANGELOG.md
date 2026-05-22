@@ -1,5 +1,11 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.55] - 2026-05-22
+
+### Fixed
+- Cooling recovery gate now bypasses EMA smoothing so inlet-temp passthrough is preserved during recovery cycles.
+- Cooling trajectory correction now skips undershoot-only correction, always applies overshoot correction, and forces physics/Newton correction when `HEATING_CORRECTION_MODE="ml"` in cooling mode.
+
 ## [0.2.54] - 2026-05-20
 
 ### Added
