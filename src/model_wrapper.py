@@ -1884,10 +1884,19 @@ class EnhancedModelWrapper:
                     "correction"
                 )
 
-            # Calculate correction using the configured mode
+            # Calculate correction using the configured mode.
+            # In cooling mode, always use "physics" (Newton) — the ML model
+            # is trained only for heating and must not be applied here.
             _correction_mode = getattr(
                 config, "HEATING_CORRECTION_MODE", "legacy"
             )
+            if self._climate_mode == "cooling" and _correction_mode == "ml":
+                logging.debug(
+                    "❄️ Cooling mode: overriding HEATING_CORRECTION_MODE='ml' "
+                    "→ using physics Newton correction (ML is heating-only)."
+                )
+                _correction_mode = "physics"
+
             if _correction_mode == "physics":
                 corrected_outlet = self._calculate_physics_newton_correction(
                     outlet_temp=outlet_temp,
@@ -1973,6 +1982,13 @@ class EnhancedModelWrapper:
                 + indoor_trend_60m * _tau * (1.0 - math.exp(-_H / _tau))
             )
 
+            # --- Cooling mode: disable undershoot correction entirely ---
+            # In cooling mode "undershoot" means room predicted too cold;
+            # correcting would raise outlet (= less cooling) which is
+            # undesirable.  Also disable the overshoot skip-gate so that
+            # overheating is always corrected aggressively.
+            _is_cooling = self._climate_mode == "cooling"
+
             if min_violates and max_violates:
                 # Both boundaries violated - choose the more severe
                 min_severity = abs(
@@ -1984,26 +2000,33 @@ class EnhancedModelWrapper:
                     - (target_indoor + boundary_tolerance)
                 )
                 if min_severity > max_severity:
-                    # Undershoot is more severe — skip correction if
-                    # projected indoor will rise above target - 0.1°C
-                    # within TRAJECTORY_STEPS hours.
-                    if projected_indoor > target_indoor - boundary_tolerance:
+                    # Undershoot is more severe.
+                    # In cooling mode: skip undershoot, fall through to
+                    # overshoot correction instead.
+                    if _is_cooling:
                         logging.info(
-                            f"🔄 Skipping undershoot correction (both violated, "
-                            f"min wins): projected indoor "
-                            f"{projected_indoor:.2f}°C > target-0.1 "
-                            f"({target_indoor - boundary_tolerance:.1f}°C) "
-                            f"in {config.TRAJECTORY_STEPS}h "
-                            f"(trend {indoor_trend_60m:+.3f}°C/h) — "
-                            "house self-correcting"
+                            "❄️ Cooling mode: ignoring undershoot (both "
+                            "violated, min wins) — treating as overshoot."
                         )
-                        return outlet_temp
-                    temp_error = target_indoor - min_predicted_temp
+                        temp_error = target_indoor - max_predicted_temp
+                    else:
+                        # Heating: skip correction if house self-correcting
+                        if projected_indoor > target_indoor - boundary_tolerance:
+                            logging.info(
+                                f"🔄 Skipping undershoot correction (both violated, "
+                                f"min wins): projected indoor "
+                                f"{projected_indoor:.2f}°C > target-0.1 "
+                                f"({target_indoor - boundary_tolerance:.1f}°C) "
+                                f"in {config.TRAJECTORY_STEPS}h "
+                                f"(trend {indoor_trend_60m:+.3f}°C/h) — "
+                                "house self-correcting"
+                            )
+                            return outlet_temp
+                        temp_error = target_indoor - min_predicted_temp
                 else:
-                    # Overshoot is more severe — skip correction if
-                    # projected indoor will fall below target + 0.1°C
-                    # within TRAJECTORY_STEPS hours.
-                    if projected_indoor < target_indoor + boundary_tolerance:
+                    # Overshoot is more severe.
+                    # In cooling mode: never skip overshoot correction.
+                    if not _is_cooling and projected_indoor < target_indoor + boundary_tolerance:
                         logging.info(
                             f"🔄 Skipping overshoot correction (both violated, "
                             f"max wins): projected indoor "
@@ -2016,8 +2039,15 @@ class EnhancedModelWrapper:
                         return outlet_temp
                     temp_error = target_indoor - max_predicted_temp
             elif min_violates:
-                # Skip undershoot correction if projected indoor will rise
-                # above target - 0.1°C within TRAJECTORY_STEPS hours.
+                # Undershoot only.
+                # In cooling mode: disable undershoot correction entirely.
+                if _is_cooling:
+                    logging.info(
+                        "❄️ Cooling mode: skipping undershoot correction "
+                        "(min_violates only) — no action needed."
+                    )
+                    return outlet_temp
+                # Heating: skip if house self-correcting
                 if projected_indoor > target_indoor - boundary_tolerance:
                     logging.info(
                         f"🔄 Skipping undershoot correction: projected indoor "
@@ -2030,9 +2060,9 @@ class EnhancedModelWrapper:
                     return outlet_temp
                 temp_error = target_indoor - min_predicted_temp
             elif max_violates:
-                # Skip overshoot correction if projected indoor will fall
-                # below target + 0.1°C within TRAJECTORY_STEPS hours.
-                if projected_indoor < target_indoor + boundary_tolerance:
+                # Overshoot only.
+                # In cooling mode: never skip — always correct aggressively.
+                if not _is_cooling and projected_indoor < target_indoor + boundary_tolerance:
                     logging.info(
                         f"🔄 Skipping overshoot correction: projected indoor "
                         f"{projected_indoor:.2f}°C < target+0.1 "
@@ -2204,6 +2234,9 @@ class EnhancedModelWrapper:
             # rather than always at the full horizon H.
             _worst_idx = len(trajectory_temps) - 1
 
+            # --- Cooling mode: disable undershoot correction entirely ---
+            _is_cooling = self._climate_mode == "cooling"
+
             if min_violates and max_violates:
                 min_severity = abs(
                     min_predicted_temp - (target_indoor - boundary_tolerance)
@@ -2212,19 +2245,29 @@ class EnhancedModelWrapper:
                     max_predicted_temp - (target_indoor + boundary_tolerance)
                 )
                 if min_severity > max_severity:
-                    if projected_indoor > target_indoor - boundary_tolerance:
+                    # Undershoot more severe.
+                    if _is_cooling:
                         logging.info(
-                            "🔄 [Newton] Skipping undershoot correction (both "
-                            "violated, min wins): projected indoor "
-                            f"{projected_indoor:.2f}°C > target-0.1 "
-                            f"({target_indoor - boundary_tolerance:.1f}°C) — "
-                            "house self-correcting"
+                            "❄️ [Newton] Cooling mode: ignoring undershoot "
+                            "(both violated, min wins) — treating as overshoot."
                         )
-                        return outlet_temp
-                    temp_error = target_indoor - min_predicted_temp
-                    _worst_idx = trajectory_temps.index(min_predicted_temp)
+                        temp_error = target_indoor - max_predicted_temp
+                        _worst_idx = trajectory_temps.index(max_predicted_temp)
+                    else:
+                        if projected_indoor > target_indoor - boundary_tolerance:
+                            logging.info(
+                                "🔄 [Newton] Skipping undershoot correction (both "
+                                "violated, min wins): projected indoor "
+                                f"{projected_indoor:.2f}°C > target-0.1 "
+                                f"({target_indoor - boundary_tolerance:.1f}°C) — "
+                                "house self-correcting"
+                            )
+                            return outlet_temp
+                        temp_error = target_indoor - min_predicted_temp
+                        _worst_idx = trajectory_temps.index(min_predicted_temp)
                 else:
-                    if projected_indoor < target_indoor + boundary_tolerance:
+                    # Overshoot more severe — in cooling never skip.
+                    if not _is_cooling and projected_indoor < target_indoor + boundary_tolerance:
                         logging.info(
                             "🔄 [Newton] Skipping overshoot correction (both "
                             "violated, max wins): projected indoor "
@@ -2236,6 +2279,13 @@ class EnhancedModelWrapper:
                     temp_error = target_indoor - max_predicted_temp
                     _worst_idx = trajectory_temps.index(max_predicted_temp)
             elif min_violates:
+                # Undershoot only — disable in cooling mode.
+                if _is_cooling:
+                    logging.info(
+                        "❄️ [Newton] Cooling mode: skipping undershoot "
+                        "correction (min_violates only) — no action needed."
+                    )
+                    return outlet_temp
                 if projected_indoor > target_indoor - boundary_tolerance:
                     logging.info(
                         "🔄 [Newton] Skipping undershoot correction: projected "
@@ -2247,7 +2297,8 @@ class EnhancedModelWrapper:
                 temp_error = target_indoor - min_predicted_temp
                 _worst_idx = trajectory_temps.index(min_predicted_temp)
             elif max_violates:
-                if projected_indoor < target_indoor + boundary_tolerance:
+                # Overshoot only — in cooling never skip.
+                if not _is_cooling and projected_indoor < target_indoor + boundary_tolerance:
                     logging.info(
                         "🔄 [Newton] Skipping overshoot correction: projected "
                         f"indoor {projected_indoor:.2f}°C < target+0.1 "
