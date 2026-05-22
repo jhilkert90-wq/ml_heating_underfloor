@@ -45,6 +45,8 @@ The primary goal is to improve upon traditional heat curves by creating a **self
 ### Intelligent Control
 
 -   **Enhanced Model Wrapper:** Intelligent prediction system that replaces complex control logic with simplified outlet temperature prediction
+-   **Selectable Heating Correction Modes:** `HEATING_CORRECTION_MODE` supports `legacy`, `physics`, and `ml` (in cooling mode, the `ml` setting is automatically overridden to use physics/Newton correction)
+-   **ML Correction Blend:** In `ml` mode, correction uses confidence-weighted blending between physics Newton delta and LightGBM delta (`HEATING_ML_BLEND_MIN_R2` gate)
 -   **Gentle Trajectory Correction:** Intelligent additive correction system that prevents outlet temperature spikes during thermal trajectory deviations, using proven heat curve automation logic (5°C/8°C/12°C per degree) instead of aggressive multiplicative factors
 -   **Overshoot & Undershoot Gates:** Projected-temperature gates that skip corrections when indoor temperature is already moving in the right direction, preventing overcorrection oscillation
 -   **Smart Rounding:** Tests both floor and ceiling temperatures, predicts outcomes, chooses the one that gets closest to target
@@ -355,6 +357,64 @@ descriptions, default values, valid ranges, and guidance on when to change each 
                          └──────────────────┘      
 ```
 
+### Workflow Diagram
+
+```mermaid
+flowchart TD
+    A[Read current cycle inputs] --> B[Build physics features]
+    B --> C{Operating mode}
+    C -->|Heating| D[Predict trajectory]
+    C -->|Cooling| D
+    D --> E{Trajectory within target bounds?}
+    E -->|Yes| F[Keep candidate outlet]
+    E -->|No| G{HEATING_CORRECTION_MODE}
+    G -->|legacy| H[Empirical physics correction]
+    G -->|physics| I[Newton correction ΔT=ε/S(t_eval)]
+    G -->|ml| J[ML correction: blend physics + LightGBM]
+    H --> K[Clamp + gradual change limits]
+    I --> K
+    J --> K
+    F --> K
+    K --> L{Shadow mode?}
+    L -->|Yes| M[Publish recommendation only]
+    L -->|No| N[Write outlet setpoint to HA]
+    M --> O[Collect observation + metrics]
+    N --> O
+    O --> P[Resolve labels and update online learning]
+    P --> Q{Retrain trigger reached?}
+    Q -->|Yes| R[Run heating-correction ML calibration]
+    Q -->|No| S[Wait next cycle]
+    R --> S
+```
+
+### Per-Cycle Calculations and Available Options
+
+1. **Input acquisition**
+   - Reads indoor/outdoor/outlet/inlet temperatures, target temperature, flow rate, weather/PV forecasts, and heat-source states.
+   - **Options:** active vs shadow deployment, heating vs cooling mode.
+2. **Feature engineering**
+   - Builds core and advanced features including slab trend (`d_inlet_temp_60min` = 60-minute inlet trend, `is_equilibrium` = near steady-state flag).
+   - Heating-correction physics features include:
+     - `heat_loss_driving_force` (indoor-outdoor temperature gradient),
+     - `delta_T_indoor_lag1` (short-term indoor momentum),
+     - `Q_wp` (estimated heat pump thermal output),
+     - `solar_thermal_proxy` and `pv_forecast_delta` (current and upcoming solar gain),
+     - `shading_proxy` and `heat_loss_interaction` (overheat protection and wind-loss interaction).
+   - **Options:** optional external source inputs (PV/fireplace/TV) and forecast availability.
+3. **Trajectory prediction**
+   - Predicts indoor response over the configured horizon (`TRAJECTORY_STEPS`) for candidate outlet temperatures.
+   - **Options:** cycle time (`CYCLE_INTERVAL_MINUTES`), horizon length.
+4. **Correction decision**
+   - If trajectory violates target band, applies configured correction path.
+   - **Options:** `HEATING_CORRECTION_MODE=legacy|physics|ml`; in ML mode the blend is enabled only above `HEATING_ML_BLEND_MIN_R2`.
+5. **Actuation / publishing**
+   - Applies outlet clamps and change-rate limits, then either writes the value (active mode) or publishes only shadow output.
+   - **Options:** `CLAMP_MIN_ABS`, `CLAMP_MAX_ABS`, `MAX_TEMP_CHANGE_PER_CYCLE`.
+6. **Learning loop**
+   - Stores cycle observations, resolves delayed labels, updates online metrics, and can auto-trigger heating-correction ML retraining when buffer thresholds are met.
+   - Note: The heating-correction loop operates during heating cycles. Cooling mode uses a separate observation loop.
+   - **Options:** `HEATING_ML_RETRAIN_TRIGGER_K`, `HEATING_ML_BUFFER_MAX_N`, `HEATING_ML_LABEL_HORIZON_H`.
+
 ### The Thermal Model
 
 The controller uses **ThermalEquilibriumModel** - a physics-based machine learning approach that combines thermodynamic principles with data-driven learning:
@@ -490,6 +550,17 @@ The system publishes a suite of detailed sensors to Home Assistant for comprehen
     - `perfect_accuracy_pct`, `tolerable_accuracy_pct`, `poor_accuracy_pct`: Breakdown of prediction accuracy over 24 hours.
     - `excellent_all_time_pct`, `good_all_time_pct`: All-time accuracy metrics.
     - `prediction_count_24h`: Number of predictions in the last 24 hours.
+
+### FAQ (ADK: Answers to Daily Questions)
+
+- **How do I train heating-correction ML once?**  
+  Run: `python3 -m src.main --calibrate-heating-correction-ml`
+- **What if ML correction is not ready or model quality is low?**  
+  The controller falls back to physics/Newton correction automatically.
+- **Can I keep learning while not controlling the heat pump?**  
+  Yes. Use shadow mode; it still collects observations and improves learning.
+- **Does ML correction run in cooling mode?**  
+  No. In cooling mode, `HEATING_CORRECTION_MODE='ml'` is overridden to physics/Newton correction.
 
 ## Analysis & Debugging
 
