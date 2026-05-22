@@ -1,3 +1,11 @@
 name: "ML Heating Control Repository"
 url: "https://github.com/jhilkert90-wq/ml_heating_underfloor"
 maintainer: "ML Heating Contributors"
+description: "Adaptive machine-learning heating and cooling control for underfloor systems in Home Assistant"
+tags:
+  - heating
+  - cooling
+  - underfloor-heating
+  - machine-learning
+  - home-assistant
+  - heat-pump
