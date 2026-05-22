@@ -2109,7 +2109,8 @@ def main():
             if _cooling_recovery_active:
                 logging.debug(
                     "❄️ Cooling recovery: bypassing EMA smoothing "
-                    "(preserving inlet_temp=%.1f°C)", final_temp,
+                    "(preserving inlet_temp=%.1f°C)",
+                    final_temp,
                 )
             else:
                 final_temp = apply_ema_smoothing(final_temp, last_final)
