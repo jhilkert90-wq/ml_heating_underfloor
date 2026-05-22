@@ -1,5 +1,25 @@
 # ML Heating System - Current Progress
 
+## ✅ PR #63 review follow-up: cooling trajectory/EMA regression coverage (2026-05-22)
+
+**Status:** COMPLETED
+
+### Changes
+1. **`tests/unit/test_heating_correction.py`**
+   - Added dispatch regression asserting cooling mode overrides `HEATING_CORRECTION_MODE="ml"` to physics/Newton and does not call ML correction.
+2. **`tests/unit/test_overshoot_logic.py`**
+   - Added cooling regression for undershoot-only path (`min_violates`) returning unchanged outlet.
+   - Added cooling regression asserting overshoot correction still executes even when projected-indoor skip-gate conditions are met.
+3. **`tests/unit/test_main_functions.py`**
+   - Added main-loop regression that runs a cooling-recovery cycle and asserts `apply_ema_smoothing()` is not called.
+4. **`CHANGELOG.md`**
+   - Added `[Unreleased]` entries for cooling recovery EMA bypass and cooling trajectory-correction behavior updates.
+
+### Validation
+- `python3 -m pytest -q tests/unit/test_heating_correction.py tests/unit/test_overshoot_logic.py tests/unit/test_main_functions.py tests/unit/test_cooling_mode.py` → **79 passed**
+
+**Files changed:** `tests/unit/test_heating_correction.py`, `tests/unit/test_overshoot_logic.py`, `tests/unit/test_main_functions.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Unit audit: all PV and thermal power features now in Watts (2026-05-20)
 
 **Status:** COMPLETED

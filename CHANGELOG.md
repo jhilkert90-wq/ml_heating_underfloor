@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Cooling recovery gate now bypasses EMA smoothing so inlet-temp passthrough is preserved during recovery cycles.
+- Cooling trajectory correction now skips undershoot-only correction, always applies overshoot correction, and forces physics/Newton correction when `HEATING_CORRECTION_MODE="ml"` in cooling mode.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
