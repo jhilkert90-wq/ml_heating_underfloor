@@ -393,7 +393,8 @@ flowchart TD
    - Reads indoor/outdoor/outlet/inlet temperatures, target temperature, flow rate, weather/PV forecasts, and heat-source states.
    - **Options:** active vs shadow deployment, heating vs cooling mode.
 2. **Feature engineering**
-   - Builds core and advanced features including slab trend (`d_inlet_temp_60min`, `is_equilibrium`) and heating-correction physics features (`heat_loss_driving_force`, `delta_T_indoor_lag1`, `Q_wp`, `solar_thermal_proxy`, `pv_forecast_delta`, `shading_proxy`, `heat_loss_interaction`).
+   - Builds core and advanced features including slab trend (`d_inlet_temp_60min`, `is_equilibrium`).
+   - Heating-correction physics features include `heat_loss_driving_force`, `delta_T_indoor_lag1`, `Q_wp`, `solar_thermal_proxy`, `pv_forecast_delta`, `shading_proxy`, and `heat_loss_interaction`.
    - **Options:** optional external source inputs (PV/fireplace/TV) and forecast availability.
 3. **Trajectory prediction**
    - Predicts indoor response over the configured horizon (`TRAJECTORY_STEPS`) for candidate outlet temperatures.
@@ -544,7 +545,7 @@ The system publishes a suite of detailed sensors to Home Assistant for comprehen
     - `excellent_all_time_pct`, `good_all_time_pct`: All-time accuracy metrics.
     - `prediction_count_24h`: Number of predictions in the last 24 hours.
 
-### ADK (Answers to Daily Questions)
+### ADK / FAQ (Answers to Daily Questions)
 
 - **How do I train heating-correction ML once?**  
   Run: `python3 -m src.main --calibrate-heating-correction-ml`
