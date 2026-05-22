@@ -121,6 +121,48 @@ class TestOvershootLogic(unittest.TestCase):
         # Should return corrected value
         self.assertEqual(result, 35.0, "Should apply correction for immediate overshoot")
 
+    def test_cooling_min_violates_only_returns_unchanged(self):
+        """Cooling mode must skip undershoot-only correction."""
+        self.wrapper._climate_mode = "cooling"
+        self.wrapper._current_features = {"indoor_temp_delta_60m": 0.4}
+        self.wrapper.thermal_model.slab_time_constant_hours = 3.0
+        self.wrapper.thermal_model.outlet_effectiveness = 0.5
+
+        trajectory = {"trajectory": [21.8, 21.9, 22.0, 22.0]}
+        outlet_temp = 35.0
+        result = self.wrapper._calculate_physics_based_correction(
+            outlet_temp=outlet_temp,
+            trajectory=trajectory,
+            target_indoor=22.0,
+            cycle_hours=0.5,
+        )
+        self.assertEqual(
+            result,
+            outlet_temp,
+            "Cooling min_violates-only path should return outlet_temp unchanged",
+        )
+
+    def test_cooling_overshoot_still_corrected_when_projected_self_correcting(self):
+        """Cooling mode must still correct overshoot even when projected_indoor would skip in heating."""
+        self.wrapper._climate_mode = "cooling"
+        self.wrapper._current_features = {"indoor_temp_delta_60m": -1.0}
+        self.wrapper.thermal_model.slab_time_constant_hours = 3.0
+        self.wrapper.thermal_model.outlet_effectiveness = 0.5
+
+        trajectory = {"trajectory": [22.0, 22.2, 22.3, 22.25]}
+        outlet_temp = 35.0
+        result = self.wrapper._calculate_physics_based_correction(
+            outlet_temp=outlet_temp,
+            trajectory=trajectory,
+            target_indoor=22.0,
+            cycle_hours=0.5,
+        )
+        self.assertLess(
+            result,
+            outlet_temp,
+            "Cooling overshoot path should apply a negative correction",
+        )
+
 
 class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
     """Tests for PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION guard in _verify_trajectory_and_correct."""

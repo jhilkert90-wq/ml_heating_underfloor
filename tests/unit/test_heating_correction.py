@@ -522,6 +522,39 @@ class TestCorrectionModeDispatch:
         mock_legacy.assert_called_once()
         mock_newton.assert_not_called()
 
+    @patch('src.model_wrapper.config.TRAJECTORY_PREDICTION_ENABLED', True)
+    @patch('src.model_wrapper.config.HEATING_CORRECTION_MODE', 'ml')
+    @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
+    def test_cooling_mode_ml_override_routes_to_newton(self):
+        """Cooling mode must override ML dispatch to Newton correction."""
+        self.wrapper.set_climate_mode("cooling")
+        self.wrapper._current_indoor = 21.0
+        self.wrapper._current_features = {'indoor_temp_delta_60m': -0.1}
+
+        with patch.object(
+            self.wrapper.thermal_model,
+            'predict_thermal_trajectory',
+            return_value=self._mock_trajectory,
+        ), patch.object(
+            self.wrapper,
+            '_calculate_physics_newton_correction',
+            return_value=25.4,
+        ) as mock_newton, patch.object(
+            self.wrapper,
+            '_calculate_ml_correction',
+        ) as mock_ml:
+            self.wrapper._verify_trajectory_and_correct(
+                outlet_temp=25.0,
+                current_indoor=21.0,
+                target_indoor=21.0,
+                outdoor_temp=3.0,
+                thermal_features={'pv_power': 0.0, 'fireplace_on': 0.0,
+                                   'tv_on': 0.0},
+            )
+
+        mock_newton.assert_called_once()
+        mock_ml.assert_not_called()
+
     # 7. "ml" mode: no loaded model → falls back to Newton (no crash) ----------
     @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
     def test_ml_mode_falls_back_to_newton_when_model_not_loaded(self):

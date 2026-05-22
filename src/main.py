@@ -2098,8 +2098,22 @@ def main():
                     )
 
             # --- EMA outlet smoothing ---
+            # In cooling recovery mode the gate deliberately sends inlet_temp
+            # to keep the HP off.  EMA must not blend this with the previous
+            # setpoint or the recovery signal is diluted/overwritten.
             last_final = state.get("last_final_temp")
-            final_temp = apply_ema_smoothing(final_temp, last_final)
+            _cooling_recovery_active = (
+                climate_mode == "cooling"
+                and getattr(_wrapper, "_cooling_cycle_state", None) == "recovery"
+            )
+            if _cooling_recovery_active:
+                logging.debug(
+                    "❄️ Cooling recovery: bypassing EMA smoothing "
+                    "(preserving inlet_temp=%.1f°C)",
+                    final_temp,
+                )
+            else:
+                final_temp = apply_ema_smoothing(final_temp, last_final)
 
             # --- Minimum Setpoint Hold ---
             # Prevent the setpoint from changing more often than every

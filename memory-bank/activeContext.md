@@ -1,5 +1,25 @@
 # Active Context - Current Work & Decision State
 
+### ✅ PR #63 review follow-up: cooling correction/EMA regression coverage + changelog — 2026-05-22
+
+#### **What changed**
+- Added cooling dispatch regression in `tests/unit/test_heating_correction.py` to verify cooling mode overrides `HEATING_CORRECTION_MODE="ml"` and routes to Newton correction without calling ML correction.
+- Added cooling trajectory-correction regressions in `tests/unit/test_overshoot_logic.py`:
+  - undershoot-only (`min_violates`) returns outlet unchanged in cooling mode,
+  - overshoot correction is still applied in cooling mode even when projected-indoor would have triggered skip-gate behavior in heating.
+- Added `tests/unit/test_main_functions.py` regression proving EMA smoothing is bypassed when `_cooling_cycle_state == "recovery"` in cooling mode.
+- Added `[Unreleased]` changelog notes in `CHANGELOG.md` for cooling recovery EMA bypass and cooling trajectory-correction behavior updates.
+
+#### **Why**
+- PR review requested explicit regression tests for the cooling-mode behavior changes and a user-facing changelog entry.  
+- These tests lock in the intended cooling-specific control behavior and prevent future refactors from reintroducing heating-oriented logic in cooling paths.
+
+#### **Files modified**
+- `tests/unit/test_heating_correction.py`
+- `tests/unit/test_overshoot_logic.py`
+- `tests/unit/test_main_functions.py`
+- `CHANGELOG.md`
+
 ### ✅ Unit audit: all PV and thermal power features normalized to Watts — 2026-05-20
 
 #### **What changed**
