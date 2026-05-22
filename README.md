@@ -45,7 +45,7 @@ The primary goal is to improve upon traditional heat curves by creating a **self
 ### Intelligent Control
 
 -   **Enhanced Model Wrapper:** Intelligent prediction system that replaces complex control logic with simplified outlet temperature prediction
--   **Selectable Heating Correction Modes:** `HEATING_CORRECTION_MODE` supports `legacy`, `physics`, and `ml` (cooling always forces physics/Newton correction)
+-   **Selectable Heating Correction Modes:** `HEATING_CORRECTION_MODE` supports `legacy`, `physics`, and `ml` (in cooling mode, the `ml` setting is automatically overridden to use physics/Newton correction)
 -   **ML Correction Blend:** In `ml` mode, correction uses confidence-weighted blending between physics Newton delta and LightGBM delta (`HEATING_ML_BLEND_MIN_R2` gate)
 -   **Gentle Trajectory Correction:** Intelligent additive correction system that prevents outlet temperature spikes during thermal trajectory deviations, using proven heat curve automation logic (5°C/8°C/12°C per degree) instead of aggressive multiplicative factors
 -   **Overshoot & Undershoot Gates:** Projected-temperature gates that skip corrections when indoor temperature is already moving in the right direction, preventing overcorrection oscillation
@@ -369,7 +369,7 @@ flowchart TD
     E -->|Yes| F[Keep candidate outlet]
     E -->|No| G{HEATING_CORRECTION_MODE}
     G -->|legacy| H[Empirical physics correction]
-    G -->|physics| I[Newton correction ΔT=ε/S_H]
+    G -->|physics| I[Newton correction ΔT=ε/S(t_eval)]
     G -->|ml| J[ML correction: blend physics + LightGBM]
     H --> K[Clamp + gradual change limits]
     I --> K
@@ -412,6 +412,7 @@ flowchart TD
    - **Options:** `CLAMP_MIN_ABS`, `CLAMP_MAX_ABS`, `MAX_TEMP_CHANGE_PER_CYCLE`.
 6. **Learning loop**
    - Stores cycle observations, resolves delayed labels, updates online metrics, and can auto-trigger heating-correction ML retraining when buffer thresholds are met.
+   - Note: The heating-correction loop operates during heating cycles. Cooling mode uses a separate observation loop.
    - **Options:** `HEATING_ML_RETRAIN_TRIGGER_K`, `HEATING_ML_BUFFER_MAX_N`, `HEATING_ML_LABEL_HORIZON_H`.
 
 ### The Thermal Model
@@ -559,7 +560,7 @@ The system publishes a suite of detailed sensors to Home Assistant for comprehen
 - **Can I keep learning while not controlling the heat pump?**  
   Yes. Use shadow mode; it still collects observations and improves learning.
 - **Does ML correction run in cooling mode?**  
-  No. Cooling forces physics/Newton correction.
+  No. In cooling mode, `HEATING_CORRECTION_MODE='ml'` is overridden to physics/Newton correction.
 
 ## Analysis & Debugging
 
