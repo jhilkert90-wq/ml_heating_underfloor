@@ -1,5 +1,22 @@
 # ML Heating System - Current Progress
 
+## ✅ PR #66 review follow-up: English-only dashboard settings docs cleanup (2026-05-23)
+
+**Status:** COMPLETED
+
+### Changes
+1. **`dashboard/config_schema.py`**
+   - Removed unused `_DE_TRANSLATIONS_PATH` constant after the dashboard moved to an English-only metadata/translation path.
+2. **`CHANGELOG.md`**
+   - Added `[Unreleased]` entries documenting English-only dashboard settings behavior and regrouped settings sections.
+3. **`memory-bank/progress.md` / `memory-bank/activeContext.md`**
+   - Added current milestone/context entries for this PR #66 review follow-up.
+
+### Validation
+- `python -m pytest -q tests/unit/test_dashboard_settings.py` → **10 passed**
+
+**Files changed:** `dashboard/config_schema.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ PR #63 review follow-up: cooling trajectory/EMA regression coverage (2026-05-22)
 
 **Status:** COMPLETED

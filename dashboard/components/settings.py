@@ -61,7 +61,7 @@ def _render_field(field: FieldMetadata, value: Any) -> Any:
     widget_key = f"settings_field_{field.key}"
     if field.widget_type == "bool":
         return st.checkbox(
-            field.de_label,
+            field.label,
             value=_coerce_bool(value if value is not None else field.default),
             help=field.description,
             key=widget_key,
@@ -70,7 +70,7 @@ def _render_field(field: FieldMetadata, value: Any) -> Any:
         options = list(field.options)
         selected = value if value in options else field.default
         return st.selectbox(
-            field.de_label,
+            field.label,
             options,
             index=options.index(selected),
             help=field.description,
@@ -84,7 +84,7 @@ def _render_field(field: FieldMetadata, value: Any) -> Any:
             current = int(field.default)
         current = int(_clamp_numeric(current, int(field.min_value), int(field.max_value)))
         return st.number_input(
-            field.de_label,
+            field.label,
             min_value=int(field.min_value),
             max_value=int(field.max_value),
             value=current,
@@ -102,7 +102,7 @@ def _render_field(field: FieldMetadata, value: Any) -> Any:
             _clamp_numeric(current, float(field.min_value), float(field.max_value))
         )
         return st.number_input(
-            field.de_label,
+            field.label,
             min_value=float(field.min_value),
             max_value=float(field.max_value),
             value=current,
@@ -112,7 +112,7 @@ def _render_field(field: FieldMetadata, value: Any) -> Any:
             key=widget_key,
         )
     return st.text_input(
-        field.de_label,
+        field.label,
         value="" if value is None else str(value),
         help=field.description,
         type="password" if field.is_secret else "default",
@@ -134,19 +134,19 @@ def render_settings() -> None:
     metadata = load_settings_metadata()
     current_options = st.session_state["settings_current_options"]
 
-    st.subheader("⚙️ Einstellungen")
+    st.subheader("⚙️ Settings")
     st.caption(
-        "Gruppierte Add-on-Konfiguration mit deutschen Labels und englischen Tooltips."
+        "Grouped add-on configuration with English labels and descriptions."
     )
 
     col1, col2 = st.columns([1, 2])
     with col1:
-        if st.button("🔄 Aktuelle Werte neu laden", width="stretch"):
+        if st.button("🔄 Reload current values", width="stretch"):
             _refresh_current_options()
-            st.toast("Einstellungen neu geladen.", icon="🔄")
+            st.toast("Settings reloaded.", icon="🔄")
             st.rerun()
     with col2:
-        st.info(f"Quelle: {st.session_state['settings_source']}")
+        st.info(f"Source: {st.session_state['settings_source']}")
 
     with st.form("dashboard_settings_form"):
         candidate_options: dict[str, Any] = {}
@@ -158,18 +158,18 @@ def render_settings() -> None:
             ]
             if not group_fields:
                 continue
-            with st.expander(group.title_de, expanded=group.expanded):
+            with st.expander(group.title, expanded=group.expanded):
                 for field in group_fields:
                     candidate_options[field.key] = _render_field(
                         field,
                         current_options.get(field.key, field.default),
                     )
-        review_changes = st.form_submit_button("Änderungen prüfen", type="primary")
+        review_changes = st.form_submit_button("Review changes", type="primary")
 
     if review_changes:
         changes = _build_diff(current_options, candidate_options)
         if not changes:
-            st.info("Keine Änderungen erkannt.")
+            st.info("No changes detected.")
             st.session_state.pop("settings_pending_options", None)
             st.session_state.pop("settings_pending_changes", None)
         else:
@@ -181,36 +181,36 @@ def render_settings() -> None:
     pending_options = st.session_state.get("settings_pending_options")
     pending_changes = st.session_state.get("settings_pending_changes")
     if pending_options and pending_changes:
-        st.warning("Bitte prüfen und bestätigen Sie die Änderungen vor dem Speichern.")
+        st.warning("Please review and confirm the changes before saving.")
         for key, new_value in pending_changes.items():
             field = metadata.fields[key]
             st.write(
-                f"**{field.de_label}**  \n"
+                f"**{field.label}**  \n"
                 f"`{current_options.get(key)}` → `{new_value}`"
             )
 
         confirm_col, cancel_col = st.columns(2)
         with confirm_col:
-            if st.button("✅ Änderungen speichern", type="primary", width="stretch"):
+            if st.button("✅ Save changes", type="primary", width="stretch"):
                 try:
                     update_addon_options(pending_options)
                     st.session_state["settings_current_options"] = pending_options
                     st.session_state["settings_source"] = "Supervisor API"
                     st.session_state.pop("settings_pending_options", None)
                     st.session_state.pop("settings_pending_changes", None)
-                    st.toast("Einstellungen gespeichert.", icon="✅")
+                    st.toast("Settings saved.", icon="✅")
                     st.success(
-                        "Die Add-on-Optionen wurden gespeichert. Ein Neustart des Add-ons kann erforderlich sein."
+                        "Add-on options saved successfully. A restart of the add-on may be required."
                     )
                     st.rerun()
                 except SettingsServiceError as exc:
-                    st.toast(f"Speichern fehlgeschlagen: {exc}", icon="⚠️")
+                    st.toast(f"Save failed: {exc}", icon="⚠️")
                     st.error(str(exc))
                 except Exception as exc:
-                    st.toast(f"Speichern fehlgeschlagen: {exc}", icon="⚠️")
-                    st.error(f"Speichern fehlgeschlagen: {exc}")
+                    st.toast(f"Save failed: {exc}", icon="⚠️")
+                    st.error(f"Save failed: {exc}")
         with cancel_col:
-            if st.button("Abbrechen", width="stretch"):
+            if st.button("Cancel", width="stretch"):
                 st.session_state.pop("settings_pending_options", None)
                 st.session_state.pop("settings_pending_changes", None)
                 st.rerun()

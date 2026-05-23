@@ -48,26 +48,32 @@ class TestSettingsMetadata:
         metadata = load_settings_metadata()
 
         assert metadata.fields["target_indoor_temp_entity"].group.slug == "core"
-        assert metadata.fields["pv_power_entity"].group.slug == "solar"
+        assert metadata.fields["pv_power_entity"].group.slug == "heat_sources"
         assert metadata.fields["heating_ml_blend_min_r2"].group.slug == "ml_heating"
-        assert metadata.fields["trajectory_steps"].group.slug == "advanced"
+        assert metadata.fields["trajectory_steps"].group.slug == "trajectory"
+        assert metadata.fields["grace_period_max_minutes"].group.slug == "blocking"
 
         assert metadata.fields["target_indoor_temp_entity"].label.startswith("[Core]")
-        assert metadata.fields["target_indoor_temp_entity"].de_label.startswith("[Kern]")
         assert metadata.fields["heating_ml_cv_enabled"].label
-        assert metadata.fields["heating_ml_cv_enabled"].de_label
 
     def test_group_definitions_keep_expected_order(self):
         assert list(GROUP_DEFINITIONS) == [
             "core",
-            "solar",
             "blocking",
-            "ml",
             "safety",
+            "learning",
+            "thermal_model",
+            "heat_sources",
+            "trajectory",
+            "functions",
             "cooling",
             "pre_cooling",
             "ml_pre_cooling",
             "ml_heating",
+            "hlc",
+            "price_pv",
+            "shadow",
+            "outlet",
             "influxdb",
             "model",
             "dashboard",

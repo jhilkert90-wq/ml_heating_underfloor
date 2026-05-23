@@ -19,58 +19,78 @@ _CONFIG_PATH = _REPO_ROOT / "ml_heating_underfloor" / "config.yaml"
 _EN_TRANSLATIONS_PATH = (
     _REPO_ROOT / "ml_heating_underfloor" / "translations" / "en.yaml"
 )
-_DE_TRANSLATIONS_PATH = (
-    _REPO_ROOT / "ml_heating_underfloor" / "translations" / "de.yaml"
-)
 
 
 @dataclass(frozen=True)
 class GroupDefinition:
     slug: str
     prefix: str
-    de_prefix: str
-    title_de: str
+    title: str
     expanded: bool = False
 
 
 GROUP_DEFINITIONS = OrderedDict(
     (
-        ("core", GroupDefinition("core", "[Core]", "[Kern]", "Kernkonfiguration", True)),
-        ("solar", GroupDefinition("solar", "[Solar]", "[Solar]", "Solar & externe Wärmequellen", True)),
-        ("blocking", GroupDefinition("blocking", "[Blocking]", "[Sperren]", "Sperr- und Blockiererkennung")),
-        ("ml", GroupDefinition("ml", "[ML]", "[ML]", "ML-Lernparameter")),
-        ("safety", GroupDefinition("safety", "[Safety]", "[Sicherheit]", "Sicherheitsgrenzen")),
-        ("cooling", GroupDefinition("cooling", "[Cooling]", "[Kühlung]", "Kühlkonfiguration", True)),
-        ("pre_cooling", GroupDefinition("pre_cooling", "[Pre-Cooling]", "[Vorkühlung]", "Vorkühlung", True)),
-        (
-            "ml_pre_cooling",
-            GroupDefinition(
-                "ml_pre_cooling",
-                "[ML Pre-Cooling]",
-                "[ML Vorkühlung]",
-                "ML-Vorkühlung",
-            ),
-        ),
-        ("ml_heating", GroupDefinition("ml_heating", "[ML Heating]", "[ML Heizen]", "ML-Heizkorrektur")),
-        ("influxdb", GroupDefinition("influxdb", "[InfluxDB]", "[InfluxDB]", "InfluxDB")),
-        ("model", GroupDefinition("model", "[Model]", "[Modell]", "Modellverwaltung")),
-        ("dashboard", GroupDefinition("dashboard", "[Dashboard]", "[Dashboard]", "Dashboard", True)),
-        ("dev", GroupDefinition("dev", "[Dev]", "[Entwicklung]", "Entwicklung & Debug")),
-        ("advanced", GroupDefinition("advanced", "[Advanced]", "[Erweitert]", "Erweiterte Einstellungen")),
+        ("core", GroupDefinition("core", "[Core]", "Core Entities")),
+        ("blocking", GroupDefinition("blocking", "[Blocking]", "Blocking Detection")),
+        ("safety", GroupDefinition("safety", "[Safety]", "Safety Limits")),
+        ("learning", GroupDefinition("learning", "[Learning]", "Learning Parameters")),
+        ("thermal_model", GroupDefinition("thermal_model", "[Thermal]", "Thermal Model")),
+        ("heat_sources", GroupDefinition("heat_sources", "[Heat Sources]", "External Heat Sources")),
+        ("trajectory", GroupDefinition("trajectory", "[Trajectory]", "Trajectory & Prediction")),
+        ("functions", GroupDefinition("functions", "[Functions]", "Features (On/Off)")),
+        ("cooling", GroupDefinition("cooling", "[Cooling]", "Cooling Mode")),
+        ("pre_cooling", GroupDefinition("pre_cooling", "[Pre-Cooling]", "Pre-Cooling")),
+        ("ml_pre_cooling", GroupDefinition("ml_pre_cooling", "[ML Pre-Cooling]", "ML Pre-Cooling Model")),
+        ("ml_heating", GroupDefinition("ml_heating", "[ML Heating]", "ML Heating Correction")),
+        ("hlc", GroupDefinition("hlc", "[HLC]", "HLC Calibration")),
+        ("price_pv", GroupDefinition("price_pv", "[Price/PV]", "Price & PV Optimization")),
+        ("shadow", GroupDefinition("shadow", "[Shadow]", "Shadow Mode")),
+        ("outlet", GroupDefinition("outlet", "[Outlet]", "Outlet Smoothing")),
+        ("influxdb", GroupDefinition("influxdb", "[InfluxDB]", "InfluxDB")),
+        ("model", GroupDefinition("model", "[Model]", "Model Management")),
+        ("dashboard", GroupDefinition("dashboard", "[Dashboard]", "Dashboard")),
+        ("dev", GroupDefinition("dev", "[Dev]", "Development & Debug")),
+        ("advanced", GroupDefinition("advanced", "[Advanced]", "Advanced Settings")),
     )
 )
 
 
 _SECTION_TO_GROUP = {
     "Core Entity Configuration": "core",
-    "External Heat Sources": "solar",
+    "External Heat Sources": "heat_sources",
     "Blocking Detection": "blocking",
-    "ML Learning Parameters": "ml",
+    "Blocking Recovery": "blocking",
+    "ML Learning Parameters": "learning",
+    "Adaptive Learning Parameters": "learning",
+    "Hybrid Learning Strategy": "learning",
+    "Learning History Sizes": "learning",
+    "Indoor Trend Protection": "learning",
     "Safety Configuration": "safety",
     "Cooling Mode Configuration": "cooling",
     "Pre-Cooling (Predictive Overheating Prevention)": "pre_cooling",
     "ML-Based Pre-Cooling Model (LightGBM Overheating Classifier)": "ml_pre_cooling",
     "ML-Based Heating Correction (LightGBM Regressor)": "ml_heating",
+    "Heating Correction Mode": "ml_heating",
+    "Thermal Equilibrium Model Parameters": "thermal_model",
+    "Heat Source Channel Architecture": "functions",
+    "External Heat Source Weights": "heat_sources",
+    "Trajectory Tuning": "trajectory",
+    "Trajectory Prediction": "functions",
+    "Advanced Learning Features": "functions",
+    "Prediction Metrics Tracking": "functions",
+    "Delta Temperature Forecast Calibration": "functions",
+    "Setpoint Stability": "trajectory",
+    "Forecast-Driven Trajectory Scaling": "trajectory",
+    "Historical Calibration System": "hlc",
+    "Thermal Power Gate Thresholds": "hlc",
+    "HLC Validation Gates": "hlc",
+    "PV-Triggered HLC Session Learner": "hlc",
+    "Historical HLC Calibration": "hlc",
+    "Electricity Price Optimization (Tibber)": "price_pv",
+    "PV Surplus Optimization": "price_pv",
+    "Shadow Mode Configuration": "shadow",
+    "Outlet Smoothing": "outlet",
     "InfluxDB Configuration": "influxdb",
     "Model Management": "model",
     "Dashboard Configuration": "dashboard",
@@ -82,7 +102,6 @@ _SECTION_TO_GROUP = {
 class FieldMetadata:
     key: str
     label: str
-    de_label: str
     description: str
     schema: str
     default: Any
@@ -166,12 +185,10 @@ def _is_secret_key(key: str) -> bool:
 def load_settings_metadata() -> SettingsMetadata:
     config = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8"))
     en_translations = yaml.safe_load(_EN_TRANSLATIONS_PATH.read_text(encoding="utf-8"))
-    de_translations = yaml.safe_load(_DE_TRANSLATIONS_PATH.read_text(encoding="utf-8"))
 
     options = config["options"]
     schema = config["schema"]
     en_config = en_translations["configuration"]
-    de_config = de_translations["configuration"]
     option_groups = _extract_option_groups()
 
     fields: dict[str, FieldMetadata] = {}
@@ -182,11 +199,9 @@ def load_settings_metadata() -> SettingsMetadata:
         group_slug = option_groups.get(key, "advanced")
         group = GROUP_DEFINITIONS[group_slug]
         en_entry = en_config.get(key, {})
-        de_entry = de_config.get(key, {})
         fields[key] = FieldMetadata(
             key=key,
             label=en_entry.get("name", key),
-            de_label=de_entry.get("name", key),
             description=en_entry.get("description", ""),
             schema=schema[key],
             default=default,

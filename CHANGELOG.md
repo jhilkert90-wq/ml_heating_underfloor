@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Dashboard settings metadata and rendering are now English-only (German translation dependency removed from schema loading path).
+- Dashboard settings regrouped into finer-grained sections (including Blocking Recovery and Trajectory Tuning) for clearer configuration navigation.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
