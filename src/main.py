@@ -46,6 +46,7 @@ from .sensor_buffer import SensorBuffer
 from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
 from .temperature_control import apply_ema_smoothing
 from .hlc_learner import calibrate_hlc
+from .cycle_state import CycleState, determine_cycle_state
 
 
 def _bool_arg(parsed_args, name: str) -> bool:
@@ -1420,6 +1421,14 @@ def main():
                     "temperature (outlet < inlet) — using cooling state %s",
                     _active_state_manager.state_file,
                 )
+
+            # --- Determine Cycle State ---
+            cycle_state = determine_cycle_state(
+                is_blocking=is_blocking,
+                heating_active=True,  # passed heating_checker.check_heating_active above
+                climate_mode=climate_mode,
+            )
+            logging.debug("🔄 Cycle state: %s", cycle_state.value)
 
             if is_blocking:
                 logging.info(
