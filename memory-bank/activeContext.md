@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ PR #66 review follow-up: English-only dashboard settings cleanup + docs sync — 2026-05-23
+
+#### **What changed**
+- Removed unused `_DE_TRANSLATIONS_PATH` in `dashboard/config_schema.py` now that dashboard settings metadata is intentionally English-only.
+- Updated `CHANGELOG.md` `[Unreleased]` with entries for English-only dashboard settings metadata/rendering and regrouped settings sections.
+- Added fresh progress/context records in `memory-bank/progress.md` and `memory-bank/activeContext.md` for this review follow-up.
+
+#### **Why**
+- PR review flagged stale/dead code (`_DE_TRANSLATIONS_PATH`) and missing documentation/context for the English-only dashboard + settings regrouping refactor.
+- This keeps schema-loading intent clear and keeps project tracking artifacts current for subsequent reviewers.
+
+#### **Files modified**
+- `dashboard/config_schema.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ### ✅ PR #63 review follow-up: cooling correction/EMA regression coverage + changelog — 2026-05-22
 
 #### **What changed**

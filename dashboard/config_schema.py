@@ -19,9 +19,6 @@ _CONFIG_PATH = _REPO_ROOT / "ml_heating_underfloor" / "config.yaml"
 _EN_TRANSLATIONS_PATH = (
     _REPO_ROOT / "ml_heating_underfloor" / "translations" / "en.yaml"
 )
-_DE_TRANSLATIONS_PATH = (
-    _REPO_ROOT / "ml_heating_underfloor" / "translations" / "de.yaml"
-)
 
 
 @dataclass(frozen=True)
