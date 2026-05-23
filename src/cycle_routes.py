@@ -688,8 +688,6 @@ def step_pre_cooling(ctx: CycleContext) -> None:
 
         # Observation buffer: accumulate features + resolve labels
         if ctx.cooling_obs_buffer is not None:
-            import datetime as _dt
-
             ctx.cooling_obs_buffer.push_pending(
                 features=ctx.features_dict,
                 indoor_temp=ctx.prediction_indoor_temp,
