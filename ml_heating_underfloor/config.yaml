@@ -259,18 +259,20 @@ options:
   # Set to true to enable detailed logging of feature vectors and model decisions
   debug: false
 
-  # === Performance Tuning ===
-  # The physics model uses learning_confidence in range (0.1..10.0]
-  # System falls back to traditional heat curve when confidence drops below threshold
-  confidence_threshold: 2.0
-  # Number of hours to predict in the thermal trajectory (2-12 hours)
-  trajectory_steps: 4
+  # === Blocking Recovery ===
   # Maximum minutes to wait during grace period after blocking ends
   grace_period_max_minutes: 15
   # Extra grace period after HP defrost cycles (minutes)
   defrost_recovery_grace_minutes: 45
   # How often (seconds) to poll blocking entities during idle period
   blocking_poll_interval_seconds: 60
+
+  # === Trajectory Tuning ===
+  # The physics model uses learning_confidence in range (0.1..10.0]
+  # System falls back to traditional heat curve when confidence drops below threshold
+  confidence_threshold: 2.0
+  # Number of hours to predict in the thermal trajectory (2-12 hours)
+  trajectory_steps: 4
   # Exponential decay time constant for indoor temperature trend momentum bias (hours).
   # Higher values = longer trend persistence across trajectory steps. Min 0.1h.
   trend_decay_tau_hours: 1.5
@@ -679,12 +681,13 @@ schema:
   dev_api_key: "str"
   log_level: "list(DEBUG|INFO|WARNING|ERROR)"
   debug: "bool"
-  # Performance Tuning
-  confidence_threshold: "float(0.1,10.0)"
-  trajectory_steps: "int(2,12)"
+  # Blocking Recovery
   grace_period_max_minutes: "int(10,120)"
   defrost_recovery_grace_minutes: "int(15,120)"
   blocking_poll_interval_seconds: "int(30,300)"
+  # Trajectory Tuning
+  confidence_threshold: "float(0.1,10.0)"
+  trajectory_steps: "int(2,12)"
   trend_decay_tau_hours: "float(0.1,24.0)"
   # Shadow Mode
   shadow_mode: "bool"

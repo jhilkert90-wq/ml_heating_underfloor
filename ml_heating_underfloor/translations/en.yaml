@@ -414,32 +414,32 @@ configuration:
       and model decision details every cycle. Useful for diagnosing unexpected behaviour.
       Equivalent to setting log_level to DEBUG.
   confidence_threshold:
-    name: '[Advanced] Confidence Threshold'
+    name: '[Trajectory] Confidence Threshold'
     description: 'Minimum learning confidence (scale 0.1–10.0) required before ML
       controls heating. Below this threshold the system falls back to a simple heat
       curve. Increase if ML takes over too early; decrease if it is stuck in fallback.
       Default: 2.0.'
   trajectory_steps:
-    name: '[Advanced] Trajectory Steps (planning horizon)'
+    name: '[Trajectory] Trajectory Steps (planning horizon)'
     description: 'Number of hours the thermal trajectory optimizer plans ahead. 4
       = 4-hour planning horizon. More steps = more proactive pre-heating but higher
       compute. Range: 2–12. Default: 4.'
   grace_period_max_minutes:
-    name: '[Advanced] Grace Period After Blocking (minutes)'
+    name: '[Blocking] Grace Period After Blocking (minutes)'
     description: 'Maximum time (minutes) to wait for the outlet temperature to stabilise
       after a blocking event (DHW, defrost, etc.) ends before resuming ML control.
       Default: 15 min.'
   defrost_recovery_grace_minutes:
-    name: '[Advanced] Defrost Recovery Grace Period (minutes)'
+    name: '[Blocking] Defrost Recovery Grace Period (minutes)'
     description: 'Additional grace period (minutes) applied specifically after a heat
       pump defrost cycle. Defrost chills the slab; this window lets it fully recover
       before the model learns again. Default: 45 min.'
   blocking_poll_interval_seconds:
-    name: '[Advanced] Blocking Poll Interval (seconds)'
+    name: '[Blocking] Blocking Poll Interval (seconds)'
     description: 'How frequently (seconds) the system checks blocking sensors (DHW,
       defrost, etc.) while waiting in an idle or grace period. Default: 60 s.'
   trend_decay_tau_hours:
-    name: '[Advanced] Indoor Trend Decay Time Constant (hours)'
+    name: '[Trajectory] Indoor Trend Decay Time Constant (hours)'
     description: 'Exponential decay time constant (hours) for the indoor temperature
       momentum bias in trajectory predictions. Higher = longer trend persistence across
       prediction steps. Min 0.1 h. Default: 1.5 h.'
