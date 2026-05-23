@@ -748,40 +748,6 @@ configuration:
     name: '[Advanced] HLC Minimum Heating Demand ΔT (K)'
     description: 'Minimum indoor-outdoor temperature difference required for HLC learning.
       Low ΔT periods have insufficient signal-to-noise. Default: 1.0 K.'
-  hlc_session_enabled:
-    name: '[Advanced] PV-Triggered HLC Session Learner Enabled'
-    description: Enables the PV-triggered Heat Loss Coefficient session learner. A
-      session opens when PV power drops below the configured threshold and closes
-      when PV rises back to or above it. Validated PV-night sessions are stored in
-      a persistent JSON file, and OLS regression over these session records produces
-      a rolling HLC estimate that survives process restarts. Disabled by default.
-  hlc_session_file:
-    name: '[Advanced] HLC Session File Path'
-    description: 'Path to the JSON file where PV-night HLC session records are persisted
-      across restarts. Leave empty to use the same directory as the unified thermal
-      state file. Default: same directory as UNIFIED_STATE_FILE (e.g. /opt/ml_heating/hlc_sessions.json).'
-  hlc_session_min_cycles:
-    name: '[Advanced] HLC Session Minimum Clean HP Cycles'
-    description: 'Minimum number of clean (after per-cycle filtering) heat pump cycles
-      in a PV-night session for that session''s record to be stored. Sessions with
-      fewer clean cycles are discarded. Default: 6.'
-  hlc_session_max_sessions:
-    name: '[Advanced] HLC Session Rolling Store Size'
-    description: 'Maximum number of validated PV-night session records kept in the
-      rolling store. Oldest records are dropped as new ones arrive. A larger store
-      improves regression stability at the cost of slower adaptation to building changes.
-      Default: 120.'
-  hlc_session_min_sessions:
-    name: '[Advanced] HLC Session Minimum Sessions Before Update'
-    description: 'Minimum number of validated PV-night session records required before
-      the learned HLC is applied to the thermal model. Prevents premature updates
-      when only sparse data is available. Default: 10.'
-  hlc_session_max_update_fraction:
-    name: '[Advanced] HLC Session Maximum Update Fraction'
-    description: 'Maximum allowed relative change when applying a session-level HLC
-      estimate to the thermal model. 0.3 = the new HLC can differ by at most 30% from
-      the current value per update. Guards against outlier sessions producing runaway
-      updates. Default: 0.3.'
   hlc_calibration_lookback_hours:
     name: '[Advanced] HLC Calibration Lookback (hours)'
     description: 'Number of hours of historical data to fetch from InfluxDB for one-shot
