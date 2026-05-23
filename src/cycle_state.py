@@ -9,12 +9,13 @@ from enum import Enum
 
 
 class CycleState(Enum):
-    """The four possible states of the main control cycle."""
+    """The five possible states of the main control cycle."""
 
     HEATING = "heating"
     COOLING = "cooling"
     BLOCKING = "blocking"
     IDLE = "idle"
+    GRACE_PERIOD = "grace_period"
 
 
 def determine_cycle_state(
@@ -22,6 +23,7 @@ def determine_cycle_state(
     is_blocking: bool,
     heating_active: bool,
     climate_mode: str | None,
+    is_grace_period: bool = False,
 ) -> CycleState:
     """Determine the cycle state from system conditions.
 
@@ -33,6 +35,8 @@ def determine_cycle_state(
         True when the heating/cooling system is switched on.
     climate_mode:
         "heating" or "cooling" as detected from the heat pump.
+    is_grace_period:
+        True when in the grace period immediately after a blocking event ends.
 
     Returns
     -------
@@ -41,6 +45,9 @@ def determine_cycle_state(
     """
     if is_blocking:
         return CycleState.BLOCKING
+
+    if is_grace_period:
+        return CycleState.GRACE_PERIOD
 
     if not heating_active:
         return CycleState.IDLE

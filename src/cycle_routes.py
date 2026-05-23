@@ -940,15 +940,50 @@ def run_blocking_route(ctx: CycleContext) -> None:
     )
 
 
+def run_grace_period_route(ctx: CycleContext) -> None:
+    """GRACE_PERIOD state: transition after blocking ends.
+
+    Preserves the previous valid target temperature to avoid state poisoning.
+    Marks this cycle as a grace period passthrough so the next cycle's
+    online learning knows not to learn from a non-calculated target.
+    Uses the heating state manager (same as IDLE).
+    """
+    logging.info("⏳ Grace period active - Passive learning mode")
+
+    preserved_target = ctx.state.get("last_final_temp")
+    if preserved_target is None:
+        try:
+            preserved_target = float(
+                ctx.ha_client.get_state(
+                    config.ACTUAL_OUTLET_TEMP_ENTITY_ID, ctx.all_states
+                )
+            )
+        except (ValueError, TypeError):
+            preserved_target = 20.0
+
+    logging.info(
+        "Preserving last_final_temp=%.1f°C during grace period", preserved_target
+    )
+
+    save_state(
+        state_manager=ctx.state_manager,
+        last_final_temp=preserved_target,
+        last_is_blocking=False,
+        last_blocking_end_time=ctx.state.get("last_blocking_end_time"),
+        last_run_features={"learning_mode": "grace_period_passthrough"},
+    )
+
+
 def run_idle_route(ctx: CycleContext) -> None:
     """IDLE state: system not active.
 
-    Actions:
-    1. Build features (for parameter learning)
-    2. Online learning from previous cycle runs before state dispatch
-       (handled in main loop)
+    Full feature calculation and state saving so that:
+    - Online learning (pre-dispatch) has valid last_run_features next cycle
+    - The heating observation buffer still resolves labels
+    - Thermal model keeps learning even when HP is off
+
+    State is saved to the heating unified thermal state file.
     """
-    # In IDLE, we still build features for learning purposes
     if not step_get_sensor_data(ctx):
         return
 
@@ -957,8 +992,24 @@ def run_idle_route(ctx: CycleContext) -> None:
     if not step_build_features(ctx):
         return
 
-    # No prediction, no HA control — just save state for learning
-    logging.debug("IDLE: system inactive, features built for learning only")
+    # Dynamic trajectory / price still calculated for feature completeness
+    step_dynamic_trajectory(ctx)
+
+    # Heating obs buffer: resolve labels even while idle so pending
+    # observations get their labels assigned (the indoor temp is still
+    # changing due to thermal decay).
+    step_heating_obs_buffer(ctx)
+
+    # Log metrics (thermodynamic sensors useful even in idle)
+    step_log_metrics(ctx)
+
+    # Save state so next cycle's online learning has valid features.
+    # IDLE always uses the heating state manager.
+    step_save_state(ctx)
+
+    logging.debug(
+        "IDLE: system inactive, features built and state saved for learning"
+    )
 
 
 def run_heating_route(ctx: CycleContext) -> None:
