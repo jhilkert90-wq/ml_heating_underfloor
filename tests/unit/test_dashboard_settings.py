@@ -40,9 +40,9 @@ class TestSettingsMetadata:
     def test_metadata_covers_all_addon_options(self):
         metadata = load_settings_metadata()
 
-        assert len(metadata.fields) == 208
-        assert len(metadata.defaults) == 208
-        assert len(metadata.field_order) == 208
+        assert len(metadata.fields) == 202
+        assert len(metadata.defaults) == 202
+        assert len(metadata.field_order) == 202
 
     def test_expected_groups_and_translations_are_loaded(self):
         metadata = load_settings_metadata()

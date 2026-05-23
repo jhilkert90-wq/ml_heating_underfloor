@@ -10,11 +10,9 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock
 
 from src.overheating_predictor import OverheatingPredictor
-from src.hlc_learner import _build_cycle, HLCCycle
 from src import config
 
 
@@ -812,61 +810,4 @@ class TestPVKeyContract:
         assert result["risk"] is False, (
             "Predictor passed guard using pv_now_electrical instead of pv_now. "
             "The thermal key pv_now must be the guard input."
-        )
-
-    def test_hlc_cycle_requires_pv_now_electrical_field(self):
-        """HLCCycle.pv_now_electrical is the correct field for HLC session logic.
-
-        This is the opposite rule: HLC uses the *electrical* key.
-        Confirm the _build_cycle helper reads pv_now_electrical from context,
-        not pv_now.
-        """
-        ctx = {
-            "timestamp": datetime(2026, 6, 1, 10, 0),
-            "thermal_power_kw": 1.5,
-            "indoor_temp": 21.0,
-            "outdoor_temp": 5.0,
-            "target_temp": 21.0,
-            "indoor_temp_delta_60m": 0.0,
-            "pv_now_electrical": 3500.0,   # electrical key — correct
-            "pv_now": 1200.0,              # thermal key — must NOT be used for session FSM
-            "fireplace_on": 0.0,
-            "tv_on": 0.0,
-            "dhw_heating": 0.0,
-            "defrosting": 0.0,
-            "dhw_boost_heater": 0.0,
-            "is_blocking": False,
-        }
-        cycle = _build_cycle(ctx)
-
-        assert isinstance(cycle, HLCCycle)
-        assert cycle.pv_now_electrical == pytest.approx(3500.0), (
-            "HLCCycle.pv_now_electrical must be read from the electrical key, "
-            "not from pv_now."
-        )
-
-    def test_hlc_cycle_pv_now_electrical_defaults_to_zero_when_absent(self):
-        """_build_cycle falls back to 0.0 when pv_now_electrical is missing."""
-        ctx = {
-            "timestamp": datetime(2026, 6, 1, 10, 0),
-            "thermal_power_kw": 1.5,
-            "indoor_temp": 21.0,
-            "outdoor_temp": 5.0,
-            "target_temp": 21.0,
-            "indoor_temp_delta_60m": 0.0,
-            # pv_now_electrical intentionally absent
-            "pv_now": 2000.0,
-            "fireplace_on": 0.0,
-            "tv_on": 0.0,
-            "dhw_heating": 0.0,
-            "defrosting": 0.0,
-            "dhw_boost_heater": 0.0,
-            "is_blocking": False,
-        }
-        cycle = _build_cycle(ctx)
-
-        assert isinstance(cycle, HLCCycle)
-        assert cycle.pv_now_electrical == pytest.approx(0.0), (
-            "_build_cycle must default pv_now_electrical to 0.0 when absent, "
-            "not fall back to pv_now."
         )

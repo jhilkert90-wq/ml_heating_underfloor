@@ -209,20 +209,6 @@ def render_system_controls():
                     else:
                         st.error(f"Recalibration failed: {output}")
 
-        if st.button("📊 Calibrate HLC"):
-            with st.spinner("Writing HLC calibration flag..."):
-                try:
-                    os.makedirs('/data/config', exist_ok=True)
-                    with open('/data/config/hlc_calibrate_flag', 'w') as f:
-                        f.write(datetime.now().isoformat())
-                    success, output = restart_ml_system()
-                    if success:
-                        st.success("HLC calibration triggered! The system will calibrate from historical data on next startup.")
-                    else:
-                        st.warning(f"Flag written but restart failed: {output}")
-                except Exception as e:
-                    st.error(f"HLC calibration trigger failed: {e}")
-
         if st.button("🤖 Calibrate ML Cooling Model", help="Train the LightGBM overheating classifier for ML-based pre-cooling. Requires warm-season historical data (≥90 days recommended). Model-based strategy only."):
             with st.spinner("Writing ML cooling calibration flag..."):
                 try:

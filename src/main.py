@@ -45,7 +45,7 @@ from .heating_controller import (
 from .sensor_buffer import SensorBuffer
 from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
 from .temperature_control import apply_ema_smoothing
-from .hlc_learner import HLCSessionLearner, calibrate_hlc
+from .hlc_learner import calibrate_hlc
 
 
 def _bool_arg(parsed_args, name: str) -> bool:
@@ -97,11 +97,6 @@ def main():
         "--restore-backup", type=str, help="Restore from a backup file."
     )
     parser.add_argument(
-        "--calibrate-hlc",
-        action="store_true",
-        help="Run one-shot HLC calibration from historical data and exit.",
-    )
-    parser.add_argument(
         "--calibrate-cooling-ml",
         action="store_true",
         help="Train the LightGBM overheating classifier for ML-based pre-cooling and exit.",
@@ -138,18 +133,6 @@ def main():
     shadow_ml_error_sum = 0.0
     shadow_hc_error_sum = 0.0
     shadow_comparison_count = 0
-
-    # --- HLC Learner Initialization ---
-    _hlc_session_learner: HLCSessionLearner | None = None
-    if getattr(config, "HLC_SESSION_ENABLED", False):
-        _hlc_session_learner = HLCSessionLearner()
-        _restored = _hlc_session_learner.load_session_records()
-        if _restored:
-            logging.info(
-                "📡 HLC session learner: loaded %d session records", _restored
-            )
-        else:
-            logging.info("📡 HLC session learner: started fresh (no prior records)")
 
     influx_service = create_influx_service()
 
@@ -454,16 +437,6 @@ def main():
             logging.error(
                 "Calibration export error: %s", e, exc_info=True,
             )
-        return
-
-    # --- One-shot HLC Calibration ---
-    if _bool_arg(args, "calibrate_hlc"):
-        logging.info("=== ONE-SHOT HLC CALIBRATION ===")
-        result = calibrate_hlc()
-        if result.get("success"):
-            logging.info("✅ %s", result["message"])
-        else:
-            logging.error("❌ HLC calibration failed: %s", result.get("message"))
         return
 
     # --- Cooling ML Calibration (CLI) ---
@@ -1617,66 +1590,6 @@ def main():
                 logging.warning("Feature building failed, skipping cycle.")
                 time.sleep(PhysicsConstants.RETRY_DELAY_SECONDS)
                 continue
-
-            # --- HLC Learner: push cycle data ---
-            _hlc_cycle_ctx = None
-            if _hlc_session_learner is not None:
-                _hlc_cycle_ctx = {
-                    "timestamp": datetime.now(),
-                    "thermal_power_kw": features_dict.get("thermal_power_kw"),
-                    "indoor_temp": actual_indoor,
-                    "outdoor_temp": outdoor_temp,
-                    "target_temp": target_indoor_temp,
-                    "indoor_temp_delta_60m": features_dict.get(
-                        "indoor_temp_delta_60m", 0.0
-                    ),
-                    "pv_now_electrical": features_dict.get(
-                        "pv_now_electrical", 0.0
-                    ),
-                    "fireplace_on": float(fireplace_on) if fireplace_on else 0.0,
-                    "tv_on": features_dict.get("tv_on", 0.0),
-                    "dhw_heating": features_dict.get("dhw_heating", 0.0),
-                    "defrosting": features_dict.get("defrosting", 0.0),
-                    "dhw_boost_heater": features_dict.get(
-                        "dhw_boost_heater", 0.0
-                    ),
-                    "is_blocking": bool(is_blocking),
-                }
-                try:
-                    _session_result = _hlc_session_learner.push_cycle(
-                        _hlc_cycle_ctx
-                    )
-                    if _session_result.get("session_closed"):
-                        if _session_result.get("session_validated"):
-                            _n_sessions = _session_result["session_records"]
-                            logging.info(
-                                "📡 HLC session: session record added (total: %d)",
-                                _n_sessions,
-                            )
-                            if _n_sessions >= config.HLC_SESSION_MIN_SESSIONS:
-                                _sess_ok, _sess_msg = (
-                                    _hlc_session_learner.apply_to_thermal_state(
-                                        thermal_state_manager=_active_state_manager
-                                    )
-                                )
-                                if _sess_ok:
-                                    logging.info(
-                                        "📡 HLC session: %s", _sess_msg
-                                    )
-                                else:
-                                    logging.debug(
-                                        "📡 HLC session apply skipped: %s",
-                                        _sess_msg,
-                                    )
-                        else:
-                            logging.debug(
-                                "📡 HLC session: session rejected — %s",
-                                _session_result.get("reject_reason", "unknown"),
-                            )
-                except Exception as _hlc_sess_exc:
-                    logging.debug(
-                        "HLC session push failed: %s", _hlc_sess_exc
-                    )
 
             # --- Step 3: Prediction ---
             # Dynamic trajectory scaling: now that pv_now is available from

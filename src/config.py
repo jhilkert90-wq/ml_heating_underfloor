@@ -580,42 +580,6 @@ HLC_DEFAULT_TARGET_TEMP: float = float(
     os.getenv("HLC_DEFAULT_TARGET_TEMP", "22.6")
 )
 
-# --- PV-Triggered HLC Session Learner ---
-# Persists one HLC data record per PV-night session.  A session opens when
-# pv_now_electrical < HLC_PV_MAX_W (50 W) and closes when it rises at or
-# above that threshold.  Cycles where DHW, defrost, DHW-boost, blocking, or
-# TV are active are filtered out individually; fireplace triggers a whole-
-# session reject.  OLS regression over stored SessionRecords produces a
-# rolling HLC estimate.
-# Enable the PV-triggered session learner (disabled by default).
-HLC_SESSION_ENABLED: bool = (
-    os.getenv("HLC_SESSION_ENABLED", "false").lower() in ("1", "true", "yes")
-)
-# Path to the JSON file where session records are persisted.  Defaults to the
-# same directory as UNIFIED_STATE_FILE so all runtime state lives in one place.
-HLC_SESSION_FILE: str = (
-    os.getenv("HLC_SESSION_FILE")
-    or os.path.join(
-        os.path.dirname(
-            os.getenv("UNIFIED_STATE_FILE", "/opt/ml_heating/unified_thermal_state.json")
-        ),
-        "hlc_sessions.json",
-    )
-)
-# Minimum number of clean (filtered) HP cycles in a session for the record
-# to be kept.
-HLC_SESSION_MIN_CYCLES: int = int(os.getenv("HLC_SESSION_MIN_CYCLES", "6"))
-# Rolling cap: keep at most this many validated session records.  Oldest
-# records are discarded when the store exceeds this limit.
-HLC_SESSION_MAX_SESSIONS: int = int(os.getenv("HLC_SESSION_MAX_SESSIONS", "120"))
-# Minimum number of validated session records required before the OLS estimate
-# is applied to the thermal model.  Prevents premature updates from sparse data.
-HLC_SESSION_MIN_SESSIONS: int = int(os.getenv("HLC_SESSION_MIN_SESSIONS", "10"))
-# Maximum relative change allowed when applying a session-level HLC estimate.
-# 0.3 = at most 30 % change from the current value per update.
-HLC_SESSION_MAX_UPDATE_FRACTION: float = float(
-    os.getenv("HLC_SESSION_MAX_UPDATE_FRACTION", "0.3")
-)
 
 # --- Historical HLC Calibration ---
 # Number of hours of historical data to fetch for HLC calibration.
