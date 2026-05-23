@@ -119,26 +119,28 @@ class TestCheckAndResolveClimateMode:
 class TestHandleGracePeriod:
     """handle_grace_period returns correct flags."""
 
-    @patch("src.pre_dispatch.save_state")
-    def test_not_grace_when_no_blocking_end(self, mock_save):
-        """No grace period if never blocked."""
+    @patch("src.pre_dispatch.BlockingStateManager")
+    def test_not_grace_when_manager_says_no(self, mock_bsm_cls):
+        """No grace period if BlockingStateManager says no."""
+        mock_bsm = MagicMock()
+        mock_bsm.handle_grace_period.return_value = False
+        mock_bsm_cls.return_value = mock_bsm
+
         state = {"last_is_blocking": False}
-        is_gp = handle_grace_period(state, MagicMock(), MagicMock(), MagicMock())
+        is_gp = handle_grace_period(MagicMock(), state, MagicMock(), False)
         assert is_gp is False
 
     @patch("src.pre_dispatch.save_state")
-    def test_grace_when_just_unblocked(self, mock_save):
-        """Grace period active when blocking just ended."""
-        from datetime import datetime, timezone
+    @patch("src.pre_dispatch.BlockingStateManager")
+    def test_grace_when_manager_says_yes(self, mock_bsm_cls, mock_save):
+        """Grace period active when manager detects transition."""
+        mock_bsm = MagicMock()
+        mock_bsm.handle_grace_period.return_value = True
+        mock_bsm_cls.return_value = mock_bsm
 
-        now = datetime.now(timezone.utc)
-        state = {
-            "last_is_blocking": True,
-            "last_blocking_end_time": None,
-        }
-        is_gp = handle_grace_period(state, MagicMock(), MagicMock(), MagicMock())
-        # The function should detect transition from blocking to non-blocking
-        assert isinstance(is_gp, bool)
+        state = {"last_is_blocking": True, "last_final_temp": 28.0}
+        is_gp = handle_grace_period(MagicMock(), state, MagicMock(), True)
+        assert is_gp is True
 
 
 class TestGracePeriodDetermineState:

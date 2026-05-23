@@ -26,10 +26,10 @@ Replace the inline loop body in `main.py` (lines ~520–2565) with:
    - `emit_network_error_state(ha_client)` (on connection failure)
 
 3. **Online learning** (lines ~927-1336): Replace with:
-   - `run_online_learning(loop, state, ha_client, all_states, ctx_prev_cycle)`
+   - `run_online_learning(ha_client, all_states, state, effective_shadow_mode, climate_mode, wrapper)`
 
 4. **Grace period** (lines ~1338-1387): Replace with:
-   - `is_gp = handle_grace_period(state, state_manager, ha_client, all_states)`
+   - `is_gp = handle_grace_period(ha_client, state, state_manager, effective_shadow_mode)`
 
 5. **State determination** (lines ~1389-1431): Replace with:
    - `heating_active, climate_mode, state_mgr, reloaded = check_and_resolve_climate_mode(...)`
