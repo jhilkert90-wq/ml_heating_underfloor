@@ -992,7 +992,11 @@ def run_idle_route(ctx: CycleContext) -> None:
     if not step_build_features(ctx):
         return
 
-    # Dynamic trajectory / price still calculated for feature completeness
+    # Dynamic trajectory / price still calculated for feature completeness.
+    # NOTE: step_dynamic_trajectory mutates config.TRAJECTORY_STEPS and
+    # config.MIN_SETPOINT_HOLD_CYCLES and may trigger electricity-price
+    # network calls. These side effects are intentional so that the next
+    # HEATING/COOLING cycle begins with an up-to-date trajectory length.
     step_dynamic_trajectory(ctx)
 
     # Heating obs buffer: resolve labels even while idle so pending

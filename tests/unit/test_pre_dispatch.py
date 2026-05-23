@@ -127,19 +127,18 @@ class TestHandleGracePeriod:
         mock_bsm_cls.return_value = mock_bsm
 
         state = {"last_is_blocking": False}
-        is_gp = handle_grace_period(MagicMock(), state, MagicMock(), False)
+        is_gp = handle_grace_period(MagicMock(), state, False)
         assert is_gp is False
 
-    @patch("src.pre_dispatch.save_state")
     @patch("src.pre_dispatch.BlockingStateManager")
-    def test_grace_when_manager_says_yes(self, mock_bsm_cls, mock_save):
+    def test_grace_when_manager_says_yes(self, mock_bsm_cls):
         """Grace period active when manager detects transition."""
         mock_bsm = MagicMock()
         mock_bsm.handle_grace_period.return_value = True
         mock_bsm_cls.return_value = mock_bsm
 
         state = {"last_is_blocking": True, "last_final_temp": 28.0}
-        is_gp = handle_grace_period(MagicMock(), state, MagicMock(), True)
+        is_gp = handle_grace_period(MagicMock(), state, True)
         assert is_gp is True
 
 
@@ -168,7 +167,7 @@ class TestGracePeriodDetermineState:
 class TestValidateSensorsOnce:
     """validate_sensors_once only runs once per process."""
 
-    def test_returns_true_on_empty_states(self):
+    def test_returns_false_on_empty_states(self):
         """Returns False (not done) when no states available."""
         result = validate_sensors_once(None, MagicMock())
         assert result is False

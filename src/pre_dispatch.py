@@ -13,6 +13,7 @@ keeping the main loop body thin.
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -25,7 +26,7 @@ from .heating_controller import BlockingStateManager, HeatingSystemStateChecker
 from .loop_state import LoopState
 from .physics_features import calculate_thermodynamic_metrics
 from .shadow_mode import get_shadow_output_entity_id, resolve_shadow_mode
-from .state_manager import load_state, save_state
+from .state_manager import load_state
 
 
 # ---------------------------------------------------------------------------
@@ -221,11 +222,9 @@ def run_online_learning(
             "ERROR: last_run_features corrupted as string - attempting to recover"
         )
         try:
-            import json
-
             last_run_features = json.loads(last_run_features)
             logging.info("✅ Recovered features from JSON string")
-        except (Exception,):
+        except (json.JSONDecodeError, ValueError):
             logging.error("❌ Cannot recover features from string, using empty dict")
             last_run_features = {}
 
@@ -438,46 +437,20 @@ def run_online_learning(
 def handle_grace_period(
     ha_client: Any,
     state: dict,
-    state_manager: Any,
     effective_shadow_mode: bool,
 ) -> bool:
-    """Check and handle post-blocking grace period.
+    """Detect whether a post-blocking grace period is active.
 
-    Returns True if grace period is active (cycle should be skipped).
-    Saves preserved state when in grace period.
+    Returns True if grace period is active (caller should dispatch to
+    run_grace_period_route, which handles state persistence).
+    Returns False if no grace period is active.
     """
     blocking_manager = BlockingStateManager()
     is_grace_period = blocking_manager.handle_grace_period(
         ha_client, state, shadow_mode=effective_shadow_mode
     )
 
-    if not is_grace_period:
-        return False
-
-    logging.info("⏳ Grace period active - Passive learning mode")
-
-    # Preserve the previous valid target to avoid state poisoning
-    preserved_target = state.get("last_final_temp")
-    if preserved_target is None:
-        try:
-            preserved_target = float(
-                ha_client.get_state(config.ACTUAL_OUTLET_TEMP_ENTITY_ID, None)
-            )
-        except (ValueError, TypeError):
-            preserved_target = 20.0
-
-    logging.info(
-        "Preserving last_final_temp=%.1f°C during grace period", preserved_target
-    )
-
-    save_state(
-        state_manager=state_manager,
-        last_final_temp=preserved_target,
-        last_is_blocking=False,
-        last_blocking_end_time=state.get("last_blocking_end_time"),
-        last_run_features={"learning_mode": "grace_period_passthrough"},
-    )
-    return True
+    return is_grace_period
 
 
 # ---------------------------------------------------------------------------
@@ -557,7 +530,7 @@ def emit_network_error_state(ha_client: Any) -> None:
     try:
         from .ha_client import create_ha_client
 
-        ha_client = create_ha_client()
+        _ha_client = create_ha_client()
         heating_state_entity_id = get_shadow_output_entity_id(
             "sensor.ml_heating_state"
         )
@@ -568,7 +541,7 @@ def emit_network_error_state(ha_client: Any) -> None:
                 "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         )
-        ha_client.set_state(
+        _ha_client.set_state(
             heating_state_entity_id,
             3,
             attributes_state,

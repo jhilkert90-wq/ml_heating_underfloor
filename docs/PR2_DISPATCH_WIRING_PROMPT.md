@@ -29,7 +29,7 @@ Replace the inline loop body in `main.py` (lines ~520–2565) with:
    - `run_online_learning(ha_client, all_states, state, effective_shadow_mode, climate_mode, wrapper)`
 
 4. **Grace period** (lines ~1338-1387): Replace with:
-   - `is_gp = handle_grace_period(ha_client, state, state_manager, effective_shadow_mode)`
+   - `is_gp = handle_grace_period(ha_client, state, effective_shadow_mode)`
 
 5. **State determination** (lines ~1389-1431): Replace with:
    - `heating_active, climate_mode, state_mgr, reloaded = check_and_resolve_climate_mode(...)`
@@ -80,8 +80,9 @@ Replace the inline loop body in `main.py` (lines ~520–2565) with:
 - Verify 1429+ tests still pass after refactoring
 - The `run_idle_route` now does full feature calculation + saves state
   (not just passive features) — so online learning has valid data next cycle
-- `run_online_learning()` in pre_dispatch.py handles the heating obs buffer
-  resolve/push + cooling obs buffer + HLC parameter learning
+- `run_online_learning()` in pre_dispatch.py handles wrapper learning
+  feedback (thermal model, correction model); observation-buffer resolve/push
+  is handled in route steps like `step_heating_obs_buffer`
 - Shadow mode comparison sums are tracked in `loop.shadow_ml_error_sum` etc.
 - Keep `time.sleep(CYCLE_INTERVAL_MINUTES * 60)` at the end of the loop
 
