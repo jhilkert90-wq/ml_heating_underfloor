@@ -4,10 +4,9 @@ These tests verify that the refactored main loop correctly dispatches
 to the appropriate route handlers based on cycle state.
 """
 
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 
 from src import config
-from src.cycle_state import CycleState
 from src.state_manager import SystemState
 
 
@@ -72,7 +71,7 @@ class TestDispatchRouting:
         mock_save_state,
         mock_get_attributes,
     ):
-        """When climate_mode is 'heat' and heating is active, run_heating_route
+        """When climate_mode is 'heating' and heating is active, run_heating_route
         is called."""
         all_states = _make_all_states(heating_status="heat")
         mock_ha = MagicMock()
@@ -100,7 +99,7 @@ class TestDispatchRouting:
             patch("src.pre_dispatch.handle_grace_period", return_value=False),
             patch(
                 "src.pre_dispatch.check_and_resolve_climate_mode",
-                return_value=(True, "heat", MagicMock(), None),
+                return_value=(True, "heating", MagicMock(), None),
             ),
             patch("src.pre_dispatch.check_blocking_state", return_value=(False, [])),
             patch("src.main.time") as mock_time,
@@ -115,7 +114,7 @@ class TestDispatchRouting:
 
             mock_checker_instance = MagicMock()
             mock_checker.return_value = mock_checker_instance
-            mock_checker_instance.get_climate_mode.return_value = "heat"
+            mock_checker_instance.get_climate_mode.return_value = "heating"
 
             from src import main
 
@@ -174,7 +173,7 @@ class TestDispatchRouting:
             patch("src.pre_dispatch.handle_grace_period", return_value=False),
             patch(
                 "src.pre_dispatch.check_and_resolve_climate_mode",
-                return_value=(False, "off", MagicMock(), None),
+                return_value=(False, "heating", MagicMock(), None),
             ),
             patch("src.pre_dispatch.check_blocking_state", return_value=(False, [])),
             patch("src.main.time") as mock_time,
@@ -189,7 +188,7 @@ class TestDispatchRouting:
 
             mock_checker_instance = MagicMock()
             mock_checker.return_value = mock_checker_instance
-            mock_checker_instance.get_climate_mode.return_value = "off"
+            mock_checker_instance.get_climate_mode.return_value = "heating"
 
             from src import main
 
@@ -248,7 +247,7 @@ class TestDispatchRouting:
             patch("src.pre_dispatch.handle_grace_period", return_value=False),
             patch(
                 "src.pre_dispatch.check_and_resolve_climate_mode",
-                return_value=(True, "heat", MagicMock(), None),
+                return_value=(True, "heating", MagicMock(), None),
             ),
             patch(
                 "src.pre_dispatch.check_blocking_state",
@@ -266,7 +265,7 @@ class TestDispatchRouting:
 
             mock_checker_instance = MagicMock()
             mock_checker.return_value = mock_checker_instance
-            mock_checker_instance.get_climate_mode.return_value = "heat"
+            mock_checker_instance.get_climate_mode.return_value = "heating"
 
             from src import main
 
@@ -304,7 +303,7 @@ class TestModeTransitionStateReload:
     ):
         """When check_and_resolve_climate_mode returns a reloaded state,
         that state is used for dispatch."""
-        all_states = _make_all_states(heating_status="cooling")
+        all_states = _make_all_states(heating_status="cool")
         mock_ha = MagicMock()
         mock_create_ha.return_value = mock_ha
         mock_ha.get_all_states.side_effect = [
