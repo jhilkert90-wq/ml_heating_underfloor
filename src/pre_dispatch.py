@@ -617,7 +617,7 @@ def check_and_resolve_climate_mode(
 def initialize_loop_state(
     sensor_buffer: Any,
     influx_service: Any,
-) -> "LoopState":
+) -> LoopState:
     """Create and populate a LoopState with all runtime objects.
 
     Handles the conditional lazy initialization of cooling ML model,
