@@ -487,9 +487,9 @@ class TestTransientDropFilterCooling:
     def test_transient_filter_skipped_in_cooling_mode(self):
         """Verify the transient drop filter code checks climate_mode."""
         import inspect
-        from src import main as main_mod
+        from src import cycle_routes as routes_mod
 
-        source = inspect.getsource(main_mod)
+        source = inspect.getsource(routes_mod)
         # The filter block must check climate_mode before applying.
         assert 'climate_mode != "cooling"' in source or "climate_mode ==" in source, (
             "Transient drop filter must be gated on climate_mode"
@@ -589,14 +589,14 @@ class TestPredictionContextNoDuplicateKeys:
     def test_no_duplicate_inlet_temp_or_delta_t(self):
         """Verify inlet_temp and delta_t appear only once."""
         import inspect
-        from src import main as main_mod
+        from src import pre_dispatch as pre_dispatch_mod
 
-        source = inspect.getsource(main_mod)
+        source = inspect.getsource(pre_dispatch_mod)
         # Find the prediction_context dict literal.  Count occurrences
         # of each key inside it.  The dict starts with "prediction_context = {"
         # and ends when we leave the block.
         ctx_start = source.find("prediction_context = {")
-        assert ctx_start != -1, "prediction_context dict not found in main.py"
+        assert ctx_start != -1, "prediction_context dict not found in pre_dispatch.py"
         # Find the closing brace (rough: count brace depth).
         depth, end = 0, ctx_start
         for i, ch in enumerate(source[ctx_start:], start=ctx_start):
@@ -625,16 +625,16 @@ class TestCoolingTargetValidation:
 
     def test_non_numeric_cooling_target_rejected(self):
         """If HA returns a non-numeric string, it must not override target."""
-        # This tests the defensive float() conversion in main.py.
+        # This tests the defensive float() conversion in cycle_routes.py.
         # We verify the code path by checking the source.
         import inspect
-        from src import main as main_mod
+        from src import cycle_routes as routes_mod
 
-        source = inspect.getsource(main_mod)
+        source = inspect.getsource(routes_mod)
         # The cooling target override must have a try/except or
         # isinstance check around the float conversion.
         cooling_override_section = source[
-            source.find("TARGET_INDOOR_TEMP_COOLING_ENTITY_ID, all_states"):
+            source.find("TARGET_INDOOR_TEMP_COOLING_ENTITY_ID, ctx.all_states"):
         ]
         # Look for float() conversion within the next ~20 lines
         snippet = cooling_override_section[:600]
