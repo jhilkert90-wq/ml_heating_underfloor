@@ -16,8 +16,8 @@ loss coefficient [kW/K].
 
 The :func:`calibrate_hlc` function fetches historical sensor data from
 InfluxDB (or HA), filters stable HP-only periods, and runs forced-through-origin
-OLS regression to estimate HLC on first deployment or on-demand from the
-dashboard.
+OLS regression to estimate HLC.  Calibration is triggered automatically on
+startup when the HLC calibration flag file is present (written by ``main.py``).
 """
 
 from __future__ import annotations

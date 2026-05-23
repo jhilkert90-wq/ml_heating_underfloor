@@ -12,7 +12,6 @@ full control over execution order.
 from __future__ import annotations
 
 import logging
-import time
 from datetime import datetime, timezone
 
 import numpy as np
@@ -20,7 +19,6 @@ import pandas as pd
 
 from . import config
 from .cycle_context import CycleContext
-from .cycle_state import CycleState
 from .ha_client import get_sensor_attributes
 from .heating_controller import SensorDataManager
 from .model_wrapper import simplified_outlet_prediction
@@ -353,6 +351,7 @@ def step_update_ha(ctx: CycleContext) -> None:
             ctx.final_temp,
         )
     else:
+        smart_rounded_temp = round(ctx.final_temp, 1)
         if not ctx.effective_shadow_mode:
             # Smart rounding
             floor_temp = np.floor(ctx.final_temp)
@@ -466,7 +465,7 @@ def step_update_ha(ctx: CycleContext) -> None:
         logging.debug("Setting target outlet temp")
         ctx.ha_client.set_state(
             target_output_entity_id,
-            round(ctx.final_temp, 1),
+            float(smart_rounded_temp),
             get_sensor_attributes(target_output_entity_id),
             round_digits=None,
         )
@@ -913,6 +912,7 @@ def run_blocking_route(ctx: CycleContext) -> None:
             for e in ctx.blocking_entities
             if ctx.ha_client.get_state(e, ctx.all_states, is_binary=True)
         ]
+        ctx.blocking_reasons = blocking_reasons
         attributes_state = get_sensor_attributes(heating_state_entity_id)
         attributes_state.update(
             {
