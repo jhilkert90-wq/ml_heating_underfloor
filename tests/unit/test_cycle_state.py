@@ -12,9 +12,10 @@ class TestCycleState:
         assert CycleState.COOLING.value == "cooling"
         assert CycleState.BLOCKING.value == "blocking"
         assert CycleState.IDLE.value == "idle"
+        assert CycleState.GRACE_PERIOD.value == "grace_period"
 
     def test_enum_members(self):
-        assert len(CycleState) == 4
+        assert len(CycleState) == 5
 
 
 class TestDetermineCycleState:
@@ -119,3 +120,56 @@ class TestDetermineCycleState:
         assert determine_cycle_state(
             is_blocking=False, heating_active=False, climate_mode="cooling"
         ) == CycleState.IDLE
+
+
+class TestGracePeriodState:
+    """Tests for GRACE_PERIOD as 5th CycleState."""
+
+    def test_grace_period_when_flag_set(self):
+        """GRACE_PERIOD returned when is_grace_period=True and not blocking."""
+        result = determine_cycle_state(
+            is_blocking=False,
+            heating_active=False,
+            climate_mode="heating",
+            is_grace_period=True,
+        )
+        assert result == CycleState.GRACE_PERIOD
+
+    def test_blocking_overrides_grace_period(self):
+        """Blocking has higher priority than grace period."""
+        result = determine_cycle_state(
+            is_blocking=True,
+            heating_active=False,
+            climate_mode="heating",
+            is_grace_period=True,
+        )
+        assert result == CycleState.BLOCKING
+
+    def test_grace_period_overrides_idle(self):
+        """Grace period has higher priority than IDLE."""
+        result = determine_cycle_state(
+            is_blocking=False,
+            heating_active=False,
+            climate_mode="heating",
+            is_grace_period=True,
+        )
+        assert result == CycleState.GRACE_PERIOD
+
+    def test_grace_period_overrides_heating(self):
+        """Grace period has priority over HEATING/COOLING."""
+        result = determine_cycle_state(
+            is_blocking=False,
+            heating_active=True,
+            climate_mode="heating",
+            is_grace_period=True,
+        )
+        assert result == CycleState.GRACE_PERIOD
+
+    def test_no_grace_period_by_default(self):
+        """Default is_grace_period=False, normal dispatch."""
+        result = determine_cycle_state(
+            is_blocking=False,
+            heating_active=True,
+            climate_mode="heating",
+        )
+        assert result == CycleState.HEATING
