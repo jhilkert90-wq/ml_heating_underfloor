@@ -35,6 +35,13 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# ── Calibration hyper-parameters (named constants) ─────────────────────────
+# Max allowed AUC drop before preferring raw model over isotonic-calibrated.
+_ISOTONIC_AUC_TOLERANCE: float = 0.01
+# Minimum samples per fold in threshold cross-validation; below this CV is
+# skipped because fold estimates are unreliable with so few samples.
+_CV_MIN_FOLD_SIZE: int = 50
+
 # Module-level import of shared training-data export helper.
 try:
     from .calibration_data_export import export_training_data
@@ -576,7 +583,7 @@ def calibrate_cooling_ml(
     use_calibrated = (
         calibrated_model is not None
         and not math.isnan(calibrated_auc)
-        and calibrated_auc >= auc - 0.01  # allow up to 0.01 AUC drop
+        and calibrated_auc >= auc - _ISOTONIC_AUC_TOLERANCE
     )
     final_model = calibrated_model if use_calibrated else model
     final_auc = calibrated_auc if use_calibrated else auc
@@ -695,7 +702,7 @@ def _cross_validate_threshold(
 
     n = len(y_train)
     fold_size = n // n_folds
-    if fold_size < 50:
+    if fold_size < _CV_MIN_FOLD_SIZE:
         return []  # too few samples for meaningful CV
 
     thresholds: list[float] = []

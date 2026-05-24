@@ -207,7 +207,9 @@ def _extract_feature(
         return max_at
 
     if col == "indoor_momentum":
-        # Linear extrapolation: 3h ahead based on 1h trend
+        # Thermal momentum proxy: 3h extrapolation from 1h trend.
+        # 3h chosen because slab thermal mass has ~3h dominant time constant;
+        # this approximates where indoor temp will be when cooling effect arrives.
         trend = float(physics.get("indoor_temp_delta_60m") or 0.0)
         return trend * 3.0
 
