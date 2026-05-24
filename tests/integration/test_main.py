@@ -9,13 +9,13 @@ from src.heating_controller import BlockingStateManager
 # that the main function behaves as expected.
 
 
-@patch("src.main.get_sensor_attributes")
-@patch("src.main.build_physics_features", return_value=({}, []))
+@patch("src.cycle_routes.get_sensor_attributes")
+@patch("src.cycle_routes.build_physics_features", return_value=({}, []))
 @patch("src.main.create_ha_client")
 @patch("src.main.create_influx_service")
-@patch("src.main.simplified_outlet_prediction")
+@patch("src.cycle_routes.simplified_outlet_prediction")
 @patch("src.main.load_state")
-@patch("src.main.save_state")
+@patch("src.cycle_routes.save_state")
 def test_main_loop_runs_once(
     mock_save_state,
     mock_load_state,
@@ -177,13 +177,13 @@ def test_main_loop_runs_once(
     mock_build_features.assert_called_once()
 
 
-@patch("src.main.get_sensor_attributes")
-@patch("src.main.build_physics_features", return_value=({}, []))
+@patch("src.cycle_routes.get_sensor_attributes")
+@patch("src.cycle_routes.build_physics_features", return_value=({}, []))
 @patch("src.main.create_ha_client")
 @patch("src.main.create_influx_service")
-@patch("src.main.simplified_outlet_prediction")
+@patch("src.cycle_routes.simplified_outlet_prediction")
 @patch("src.main.load_state")
-@patch("src.main.save_state")
+@patch("src.cycle_routes.save_state")
 def test_main_online_learning_passes_previous_cycle_heat_source_context(
     mock_save_state,
     mock_load_state,
@@ -324,13 +324,13 @@ def test_main_online_learning_passes_previous_cycle_heat_source_context(
     mock_build_features.assert_called_once()
 
 
-@patch("src.main.get_sensor_attributes")
-@patch("src.main.build_physics_features", return_value=({}, []))
+@patch("src.cycle_routes.get_sensor_attributes")
+@patch("src.cycle_routes.build_physics_features", return_value=({}, []))
 @patch("src.main.create_ha_client")
 @patch("src.main.create_influx_service")
-@patch("src.main.simplified_outlet_prediction")
+@patch("src.cycle_routes.simplified_outlet_prediction")
 @patch("src.main.load_state")
-@patch("src.main.save_state")
+@patch("src.cycle_routes.save_state")
 def test_main_online_learning_uses_persisted_previous_cycle_mode_and_target(
     mock_save_state,
     mock_load_state,
@@ -470,13 +470,13 @@ def test_main_online_learning_uses_persisted_previous_cycle_mode_and_target(
     mock_build_features.assert_called_once()
 
 
-@patch("src.main.get_sensor_attributes")
-@patch("src.main.build_physics_features", return_value=({}, []))
+@patch("src.cycle_routes.get_sensor_attributes")
+@patch("src.cycle_routes.build_physics_features", return_value=({}, []))
 @patch("src.main.create_ha_client")
 @patch("src.main.create_influx_service")
-@patch("src.main.simplified_outlet_prediction")
+@patch("src.cycle_routes.simplified_outlet_prediction")
 @patch("src.main.load_state")
-@patch("src.main.save_state")
+@patch("src.cycle_routes.save_state")
 def test_main_dynamic_shadow_mode_suppresses_live_control_outputs(
     mock_save_state,
     mock_load_state,
@@ -619,13 +619,13 @@ def test_main_dynamic_shadow_mode_suppresses_live_control_outputs(
     mock_poll_blocking.assert_called_once()
 
 
-@patch("src.main.get_sensor_attributes")
-@patch("src.main.build_physics_features", return_value=({}, []))
+@patch("src.cycle_routes.get_sensor_attributes")
+@patch("src.cycle_routes.build_physics_features", return_value=({}, []))
 @patch("src.main.create_ha_client")
 @patch("src.main.create_influx_service")
-@patch("src.main.simplified_outlet_prediction")
+@patch("src.cycle_routes.simplified_outlet_prediction")
 @patch("src.main.load_state")
-@patch("src.main.save_state")
+@patch("src.cycle_routes.save_state")
 def test_main_shadow_deployment_writes_shadow_output_entities(
     mock_save_state,
     mock_load_state,
@@ -732,7 +732,7 @@ def test_main_shadow_deployment_writes_shadow_output_entities(
         ) as mock_get_wrapper, patch.object(
             BlockingStateManager, "poll_for_blocking"
         ) as mock_poll_blocking, patch(
-            "src.main.calculate_thermodynamic_metrics",
+            "src.pre_dispatch.calculate_thermodynamic_metrics",
             return_value={
                 "cop_realtime": 3.5,
                 "thermal_power_kw": 4.2,
@@ -775,13 +775,13 @@ def test_main_shadow_deployment_writes_shadow_output_entities(
     mock_poll_blocking.assert_called_once()
 
 
-@patch("src.main.get_sensor_attributes")
-@patch("src.main.build_physics_features", return_value=({}, []))
+@patch("src.cycle_routes.get_sensor_attributes")
+@patch("src.cycle_routes.build_physics_features", return_value=({}, []))
 @patch("src.main.create_ha_client")
 @patch("src.main.create_influx_service")
-@patch("src.main.simplified_outlet_prediction")
+@patch("src.cycle_routes.simplified_outlet_prediction")
 @patch("src.main.load_state")
-@patch("src.main.save_state")
+@patch("src.cycle_routes.save_state")
 def test_main_retries_startup_sensor_validation_after_transient_failure(
     mock_save_state,
     mock_load_state,

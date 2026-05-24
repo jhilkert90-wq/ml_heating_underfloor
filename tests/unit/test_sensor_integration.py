@@ -14,18 +14,20 @@ class TestSensorIntegration(unittest.TestCase):
     @patch('src.main.SensorBuffer')
     @patch('src.main.BlockingStateManager')
     @patch('src.main.HeatingSystemStateChecker')
-    @patch('src.main.SensorDataManager')
-    @patch('src.main.build_physics_features')
-    @patch('src.main.simplified_outlet_prediction')
-    @patch('src.main.save_state')
+    @patch('src.cycle_routes.SensorDataManager')
+    @patch('src.cycle_routes.build_physics_features')
+    @patch('src.cycle_routes.simplified_outlet_prediction')
+    @patch('src.cycle_routes.save_state')
     @patch('src.main.load_state')
-    @patch('src.main.calculate_thermodynamic_metrics')
-    @patch('src.main.get_sensor_attributes')
+    @patch('src.pre_dispatch.calculate_thermodynamic_metrics')
+    @patch('src.pre_dispatch.get_sensor_attributes')
+    @patch('src.cycle_routes.get_sensor_attributes')
     @patch('argparse.ArgumentParser.parse_args')
     def test_thermodynamic_sensor_export(
         self,
         mock_parse_args,
-        mock_get_attributes,
+        mock_get_attributes_routes,
+        mock_get_attributes_predispatch,
         mock_calc_metrics,
         mock_load_state,
         mock_save_state,
@@ -103,7 +105,7 @@ class TestSensorIntegration(unittest.TestCase):
         mock_prediction.return_value = (38.0, 5.0, {})
 
         # Mock attributes
-        mock_get_attributes.side_effect = lambda entity_id: {
+        _attr_side_effect = lambda entity_id: {
             "sensor.ml_heating_thermal_power": {
                 "friendly_name": "ML Heating Thermal Power",
                 "unit_of_measurement": "kW",
@@ -119,6 +121,8 @@ class TestSensorIntegration(unittest.TestCase):
                 "state_class": "measurement",
             },
         }.get(entity_id, {})
+        mock_get_attributes_routes.side_effect = _attr_side_effect
+        mock_get_attributes_predispatch.side_effect = _attr_side_effect
 
         # Run main for one cycle
         # We need to break the infinite loop in main.

@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### ✅ PR #69 review follow-up: dispatch wiring test cleanup + docs sync — 2026-05-23
+
+#### **What changed**
+- Removed unused imports (`PropertyMock`, `CycleState`) from `tests/integration/test_dispatch_wiring.py`.
+- Aligned `check_and_resolve_climate_mode` mock return values with production contract: "heat" → "heating", "off" → "heating" (idle path), and HA state "cooling" → "cool" in `_make_all_states`.
+- Updated `CHANGELOG.md` `[Unreleased]` with entries for the dispatch wiring refactor (main loop restructure, `initialize_loop_state`, updated test coverage).
+- Added fresh progress/context records in `memory-bank/progress.md` and `memory-bank/activeContext.md`.
+
+#### **Why**
+- PR review flagged unused imports and mismatched climate_mode strings ("heat"/"off" vs production "heating") in the new dispatch wiring integration tests.
+- Keeping mock return values aligned with production contracts prevents route-dispatch bugs from being masked by incorrect test fixtures.
+
+#### **Files modified**
+- `tests/integration/test_dispatch_wiring.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ### ✅ PR #66 review follow-up: English-only dashboard settings cleanup + docs sync — 2026-05-23
 
 #### **What changed**

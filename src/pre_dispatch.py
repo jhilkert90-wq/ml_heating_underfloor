@@ -607,3 +607,121 @@ def check_and_resolve_climate_mode(
         )
 
     return True, climate_mode, _active_state_manager, reloaded_state
+
+
+# ---------------------------------------------------------------------------
+# LoopState initialization factory
+# ---------------------------------------------------------------------------
+
+
+def initialize_loop_state(
+    sensor_buffer: Any,
+    influx_service: Any,
+) -> LoopState:
+    """Create and populate a LoopState with all runtime objects.
+
+    Handles the conditional lazy initialization of cooling ML model,
+    cooling observation buffer, and heating observation buffer.
+    """
+    from .model_wrapper import get_enhanced_model_wrapper
+
+    wrapper = get_enhanced_model_wrapper()
+    try:
+        wrapper.export_metrics_to_ha()
+        logging.info("✅ Initial metrics exported to HA successfully.")
+    except Exception as e:
+        logging.error(
+            "❌ FAILED to export initial metrics to HA: %s", e, exc_info=True
+        )
+
+    loop = LoopState(
+        sensor_buffer=sensor_buffer,
+        influx_service=influx_service,
+        wrapper=wrapper,
+        blocking_entities=[
+            config.DHW_STATUS_ENTITY_ID,
+            config.DEFROST_STATUS_ENTITY_ID,
+            config.DISINFECTION_STATUS_ENTITY_ID,
+            config.DHW_BOOST_HEATER_STATUS_ENTITY_ID,
+        ],
+    )
+
+    # --- Cooling ML model + observation buffer (lazy init once) ---
+    loop.cooling_ml_model_type = getattr(config, "PRE_COOL_MODEL_TYPE", "trajectory")
+    if getattr(config, "PRE_COOL_ENABLED", True):
+        _steps_per_hour = round(
+            60 / float(getattr(config, "CYCLE_INTERVAL_MINUTES", 10))
+        )
+        try:
+            from .cooling_ml_model import CoolingMLModel
+            from .cooling_ml_observation_buffer import CoolingObservationBuffer
+
+            _horizon_h = int(getattr(config, "PRE_COOL_HORIZON_HOURS", 12))
+            loop.cooling_ml_model = CoolingMLModel(
+                model_path=getattr(
+                    config,
+                    "COOLING_ML_MODEL_PATH",
+                    "/opt/ml_heating/cooling_ml_model.joblib",
+                ),
+                metadata_path=getattr(
+                    config,
+                    "COOLING_ML_METADATA_PATH",
+                    "/opt/ml_heating/cooling_ml_metadata.json",
+                ),
+                steps_per_hour=_steps_per_hour,
+            )
+            loop.cooling_ml_model.load()
+            loop.cooling_obs_buffer = CoolingObservationBuffer(
+                path=getattr(
+                    config,
+                    "COOLING_ML_OBSERVATION_BUFFER_PATH",
+                    "/opt/ml_heating/cooling_ml_obs_buffer.json",
+                ),
+                max_n=int(getattr(config, "COOLING_ML_BUFFER_MAX_N", 500)),
+                min_training_samples=int(
+                    getattr(config, "COOLING_ML_MIN_TRAINING_SAMPLES", 200)
+                ),
+                retrain_trigger_k=int(
+                    getattr(config, "COOLING_ML_RETRAIN_TRIGGER_K", 50)
+                ),
+                horizon_steps=_horizon_h * _steps_per_hour,
+            )
+        except Exception as _cml_init_err:
+            logging.warning(
+                "Cooling ML init failed (non-fatal): %s", _cml_init_err
+            )
+
+    # --- Heating Correction ML observation buffer (always init) ---
+    _heating_obs_steps_per_hour = round(
+        60 / float(getattr(config, "CYCLE_INTERVAL_MINUTES", 10))
+    )
+    try:
+        from .heating_correction_ml_observation_buffer import (
+            HeatingCorrectionObservationBuffer,
+        )
+
+        _heating_label_h = int(
+            getattr(config, "HEATING_ML_LABEL_HORIZON_H", 4)
+        )
+        loop.heating_obs_buffer = HeatingCorrectionObservationBuffer(
+            path=getattr(
+                config,
+                "HEATING_ML_OBSERVATION_BUFFER_PATH",
+                "/opt/ml_heating/heating_correction_ml_obs_buffer.json",
+            ),
+            max_n=int(getattr(config, "HEATING_ML_BUFFER_MAX_N", 500)),
+            min_training_samples=int(
+                getattr(config, "HEATING_ML_MIN_TRAINING_SAMPLES", 200)
+            ),
+            retrain_trigger_k=int(
+                getattr(config, "HEATING_ML_RETRAIN_TRIGGER_K", 50)
+            ),
+            horizon_steps=_heating_label_h * _heating_obs_steps_per_hour,
+        )
+    except Exception as _hml_buf_init_err:
+        logging.warning(
+            "Heating correction obs buffer init failed (non-fatal): %s",
+            _hml_buf_init_err,
+        )
+
+    return loop

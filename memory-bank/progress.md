@@ -1,5 +1,25 @@
 # ML Heating System - Current Progress
 
+## ✅ PR #69 review follow-up: dispatch wiring test cleanup (2026-05-23)
+
+**Status:** COMPLETED
+
+### Changes
+1. **`tests/integration/test_dispatch_wiring.py`**
+   - Removed unused imports `PropertyMock` and `CycleState`.
+   - Fixed `check_and_resolve_climate_mode` mock return values to use production climate_mode strings: "heat" → "heating" (heating/blocking route tests), "off" → "heating" (idle route test — production always returns "heating" when heating_active is False).
+   - Fixed `get_climate_mode` mock return values accordingly: "heat"/"off" → "heating".
+   - Fixed `_make_all_states(heating_status="cooling")` → `heating_status="cool"` (HA state "cool" maps to climate_mode "cooling" via `config.get_climate_mode`).
+2. **`CHANGELOG.md`**
+   - Added `[Unreleased]` entries documenting the dispatch wiring refactor (main loop restructure, `initialize_loop_state` factory, integration test coverage).
+3. **`memory-bank/progress.md` / `memory-bank/activeContext.md`**
+   - Added current milestone/context entries for this PR #69 review follow-up.
+
+### Validation
+- `python3 -m pytest tests/integration/test_dispatch_wiring.py -v` → **4 passed**
+
+**Files changed:** `tests/integration/test_dispatch_wiring.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ PR #66 review follow-up: English-only dashboard settings docs cleanup (2026-05-23)
 
 **Status:** COMPLETED
