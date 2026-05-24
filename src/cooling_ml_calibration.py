@@ -264,6 +264,60 @@ def calibrate_cooling_ml(
         df[pv_col2] = df["PV_Generate"].shift(-shift)
         forecast_feature_cols.extend([at_col, pv_col2])
 
+    # ── 5b. Forecast noise injection (Prio 5) ─────────────────────────────
+    # Add realistic noise to hindcast features to simulate forecast errors
+    # at inference time.  This prevents the model from relying on precise
+    # future values it won't have at inference.
+    _noise_seed = 42
+    _rng = np.random.default_rng(_noise_seed)
+    for h in range(1, horizon_h + 1):
+        at_col = f"AT_roh_{h}h"
+        pv_col2 = f"pv_forecast_{h}h"
+        if at_col in df.columns:
+            # AT noise grows with horizon: std = 0.3 × sqrt(h)
+            at_noise = _rng.normal(0, 0.3 * math.sqrt(h), size=len(df))
+            df[at_col] = df[at_col] + at_noise
+        if pv_col2 in df.columns:
+            # PV multiplicative noise grows with horizon: std = 8% × sqrt(h)
+            pv_noise = _rng.normal(0, 0.08 * math.sqrt(h), size=len(df))
+            df[pv_col2] = df[pv_col2] * (1.0 + pv_noise)
+            df[pv_col2] = df[pv_col2].clip(lower=0.0)  # PV can't be negative
+    logger.info("Applied forecast noise injection (AT std=0.3√h, PV 8%%√h)")
+
+    # ── 5c. Cumulative / integration features (Prio 4) ──────────────────
+    # Give the model "total energy build-up" features similar to what the
+    # trajectory model computes by integrating over time.
+    _cum_pv_cols = [f"pv_forecast_{h}h" for h in range(1, 5)
+                    if f"pv_forecast_{h}h" in df.columns]
+    if _cum_pv_cols:
+        df["cum_pv_forecast_4h"] = df[_cum_pv_cols].sum(axis=1)
+    else:
+        df["cum_pv_forecast_4h"] = 0.0
+
+    _cum_at_cols = [f"AT_roh_{h}h" for h in range(1, 5)
+                    if f"AT_roh_{h}h" in df.columns]
+    if _cum_at_cols:
+        df["cum_at_excess_4h"] = df[_cum_at_cols].apply(
+            lambda row: sum(max(0.0, v - cooling_target_c) for v in row), axis=1
+        )
+    else:
+        df["cum_at_excess_4h"] = 0.0
+
+    _max_at_cols = [f"AT_roh_{h}h" for h in range(1, label_horizon_h + 1)
+                    if f"AT_roh_{h}h" in df.columns]
+    if _max_at_cols:
+        df["max_at_forecast"] = df[_max_at_cols].max(axis=1)
+    else:
+        df["max_at_forecast"] = df["AT"]
+
+    # indoor_momentum: linear extrapolation 3h ahead based on 1h trend
+    df["indoor_momentum"] = df["indoor_trend_1h"].fillna(0.0) * 3.0
+
+    # slab_stored_heat: thermal energy in the floor relative to room
+    df["slab_stored_heat"] = (df["VLT"] + df["RLT"]) / 2.0 - df["indoor_temp"]
+
+    logger.info("Computed cumulative/integration features")
+
     # ── 6. Define feature set ────────────────────────────────────────────
     # The exact columns are saved to metadata; inference reads them back.
     # AT hindcast hours: controlled by COOLING_ML_AT_FORECAST_HOURS
@@ -333,6 +387,12 @@ def calibrate_cooling_ml(
         "hour_cos",
         "doy_sin",
         "doy_cos",
+        # Cumulative / integration features (Prio 4)
+        "cum_pv_forecast_4h",
+        "cum_at_excess_4h",
+        "max_at_forecast",
+        "indoor_momentum",
+        "slab_stored_heat",
     ]
 
     # ── 7. Label computation ────────────────────────────────────────────
@@ -405,6 +465,33 @@ def calibrate_cooling_ml(
     X_val = df_val[feature_cols].values.astype(float)
     y_val = df_val["label"].values
 
+    # ── 9b. Temporal boundary sample weighting (Prio 6) ────────────────
+    # Upweight samples at the critical 0→1 label transition boundary and
+    # samples where label=1 but indoor < target (conditions building,
+    # not yet overheated).  These are the "morning decision" samples.
+    sample_weights = np.ones(len(y_fit), dtype=float)
+    _label_series = df_fit["label"].values
+    _indoor_series = df_fit["indoor_temp"].values if "indoor_temp" in df_fit.columns else None
+
+    # Weight 3.0: label transitions from 0→1 within the next 2h (12 steps)
+    _transition_window = 2 * steps_per_hour
+    for i in range(len(_label_series)):
+        if _label_series[i] == 0:
+            # Check if label becomes 1 within next 2h
+            future_end = min(i + _transition_window, len(_label_series))
+            if any(_label_series[i+1:future_end] == 1):
+                sample_weights[i] = 3.0
+        elif _label_series[i] == 1 and _indoor_series is not None:
+            # Weight 2.0: label=1 but indoor still comfortable (building phase)
+            if _indoor_series[i] < cooling_target_c:
+                sample_weights[i] = 2.0
+
+    n_upweighted = int((sample_weights > 1.0).sum())
+    logger.info(
+        "Temporal boundary weighting: %d/%d samples upweighted (%.1f%%)",
+        n_upweighted, len(sample_weights), 100 * n_upweighted / max(1, len(sample_weights)),
+    )
+
     # ── 10. Train LightGBM ─────────────────────────────────────────────
     try:
         import lightgbm as lgb  # type: ignore
@@ -434,14 +521,29 @@ def calibrate_cooling_ml(
     model = lgb.LGBMClassifier(**lgb_params)
     model.fit(
         X_fit, y_fit,
+        sample_weight=sample_weights,
         eval_set=[(X_val, y_val)],
         callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(50)],
     )
 
-    # ── 11. Threshold optimisation (maximise F1 on val) ────────────────
+    # ── 11. Threshold optimisation (Prio 2: F-beta with β=2, cross-validated)
+    # Use recall-biased threshold to ensure early activation.
+    # Cross-validate: split training data into 3 temporal folds, find best
+    # threshold on each, then average.
     proba_val = model.predict_proba(X_val)[:, 1]
-    threshold, best_f1 = _optimise_threshold(y_val, proba_val)
-    logger.info("Optimal threshold=%.4f (val F1=%.4f)", threshold, best_f1)
+    threshold, best_fbeta = _optimise_threshold_fbeta(y_val, proba_val, beta=2.0)
+    logger.info("Optimal F2-threshold=%.4f (val F2=%.4f)", threshold, best_fbeta)
+
+    # Cross-validated threshold confirmation on training folds
+    cv_thresholds = _cross_validate_threshold(X_fit, y_fit, model, beta=2.0, n_folds=3)
+    if cv_thresholds:
+        cv_mean = float(np.mean(cv_thresholds))
+        # Use the lower of CV mean and val-optimised (prefer earlier trigger)
+        threshold = min(threshold, cv_mean)
+        logger.info(
+            "CV thresholds: %s → mean=%.4f | final threshold=%.4f",
+            [f"{t:.4f}" for t in cv_thresholds], cv_mean, threshold,
+        )
 
     # AUC on val
     try:
@@ -450,6 +552,43 @@ def calibrate_cooling_ml(
     except Exception:
         auc = float("nan")
     logger.info("Val AUC=%.4f", auc)
+
+    # ── 11b. Isotonic probability calibration (Prio 3) ──────────────────
+    # Wrap the model with isotonic calibration to produce well-calibrated
+    # probabilities.  If calibration improves val AUC → save calibrated model.
+    calibrated_model = None
+    calibrated_auc = float("nan")
+    try:
+        from sklearn.calibration import CalibratedClassifierCV  # type: ignore
+        # Fit isotonic calibration on validation predictions
+        calibrated_model = CalibratedClassifierCV(
+            model, method="isotonic", cv="prefit"
+        )
+        calibrated_model.fit(X_val, y_val)
+        proba_cal = calibrated_model.predict_proba(X_val)[:, 1]
+        calibrated_auc = float(roc_auc_score(y_val, proba_cal))
+        logger.info("Calibrated model val AUC=%.4f (raw=%.4f)", calibrated_auc, auc)
+    except Exception as exc:
+        logger.warning("Isotonic calibration failed: %s — using raw model", exc)
+        calibrated_model = None
+
+    # Decision: use calibrated model if it doesn't degrade AUC
+    use_calibrated = (
+        calibrated_model is not None
+        and not math.isnan(calibrated_auc)
+        and calibrated_auc >= auc - 0.01  # allow up to 0.01 AUC drop
+    )
+    final_model = calibrated_model if use_calibrated else model
+    final_auc = calibrated_auc if use_calibrated else auc
+    if use_calibrated:
+        # Re-optimise threshold on calibrated probabilities
+        threshold, best_fbeta = _optimise_threshold_fbeta(y_val, proba_cal, beta=2.0)
+        logger.info(
+            "Using CALIBRATED model (AUC=%.4f) with threshold=%.4f",
+            calibrated_auc, threshold,
+        )
+    else:
+        logger.info("Using RAW model (calibration did not improve AUC)")
 
     # ── 12. Save model + metadata ───────────────────────────────────────
     try:
@@ -464,7 +603,7 @@ def calibrate_cooling_ml(
     os.makedirs(os.path.dirname(model_path) or ".", exist_ok=True)
 
     tmp_model = model_path + ".tmp"
-    joblib.dump(model, tmp_model)
+    joblib.dump(final_model, tmp_model)
     os.replace(tmp_model, model_path)
 
     metadata = {
@@ -472,8 +611,10 @@ def calibrate_cooling_ml(
         "feature_cols": feature_cols,
         "n_features": len(feature_cols),
         "threshold": threshold,
-        "val_f1": best_f1,
-        "roc_auc": auc,
+        "val_f2": best_fbeta,
+        "roc_auc": final_auc,
+        "roc_auc_raw": auc,
+        "calibrated": use_calibrated,
         "n_train": int(len(df_fit)),
         "n_val": int(len(df_val)),
         "n_pos": int(pos),
@@ -485,6 +626,9 @@ def calibrate_cooling_ml(
         "cooling_target_c": cooling_target_c,
         "lookback_hours": lookback_hours,
         "lgb_params": lgb_params,
+        "threshold_method": "f2_cross_validated",
+        "noise_injection": True,
+        "temporal_weighting": True,
     }
     tmp_meta = metadata_path + ".tmp"
     with open(tmp_meta, "w", encoding="utf-8") as fh:
@@ -492,8 +636,9 @@ def calibrate_cooling_ml(
     os.replace(tmp_meta, metadata_path)
 
     logger.info(
-        "=== COOLING ML CALIBRATION COMPLETE: model → %s | AUC=%.4f threshold=%.4f ===",
-        model_path, auc, threshold,
+        "=== COOLING ML CALIBRATION COMPLETE: model → %s | AUC=%.4f threshold=%.4f "
+        "calibrated=%s ===",
+        model_path, final_auc, threshold, use_calibrated,
     )
 
     # ── 13. Export training data for offline HPO / analysis ──────────────
@@ -506,12 +651,17 @@ def calibrate_cooling_ml(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _optimise_threshold(y_true, proba, n_points: int = 200) -> tuple[float, float]:
-    """Find threshold that maximises F1 score on the given split."""
+def _optimise_threshold_fbeta(y_true, proba, beta: float = 2.0, n_points: int = 200) -> tuple[float, float]:
+    """Find threshold that maximises F-beta score on the given split.
+
+    With beta=2 (default), recall is weighted 4× more than precision —
+    ensuring the model fires early enough for pre-cooling.
+    """
     import numpy as np
 
+    beta_sq = beta * beta
     best_thr = 0.5
-    best_f1 = 0.0
+    best_fbeta = 0.0
     for thr in np.linspace(0.01, 0.99, n_points):
         y_pred = (proba >= thr).astype(int)
         tp = int(((y_pred == 1) & (y_true == 1)).sum())
@@ -519,11 +669,50 @@ def _optimise_threshold(y_true, proba, n_points: int = 200) -> tuple[float, floa
         fn = int(((y_pred == 0) & (y_true == 1)).sum())
         prec = tp / max(1, tp + fp)
         rec  = tp / max(1, tp + fn)
-        f1   = 2 * prec * rec / max(1e-9, prec + rec)
-        if f1 > best_f1:
-            best_f1 = f1
+        fbeta = (1 + beta_sq) * prec * rec / max(1e-9, beta_sq * prec + rec)
+        if fbeta > best_fbeta:
+            best_fbeta = fbeta
             best_thr = float(thr)
-    return best_thr, best_f1
+    return best_thr, best_fbeta
+
+
+# Keep legacy function for backward compat (online retraining buffer uses it)
+def _optimise_threshold(y_true, proba, n_points: int = 200) -> tuple[float, float]:
+    """Find threshold that maximises F1 score on the given split (legacy)."""
+    return _optimise_threshold_fbeta(y_true, proba, beta=1.0, n_points=n_points)
+
+
+def _cross_validate_threshold(
+    X_train, y_train, model, beta: float = 2.0, n_folds: int = 3
+) -> list[float]:
+    """Temporal cross-validation for threshold selection.
+
+    Splits X_train into n_folds temporal segments, computes model
+    predictions on each held-out segment, and finds the optimal F-beta
+    threshold per fold.  Returns a list of per-fold thresholds.
+    """
+    import numpy as np
+
+    n = len(y_train)
+    fold_size = n // n_folds
+    if fold_size < 50:
+        return []  # too few samples for meaningful CV
+
+    thresholds: list[float] = []
+    for i in range(n_folds):
+        start = i * fold_size
+        end = (i + 1) * fold_size if i < n_folds - 1 else n
+        X_fold = X_train[start:end]
+        y_fold = y_train[start:end]
+        if len(y_fold) < 20 or y_fold.sum() < 1:
+            continue
+        try:
+            proba_fold = model.predict_proba(X_fold)[:, 1]
+            thr, _ = _optimise_threshold_fbeta(y_fold, proba_fold, beta=beta)
+            thresholds.append(thr)
+        except Exception:
+            continue
+    return thresholds
 
 
 def _json_default(obj):

@@ -176,6 +176,46 @@ def _extract_feature(
             val = physics.get("pv_now", 0.0)
         return float(val)
 
+    # ── Cumulative / integration features (Prio 4) ────────────────────
+    if col == "cum_pv_forecast_4h":
+        total = 0.0
+        for h in range(1, 5):
+            v = physics.get(f"pv_forecast_electrical_{h}h")
+            if v is None:
+                v = physics.get(f"pv_forecast_{h}h")
+            if v is None:
+                v = physics.get("pv_now_electrical")
+            if v is None:
+                v = physics.get("pv_now", 0.0)
+            total += float(v)
+        return total
+
+    if col == "cum_at_excess_4h":
+        total = 0.0
+        for h in range(1, 5):
+            at_val = float(physics.get(f"temp_forecast_{h}h") or physics.get("outdoor_temp") or 0.0)
+            total += max(0.0, at_val - cooling_target)
+        return total
+
+    if col == "max_at_forecast":
+        max_at = float(physics.get("outdoor_temp") or 0.0)
+        # Look up to 8h ahead (label horizon)
+        for h in range(1, 9):
+            at_val = float(physics.get(f"temp_forecast_{h}h") or 0.0)
+            if at_val > max_at:
+                max_at = at_val
+        return max_at
+
+    if col == "indoor_momentum":
+        # Linear extrapolation: 3h ahead based on 1h trend
+        trend = float(physics.get("indoor_temp_delta_60m") or 0.0)
+        return trend * 3.0
+
+    if col == "slab_stored_heat":
+        vlt = float(physics.get("outlet_temp") or 0.0)
+        rlt = float(physics.get("inlet_temp") or 0.0)
+        return (vlt + rlt) / 2.0 - current_indoor
+
     logger.warning("CoolingMLModel: unknown feature column '%s', filling 0.0", col)
     return 0.0
 

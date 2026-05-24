@@ -347,9 +347,10 @@ class TestEndToEndCalibration:
             meta = json.load(f)
         expected_keys = {
             "trained_at", "feature_cols", "n_features", "threshold",
-            "val_f1", "roc_auc", "n_train", "n_val", "n_pos", "n_neg",
+            "val_f2", "roc_auc", "n_train", "n_val", "n_pos", "n_neg",
             "scale_pos_weight", "label_horizon_h", "forecast_horizon_h",
             "steps_per_hour", "cooling_target_c", "lookback_hours", "lgb_params",
+            "calibrated", "threshold_method", "noise_injection", "temporal_weighting",
         }
         assert expected_keys.issubset(set(meta.keys()))
 
