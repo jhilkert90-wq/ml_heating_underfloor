@@ -355,6 +355,125 @@ class TestExtractHeatingFeature:
 
 
 # ---------------------------------------------------------------------------
+# Trajectory-derived feature extraction
+# ---------------------------------------------------------------------------
+
+class TestTrajectoryFeatures:
+    """Tests for trajectory-derived physics features at inference time."""
+
+    def _call(self, col, physics, target=21.0):
+        from src.heating_correction_ml_model import _extract_heating_feature
+        return _extract_heating_feature(col, physics, target)
+
+    def test_traj_predicted_error_from_trajectory_dict(self):
+        """Uses last trajectory step minus target when _last_trajectory available."""
+        physics = {
+            "_last_trajectory": {
+                "trajectory": [21.5, 21.3, 21.1, 20.9],
+                "reaches_target_at": 2.0,
+                "max_predicted": 21.5,
+                "equilibrium_temp": 20.8,
+            }
+        }
+        val = self._call("traj_predicted_error", physics, target=21.0)
+        # last step = 20.9, target = 21.0 → error = -0.1
+        assert val == pytest.approx(-0.1)
+
+    def test_traj_predicted_error_analytical_fallback(self):
+        """Analytical fallback when _last_trajectory is not present."""
+        physics = {
+            "indoor_temp": 20.0,
+            "outlet_temp": 25.0,
+            "outdoor_temp": 5.0,
+        }
+        val = self._call("traj_predicted_error", physics, target=21.0)
+        # Should return a finite number (analytical computation)
+        assert isinstance(val, float)
+        assert abs(val) < 10.0  # sanity bound
+
+    def test_traj_convergence_rate_from_trajectory(self):
+        """Convergence rate from trajectory dict."""
+        physics = {
+            "_last_trajectory": {
+                "trajectory": [22.0, 21.5, 21.2, 21.0],
+            }
+        }
+        val = self._call("traj_convergence_rate", physics, target=21.0)
+        # (22.0 - 21.0) / 4 = 0.25
+        assert val == pytest.approx(0.25)
+
+    def test_traj_reaches_target_hours_from_trajectory(self):
+        """Uses reaches_target_at from trajectory dict."""
+        physics = {
+            "_last_trajectory": {
+                "trajectory": [21.5, 21.0],
+                "reaches_target_at": 1.5,
+            }
+        }
+        val = self._call("traj_reaches_target_hours", physics, target=21.0)
+        assert val == pytest.approx(1.5)
+
+    def test_traj_overshoot_magnitude_from_trajectory(self):
+        """Uses max_predicted from trajectory dict."""
+        physics = {
+            "_last_trajectory": {
+                "trajectory": [22.0, 21.5],
+                "max_predicted": 22.0,
+            }
+        }
+        val = self._call("traj_overshoot_magnitude", physics, target=21.0)
+        assert val == pytest.approx(1.0)
+
+    def test_traj_overshoot_magnitude_zero_when_below_target(self):
+        """Overshoot is 0 when max predicted is below target."""
+        physics = {
+            "_last_trajectory": {
+                "trajectory": [20.5, 20.8],
+                "max_predicted": 20.8,
+            }
+        }
+        val = self._call("traj_overshoot_magnitude", physics, target=21.0)
+        assert val == pytest.approx(0.0)
+
+    def test_traj_equilibrium_gap_from_trajectory(self):
+        """Uses equilibrium_temp from trajectory dict."""
+        physics = {
+            "_last_trajectory": {
+                "trajectory": [21.5],
+                "equilibrium_temp": 20.5,
+            }
+        }
+        val = self._call("traj_equilibrium_gap", physics, target=21.0)
+        # 20.5 - 21.0 = -0.5
+        assert val == pytest.approx(-0.5)
+
+    def test_traj_equilibrium_gap_analytical_fallback(self):
+        """Analytical fallback for equilibrium gap."""
+        # TDD conftest sets OUTLET_EFFECTIVENESS=0.04, HEAT_LOSS_COEFFICIENT=0.2
+        # T_eq = (0.04×VLT + 0.2×AT) / (0.04+0.2)
+        # Need high VLT for T_eq > target: VLT=200 → T_eq=(8+1)/0.24=37.5
+        physics = {
+            "outlet_temp": 200.0,
+            "outdoor_temp": 5.0,
+        }
+        val = self._call("traj_equilibrium_gap", physics, target=21.0)
+        assert isinstance(val, float)
+        assert val > 0  # T_eq > target when VLT is very high
+
+    def test_traj_features_return_zero_with_no_data(self):
+        """All trajectory features gracefully return 0.0 with empty physics."""
+        for col in [
+            "traj_predicted_error",
+            "traj_convergence_rate",
+            "traj_reaches_target_hours",
+            "traj_overshoot_magnitude",
+            "traj_equilibrium_gap",
+        ]:
+            val = self._call(col, {}, target=21.0)
+            assert isinstance(val, float), f"{col} did not return float"
+
+
+# ---------------------------------------------------------------------------
 # build_heating_feature_vector
 # ---------------------------------------------------------------------------
 

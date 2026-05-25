@@ -2523,6 +2523,8 @@ class EnhancedModelWrapper:
 
         # Step 3: ML inference
         features = getattr(self, "_current_features", {}) or {}
+        # Inject trajectory result so trajectory-derived features are available
+        features["_last_trajectory"] = trajectory
         delta_ml = ml_model.predict(features, target_indoor)
         if delta_ml is None:
             logging.debug(

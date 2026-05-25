@@ -603,6 +603,79 @@ def calibrate_heating_correction_ml(
         (df["indoor_temp"] - df["AT"]) * df["wind_speed"]
     ).fillna(0.0)
 
+    # ── 4e. Trajectory-derived physics features (vectorized) ────────────
+    # Analytical Newton-decay approximation of what the trajectory simulator
+    # would predict, computed per row using calibrated τ, η, U.  Provides
+    # the ML model with the physics engine's forward-looking expectations.
+    _traj_eta, _traj_u, _traj_tau = _read_baseline_thermal_params(config)
+    # Guard: τ < 0.1 h means near-instant response (physically impossible for
+    # underfloor slab systems); fall back to configured constant.
+    if _traj_tau < 0.1:
+        _traj_tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+    if (_traj_eta + _traj_u) < 1e-6:
+        _traj_eta = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
+        _traj_u = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+
+    # Equilibrium temperature: T_eq = (η×VLT + U×AT) / (η + U)
+    _traj_denom = _traj_eta + _traj_u
+    df["_traj_T_eq"] = (
+        _traj_eta * df["VLT"] + _traj_u * df["AT"]
+    ) / _traj_denom
+
+    # Prediction horizon in hours (same as label horizon)
+    _traj_H = float(label_horizon_h)
+    _traj_steps = int(_traj_H * steps_per_hour)
+
+    # Vectorized trajectory: T(t) = T_eq + (T_indoor - T_eq) × exp(-t/τ)
+    # Compute at multiple time points (step_1=1cycle, step_last=horizon)
+    _step_hours = 1.0 / steps_per_hour  # one cycle in hours
+    _t_first = _step_hours
+    _t_last = _traj_H
+
+    # First step prediction
+    _exp_first = np.exp(-_t_first / _traj_tau)
+    df["_traj_step_1"] = df["_traj_T_eq"] + (df["indoor_temp"] - df["_traj_T_eq"]) * _exp_first
+
+    # Last step prediction (end of horizon)
+    _exp_last = np.exp(-_t_last / _traj_tau)
+    df["_traj_step_last"] = df["_traj_T_eq"] + (df["indoor_temp"] - df["_traj_T_eq"]) * _exp_last
+
+    # Feature 1: traj_predicted_error — how far the physics model expects to
+    # miss the target at the end of the horizon
+    df["traj_predicted_error"] = (df["_traj_step_last"] - heating_target_c).fillna(0.0)
+
+    # Feature 2: traj_convergence_rate — speed of approach to equilibrium
+    # (step_1 − step_last) / n_steps; units: °C per step
+    df["traj_convergence_rate"] = (
+        (df["_traj_step_1"] - df["_traj_step_last"]) / max(1, _traj_steps)
+    ).fillna(0.0)
+
+    # Feature 3: traj_reaches_target_hours — time to reach target analytically
+    # Solving T_eq + (T_indoor - T_eq)×exp(-t/τ) = T_target for t:
+    #   t = -τ × ln((T_target - T_eq) / (T_indoor - T_eq))
+    # Clip to [0, horizon] and fill NaN (unreachable) with horizon.
+    # Division by zero when indoor_temp == T_eq is handled by _valid_mask
+    # (ratio becomes inf → excluded) and final fillna replaces NaN with horizon.
+    _ratio = (heating_target_c - df["_traj_T_eq"]) / (df["indoor_temp"] - df["_traj_T_eq"])
+    # Only valid when 0 < ratio < 1 (target between indoor and equilibrium)
+    _valid_mask = (_ratio > 0) & (_ratio < 1)
+    _reaches_raw = -_traj_tau * np.log(_ratio.where(_valid_mask))
+    df["traj_reaches_target_hours"] = _reaches_raw.clip(lower=0.0, upper=_traj_H).fillna(_traj_H)
+
+    # Feature 4: traj_overshoot_magnitude — maximum predicted overshoot
+    # In heating: if T_eq > T_target, system will overshoot
+    # max(trajectory) ≈ max(T_indoor, T_eq) for monotonic approach
+    _traj_max = df[["indoor_temp", "_traj_T_eq"]].max(axis=1)
+    df["traj_overshoot_magnitude"] = (_traj_max - heating_target_c).clip(lower=0.0).fillna(0.0)
+
+    # Feature 5: traj_equilibrium_gap — steady-state error signal
+    df["traj_equilibrium_gap"] = (df["_traj_T_eq"] - heating_target_c).fillna(0.0)
+
+    # Cleanup temporary columns
+    df.drop(columns=["_traj_T_eq", "_traj_step_1", "_traj_step_last"], inplace=True)
+
+    logger.info("Computed trajectory-derived physics features (vectorized Newton decay)")
+
     # ── 5. Regression label construction ───────────────────────────────
     # Estimate S_H from calibrated thermal parameters
     eta, u_loss, tau_room = _read_baseline_thermal_params(config)
@@ -721,6 +794,15 @@ def calibrate_heating_correction_ml(
     feature_cols += [
         "shading_proxy",          # max(0, T_indoor−23) × PV_W: continuous solar shading proxy (K×W)
         "heat_loss_interaction",  # (T_indoor − AT) × wind_speed: convective heat loss interaction
+    ]
+
+    # Trajectory-derived physics features (vectorized Newton-decay approximation)
+    feature_cols += [
+        "traj_predicted_error",        # T_final − T_target: physics-predicted miss at horizon
+        "traj_convergence_rate",       # (step_1 − step_last) / n_steps: approach speed
+        "traj_reaches_target_hours",   # Analytical time to reach target (capped at horizon)
+        "traj_overshoot_magnitude",    # max(0, max_predicted − target): predicted overshoot
+        "traj_equilibrium_gap",        # T_eq − T_target: steady-state error signal
     ]
 
     # Guard: only keep columns that exist and have > 5% coverage

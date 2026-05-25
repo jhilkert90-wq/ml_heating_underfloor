@@ -126,6 +126,132 @@ def _pv_roll(physics: dict[str, Any], hours: int, steps_per_hour: int = 6) -> fl
 
 
 # ---------------------------------------------------------------------------
+# Trajectory-derived feature helpers (inference time)
+# ---------------------------------------------------------------------------
+# At inference the previous cycle's trajectory result may be stored as
+# ``physics["_last_trajectory"]`` (dict with keys: trajectory, times,
+# reaches_target_at, max_predicted, min_predicted, equilibrium_temp,
+# final_error).  When unavailable, we compute a lightweight analytical
+# approximation using the current thermal parameters.
+
+def _get_traj_params(physics: dict[str, Any]) -> tuple[float, float, float]:
+    """Return (eta, u_loss, tau) for analytical trajectory approximation."""
+    eta = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
+    u_loss = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+    tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+    return eta, u_loss, tau
+
+
+def _compute_traj_equilibrium(physics: dict[str, Any]) -> float:
+    """Compute T_eq = (η×VLT + U×AT) / (η + U)."""
+    eta, u_loss, tau = _get_traj_params(physics)
+    vlt = physics.get("outlet_temp")
+    at = physics.get("outdoor_temp")
+    if vlt is None or at is None:
+        return 0.0
+    denom = eta + u_loss
+    if denom < 1e-6:
+        return float(vlt)
+    return (eta * float(vlt) + u_loss * float(at)) / denom
+
+
+def _compute_traj_predicted_error(
+    physics: dict[str, Any], target_indoor: float
+) -> float:
+    """Trajectory final temp − target: how far physics expects to miss."""
+    traj = physics.get("_last_trajectory")
+    if traj and traj.get("trajectory"):
+        return float(traj["trajectory"][-1]) - target_indoor
+    # Analytical fallback: T(H) = T_eq + (T_indoor - T_eq) × exp(-H/τ)
+    _, _, tau = _get_traj_params(physics)
+    t_eq = _compute_traj_equilibrium(physics)
+    indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+    if indoor is None:
+        return 0.0
+    h = float(getattr(config, "TRAJECTORY_STEPS", 4))
+    t_final = t_eq + (float(indoor) - t_eq) * math.exp(-h / tau)
+    return t_final - target_indoor
+
+
+def _compute_traj_convergence_rate(
+    physics: dict[str, Any], target_indoor: float
+) -> float:
+    """(step_1 − step_last) / n_steps: speed of approach to equilibrium."""
+    traj = physics.get("_last_trajectory")
+    if traj and traj.get("trajectory"):
+        temps = traj["trajectory"]
+        if len(temps) >= 2:
+            return (temps[0] - temps[-1]) / len(temps)
+        return 0.0
+    # Analytical fallback
+    _, _, tau = _get_traj_params(physics)
+    t_eq = _compute_traj_equilibrium(physics)
+    indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+    if indoor is None:
+        return 0.0
+    indoor = float(indoor)
+    cycle_min = float(getattr(config, "CYCLE_INTERVAL_MINUTES", 10))
+    dt_step = cycle_min / 60.0
+    h = float(getattr(config, "TRAJECTORY_STEPS", 4))
+    n_steps = max(1, int(h * 60 / cycle_min))
+    step_1 = t_eq + (indoor - t_eq) * math.exp(-dt_step / tau)
+    step_last = t_eq + (indoor - t_eq) * math.exp(-h / tau)
+    return (step_1 - step_last) / n_steps
+
+
+def _compute_traj_reaches_target_hours(
+    physics: dict[str, Any], target_indoor: float
+) -> float:
+    """Analytical time to reach target (capped at horizon)."""
+    traj = physics.get("_last_trajectory")
+    if traj and traj.get("reaches_target_at") is not None:
+        return float(traj["reaches_target_at"])
+    # Analytical: t = -τ × ln((T_target - T_eq) / (T_indoor - T_eq))
+    _, _, tau = _get_traj_params(physics)
+    t_eq = _compute_traj_equilibrium(physics)
+    indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+    if indoor is None:
+        h = float(getattr(config, "TRAJECTORY_STEPS", 4))
+        return h
+    indoor = float(indoor)
+    h = float(getattr(config, "TRAJECTORY_STEPS", 4))
+    denom = indoor - t_eq
+    if abs(denom) < 1e-6:
+        return 0.0  # already at equilibrium
+    ratio = (target_indoor - t_eq) / denom
+    if ratio <= 0 or ratio >= 1:
+        return h  # target unreachable within horizon
+    t_reach = -tau * math.log(ratio)
+    return max(0.0, min(h, t_reach))
+
+
+def _compute_traj_overshoot_magnitude(
+    physics: dict[str, Any], target_indoor: float
+) -> float:
+    """max(0, max_predicted − target): predicted overshoot magnitude."""
+    traj = physics.get("_last_trajectory")
+    if traj and "max_predicted" in traj:
+        return max(0.0, float(traj["max_predicted"]) - target_indoor)
+    # Analytical: max(T_indoor, T_eq) − target, clipped to ≥ 0
+    t_eq = _compute_traj_equilibrium(physics)
+    indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+    if indoor is None:
+        return 0.0
+    peak = max(float(indoor), t_eq)
+    return max(0.0, peak - target_indoor)
+
+
+def _compute_traj_equilibrium_gap(
+    physics: dict[str, Any], target_indoor: float
+) -> float:
+    """T_eq − T_target: steady-state error signal."""
+    traj = physics.get("_last_trajectory")
+    if traj and "equilibrium_temp" in traj:
+        return float(traj["equilibrium_temp"]) - target_indoor
+    return _compute_traj_equilibrium(physics) - target_indoor
+
+
+# ---------------------------------------------------------------------------
 # Feature extraction
 # ---------------------------------------------------------------------------
 
@@ -363,6 +489,21 @@ def _extract_heating_feature(
         if wind is None:
             return 0.0
         return (float(indoor) - float(outdoor)) * float(wind)
+
+    # ── Trajectory-derived physics features ────────────────────────────
+    # At inference time these are computed from the previous cycle's
+    # trajectory result (stored as _last_trajectory dict in the physics dict)
+    # or from a lightweight analytical approximation using current conditions.
+    if col == "traj_predicted_error":
+        return _compute_traj_predicted_error(physics, target_indoor)
+    if col == "traj_convergence_rate":
+        return _compute_traj_convergence_rate(physics, target_indoor)
+    if col == "traj_reaches_target_hours":
+        return _compute_traj_reaches_target_hours(physics, target_indoor)
+    if col == "traj_overshoot_magnitude":
+        return _compute_traj_overshoot_magnitude(physics, target_indoor)
+    if col == "traj_equilibrium_gap":
+        return _compute_traj_equilibrium_gap(physics, target_indoor)
 
     logger.warning(
         "HeatingCorrectionMLModel: unknown feature column '%s', filling 0.0", col
