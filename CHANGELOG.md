@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **MAJOR: Dispatch wiring refactor** — Replaced large inline main-loop body in `src/main.py` with structured pre-dispatch + route-dispatch wiring using `CycleContext` and `run_*_route()` handlers.
-- Added `initialize_loop_state()` factory in `src/pre_dispatch.py` to centralize one-time runtime object initialization (wrapper + ML buffers).
-- Updated test patch targets to `src.pre_dispatch` / `src.cycle_routes`; added integration test module `tests/integration/test_dispatch_wiring.py` for dispatch routing coverage.
-- Dashboard settings metadata and rendering are now English-only (German translation dependency removed from schema loading path).
-- Dashboard settings regrouped into finer-grained sections (including Blocking Recovery and Trajectory Tuning) for clearer configuration navigation.
-- `_cross_validate_threshold` in `cooling_ml_calibration.py` clarified to reflect that it computes per-segment thresholds using a model already fit on the full training set (in-sample predictions), not truly held-out temporal folds.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
