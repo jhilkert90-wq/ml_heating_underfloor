@@ -608,6 +608,8 @@ def calibrate_heating_correction_ml(
     # would predict, computed per row using calibrated τ, η, U.  Provides
     # the ML model with the physics engine's forward-looking expectations.
     _traj_eta, _traj_u, _traj_tau = _read_baseline_thermal_params(config)
+    # Guard: τ < 0.1 h means near-instant response (physically impossible for
+    # underfloor slab systems); fall back to configured constant.
     if _traj_tau < 0.1:
         _traj_tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
     if (_traj_eta + _traj_u) < 1e-6:
@@ -651,7 +653,9 @@ def calibrate_heating_correction_ml(
     # Feature 3: traj_reaches_target_hours — time to reach target analytically
     # Solving T_eq + (T_indoor - T_eq)×exp(-t/τ) = T_target for t:
     #   t = -τ × ln((T_target - T_eq) / (T_indoor - T_eq))
-    # Clip to [0, horizon] and fill NaN (unreachable) with horizon
+    # Clip to [0, horizon] and fill NaN (unreachable) with horizon.
+    # Division by zero when indoor_temp == T_eq is handled by _valid_mask
+    # (ratio becomes inf → excluded) and final fillna replaces NaN with horizon.
     _ratio = (heating_target_c - df["_traj_T_eq"]) / (df["indoor_temp"] - df["_traj_T_eq"])
     # Only valid when 0 < ratio < 1 (target between indoor and equilibrium)
     _valid_mask = (_ratio > 0) & (_ratio < 1)
