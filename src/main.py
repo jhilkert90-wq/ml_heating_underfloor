@@ -585,6 +585,9 @@ def main():
             )
             _wrapper = _get_wrapper()
             _wrapper.set_climate_mode(climate_mode or "heating")
+            # Normalize: set_climate_mode coerces unsupported values (e.g. "off")
+            # to "heating", so read back the actual mode the wrapper is using.
+            climate_mode = _wrapper.climate_mode
             _active_state_manager = _wrapper.state_manager
 
             # --- Load state from the mode-correct state file ---
@@ -611,9 +614,11 @@ def main():
             )
 
             # --- Online learning from previous cycle ---
-            # Skip on first cycle after boot: no previous cycle actually ran,
-            # so state data is stale and would produce wrong error signals.
-            if cycle_number > 1:
+            # Skip until at least one cycle has completed in this process.
+            # `cycle_number > 1` is not sufficient because cycle 1 may have
+            # exited early (e.g. network error → continue), leaving
+            # last_cycle_end_time as None and persisted state stale.
+            if loop.last_cycle_end_time is not None:
                 run_online_learning(
                     ha_client=ha_client,
                     all_states=all_states,

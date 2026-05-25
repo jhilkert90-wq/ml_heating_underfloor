@@ -31,7 +31,7 @@ import logging
 import math
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,32 @@ _ISOTONIC_AUC_TOLERANCE: float = 0.01
 # Minimum samples per fold in threshold cross-validation; below this CV is
 # skipped because fold estimates are unreliable with so few samples.
 _CV_MIN_FOLD_SIZE: int = 50
+
+
+class _IsotonicCalibratedModel:
+    """Wrap a frozen base classifier with a pre-fitted IsotonicRegression.
+
+    Used as a drop-in replacement for ``CalibratedClassifierCV(cv="prefit")``
+    on sklearn versions that removed that argument.  The base model is never
+    re-fitted — only the isotonic mapping on top of its probabilities is
+    trained, so the deployed model is identical to the one trained on the full
+    training split.
+    """
+
+    def __init__(self, base_model: Any, isotonic: Any) -> None:
+        self._base = base_model
+        self._iso = isotonic
+
+    def predict_proba(self, X: Any) -> Any:
+        import numpy as np  # type: ignore
+        raw = self._base.predict_proba(X)[:, 1]
+        cal = self._iso.predict(raw)
+        return np.column_stack([1.0 - cal, cal])
+
+    def predict(self, X: Any) -> Any:
+        import numpy as np  # type: ignore
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
 
 # Module-level import of shared training-data export helper.
 try:
@@ -576,19 +602,20 @@ def calibrate_cooling_ml(
     X_eval_iso, y_eval_iso = X_val[n_cal_iso:], y_val[n_cal_iso:]
     try:
         from sklearn.calibration import CalibratedClassifierCV  # type: ignore
-        # sklearn >=1.6 removed cv="prefit"; fall back to cv=2 which
-        # refits with 2-fold CV on the calibration split — acceptable since
-        # the eval-split AUC comparison still gates adoption downstream.
+        # sklearn >=1.6 removed cv="prefit"; fall back to fitting an
+        # IsotonicRegression directly on the base model's probabilities so
+        # the base model weights are never changed (unlike cv=2 which refits
+        # cloned estimators on the calibration split).
         try:
             calibrated_model = CalibratedClassifierCV(
                 estimator=model, method="isotonic", cv="prefit"
             )
             calibrated_model.fit(X_cal_iso, y_cal_iso)
         except (TypeError, ValueError):
-            calibrated_model = CalibratedClassifierCV(
-                estimator=model, method="isotonic", cv=2
-            )
-            calibrated_model.fit(X_cal_iso, y_cal_iso)
+            from sklearn.isotonic import IsotonicRegression  # type: ignore
+            _iso = IsotonicRegression(out_of_bounds="clip")
+            _iso.fit(model.predict_proba(X_cal_iso)[:, 1], y_cal_iso)
+            calibrated_model = _IsotonicCalibratedModel(model, _iso)
         proba_cal_eval = calibrated_model.predict_proba(X_eval_iso)[:, 1]
         proba_raw_eval = model.predict_proba(X_eval_iso)[:, 1]
         if len(y_eval_iso) > 0 and y_eval_iso.sum() > 0:

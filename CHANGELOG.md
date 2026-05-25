@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Cooling boot state selection**: detect climate mode *before* `load_state()` so cooling boots load the correct cooling unified state file instead of the heating one.
+- **`climate_mode` normalization**: read back `wrapper.climate_mode` after `set_climate_mode()` so downstream code (online learning, CycleContext) can't see an unsupported mode string such as `"off"`.
+- **First-cycle online learning guard**: replaced `cycle_number > 1` check with `loop.last_cycle_end_time is not None` so online learning is correctly skipped after a network-error `continue` on the first cycle (where `last_cycle_end_time` remains `None`).
+- **Isotonic calibration fallback**: replaced the `cv=2` sklearn fallback (which refits the base model from scratch) with a direct `IsotonicRegression` fitted on the frozen base model's probability outputs, keeping the deployed model identical to the one trained on the full training split.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
