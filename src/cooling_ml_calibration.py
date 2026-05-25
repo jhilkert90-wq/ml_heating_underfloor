@@ -716,7 +716,7 @@ def calibrate_cooling_ml(
         _base_model = model._base if hasattr(model, "_base") else model
         _importances = _base_model.feature_importances_
         metadata["feature_importances"] = {
-            col: int(imp)
+            col: round(float(imp), 4)
             for col, imp in sorted(
                 zip(feature_cols, _importances),
                 key=lambda x: -x[1],

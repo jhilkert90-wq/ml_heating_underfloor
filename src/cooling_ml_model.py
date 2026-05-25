@@ -289,18 +289,13 @@ class CoolingMLModel:
                 logger.error(
                     "CoolingMLModel: feature count mismatch — model expects %d features "
                     "but metadata lists %d. The model binary is stale; run "
-                    "--calibrate-cooling-ml to retrain with the current feature set.",
+                    "--calibrate-cooling-ml to retrain with the current feature set. "
+                    "Model will not be used.",
                     model_n_features,
                     len(self._feature_cols),
                 )
-                # Truncate feature_cols to what the model actually accepts so that
-                # inference degrades gracefully instead of crashing.
-                self._feature_cols = self._feature_cols[:model_n_features]
-                logger.warning(
-                    "CoolingMLModel: truncated feature_cols to first %d entries "
-                    "to match trained model; predictions may be suboptimal.",
-                    model_n_features,
-                )
+                self._loaded = False
+                return False
 
             self._loaded = True
             logger.info(
