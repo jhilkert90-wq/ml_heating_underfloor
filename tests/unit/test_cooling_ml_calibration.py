@@ -347,9 +347,10 @@ class TestEndToEndCalibration:
             meta = json.load(f)
         expected_keys = {
             "trained_at", "feature_cols", "n_features", "threshold",
-            "val_f1", "roc_auc", "n_train", "n_val", "n_pos", "n_neg",
+            "val_f2", "roc_auc", "n_train", "n_val", "n_pos", "n_neg",
             "scale_pos_weight", "label_horizon_h", "forecast_horizon_h",
             "steps_per_hour", "cooling_target_c", "lookback_hours", "lgb_params",
+            "calibrated", "threshold_method", "noise_injection", "temporal_weighting",
         }
         assert expected_keys.issubset(set(meta.keys()))
 
@@ -369,6 +370,19 @@ class TestEndToEndCalibration:
         mock_model.fit.assert_called_once()
         fit_kwargs = mock_model.fit.call_args
         assert "eval_set" in fit_kwargs.kwargs or len(fit_kwargs.args) > 2
+
+    def test_lgbm_fit_called_with_sample_weight(self, model_dir):
+        """LGBMClassifier.fit is called with sample_weight for temporal boundary weighting."""
+        result, _, _, _, mock_model = self._run_calibration(model_dir)
+        assert result is True
+        mock_model.fit.assert_called_once()
+        fit_kwargs = mock_model.fit.call_args
+        assert "sample_weight" in fit_kwargs.kwargs, (
+            "model.fit() must receive sample_weight for temporal boundary weighting"
+        )
+        sw = fit_kwargs.kwargs["sample_weight"]
+        assert sw is not None
+        assert len(sw) > 0
 
     def test_custom_cooling_target(self, model_dir):
         """cooling_target_c parameter is respected."""

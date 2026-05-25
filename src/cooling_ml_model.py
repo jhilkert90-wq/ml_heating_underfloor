@@ -85,6 +85,7 @@ def build_feature_vector(
     current_indoor: float,
     cooling_target: float,
     steps_per_hour: int = 6,
+    label_horizon_h: int = 8,
 ) -> list[float]:
     """
     Construct a feature vector (in ``feature_cols`` order) from
@@ -94,7 +95,7 @@ def build_feature_vector(
     """
     vec: list[float] = []
     for col in feature_cols:
-        val = _extract_feature(col, physics, current_indoor, cooling_target, steps_per_hour)
+        val = _extract_feature(col, physics, current_indoor, cooling_target, steps_per_hour, label_horizon_h)
         vec.append(val)
     return vec
 
@@ -105,6 +106,7 @@ def _extract_feature(
     current_indoor: float,
     cooling_target: float,
     steps_per_hour: int,
+    label_horizon_h: int = 8,
 ) -> float:
     # ── Derived scalars ────────────────────────────────────────────────
     if col == "indoor_temp":
@@ -175,6 +177,53 @@ def _extract_feature(
         if val is None:
             val = physics.get("pv_now", 0.0)
         return float(val)
+
+    # ── Cumulative / integration features (Prio 4) ────────────────────
+    if col == "cum_pv_forecast_4h":
+        total = 0.0
+        for h in range(1, 5):
+            v = physics.get(f"pv_forecast_electrical_{h}h")
+            if v is None:
+                v = physics.get(f"pv_forecast_{h}h")
+            if v is None:
+                v = physics.get("pv_now_electrical")
+            if v is None:
+                v = physics.get("pv_now", 0.0)
+            total += float(v)
+        return total
+
+    if col == "cum_at_excess_4h":
+        total = 0.0
+        for h in range(1, 5):
+            at_h = physics.get(f"temp_forecast_{h}h")
+            if at_h is None:
+                at_h = physics.get("outdoor_temp")
+            if at_h is None:
+                at_h = 0.0
+            total += max(0.0, float(at_h) - cooling_target)
+        return total
+
+    if col == "max_at_forecast":
+        max_at = physics.get("outdoor_temp")
+        max_at = float(max_at) if max_at is not None else 0.0
+        # Look ahead up to label_horizon_h (derived from training metadata)
+        for h in range(1, label_horizon_h + 1):
+            at_h = physics.get(f"temp_forecast_{h}h")
+            if at_h is not None and float(at_h) > max_at:
+                max_at = float(at_h)
+        return max_at
+
+    if col == "indoor_momentum":
+        # Thermal momentum proxy: 3h extrapolation from 1h trend.
+        # 3h chosen because slab thermal mass has ~3h dominant time constant;
+        # this approximates where indoor temp will be when cooling effect arrives.
+        trend = float(physics.get("indoor_temp_delta_60m") or 0.0)
+        return trend * 3.0
+
+    if col == "slab_stored_heat":
+        vlt = float(physics.get("outlet_temp") or 0.0)
+        rlt = float(physics.get("inlet_temp") or 0.0)
+        return (vlt + rlt) / 2.0 - current_indoor
 
     logger.warning("CoolingMLModel: unknown feature column '%s', filling 0.0", col)
     return 0.0
@@ -293,12 +342,14 @@ class CoolingMLModel:
 
         try:
             np = _load_numpy()
+            label_horizon_h = int(self._metadata.get("label_horizon_h", 8))
             vec = build_feature_vector(
                 self._feature_cols,
                 features,
                 current_indoor,
                 target_cooling,
                 self._steps_per_hour,
+                label_horizon_h,
             )
             X = np.array(vec, dtype=float).reshape(1, -1)
             proba = float(self._model.predict_proba(X)[0, 1])
