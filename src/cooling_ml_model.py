@@ -280,6 +280,28 @@ class CoolingMLModel:
                 self._metadata = json.load(fh)
             self._feature_cols = self._metadata.get("feature_cols", [])
             self._threshold = float(self._metadata.get("threshold", 0.5))
+
+            # Guard: verify the model's expected feature count matches metadata.
+            # A mismatch means the model was trained before new features were added
+            # to the calibration code; inference would fail with a dimension error.
+            model_n_features = getattr(self._model, "n_features_in_", None)
+            if isinstance(model_n_features, int) and model_n_features != len(self._feature_cols):
+                logger.error(
+                    "CoolingMLModel: feature count mismatch — model expects %d features "
+                    "but metadata lists %d. The model binary is stale; run "
+                    "--calibrate-cooling-ml to retrain with the current feature set.",
+                    model_n_features,
+                    len(self._feature_cols),
+                )
+                # Truncate feature_cols to what the model actually accepts so that
+                # inference degrades gracefully instead of crashing.
+                self._feature_cols = self._feature_cols[:model_n_features]
+                logger.warning(
+                    "CoolingMLModel: truncated feature_cols to first %d entries "
+                    "to match trained model; predictions may be suboptimal.",
+                    model_n_features,
+                )
+
             self._loaded = True
             logger.info(
                 "CoolingMLModel: loaded %s | features=%d threshold=%.4f AUC=%.4f",
