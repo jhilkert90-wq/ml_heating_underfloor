@@ -543,10 +543,15 @@ def calibrate_cooling_ml(
     cv_thresholds = _cross_validate_threshold(X_fit, y_fit, model, beta=2.0, n_folds=3)
     if cv_thresholds:
         cv_mean = float(np.mean(cv_thresholds))
-        # Use the lower of CV mean and val-optimised (prefer earlier trigger)
-        threshold = min(threshold, cv_mean)
+        # Weighted average: CV thresholds are more robust (in-sample but
+        # temporally diverse), val threshold can be an outlier on a single
+        # split.  Weight CV 2:1 over val to stabilise the final threshold.
+        threshold = float(np.average(
+            [threshold, cv_mean],
+            weights=[1.0, 2.0],
+        ))
         logger.info(
-            "CV thresholds: %s → mean=%.4f | final threshold=%.4f",
+            "CV thresholds: %s → mean=%.4f | final threshold=%.4f (weighted avg)",
             [f"{t:.4f}" for t in cv_thresholds], cv_mean, threshold,
         )
 
@@ -571,12 +576,19 @@ def calibrate_cooling_ml(
     X_eval_iso, y_eval_iso = X_val[n_cal_iso:], y_val[n_cal_iso:]
     try:
         from sklearn.calibration import CalibratedClassifierCV  # type: ignore
-        calibrated_model = CalibratedClassifierCV(
-            model, method="isotonic", cv="prefit"
-        )
-        # Fit calibration on the first half; this avoids overfitting to the
-        # same samples used for model selection below.
-        calibrated_model.fit(X_cal_iso, y_cal_iso)
+        # sklearn >=1.6 removed cv="prefit"; fall back to cv=2 which
+        # refits with 2-fold CV on the calibration split — acceptable since
+        # the eval-split AUC comparison still gates adoption downstream.
+        try:
+            calibrated_model = CalibratedClassifierCV(
+                estimator=model, method="isotonic", cv="prefit"
+            )
+            calibrated_model.fit(X_cal_iso, y_cal_iso)
+        except (TypeError, ValueError):
+            calibrated_model = CalibratedClassifierCV(
+                estimator=model, method="isotonic", cv=2
+            )
+            calibrated_model.fit(X_cal_iso, y_cal_iso)
         proba_cal_eval = calibrated_model.predict_proba(X_eval_iso)[:, 1]
         proba_raw_eval = model.predict_proba(X_eval_iso)[:, 1]
         if len(y_eval_iso) > 0 and y_eval_iso.sum() > 0:

@@ -561,13 +561,34 @@ def main():
                     cycle_start_datetime.strftime("%H:%M:%S"),
                 )
 
-            # --- Load state and fetch HA data ---
+            # --- Fetch HA data ---
             from .model_wrapper import get_enhanced_model_wrapper as _get_wrapper
 
-            _active_state_manager = _get_wrapper().state_manager
-            state = load_state(state_manager=_active_state_manager)
             ha_client = create_ha_client()
             all_states = ha_client.get_all_states()
+
+            # --- Network error check (must be before anything using all_states) ---
+            if not all_states:
+                logging.warning(
+                    "Could not fetch states from HA, skipping cycle."
+                )
+                emit_network_error_state(ha_client)
+                time.sleep(PhysicsConstants.RETRY_DELAY_SECONDS)
+                continue
+
+            # --- Early climate mode detection ---
+            # Detect climate mode BEFORE loading state so the correct
+            # state file (heating vs cooling) is used from the start.
+            _early_checker = HeatingSystemStateChecker()
+            climate_mode = _early_checker.get_climate_mode(
+                ha_client, all_states
+            )
+            _wrapper = _get_wrapper()
+            _wrapper.set_climate_mode(climate_mode or "heating")
+            _active_state_manager = _wrapper.state_manager
+
+            # --- Load state from the mode-correct state file ---
+            state = load_state(state_manager=_active_state_manager)
 
             # --- One-time sensor validation ---
             if not loop.sensor_validation_done:
@@ -584,35 +605,27 @@ def main():
                 ha_client, all_states
             )
 
-            # --- Network error check ---
-            if not all_states:
-                logging.warning(
-                    "Could not fetch states from HA, skipping cycle."
-                )
-                emit_network_error_state(ha_client)
-                time.sleep(PhysicsConstants.RETRY_DELAY_SECONDS)
-                continue
-
             # --- Blocking check ---
             is_blocking, blocking_reasons = check_blocking_state(
                 ha_client, all_states
             )
 
-            # --- Early climate mode detection (needed for learning context) ---
-            _early_checker = HeatingSystemStateChecker()
-            climate_mode = _early_checker.get_climate_mode(
-                ha_client, all_states
-            )
-
             # --- Online learning from previous cycle ---
-            run_online_learning(
-                ha_client=ha_client,
-                all_states=all_states,
-                state=state,
-                effective_shadow_mode=effective_shadow_mode,
-                climate_mode=climate_mode,
-                wrapper=loop.wrapper,
-            )
+            # Skip on first cycle after boot: no previous cycle actually ran,
+            # so state data is stale and would produce wrong error signals.
+            if cycle_number > 1:
+                run_online_learning(
+                    ha_client=ha_client,
+                    all_states=all_states,
+                    state=state,
+                    effective_shadow_mode=effective_shadow_mode,
+                    climate_mode=climate_mode,
+                    wrapper=loop.wrapper,
+                )
+            else:
+                logging.debug(
+                    "Skipping online learning on first cycle after boot"
+                )
 
             # --- Grace period check ---
             is_grace_period = handle_grace_period(
