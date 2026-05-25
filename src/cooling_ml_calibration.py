@@ -304,9 +304,7 @@ def calibrate_cooling_ml(
     _cum_at_cols = [f"AT_roh_{h}h" for h in range(1, 5)
                     if f"AT_roh_{h}h" in df.columns]
     if _cum_at_cols:
-        df["cum_at_excess_4h"] = df[_cum_at_cols].apply(
-            lambda row: sum(max(0.0, v - cooling_target_c) for v in row), axis=1
-        )
+        df["cum_at_excess_4h"] = (df[_cum_at_cols] - cooling_target_c).clip(lower=0).sum(axis=1)
     else:
         df["cum_at_excess_4h"] = 0.0
 
@@ -562,36 +560,55 @@ def calibrate_cooling_ml(
 
     # ── 11b. Isotonic probability calibration (Prio 3) ──────────────────
     # Wrap the model with isotonic calibration to produce well-calibrated
-    # probabilities.  If calibration improves val AUC → save calibrated model.
+    # probabilities.  Fit on the first half of val; evaluate on the second
+    # half to avoid overfitting the calibration map to the same data used
+    # for AUC comparison.
     calibrated_model = None
     calibrated_auc = float("nan")
+    # Split val into calibration-fit and calibration-eval halves
+    n_cal_iso = len(X_val) // 2
+    X_cal_iso, y_cal_iso = X_val[:n_cal_iso], y_val[:n_cal_iso]
+    X_eval_iso, y_eval_iso = X_val[n_cal_iso:], y_val[n_cal_iso:]
     try:
         from sklearn.calibration import CalibratedClassifierCV  # type: ignore
-        # Fit isotonic calibration on validation predictions
         calibrated_model = CalibratedClassifierCV(
             model, method="isotonic", cv="prefit"
         )
-        calibrated_model.fit(X_val, y_val)
-        proba_cal = calibrated_model.predict_proba(X_val)[:, 1]
-        calibrated_auc = float(roc_auc_score(y_val, proba_cal))
-        logger.info("Calibrated model val AUC=%.4f (raw=%.4f)", calibrated_auc, auc)
+        # Fit calibration on the first half; this avoids overfitting to the
+        # same samples used for model selection below.
+        calibrated_model.fit(X_cal_iso, y_cal_iso)
+        proba_cal_eval = calibrated_model.predict_proba(X_eval_iso)[:, 1]
+        proba_raw_eval = model.predict_proba(X_eval_iso)[:, 1]
+        if len(y_eval_iso) > 0 and y_eval_iso.sum() > 0:
+            calibrated_auc = float(roc_auc_score(y_eval_iso, proba_cal_eval))
+            auc_eval = float(roc_auc_score(y_eval_iso, proba_raw_eval))
+        else:
+            calibrated_auc = float("nan")
+            auc_eval = float("nan")
+        logger.info(
+            "Calibrated model eval-split AUC=%.4f (raw eval-split AUC=%.4f)",
+            calibrated_auc, auc_eval,
+        )
     except Exception as exc:
         logger.warning("Isotonic calibration failed: %s — using raw model", exc)
         calibrated_model = None
+        auc_eval = auc
 
-    # Decision: use calibrated model if it doesn't degrade AUC
+    # Decision: use calibrated model if it doesn't degrade AUC on held-out eval split
     use_calibrated = (
         calibrated_model is not None
         and not math.isnan(calibrated_auc)
-        and calibrated_auc >= auc - _ISOTONIC_AUC_TOLERANCE
+        and not math.isnan(auc_eval)
+        and calibrated_auc >= auc_eval - _ISOTONIC_AUC_TOLERANCE
     )
     final_model = calibrated_model if use_calibrated else model
     final_auc = calibrated_auc if use_calibrated else auc
     if use_calibrated:
-        # Re-optimise threshold on calibrated probabilities
-        threshold, best_fbeta = _optimise_threshold_fbeta(y_val, proba_cal, beta=2.0)
+        # Re-optimise threshold on calibrated probabilities over the full val set
+        proba_cal_full = calibrated_model.predict_proba(X_val)[:, 1]
+        threshold, best_fbeta = _optimise_threshold_fbeta(y_val, proba_cal_full, beta=2.0)
         logger.info(
-            "Using CALIBRATED model (AUC=%.4f) with threshold=%.4f",
+            "Using CALIBRATED model (eval AUC=%.4f) with threshold=%.4f",
             calibrated_auc, threshold,
         )
     else:
@@ -692,11 +709,16 @@ def _optimise_threshold(y_true, proba, n_points: int = 200) -> tuple[float, floa
 def _cross_validate_threshold(
     X_train, y_train, model, beta: float = 2.0, n_folds: int = 3
 ) -> list[float]:
-    """Temporal cross-validation for threshold selection.
+    """Per-segment threshold estimation on the training set.
 
-    Splits X_train into n_folds temporal segments, computes model
-    predictions on each held-out segment, and finds the optimal F-beta
-    threshold per fold.  Returns a list of per-fold thresholds.
+    Splits X_train into n_folds temporal segments and computes F-beta-optimal
+    thresholds using predictions from ``model``, which has already been fit on
+    the full training set.  Because the same model is used for all segments
+    (i.e. there is no per-fold re-training), these are in-sample predictions
+    and the resulting thresholds may be optimistic.  The primary purpose is to
+    check whether the validation-set threshold is consistent across temporal
+    segments of the training data, not to produce a truly held-out estimate.
+    Returns a list of per-segment thresholds.
     """
     import numpy as np
 
