@@ -31,7 +31,7 @@ import logging
 import math
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,32 @@ _ISOTONIC_AUC_TOLERANCE: float = 0.01
 # Minimum samples per fold in threshold cross-validation; below this CV is
 # skipped because fold estimates are unreliable with so few samples.
 _CV_MIN_FOLD_SIZE: int = 50
+
+
+class _IsotonicCalibratedModel:
+    """Wrap a frozen base classifier with a pre-fitted IsotonicRegression.
+
+    Used as a drop-in replacement for ``CalibratedClassifierCV(cv="prefit")``
+    on sklearn versions that removed that argument.  The base model is never
+    re-fitted — only the isotonic mapping on top of its probabilities is
+    trained, so the deployed model is identical to the one trained on the full
+    training split.
+    """
+
+    def __init__(self, base_model: Any, isotonic: Any) -> None:
+        self._base = base_model
+        self._iso = isotonic
+
+    def predict_proba(self, X: Any) -> Any:
+        import numpy as np  # type: ignore
+        raw = self._base.predict_proba(X)[:, 1]
+        cal = self._iso.predict(raw)
+        return np.column_stack([1.0 - cal, cal])
+
+    def predict(self, X: Any) -> Any:
+        import numpy as np  # type: ignore
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
 
 # Module-level import of shared training-data export helper.
 try:
@@ -543,10 +569,15 @@ def calibrate_cooling_ml(
     cv_thresholds = _cross_validate_threshold(X_fit, y_fit, model, beta=2.0, n_folds=3)
     if cv_thresholds:
         cv_mean = float(np.mean(cv_thresholds))
-        # Use the lower of CV mean and val-optimised (prefer earlier trigger)
-        threshold = min(threshold, cv_mean)
+        # Weighted average: CV thresholds are more robust (in-sample but
+        # temporally diverse), val threshold can be an outlier on a single
+        # split.  Weight CV 2:1 over val to stabilise the final threshold.
+        threshold = float(np.average(
+            [threshold, cv_mean],
+            weights=[1.0, 2.0],
+        ))
         logger.info(
-            "CV thresholds: %s → mean=%.4f | final threshold=%.4f",
+            "CV thresholds: %s → mean=%.4f | final threshold=%.4f (weighted avg)",
             [f"{t:.4f}" for t in cv_thresholds], cv_mean, threshold,
         )
 
@@ -571,12 +602,20 @@ def calibrate_cooling_ml(
     X_eval_iso, y_eval_iso = X_val[n_cal_iso:], y_val[n_cal_iso:]
     try:
         from sklearn.calibration import CalibratedClassifierCV  # type: ignore
-        calibrated_model = CalibratedClassifierCV(
-            model, method="isotonic", cv="prefit"
-        )
-        # Fit calibration on the first half; this avoids overfitting to the
-        # same samples used for model selection below.
-        calibrated_model.fit(X_cal_iso, y_cal_iso)
+        # sklearn >=1.6 removed cv="prefit"; fall back to fitting an
+        # IsotonicRegression directly on the base model's probabilities so
+        # the base model weights are never changed (unlike cv=2 which refits
+        # cloned estimators on the calibration split).
+        try:
+            calibrated_model = CalibratedClassifierCV(
+                estimator=model, method="isotonic", cv="prefit"
+            )
+            calibrated_model.fit(X_cal_iso, y_cal_iso)
+        except (TypeError, ValueError):
+            from sklearn.isotonic import IsotonicRegression  # type: ignore
+            _iso = IsotonicRegression(out_of_bounds="clip")
+            _iso.fit(model.predict_proba(X_cal_iso)[:, 1], y_cal_iso)
+            calibrated_model = _IsotonicCalibratedModel(model, _iso)
         proba_cal_eval = calibrated_model.predict_proba(X_eval_iso)[:, 1]
         proba_raw_eval = model.predict_proba(X_eval_iso)[:, 1]
         if len(y_eval_iso) > 0 and y_eval_iso.sum() > 0:

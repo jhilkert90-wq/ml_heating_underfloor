@@ -1,6 +1,29 @@
 # ML Heating System - Current Progress
 
-## ✅ PR #69 review follow-up: dispatch wiring test cleanup (2026-05-23)
+## ✅ PR #71 review follow-up: cooling reliability + calibration stability fixes (2026-05-25)
+
+**Status:** COMPLETED
+
+### Changes
+1. **`src/main.py`**
+   - Normalize `climate_mode` to `wrapper.climate_mode` after `set_climate_mode()` so unsupported values (e.g. `"off"`) can't reach `run_online_learning()` or `CycleContext`.
+   - Replace `cycle_number > 1` with `loop.last_cycle_end_time is not None` to correctly skip online learning when cycle 1 exits early via a network-error `continue`.
+2. **`src/cooling_ml_calibration.py`**
+   - Added `_IsotonicCalibratedModel` wrapper class to keep base model weights frozen when sklearn's `cv="prefit"` is unavailable (>= 1.6).
+   - Replaced the `cv=2` fallback (which refits cloned estimators) with a direct `IsotonicRegression` on `model.predict_proba(X_cal_iso)`.
+3. **`tests/unit/test_main_functions.py`**
+   - Added `test_online_learning_skipped_on_first_cycle`: asserts `run_online_learning` is not called on cycle 1.
+   - Added `test_online_learning_called_after_completed_cycle`: asserts `run_online_learning` is called once `loop.last_cycle_end_time` is non-None.
+4. **`CHANGELOG.md`** / **`memory-bank/progress.md`** / **`memory-bank/activeContext.md`**
+   - Updated `[Unreleased]` section and project tracking with all changes.
+
+### Validation
+- `python3 -m pytest tests/unit/test_main_functions.py -v` → **6 passed**
+- `python3 -m pytest tests/unit/test_cooling_ml_calibration.py -v` → **34 passed**
+
+**Files changed:** `src/main.py`, `src/cooling_ml_calibration.py`, `tests/unit/test_main_functions.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+
 
 **Status:** COMPLETED
 

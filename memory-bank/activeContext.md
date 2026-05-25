@@ -1,6 +1,25 @@
 # Active Context - Current Work & Decision State
 
-### ✅ PR #69 review follow-up: dispatch wiring test cleanup + docs sync — 2026-05-23
+### ✅ PR #71 review follow-up: cooling reliability + calibration stability — 2026-05-25
+
+#### **What changed**
+- Normalized `climate_mode` in `src/main.py` to read back `wrapper.climate_mode` after `set_climate_mode()`, so `"off"` (and other unsupported values) are coerced to `"heating"` before being passed to `run_online_learning()` and `CycleContext`.
+- Replaced `cycle_number > 1` guard with `loop.last_cycle_end_time is not None` so the online-learning skip is robust to a network-error `continue` on cycle 1.
+- Added `_IsotonicCalibratedModel` class to `src/cooling_ml_calibration.py`; replaced the `cv=2` fallback (which refits from scratch) with a direct `IsotonicRegression` fitted on the frozen base model's probability output, preserving the deployed model's weights exactly.
+- Added two regression tests to `tests/unit/test_main_functions.py` covering the boot-ordering guard and the first-cycle online-learning skip.
+
+#### **Why**
+- PR review (copilot-pull-request-reviewer) flagged all four issues: unsupported `climate_mode` leaking to downstream, insufficient first-cycle guard, cv=2 changing the deployed model, and missing test coverage.
+
+#### **Files modified**
+- `src/main.py`
+- `src/cooling_ml_calibration.py`
+- `tests/unit/test_main_functions.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+
 
 #### **What changed**
 - Removed unused imports (`PropertyMock`, `CycleState`) from `tests/integration/test_dispatch_wiring.py`.
