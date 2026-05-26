@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Exposed `recovery_start_time` in Home Assistant comprehensive metrics during cooling mode.
+
+### Changed
+- Narrowed PR #73 scope to cooling recovery tracking by reverting unrelated cooling-ML calibration/model/metadata changes.
+- Updated cooling recovery unit-test fixture to instantiate `EnhancedModelWrapper` directly, avoiding singleton reuse across tests.
+
+### Fixed
+- Removed inline `datetime/timezone` import in cooling gate logic and used module-level imports for consistency.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

@@ -1,5 +1,28 @@
 # ML Heating System - Current Progress
 
+## ✅ PR #73 review follow-up: cooling recovery scope + reliability fixes (2026-05-26)
+
+**Status:** COMPLETED
+
+### Changes
+1. **`src/model_wrapper.py`**
+   - Moved `timezone` import to module scope and removed inline import inside cooling recovery transition logic.
+   - Added `recovery_start_time` to `get_comprehensive_metrics_for_ha()` in cooling mode.
+2. **`tests/unit/test_cooling_mode.py`**
+   - Updated recovery test fixture to instantiate `EnhancedModelWrapper()` directly, preventing singleton reuse between tests.
+3. **Scope alignment**
+   - Reverted unrelated cooling ML artifact/calibration/model edits to keep PR #73 focused on cooling recovery tracking:
+     - `Logs_and_models/cooling_ml_metadata.json`
+     - `src/cooling_ml_calibration.py`
+     - `src/cooling_ml_model.py`
+4. **Documentation**
+   - Updated `CHANGELOG.md`, `memory-bank/progress.md`, and `memory-bank/activeContext.md`.
+
+### Validation
+- `python -m pytest -q tests/unit/test_cooling_mode.py`
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`, plus reverts for `Logs_and_models/cooling_ml_metadata.json`, `src/cooling_ml_calibration.py`, `src/cooling_ml_model.py`
+
 ## ✅ PR #71 review follow-up: cooling reliability + calibration stability fixes (2026-05-25)
 
 **Status:** COMPLETED

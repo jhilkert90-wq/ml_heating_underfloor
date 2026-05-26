@@ -1,5 +1,27 @@
 # Active Context - Current Work & Decision State
 
+### ✅ PR #73 review follow-up: cooling recovery scope + reliability fixes — 2026-05-26
+
+#### **What changed**
+- Replaced inline `from datetime import datetime, timezone` in `calculate_optimal_outlet_temp()` with module-level import usage.
+- Added `recovery_start_time` to cooling HA metrics in `get_comprehensive_metrics_for_ha()`.
+- Updated `tests/unit/test_cooling_mode.py` recovery fixture to instantiate `EnhancedModelWrapper()` directly (no singleton path), eliminating order-dependent test behavior.
+- Reverted unrelated cooling-ML calibration/model/metadata changes from this PR to keep review scope aligned with cooling recovery tracking.
+
+#### **Why**
+- PR review requested singleton-safe tests, module-level import consistency, HA exposure of `recovery_start_time`, and tighter PR scope.
+- Reverting unrelated ML artifacts resolves the scope comments without adding new behavior changes to this PR.
+
+#### **Files modified**
+- `src/model_wrapper.py`
+- `tests/unit/test_cooling_mode.py`
+- `Logs_and_models/cooling_ml_metadata.json` (revert to `origin/main`)
+- `src/cooling_ml_calibration.py` (revert to `origin/main`)
+- `src/cooling_ml_model.py` (revert to `origin/main`)
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ### ✅ PR #71 review follow-up: cooling reliability + calibration stability — 2026-05-25
 
 #### **What changed**

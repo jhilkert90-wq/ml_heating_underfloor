@@ -794,10 +794,8 @@ class TestCoolingRecoveryAbsorption:
             }
             mock_csm.return_value.save_state = Mock()
             mock_csm.return_value.update_operational_state = Mock()
-            from src.model_wrapper import get_enhanced_model_wrapper
-            w = get_enhanced_model_wrapper.__wrapped__() if hasattr(
-                get_enhanced_model_wrapper, "__wrapped__"
-            ) else get_enhanced_model_wrapper()
+            from src.model_wrapper import EnhancedModelWrapper
+            w = EnhancedModelWrapper()
             yield w
 
     def _make_features(self, inlet, outdoor, indoor, extra=None):

@@ -15,7 +15,7 @@ Key features:
 import logging
 import math
 from typing import Any, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -699,7 +699,6 @@ class EnhancedModelWrapper:
                             # as the cold reference. After HP off, inlet
                             # warms passively toward indoor temp.
                             self._recovery_inlet_start = _inlet_guard
-                            from datetime import datetime, timezone
                             self._recovery_start_time = (
                                 datetime.now(timezone.utc).isoformat()
                             )
@@ -3173,6 +3172,10 @@ class EnhancedModelWrapper:
                 if self._recovery_inlet_start is not None:
                     ha_metrics["recovery_inlet_start"] = round(
                         self._recovery_inlet_start, 2
+                    )
+                if self._recovery_start_time is not None:
+                    ha_metrics["recovery_start_time"] = (
+                        self._recovery_start_time
                     )
 
             return ha_metrics

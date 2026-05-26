@@ -538,15 +538,11 @@ def calibrate_cooling_ml(
     lgb_params = {
         "objective": "binary",
         "metric": "auc",
-        "n_estimators": 500,
+        "n_estimators": 300,
         "learning_rate": 0.05,
         "max_depth": 6,
-        "num_leaves": 50,
+        "num_leaves": 31,
         "min_child_samples": 20,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "reg_alpha": 0.1,
-        "reg_lambda": 1.0,
         "scale_pos_weight": spw,
         "random_state": 42,
         "n_jobs": -1,
@@ -558,21 +554,8 @@ def calibrate_cooling_ml(
         X_fit, y_fit,
         sample_weight=sample_weights,
         eval_set=[(X_val, y_val)],
-        callbacks=[lgb.early_stopping(30, verbose=False), lgb.log_evaluation(50)],
+        callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(50)],
     )
-
-    # ── 10b. Post-train feature-count consistency guard ───────────────────
-    # Detect if the trained model's n_features_in_ disagrees with the
-    # feature_cols list — this would indicate a code/metadata drift bug.
-    _model_n = getattr(model, "n_features_in_", None)
-    if _model_n is not None and _model_n != len(feature_cols):
-        logger.error(
-            "POST-TRAIN MISMATCH: model.n_features_in_=%d but len(feature_cols)=%d. "
-            "This is a calibration bug; aborting to prevent saving corrupt metadata.",
-            _model_n, len(feature_cols),
-        )
-        return False
-    logger.info("Post-train consistency check passed: model.n_features_in_=%d", _model_n)
 
     # ── 11. Threshold optimisation (Prio 2: F-beta with β=2, cross-validated)
     # Use recall-biased threshold to ensure early activation.
@@ -710,20 +693,6 @@ def calibrate_cooling_ml(
         "noise_injection": True,
         "temporal_weighting": True,
     }
-
-    # Record feature importances from the base (raw) model for diagnostics.
-    try:
-        _base_model = model._base if hasattr(model, "_base") else model
-        _importances = _base_model.feature_importances_
-        metadata["feature_importances"] = {
-            col: round(float(imp), 4)
-            for col, imp in sorted(
-                zip(feature_cols, _importances),
-                key=lambda x: -x[1],
-            )
-        }
-    except Exception as _exc:
-        logger.debug("Could not extract feature importances: %s", _exc)
     tmp_meta = metadata_path + ".tmp"
     with open(tmp_meta, "w", encoding="utf-8") as fh:
         json.dump(metadata, fh, indent=2, default=_json_default)

@@ -42,9 +42,14 @@
     "hour_sin",
     "hour_cos",
     "doy_sin",
-    "doy_cos"
+    "doy_cos",
+    "cum_pv_forecast_4h",
+    "cum_at_excess_4h",
+    "max_at_forecast",
+    "indoor_momentum",
+    "slab_stored_heat"
   ],
-  "n_features": 42,
+  "n_features": 47,
   "threshold": 0.11341708542713567,
   "val_f2": 0.9390801029007363,
   "roc_auc": 0.9599460216313906,

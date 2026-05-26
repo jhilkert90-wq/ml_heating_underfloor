@@ -280,23 +280,6 @@ class CoolingMLModel:
                 self._metadata = json.load(fh)
             self._feature_cols = self._metadata.get("feature_cols", [])
             self._threshold = float(self._metadata.get("threshold", 0.5))
-
-            # Guard: verify the model's expected feature count matches metadata.
-            # A mismatch means the model was trained before new features were added
-            # to the calibration code; inference would fail with a dimension error.
-            model_n_features = getattr(self._model, "n_features_in_", None)
-            if isinstance(model_n_features, int) and model_n_features != len(self._feature_cols):
-                logger.error(
-                    "CoolingMLModel: feature count mismatch — model expects %d features "
-                    "but metadata lists %d. The model binary is stale; run "
-                    "--calibrate-cooling-ml to retrain with the current feature set. "
-                    "Model will not be used.",
-                    model_n_features,
-                    len(self._feature_cols),
-                )
-                self._loaded = False
-                return False
-
             self._loaded = True
             logger.info(
                 "CoolingMLModel: loaded %s | features=%d threshold=%.4f AUC=%.4f",
