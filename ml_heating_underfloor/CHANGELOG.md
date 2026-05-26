@@ -1,5 +1,17 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.62] - 2026-05-26
+
+### Added
+- Exposed `recovery_start_time` in Home Assistant comprehensive metrics during cooling mode.
+
+### Changed
+- Narrowed PR #73 scope to cooling recovery tracking by reverting unrelated cooling-ML calibration/model/metadata changes.
+- Updated cooling recovery unit-test fixture to instantiate `EnhancedModelWrapper` directly, avoiding singleton reuse across tests.
+
+### Fixed
+- Removed inline `datetime/timezone` import in cooling gate logic and used module-level imports for consistency.
+
 ## [0.2.58] - 2026-05-25
 
 ### Fixed
