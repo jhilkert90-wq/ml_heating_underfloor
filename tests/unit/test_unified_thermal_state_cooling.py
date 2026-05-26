@@ -191,10 +191,30 @@ class TestCoolingBufferState:
 class TestCoolingOperationalState:
     """Operational state tests."""
 
+    def test_recovery_tracking_defaults_present(self, cooling_manager):
+        op = cooling_manager.get_operational_state()
+        assert op["recovery_inlet_start"] is None
+        assert op["recovery_start_time"] is None
+        assert op["slab_absorption_progress"] is None
+
     def test_update_operational_state(self, cooling_manager):
         cooling_manager.update_operational_state(last_prediction=21.0)
         op = cooling_manager.get_operational_state()
         assert op["last_prediction"] == 21.0
+
+    def test_recovery_tracking_persists(self, cooling_manager, temp_state_file):
+        cooling_manager.update_operational_state(
+            recovery_inlet_start=21.4,
+            recovery_start_time="2026-05-26T05:00:00+00:00",
+            slab_absorption_progress=0.42,
+        )
+        cooling_manager.save_state()
+
+        reloaded = CoolingThermalStateManager(state_file=str(temp_state_file))
+        op = reloaded.get_operational_state()
+        assert op["recovery_inlet_start"] == pytest.approx(21.4)
+        assert op["recovery_start_time"] == "2026-05-26T05:00:00+00:00"
+        assert op["slab_absorption_progress"] == pytest.approx(0.42)
 
     def test_set_calibration_mode(self, cooling_manager, temp_state_file):
         cooling_manager.save_state()
