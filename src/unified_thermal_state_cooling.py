@@ -145,6 +145,9 @@ class CoolingThermalStateManager:
                 "last_blocking_reasons": [],
                 "last_blocking_end_time": None,
                 "cooling_cycle_gate": "running",
+                "recovery_inlet_start": None,
+                "recovery_start_time": None,
+                "slab_absorption_progress": None,
             },
         }
 

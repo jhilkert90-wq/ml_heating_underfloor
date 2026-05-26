@@ -771,3 +771,126 @@ class TestCoolingInletGuard:
             f"Without inlet_temp, outlet should pass through unchanged; "
             f"expected {OUTLET}°C, got {result}°C"
         )
+
+
+class TestCoolingRecoveryAbsorption:
+    """Tests for slab absorption progress tracking during HP recovery."""
+
+    @pytest.fixture
+    def wrapper(self):
+        with patch("src.model_wrapper.get_thermal_state_manager"), \
+             patch("src.model_wrapper.get_cooling_state_manager") as mock_csm:
+            mock_csm.return_value.get_operational_state.return_value = {
+                "cooling_cycle_gate": "running",
+                "recovery_inlet_start": None,
+                "slab_absorption_progress": None,
+            }
+            mock_csm.return_value.state = {
+                "operational_state": {
+                    "cooling_cycle_gate": "running",
+                    "recovery_inlet_start": None,
+                    "slab_absorption_progress": None,
+                }
+            }
+            mock_csm.return_value.save_state = Mock()
+            mock_csm.return_value.update_operational_state = Mock()
+            from src.model_wrapper import get_enhanced_model_wrapper
+            w = get_enhanced_model_wrapper.__wrapped__() if hasattr(
+                get_enhanced_model_wrapper, "__wrapped__"
+            ) else get_enhanced_model_wrapper()
+            yield w
+
+    def _make_features(self, inlet, outdoor, indoor, extra=None):
+        features = {
+            "indoor_temp_lag_30m": indoor,
+            "target_temp": indoor - 1.0,
+            "outdoor_temp": outdoor,
+            "inlet_temp": inlet,
+            "delta_t": -0.1,
+            "pv_now": 0.0,
+            "pv_forecast_electrical_1h": 0.0,
+            "pv_forecast_1h": 0.0,
+            "indoor_temp_delta_60m": 0.0,
+            "thermal_power_kw": 0.0,
+        }
+        if extra:
+            features.update(extra)
+        return features
+
+    @patch("src.model_wrapper._is_heat_pump_active", return_value=False)
+    def test_recovery_records_inlet_start(self, _mock_hp, wrapper):
+        """On RUNNING -> RECOVERY, recovery_inlet_start is recorded."""
+        wrapper.set_climate_mode("cooling")
+        wrapper._cooling_cycle_state = "running"
+
+        inlet = 20.0
+        with patch.object(
+            wrapper, "_calculate_required_outlet_temp", return_value=19.0
+        ):
+            features = self._make_features(inlet, 30.0, 24.0)
+            wrapper.calculate_optimal_outlet_temp(features=features)
+
+        assert wrapper._cooling_cycle_state == "recovery"
+        assert wrapper._recovery_inlet_start == inlet
+
+    @patch("src.model_wrapper._is_heat_pump_active", return_value=False)
+    def test_absorption_progress_increases_as_inlet_warms(
+        self, _mock_hp, wrapper
+    ):
+        """During recovery, absorption progress tracks inlet -> indoor."""
+        wrapper.set_climate_mode("cooling")
+        wrapper._cooling_cycle_state = "recovery"
+        wrapper._recovery_inlet_start = 20.0  # cold reference
+
+        # Inlet has warmed from 20 to 22, indoor is 24
+        # Progress = (22-20)/(24-20) = 0.5
+        # required_outlet=21.5 keeps gate closed: 22-21.5=0.5 < MIN_COOLING_DELTA_K
+        inlet = 22.0
+        with patch.object(
+            wrapper, "_calculate_required_outlet_temp", return_value=21.5
+        ):
+            features = self._make_features(inlet, 30.0, 24.0)
+            wrapper.calculate_optimal_outlet_temp(features=features)
+
+        assert wrapper._cooling_cycle_state == "recovery"
+        assert wrapper._slab_absorption_progress == pytest.approx(0.5, abs=0.01)
+
+    @patch("src.model_wrapper._is_heat_pump_active", return_value=False)
+    def test_absorption_progress_clamped_at_1(self, _mock_hp, wrapper):
+        """Absorption progress is clamped to [0, 1]."""
+        wrapper.set_climate_mode("cooling")
+        wrapper._cooling_cycle_state = "recovery"
+        wrapper._recovery_inlet_start = 20.0
+
+        # Inlet overshot indoor (shouldn't happen, but clamp anyway)
+        # required_outlet=24.5 keeps gate closed: 25-24.5=0.5 < MIN_COOLING_DELTA_K
+        inlet = 25.0  # > indoor
+        with patch.object(
+            wrapper, "_calculate_required_outlet_temp", return_value=24.5
+        ):
+            features = self._make_features(inlet, 30.0, 24.0)
+            wrapper.calculate_optimal_outlet_temp(features=features)
+
+        assert wrapper._slab_absorption_progress == 1.0
+
+    @patch("src.model_wrapper._is_heat_pump_active", return_value=True)
+    def test_recovery_to_running_clears_tracking(self, _mock_hp, wrapper):
+        """RECOVERY -> RUNNING clears recovery tracking state."""
+        wrapper.set_climate_mode("cooling")
+        wrapper._cooling_cycle_state = "recovery"
+        wrapper._recovery_inlet_start = 20.0
+        wrapper._slab_absorption_progress = 0.6
+
+        inlet = 22.0
+        with patch.object(
+            wrapper, "_calculate_required_outlet_temp", return_value=19.0
+        ):
+            features = self._make_features(
+                inlet, 30.0, 24.0,
+                extra={"thermal_power_kw": -1.5, "delta_t": -2.5},
+            )
+            wrapper.calculate_optimal_outlet_temp(features=features)
+
+        assert wrapper._cooling_cycle_state == "running"
+        assert wrapper._recovery_inlet_start is None
+        assert wrapper._slab_absorption_progress is None
