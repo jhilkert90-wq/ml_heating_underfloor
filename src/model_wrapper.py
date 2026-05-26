@@ -15,7 +15,7 @@ Key features:
 import logging
 import math
 from typing import Any, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -84,6 +84,16 @@ class EnhancedModelWrapper:
         _cooling_ops = self._cooling_state_manager.get_operational_state()
         self._cooling_cycle_state = _cooling_ops.get(
             "cooling_cycle_gate", "running"
+        )
+        # Recovery tracking: inlet temp when HP stopped and absorption progress
+        self._recovery_inlet_start: float | None = _cooling_ops.get(
+            "recovery_inlet_start", None
+        )
+        self._recovery_start_time: str | None = _cooling_ops.get(
+            "recovery_start_time", None
+        )
+        self._slab_absorption_progress: float | None = _cooling_ops.get(
+            "slab_absorption_progress", None
         )
 
         # Active pair — initially heating.
@@ -176,6 +186,15 @@ class EnhancedModelWrapper:
             _cooling_ops = self._cooling_state_manager.get_operational_state()
             self._cooling_cycle_state = _cooling_ops.get(
                 "cooling_cycle_gate", "running"
+            )
+            self._recovery_inlet_start = _cooling_ops.get(
+                "recovery_inlet_start", None
+            )
+            self._recovery_start_time = _cooling_ops.get(
+                "recovery_start_time", None
+            )
+            self._slab_absorption_progress = _cooling_ops.get(
+                "slab_absorption_progress", None
             )
         else:
             self.thermal_model = self._heating_thermal_model
@@ -637,6 +656,10 @@ class EnhancedModelWrapper:
                                 _hp_ctx["delta_t"],
                                 _hp_ctx["thermal_power"],
                             )
+                            # Clear recovery tracking on transition
+                            self._recovery_inlet_start = None
+                            self._recovery_start_time = None
+                            self._slab_absorption_progress = None
                         self._cooling_cycle_state = "running"
                         if not (_gradient_ok and _margin_ok):
                             logging.info(
@@ -665,9 +688,20 @@ class EnhancedModelWrapper:
                                 _inlet_guard + _learned_dtf,
                                 _effective_min,
                             )
+                            # Clear recovery tracking on transition
+                            self._recovery_inlet_start = None
+                            self._recovery_start_time = None
+                            self._slab_absorption_progress = None
                         self._cooling_cycle_state = "running"
                     else:
                         if self._cooling_cycle_state != "recovery":
+                            # Transition RUNNING → RECOVERY: record inlet
+                            # as the cold reference. After HP off, inlet
+                            # warms passively toward indoor temp.
+                            self._recovery_inlet_start = _inlet_guard
+                            self._recovery_start_time = (
+                                datetime.now(timezone.utc).isoformat()
+                            )
                             logging.info(
                                 "❄️ Cooling cycle gate: RUNNING → RECOVERY "
                                 "(HP idle and start gate closed: "
@@ -687,14 +721,44 @@ class EnhancedModelWrapper:
                                 "❄️ Cooling cycle gate: RECOVERY — waiting "
                                 "(inlet %.1f°C, inlet+Δt_floor=%.1f°C, "
                                 "required_outlet %.1f°C, "
+                                "absorption=%.0f%%, "
                                 "gradient_ok=%s, margin_ok=%s). "
                                 "Sending inlet_temp.",
                                 _inlet_guard,
                                 _inlet_guard + _learned_dtf,
                                 optimal_outlet_temp,
+                                (self._slab_absorption_progress or 0.0) * 100,
                                 _gradient_ok,
                                 _margin_ok,
                             )
+
+                        # Calculate slab absorption progress:
+                        # HP off → outlet == inlet → inlet warms toward
+                        # indoor as slab absorbs room heat.
+                        # progress = (inlet_now - inlet_cold) /
+                        #            (indoor - inlet_cold)
+                        # 0.0 = just stopped, 1.0 = inlet reached indoor
+                        _indoor_ref = _hp_ctx.get(
+                            "current_indoor", current_indoor
+                        )
+                        if (
+                            self._recovery_inlet_start is not None
+                            and _indoor_ref > self._recovery_inlet_start + 0.5
+                        ):
+                            self._slab_absorption_progress = min(
+                                1.0,
+                                max(
+                                    0.0,
+                                    (_inlet_guard - self._recovery_inlet_start)
+                                    / (
+                                        _indoor_ref
+                                        - self._recovery_inlet_start
+                                    ),
+                                ),
+                            )
+                        else:
+                            self._slab_absorption_progress = 0.0
+
                         self._cooling_cycle_state = "recovery"
                         optimal_outlet_temp = _inlet_guard
 
@@ -702,6 +766,9 @@ class EnhancedModelWrapper:
                     try:
                         self._cooling_state_manager.update_operational_state(
                             cooling_cycle_gate=self._cooling_cycle_state,
+                            recovery_inlet_start=self._recovery_inlet_start,
+                            recovery_start_time=self._recovery_start_time,
+                            slab_absorption_progress=self._slab_absorption_progress,
                         )
                         self._cooling_state_manager.save_state()
                     except Exception:
@@ -3094,6 +3161,22 @@ class EnhancedModelWrapper:
                 ha_metrics["slab_passive_delta"] = round(
                     float(_s_inlet) - float(_s_indoor), 2
                 )
+
+            # Cooling recovery metrics: slab absorption progress
+            if self._climate_mode == "cooling":
+                ha_metrics["cooling_cycle_gate"] = self._cooling_cycle_state
+                if self._slab_absorption_progress is not None:
+                    ha_metrics["slab_absorption_progress"] = round(
+                        self._slab_absorption_progress, 3
+                    )
+                if self._recovery_inlet_start is not None:
+                    ha_metrics["recovery_inlet_start"] = round(
+                        self._recovery_inlet_start, 2
+                    )
+                if self._recovery_start_time is not None:
+                    ha_metrics["recovery_start_time"] = (
+                        self._recovery_start_time
+                    )
 
             return ha_metrics
 
