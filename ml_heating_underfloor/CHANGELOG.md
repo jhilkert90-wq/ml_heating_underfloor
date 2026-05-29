@@ -1,5 +1,31 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.63] - 2026-05-29
+
+### Added
+- **Cooling ML model: 23 new features** ported from heating model and newly implemented:
+  - HA context features: `wind_speed`, `living_room_temp`, `fireplace_on`, `tv_on` + dynamic rolling lags (`fireplace_lag_30m/1h/2h`, `tv_lag_30m/1h`)
+  - Derived physics features: `heat_loss_driving_force`, `indoor_temp_gradient`, `indoor_margin_rate`, `delta_T_indoor_lag1`, `d_inlet_temp_60min`, `is_equilibrium`, `thermal_power_rolling_1h`, `is_overshoot`, `is_hp_active`, `is_weekend`, `heat_loss_interaction`
+  - Solar/shading features: `solar_thermal_proxy`, `shading_proxy`, `pv_forecast_delta`
+  - Trajectory-derived features: `traj_predicted_error`, `traj_convergence_rate`, `traj_reaches_target_hours`, `traj_overshoot_magnitude`, `traj_equilibrium_gap` — vectorized analytical Newton-decay approximation at calibration, OverheatingPredictor trajectory injection at inference
+- **Cooling HA entity fetch expanded**: `fetch_historical_data_for_calibration(purpose="cooling")` now fetches 11 entities (was 7) — adds wind_speed, fireplace, TV, living_room_temp
+- **Trajectory injection for cooling LGBM inference**: `cycle_routes.py` injects OverheatingPredictor's trajectory result into CoolingMLModel features, enabling physics-ML bridge
+- **Cooling ML Analysis Notebook** (`notebooks/analysis/09_cooling_ml_analysis.ipynb`): Full analysis of overheating classifier with 17 new derivable features, incremental pruning, regression alternative (regression wins: AUC 0.9502 vs 0.9431, F2 0.9492 vs 0.9424), Optuna HPO (AUC 0.9582, MAE 0.0827°C), threshold sensitivity analysis. Key finding: regression approach predicting `delta_indoor_8h` then thresholding at 22.93°C outperforms direct binary classification.
+- **Optimized ML Training Notebook** (`notebooks/analysis/08_heating_ml_optimized.ipynb`): Residualized label architecture with 53 features, outlier filtering, incremental pruning, Optuna HPO, 5-fold TS-CV, SHAP analysis, sensor noise floor analysis, outlet temp adjustment verification
+- **Residualized label as primary architecture**: `adjusted_label = -(T_future - T_current) / S_H`; at inference: `full_correction = model.predict(X) - indoor_margin / S_H`. Achieves adj R²=0.9755, recon R²=0.9042, MAE=0.1277°C
+- **Outlier filtering with forward-looking label contamination**: Removes fireplace (4.4%), window-open (3.4%), PV spikes — 85,078→78,483 rows (7.8% removed). Key enabler for R²>0.90
+- **Incremental PI-based pruning**: Drops features one-by-one (worst PI first, threshold PI<0.001). Removed `shortwave_radiation_wm2` and `pv_roll_1h` — 55→53 features, MAE improved 0.1304→0.1277
+- **Sensor noise floor analysis**: Measured actual sensor resolutions (indoor_temp: 0.002°C, VLT/RLT: 0.02°C, AT: 0.01°C). Label quantization = 0.004°C — sensor accuracy is NOT the bottleneck
+- **5 new engineered features**: `cumulative_Q_wp_4h` (142 splits), `AT_forecast_trend`, `thermal_momentum`, `indoor_accel`, `pv_cumulative_4h`
+- **Outlet temperature adjustment verification**: Worked examples showing exact correction formula for undershoot/overshoot scenarios (±1.22°C per 0.6°C margin)
+- **Heating ML Standalone Training Notebook** (`notebooks/analysis/07_heating_ml_standalone.ipynb`): Offline LightGBM training with HA_LOG-style output, commentable feature list for ablation, leave-one-out and group ablation analysis, `indoor_temp` dominance diagnosis with decorrelation experiments, SHAP analysis (optional), residual-based missing-feature analysis, and full diagnostic dashboard
+- **Open-Meteo solar radiation enrichment** in notebook: Fetches historical `shortwave_radiation` (W/m²) from Open-Meteo archive API for 48.928°N/10.069°E, interpolates hourly data to CSV resolution (~6 min), adds `shortwave_radiation_wm2` as 52nd feature. Includes HA REST sensor configuration for live integration.
+- **Residualized label experiment** (Section 11c-bis): Subtracts trivial `indoor_margin/S_H` component to isolate temperature-change perturbation; reveals `living_room_temp` as hidden dominant proxy
+- **New engineered features experiment** (Section 15b): Tests `cumulative_Q_wp_4h` (112 splits), `AT_forecast_trend`, `indoor_accel`, `pv_cumulative_4h`, `thermal_momentum` — combined MAE improvement -0.0035
+
+### Changed
+- **Feature selection refined**: Removed `indoor_temp` and `living_room_temp` (redundant with `indoor_margin` in residualized framework); kept `indoor_margin` (physics input) and `is_overshoot` (HP mode signal)
+
 ## [0.2.62] - 2026-05-26
 
 ### Added
