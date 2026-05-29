@@ -79,6 +79,147 @@ def _doy_cos() -> float:
     return math.cos(2 * math.pi * doy / 365.25)
 
 
+# Indoor temperature threshold above which solar overheat protection
+# (roller shutters / Jalousie) is assumed active.
+_SHADING_ACTIVATION_TEMP_C = 23.0
+
+
+# ---------------------------------------------------------------------------
+# Trajectory-derived feature helpers (inference time)
+# ---------------------------------------------------------------------------
+# Mirrors heating_correction_ml_model._compute_traj_* helpers.
+# At inference the OverheatingPredictor's trajectory result is injected
+# as ``physics["_last_trajectory"]`` by cycle_routes.py.
+
+def _get_traj_params() -> tuple[float, float, float]:
+    """Return (eta, u_loss, tau) for analytical trajectory approximation."""
+    try:
+        from src import config as _cfg
+    except ImportError:
+        import config as _cfg  # type: ignore
+    eta = float(getattr(_cfg, "OUTLET_EFFECTIVENESS", 0.830))
+    u_loss = float(getattr(_cfg, "HEAT_LOSS_COEFFICIENT", 0.124))
+    tau = float(getattr(_cfg, "THERMAL_TIME_CONSTANT", 4.39))
+    return eta, u_loss, tau
+
+
+def _compute_traj_equilibrium(physics: dict[str, Any]) -> float:
+    """Compute T_eq = (η×VLT + U×AT) / (η + U)."""
+    eta, u_loss, _ = _get_traj_params()
+    vlt = physics.get("outlet_temp")
+    at = physics.get("outdoor_temp")
+    if vlt is None or at is None:
+        return 0.0
+    denom = eta + u_loss
+    if denom < 1e-6:
+        return float(vlt)
+    return (eta * float(vlt) + u_loss * float(at)) / denom
+
+
+def _compute_traj_predicted_error(
+    physics: dict[str, Any], target: float
+) -> float:
+    """Trajectory final temp − target: how far physics expects to miss."""
+    traj = physics.get("_last_trajectory")
+    if traj and traj.get("trajectory"):
+        return float(traj["trajectory"][-1]) - target
+    # Analytical fallback
+    _, _, tau = _get_traj_params()
+    t_eq = _compute_traj_equilibrium(physics)
+    indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+    if indoor is None:
+        return 0.0
+    try:
+        from src import config as _cfg
+    except ImportError:
+        import config as _cfg  # type: ignore
+    h = float(getattr(_cfg, "TRAJECTORY_STEPS", 4))
+    t_final = t_eq + (float(indoor) - t_eq) * math.exp(-h / tau)
+    return t_final - target
+
+
+def _compute_traj_convergence_rate(
+    physics: dict[str, Any], target: float
+) -> float:
+    """(step_1 − step_last) / n_steps: speed of approach to equilibrium."""
+    traj = physics.get("_last_trajectory")
+    if traj and traj.get("trajectory"):
+        temps = traj["trajectory"]
+        if len(temps) >= 2:
+            return (temps[0] - temps[-1]) / len(temps)
+        return 0.0
+    _, _, tau = _get_traj_params()
+    t_eq = _compute_traj_equilibrium(physics)
+    indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+    if indoor is None:
+        return 0.0
+    indoor = float(indoor)
+    try:
+        from src import config as _cfg
+    except ImportError:
+        import config as _cfg  # type: ignore
+    cycle_min = float(getattr(_cfg, "CYCLE_INTERVAL_MINUTES", 10))
+    dt_step = cycle_min / 60.0
+    h = float(getattr(_cfg, "TRAJECTORY_STEPS", 4))
+    n_steps = max(1, int(h * 60 / cycle_min))
+    step_1 = t_eq + (indoor - t_eq) * math.exp(-dt_step / tau)
+    step_last = t_eq + (indoor - t_eq) * math.exp(-h / tau)
+    return (step_1 - step_last) / n_steps
+
+
+def _compute_traj_reaches_target_hours(
+    physics: dict[str, Any], target: float
+) -> float:
+    """Analytical time to reach target (capped at horizon)."""
+    traj = physics.get("_last_trajectory")
+    if traj and traj.get("reaches_target_at") is not None:
+        return float(traj["reaches_target_at"])
+    _, _, tau = _get_traj_params()
+    t_eq = _compute_traj_equilibrium(physics)
+    indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+    try:
+        from src import config as _cfg
+    except ImportError:
+        import config as _cfg  # type: ignore
+    h = float(getattr(_cfg, "TRAJECTORY_STEPS", 4))
+    if indoor is None:
+        return h
+    indoor = float(indoor)
+    denom = indoor - t_eq
+    if abs(denom) < 1e-6:
+        return 0.0
+    ratio = (target - t_eq) / denom
+    if ratio <= 0 or ratio >= 1:
+        return h
+    t_reach = -tau * math.log(ratio)
+    return max(0.0, min(h, t_reach))
+
+
+def _compute_traj_overshoot_magnitude(
+    physics: dict[str, Any], target: float
+) -> float:
+    """max(0, max_predicted − target): predicted overshoot magnitude."""
+    traj = physics.get("_last_trajectory")
+    if traj and "max_predicted" in traj:
+        return max(0.0, float(traj["max_predicted"]) - target)
+    t_eq = _compute_traj_equilibrium(physics)
+    indoor = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+    if indoor is None:
+        return 0.0
+    peak = max(float(indoor), t_eq)
+    return max(0.0, peak - target)
+
+
+def _compute_traj_equilibrium_gap(
+    physics: dict[str, Any], target: float
+) -> float:
+    """T_eq − T_target: steady-state error signal."""
+    traj = physics.get("_last_trajectory")
+    if traj and "equilibrium_temp" in traj:
+        return float(traj["equilibrium_temp"]) - target
+    return _compute_traj_equilibrium(physics) - target
+
+
 def build_feature_vector(
     feature_cols: list[str],
     physics: dict[str, Any],
@@ -224,6 +365,95 @@ def _extract_feature(
         vlt = float(physics.get("outlet_temp") or 0.0)
         rlt = float(physics.get("inlet_temp") or 0.0)
         return (vlt + rlt) / 2.0 - current_indoor
+
+    # ── HA context features ────────────────────────────────────────────
+    if col == "wind_speed":
+        return float(physics.get("wind_speed") or 0.0)
+    if col == "living_room_temp":
+        val = physics.get("living_room_temp")
+        if val is None:
+            val = physics.get("indoor_temp") or physics.get("indoor_temp_lag_30m")
+        return float(val) if val is not None else current_indoor
+    if col == "fireplace_on":
+        return float(physics.get("fireplace_on") or 0.0)
+    if col == "tv_on":
+        return float(physics.get("tv_on") or 0.0)
+
+    # Dynamic fireplace/TV lag features → approximate with instantaneous flag
+    if re.fullmatch(r"fireplace_lag_\d+[hm]", col):
+        return float(physics.get("fireplace_on") or 0.0)
+    if re.fullmatch(r"tv_lag_\d+[hm]", col):
+        return float(physics.get("tv_on") or 0.0)
+
+    # ── Derived physics features ───────────────────────────────────────
+    if col == "heat_loss_driving_force":
+        outdoor = float(physics.get("outdoor_temp") or 0.0)
+        return current_indoor - outdoor
+    if col == "indoor_temp_gradient":
+        return float(physics.get("indoor_temp_gradient") or 0.0)
+    if col == "indoor_margin_rate":
+        return float(physics.get("indoor_margin_rate") or 0.0)
+    if col == "delta_T_indoor_lag1":
+        return float(physics.get("indoor_temp_delta_10m") or 0.0)
+    if col == "d_inlet_temp_60min":
+        return float(physics.get("d_inlet_temp_60min") or 0.0)
+    if col == "is_equilibrium":
+        return float(physics.get("is_equilibrium") or 0.0)
+    if col == "thermal_power_rolling_1h":
+        return float(physics.get("thermal_power_kw") or 0.0)
+    if col == "is_overshoot":
+        return 1.0 if current_indoor > cooling_target else 0.0
+    if col == "is_hp_active":
+        dt = physics.get("delta_t")
+        if dt is not None:
+            return 1.0 if abs(float(dt)) > 1.0 else 0.0
+        return 0.0
+    if col == "is_weekend":
+        return float(physics.get("is_weekend") or 0.0)
+    if col == "heat_loss_interaction":
+        outdoor = physics.get("outdoor_temp")
+        wind = physics.get("wind_speed")
+        if outdoor is None or wind is None:
+            return 0.0
+        return (current_indoor - float(outdoor)) * float(wind)
+
+    # ── Solar / shading features ───────────────────────────────────────
+    if col == "solar_thermal_proxy":
+        pv = physics.get("pv_now_electrical")
+        if pv is None:
+            pv = physics.get("pv_now")
+        pv = float(pv) if pv is not None else 0.0
+        cos_hour = float(physics.get("hour_cos") or 0.0)
+        return pv * cos_hour
+    if col == "shading_proxy":
+        pv = physics.get("pv_now_electrical")
+        if pv is None:
+            pv = physics.get("pv_now")
+        pv = float(pv) if pv is not None else 0.0
+        return max(0.0, current_indoor - _SHADING_ACTIVATION_TEMP_C) * pv
+    if col == "pv_forecast_delta":
+        pv = physics.get("pv_now_electrical")
+        if pv is None:
+            pv = physics.get("pv_now")
+        pv = float(pv) if pv is not None else 0.0
+        fc = physics.get("pv_forecast_electrical_2h")
+        if fc is None:
+            fc = physics.get("pv_forecast_2h")
+        if fc is None:
+            return 0.0
+        return float(fc) - pv
+
+    # ── Trajectory-derived physics features ────────────────────────────
+    if col == "traj_predicted_error":
+        return _compute_traj_predicted_error(physics, cooling_target)
+    if col == "traj_convergence_rate":
+        return _compute_traj_convergence_rate(physics, cooling_target)
+    if col == "traj_reaches_target_hours":
+        return _compute_traj_reaches_target_hours(physics, cooling_target)
+    if col == "traj_overshoot_magnitude":
+        return _compute_traj_overshoot_magnitude(physics, cooling_target)
+    if col == "traj_equilibrium_gap":
+        return _compute_traj_equilibrium_gap(physics, cooling_target)
 
     logger.warning("CoolingMLModel: unknown feature column '%s', filling 0.0", col)
     return 0.0

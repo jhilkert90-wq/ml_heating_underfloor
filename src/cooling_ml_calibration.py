@@ -35,6 +35,10 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Indoor temperature threshold above which solar overheat protection (roller
+# shutters / Jalousie) is assumed to be active – matches heating calibration.
+_SHADING_ACTIVATION_TEMP_C = 23.0
+
 # ── Calibration hyper-parameters (named constants) ─────────────────────────
 # Max allowed AUC drop before preferring raw model over isotonic-calibrated.
 _ISOTONIC_AUC_TOLERANCE: float = 0.01
@@ -201,6 +205,10 @@ def calibrate_cooling_ml(
     flow_col    = getattr(config, "FLOW_RATE_ENTITY_ID",    "input_number.hp_current_flow_rate").split(".", 1)[-1]
     power_col   = getattr(config, "POWER_CONSUMPTION_ENTITY_ID", "sensor.nibe_el_leistung").split(".", 1)[-1]
     pv_col      = getattr(config, "PV_POWER_ENTITY_ID",     "sensor.pv_leistung_gefiltert").split(".", 1)[-1]
+    fireplace_col = getattr(config, "FIREPLACE_STATUS_ENTITY_ID", "binary_sensor.fireplace_active").split(".", 1)[-1]
+    tv_col      = getattr(config, "TV_STATUS_ENTITY_ID",    "input_boolean.fernseher").split(".", 1)[-1]
+    living_room_col = getattr(config, "LIVING_ROOM_TEMP_ENTITY_ID", "sensor.living_room_temperature").split(".", 1)[-1]
+    wind_col    = getattr(config, "WIND_SPEED_ENTITY_ID",   "sensor.wind_speed").split(".", 1)[-1]
 
     rename_map = {
         indoor_col:  "indoor_temp",
@@ -210,6 +218,10 @@ def calibrate_cooling_ml(
         flow_col:    "flow_rate",
         power_col:   "power_w",
         pv_col:      "PV_Generate",
+        fireplace_col: "fireplace_on",
+        tv_col:      "tv_on",
+        living_room_col: "living_room_temp",
+        wind_col:    "wind_speed",
     }
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
@@ -269,6 +281,89 @@ def calibrate_cooling_ml(
     df["pv_roll_1h"]  = df["PV_Generate"].rolling(steps_per_hour, min_periods=1).mean()
     df["pv_roll_2h"]  = df["PV_Generate"].rolling(2 * steps_per_hour, min_periods=1).mean()
 
+    # ── 4b. HA context features ─────────────────────────────────────────
+    # Wind speed — fill missing with 0 (calm)
+    if "wind_speed" in df.columns:
+        df["wind_speed"] = pd.to_numeric(
+            df["wind_speed"], errors="coerce"
+        ).fillna(0.0).clip(0, 200)
+    else:
+        df["wind_speed"] = 0.0
+
+    # Living room temperature
+    if "living_room_temp" in df.columns:
+        df["living_room_temp"] = pd.to_numeric(
+            df["living_room_temp"], errors="coerce"
+        ).fillna(method="ffill").fillna(df["indoor_temp"])
+    else:
+        df["living_room_temp"] = df["indoor_temp"]
+
+    # Fireplace and TV features (binary) — fill missing with 0
+    for src_col in ["fireplace_on", "tv_on"]:
+        if src_col in df.columns:
+            df[src_col] = pd.to_numeric(
+                df[src_col], errors="coerce"
+            ).fillna(0.0).clip(0, 1)
+        else:
+            df[src_col] = 0.0
+
+    # Dynamic fireplace lag features (rolling max captures residual heat)
+    _fp_lag_hours = [0.5, 1.0, 2.0]
+    for lag_h in _fp_lag_hours:
+        n_steps = max(1, int(round(lag_h * steps_per_hour)))
+        if lag_h == int(lag_h):
+            col_name = f"fireplace_lag_{int(lag_h)}h"
+        else:
+            col_name = f"fireplace_lag_{int(round(lag_h * 60))}m"
+        df[col_name] = df["fireplace_on"].rolling(n_steps, min_periods=1).max()
+
+    # Dynamic TV lag features
+    _tv_lag_hours = [0.5, 1.0]
+    for lag_h in _tv_lag_hours:
+        n_steps = max(1, int(round(lag_h * steps_per_hour)))
+        if lag_h == int(lag_h):
+            col_name = f"tv_lag_{int(lag_h)}h"
+        else:
+            col_name = f"tv_lag_{int(round(lag_h * 60))}m"
+        df[col_name] = df["tv_on"].rolling(n_steps, min_periods=1).max()
+
+    # ── 4c. Derived physics features ────────────────────────────────────
+    # Heat loss driving force (Newton's law)
+    df["heat_loss_driving_force"] = df["indoor_temp"] - df["AT"]
+
+    # Indoor temp gradient (°C/h)
+    df["indoor_temp_gradient"] = df["indoor_temp"].diff() * steps_per_hour
+
+    # Indoor margin rate of change (°C/h)
+    df["indoor_margin_rate"] = df["indoor_margin"].diff() * steps_per_hour
+
+    # AR momentum: ΔT over 1 cycle
+    df["delta_T_indoor_lag1"] = df["indoor_temp"].diff(1).fillna(0.0)
+
+    # Slab thermal loading trend over 60 min
+    df["d_inlet_temp_60min"] = df["RLT"].diff(steps_per_hour)
+
+    # Binary flag: thermal steady state
+    df["is_equilibrium"] = (df["d_inlet_temp_60min"].abs() < 0.3).astype(float)
+
+    # Rolling 1-hour thermal power
+    df["thermal_power_rolling_1h"] = df["thermal_power_kw"].rolling(
+        steps_per_hour, min_periods=1
+    ).mean()
+
+    # Overshoot indicator: indoor > cooling target
+    df["is_overshoot"] = (df["indoor_temp"] > cooling_target_c).astype(float)
+
+    # Heat pump active — |delta_t| > 1°C indicates flow
+    df["is_hp_active"] = (df["delta_t"].abs() > 1.0).astype(float)
+
+    # Wind × temperature-difference interaction: convective heat loss
+    df["heat_loss_interaction"] = (
+        (df["indoor_temp"] - df["AT"]) * df["wind_speed"]
+    ).fillna(0.0)
+
+    logger.info("Computed HA context + derived physics features")
+
     # Temporal cyclical features from _time
     if "_time" in df.columns:
         ts = pd.to_datetime(df["_time"], utc=True)
@@ -282,6 +377,20 @@ def calibrate_cooling_ml(
     df["hour_cos"] = np.cos(2 * np.pi * hour_frac / 24.0)
     df["doy_sin"]  = np.sin(2 * np.pi * doy / 365.25)
     df["doy_cos"]  = np.cos(2 * np.pi * doy / 365.25)
+
+    # Weekend indicator
+    if "_time" in df.columns:
+        df["is_weekend"] = ts.dt.dayofweek.isin([5, 6]).astype(float)
+    else:
+        df["is_weekend"] = 0.0
+
+    # Passive solar gain proxy: PV power × cos(hour) encodes sun angle
+    df["solar_thermal_proxy"] = df["PV_Generate"] * df["hour_cos"]
+
+    # Continuous shading proxy: overheat-protection active when indoor > 23°C
+    df["shading_proxy"] = (
+        (df["indoor_temp"] - _SHADING_ACTIVATION_TEMP_C).clip(lower=0.0) * df["PV_Generate"]
+    ).fillna(0.0)
 
     # ── 5. Hindcast substitution for forecast features ──────────────────
     # At calibration time we know the future; shift actual values back to
@@ -317,6 +426,14 @@ def calibrate_cooling_ml(
             df[pv_col2] = df[pv_col2].clip(lower=0.0)  # PV can't be negative
     logger.info("Applied forecast noise injection (AT std=0.3√h, PV 8%%√h)")
 
+    # Anticipatory solar: upcoming PV gain minus current (slab thermal lag)
+    if "pv_forecast_2h" in df.columns:
+        df["pv_forecast_delta"] = (
+            df["pv_forecast_2h"] - df["PV_Generate"]
+        ).fillna(0.0)
+    else:
+        df["pv_forecast_delta"] = 0.0
+
     # ── 5c. Cumulative / integration features (Prio 4) ──────────────────
     # Give the model "total energy build-up" features similar to what the
     # trajectory model computes by integrating over time.
@@ -348,6 +465,84 @@ def calibrate_cooling_ml(
     df["slab_stored_heat"] = (df["VLT"] + df["RLT"]) / 2.0 - df["indoor_temp"]
 
     logger.info("Computed cumulative/integration features")
+
+    # ── 5d. Trajectory-derived physics features (vectorized) ────────────
+    # Analytical Newton-decay approximation of what the trajectory simulator
+    # would predict, computed per row using calibrated τ, η, U.  Provides
+    # the ML model with the physics engine's forward-looking expectations.
+    _traj_eta = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
+    _traj_u = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+    _traj_tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+
+    # Try reading calibrated parameters from unified thermal state
+    try:
+        from src.unified_thermal_state import get_thermal_state_manager
+        _state_mgr = get_thermal_state_manager()
+        _get_computed = getattr(_state_mgr, "get_computed_parameters", None)
+        _computed = _get_computed() if callable(_get_computed) else {}
+        if _computed.get("outlet_effectiveness") is not None:
+            _traj_eta = float(_computed["outlet_effectiveness"])
+        if _computed.get("heat_loss_coefficient") is not None:
+            _traj_u = float(_computed["heat_loss_coefficient"])
+        if _computed.get("thermal_time_constant") is not None:
+            _traj_tau = float(_computed["thermal_time_constant"])
+    except Exception:
+        pass  # Use config defaults
+
+    # Guard: τ < 0.1 h is physically impossible for underfloor slab systems
+    if _traj_tau < 0.1:
+        _traj_tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+    if (_traj_eta + _traj_u) < 1e-6:
+        _traj_eta = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
+        _traj_u = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+
+    # Equilibrium temperature: T_eq = (η×VLT + U×AT) / (η + U)
+    _traj_denom = _traj_eta + _traj_u
+    df["_traj_T_eq"] = (
+        _traj_eta * df["VLT"] + _traj_u * df["AT"]
+    ) / _traj_denom
+
+    # Prediction horizon matches label horizon
+    _traj_H = float(label_horizon_h)
+    _traj_steps = int(_traj_H * steps_per_hour)
+
+    # Vectorized trajectory: T(t) = T_eq + (T_indoor - T_eq) × exp(-t/τ)
+    _step_hours = 1.0 / steps_per_hour
+    _exp_first = np.exp(-_step_hours / _traj_tau)
+    df["_traj_step_1"] = df["_traj_T_eq"] + (df["indoor_temp"] - df["_traj_T_eq"]) * _exp_first
+
+    _exp_last = np.exp(-_traj_H / _traj_tau)
+    df["_traj_step_last"] = df["_traj_T_eq"] + (df["indoor_temp"] - df["_traj_T_eq"]) * _exp_last
+
+    # Feature 1: traj_predicted_error — physics predicted miss of cooling target
+    df["traj_predicted_error"] = (df["_traj_step_last"] - cooling_target_c).fillna(0.0)
+
+    # Feature 2: traj_convergence_rate — speed of approach to equilibrium
+    df["traj_convergence_rate"] = (
+        (df["_traj_step_1"] - df["_traj_step_last"]) / max(1, _traj_steps)
+    ).fillna(0.0)
+
+    # Feature 3: traj_reaches_target_hours — analytical time to reach cooling target
+    _ratio = (cooling_target_c - df["_traj_T_eq"]) / (df["indoor_temp"] - df["_traj_T_eq"])
+    _valid_mask = (_ratio > 0) & (_ratio < 1)
+    _reaches_raw = -_traj_tau * np.log(_ratio.where(_valid_mask))
+    df["traj_reaches_target_hours"] = _reaches_raw.clip(lower=0.0, upper=_traj_H).fillna(_traj_H)
+
+    # Feature 4: traj_overshoot_magnitude — predicted overshoot above cooling target
+    _traj_max = df[["indoor_temp", "_traj_T_eq"]].max(axis=1)
+    df["traj_overshoot_magnitude"] = (_traj_max - cooling_target_c).clip(lower=0.0).fillna(0.0)
+
+    # Feature 5: traj_equilibrium_gap — steady-state error (positive = above target = risk)
+    df["traj_equilibrium_gap"] = (df["_traj_T_eq"] - cooling_target_c).fillna(0.0)
+
+    # Cleanup temporary columns
+    df.drop(columns=["_traj_T_eq", "_traj_step_1", "_traj_step_last"], inplace=True)
+
+    logger.info(
+        "Computed trajectory-derived physics features "
+        "(η=%.3f U=%.3f τ=%.2fh H=%.0fh)",
+        _traj_eta, _traj_u, _traj_tau, _traj_H,
+    )
 
     # ── 6. Define feature set ────────────────────────────────────────────
     # The exact columns are saved to metadata; inference reads them back.
@@ -418,12 +613,45 @@ def calibrate_cooling_ml(
         "hour_cos",
         "doy_sin",
         "doy_cos",
+        # HA context features
+        "wind_speed",
+        "living_room_temp",
+        "fireplace_on",
+        "tv_on",
+        # Dynamic lag features
+        "fireplace_lag_30m",
+        "fireplace_lag_1h",
+        "fireplace_lag_2h",
+        "tv_lag_30m",
+        "tv_lag_1h",
+        # Derived physics features
+        "heat_loss_driving_force",
+        "indoor_temp_gradient",
+        "indoor_margin_rate",
+        "delta_T_indoor_lag1",
+        "d_inlet_temp_60min",
+        "is_equilibrium",
+        "thermal_power_rolling_1h",
+        "is_overshoot",
+        "is_hp_active",
+        "is_weekend",
+        "heat_loss_interaction",
+        # Solar / shading features
+        "solar_thermal_proxy",
+        "shading_proxy",
+        "pv_forecast_delta",
         # Cumulative / integration features (Prio 4)
         "cum_pv_forecast_4h",
         "cum_at_excess_4h",
         "max_at_forecast",
         "indoor_momentum",
         "slab_stored_heat",
+        # Trajectory-derived physics features
+        "traj_predicted_error",
+        "traj_convergence_rate",
+        "traj_reaches_target_hours",
+        "traj_overshoot_magnitude",
+        "traj_equilibrium_gap",
     ]
 
     # ── 7. Label computation ────────────────────────────────────────────

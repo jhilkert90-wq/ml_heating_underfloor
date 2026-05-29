@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Cooling ML model: 23 new features** ported from heating model and newly implemented:
+  - HA context features: `wind_speed`, `living_room_temp`, `fireplace_on`, `tv_on` + dynamic rolling lags (`fireplace_lag_30m/1h/2h`, `tv_lag_30m/1h`)
+  - Derived physics features: `heat_loss_driving_force`, `indoor_temp_gradient`, `indoor_margin_rate`, `delta_T_indoor_lag1`, `d_inlet_temp_60min`, `is_equilibrium`, `thermal_power_rolling_1h`, `is_overshoot`, `is_hp_active`, `is_weekend`, `heat_loss_interaction`
+  - Solar/shading features: `solar_thermal_proxy`, `shading_proxy`, `pv_forecast_delta`
+  - Trajectory-derived features: `traj_predicted_error`, `traj_convergence_rate`, `traj_reaches_target_hours`, `traj_overshoot_magnitude`, `traj_equilibrium_gap` — vectorized analytical Newton-decay approximation at calibration, OverheatingPredictor trajectory injection at inference
+- **Cooling HA entity fetch expanded**: `fetch_historical_data_for_calibration(purpose="cooling")` now fetches 11 entities (was 7) — adds wind_speed, fireplace, TV, living_room_temp
+- **Trajectory injection for cooling LGBM inference**: `cycle_routes.py` injects OverheatingPredictor's trajectory result into CoolingMLModel features, enabling physics-ML bridge
+- **Cooling ML Analysis Notebook** (`notebooks/analysis/09_cooling_ml_analysis.ipynb`): Full analysis of overheating classifier with 17 new derivable features, incremental pruning, regression alternative (regression wins: AUC 0.9502 vs 0.9431, F2 0.9492 vs 0.9424), Optuna HPO (AUC 0.9582, MAE 0.0827°C), threshold sensitivity analysis. Key finding: regression approach predicting `delta_indoor_8h` then thresholding at 22.93°C outperforms direct binary classification.
 - **Optimized ML Training Notebook** (`notebooks/analysis/08_heating_ml_optimized.ipynb`): Residualized label architecture with 53 features, outlier filtering, incremental pruning, Optuna HPO, 5-fold TS-CV, SHAP analysis, sensor noise floor analysis, outlet temp adjustment verification
 - **Residualized label as primary architecture**: `adjusted_label = -(T_future - T_current) / S_H`; at inference: `full_correction = model.predict(X) - indoor_margin / S_H`. Achieves adj R²=0.9755, recon R²=0.9042, MAE=0.1277°C
 - **Outlier filtering with forward-looking label contamination**: Removes fireplace (4.4%), window-open (3.4%), PV spikes — 85,078→78,483 rows (7.8% removed). Key enabler for R²>0.90

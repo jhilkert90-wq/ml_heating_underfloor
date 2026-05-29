@@ -656,10 +656,20 @@ def step_pre_cooling(ctx: CycleContext) -> None:
             ctx.cooling_ml_model is not None
             and ctx.cooling_ml_model.is_loaded
         ):
+            # Inject trajectory from OverheatingPredictor so that LGBM model
+            # can use trajectory-derived features (traj_predicted_error, etc.)
+            _lgbm_features = ctx.features_dict
+            if _traj_result and _traj_result.get("trajectory"):
+                _lgbm_features = dict(ctx.features_dict)
+                _lgbm_features["_last_trajectory"] = {
+                    "trajectory": _traj_result["trajectory"],
+                    "max_predicted": _traj_result.get("peak_temp"),
+                    "reaches_target_at": _traj_result.get("peak_hour"),
+                }
             _lgbm_result = ctx.cooling_ml_model.predict_overheating_risk(
                 current_indoor=ctx.prediction_indoor_temp,
                 target_cooling=ctx.target_indoor_temp,
-                features=ctx.features_dict,
+                features=_lgbm_features,
                 climate_mode=ctx.climate_mode,
             )
 

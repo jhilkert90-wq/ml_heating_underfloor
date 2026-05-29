@@ -1,5 +1,37 @@
 # ML Heating System - Current Progress
 
+## ✅ Cooling ML Analysis Notebook + Regression Discovery (2026-05-30)
+
+**Status:** COMPLETED
+
+### Results
+- Created `notebooks/analysis/09_cooling_ml_analysis.ipynb` — full 10-section analysis
+- Added 17 derivable features from existing CSV (no re-calibration needed)
+- **Key finding**: Regression approach (`delta_indoor_8h`) beats binary classifier:
+  - Classifier: AUC=0.9431, F2=0.9424 (61 features after pruning)
+  - Regression: AUC=0.9502, F2=0.9492 (same features)
+  - Optuna-tuned regression: AUC=0.9582, F2=0.9505, MAE=0.0827°C
+- `traj_predicted_error` ranked #8 by importance (new feature)
+- `is_overshoot` has highest label correlation (r=+0.74)
+- Optimal regression threshold: predicted_max > 22.93°C
+
+## ✅ Cooling ML model: 23 new features + trajectory bridge (2026-05-30)
+
+**Status:** COMPLETED
+
+### Changes
+1. **`src/physics_calibration.py`** — Expanded `_cooling_entity_ids` from 7→11 entities (added wind_speed, fireplace, TV, living_room_temp)
+2. **`src/cooling_ml_calibration.py`** — Added 23 new features:
+   - HA context (wind_speed, living_room_temp, fireplace_on + 3 lags, tv_on + 2 lags)
+   - Derived physics (heat_loss_driving_force, indoor_temp_gradient, indoor_margin_rate, delta_T_indoor_lag1, d_inlet_temp_60min, is_equilibrium, thermal_power_rolling_1h, is_overshoot, is_hp_active, is_weekend, heat_loss_interaction)
+   - Solar/shading (solar_thermal_proxy, shading_proxy, pv_forecast_delta)
+   - Trajectory-derived (traj_predicted_error, traj_convergence_rate, traj_reaches_target_hours, traj_overshoot_magnitude, traj_equilibrium_gap) — vectorized analytical Newton-decay
+3. **`src/cooling_ml_model.py`** — Added `_compute_traj_*` helpers + `_extract_feature()` cases for all 23 new features
+4. **`src/cycle_routes.py`** — Inject OverheatingPredictor trajectory into CoolingMLModel features dict
+
+### Test results
+- 1412 passed, 266 cooling tests passed, 0 new failures
+
 ## ✅ PR #73 review follow-up: cooling recovery scope + reliability fixes (2026-05-26)
 
 **Status:** COMPLETED

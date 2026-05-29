@@ -1,5 +1,51 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Cooling ML Analysis Notebook — Regression wins — 2026-05-30
+
+#### **What changed**
+- Created `notebooks/analysis/09_cooling_ml_analysis.ipynb` with 10 analysis sections
+- Added 17 new features derivable from existing CSV columns (trajectory, physics, solar)
+- Compared binary classifier (AUC=0.9431) vs regression (AUC=0.9502) — regression wins on both AUC and F2
+- Optuna-tuned regression: AUC=0.9582, F2=0.9505, MAE=0.0827°C
+- Optimal threshold: predicted_max > 22.93°C (0.07°C below target — safety margin)
+
+#### **Why**
+- Need to validate whether the 23 new features improve the cooling model
+- Regression approach gives continuous temperature prediction → more informative than binary classification
+- Can use regression predictions for proportional pre-cooling decisions
+
+#### **Files modified**
+- `notebooks/analysis/09_cooling_ml_analysis.ipynb` — NEW: full analysis notebook
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+#### **Next steps**
+- Consider switching cooling model from binary to regression in production
+- Re-run calibration with expanded HA fetch to get remaining 6 features (wind, fireplace, TV, living_room_temp)
+- Re-run notebook with full 23-feature dataset for definitive comparison
+
+### ✅ Cooling ML model: 23 new features + trajectory bridge — 2026-05-30
+
+#### **What changed**
+- Expanded cooling HA entity fetch from 7→11 entities (wind_speed, fireplace, TV, living_room_temp)
+- Added 23 new features to cooling calibration: HA context (wind/fireplace/TV/living_room + lags), derived physics (heat_loss_driving_force, gradients, equilibrium flags), solar/shading, and 5 trajectory-derived features using vectorized Newton-decay
+- Added trajectory injection in cycle_routes.py: OverheatingPredictor's trajectory result → CoolingMLModel features dict → enables physics-ML bridge
+- Added all 23 `_extract_feature()` cases + 5 `_compute_traj_*` helpers to cooling_ml_model.py
+
+#### **Why**
+- Cooling model only had 47 features vs heating's 53+. 23 features that existed in heating were never ported to cooling. User identified trajectory features (traj_predicted_error etc.) accidentally implemented only in heating.
+- Trajectory features are arguably MORE important for cooling — `traj_overshoot_magnitude` directly predicts overheating magnitude, `traj_equilibrium_gap > 0` means persistent overheating risk.
+
+#### **Files modified**
+- `src/physics_calibration.py` — `_cooling_entity_ids` expanded
+- `src/cooling_ml_calibration.py` — 23 new features + feature_cols updated
+- `src/cooling_ml_model.py` — `_compute_traj_*` helpers + `_extract_feature()` cases
+- `src/cycle_routes.py` — trajectory injection for LGBM inference
+
+#### **Next steps**
+- Create cooling analysis notebook (09_) to validate improvements with both classification and regression approaches
+- Re-run cooling calibration to generate new training CSV with ~70 features
+- Re-run notebook with expanded features to measure AUC/F2 improvement
+
 ### ✅ PR #73 review follow-up: cooling recovery scope + reliability fixes — 2026-05-26
 
 #### **What changed**

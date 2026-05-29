@@ -598,6 +598,12 @@ def fetch_historical_data_for_calibration(lookback_hours=672, purpose="heating")
             # Optional: thermal_power_kw derivation
             config.FLOW_RATE_ENTITY_ID,
             config.POWER_CONSUMPTION_ENTITY_ID,
+            # Optional: context sensors for ML feature engineering
+            config.WIND_SPEED_ENTITY_ID,
+            config.FIREPLACE_STATUS_ENTITY_ID,
+            config.TV_STATUS_ENTITY_ID,
+            getattr(config, "LIVING_ROOM_TEMP_ENTITY_ID",
+                    "sensor.living_room_temperature"),
         ]
         logging.info(
             "Cooling-only fetch: %d entities (reduced from 15)",
