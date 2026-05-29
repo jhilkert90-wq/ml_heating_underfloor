@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Optimized ML Training Notebook** (`notebooks/analysis/08_heating_ml_optimized.ipynb`): Residualized label architecture with 53 features, outlier filtering, incremental pruning, Optuna HPO, 5-fold TS-CV, SHAP analysis, sensor noise floor analysis, outlet temp adjustment verification
+- **Residualized label as primary architecture**: `adjusted_label = -(T_future - T_current) / S_H`; at inference: `full_correction = model.predict(X) - indoor_margin / S_H`. Achieves adj R²=0.9755, recon R²=0.9042, MAE=0.1277°C
+- **Outlier filtering with forward-looking label contamination**: Removes fireplace (4.4%), window-open (3.4%), PV spikes — 85,078→78,483 rows (7.8% removed). Key enabler for R²>0.90
+- **Incremental PI-based pruning**: Drops features one-by-one (worst PI first, threshold PI<0.001). Removed `shortwave_radiation_wm2` and `pv_roll_1h` — 55→53 features, MAE improved 0.1304→0.1277
+- **Sensor noise floor analysis**: Measured actual sensor resolutions (indoor_temp: 0.002°C, VLT/RLT: 0.02°C, AT: 0.01°C). Label quantization = 0.004°C — sensor accuracy is NOT the bottleneck
+- **5 new engineered features**: `cumulative_Q_wp_4h` (142 splits), `AT_forecast_trend`, `thermal_momentum`, `indoor_accel`, `pv_cumulative_4h`
+- **Outlet temperature adjustment verification**: Worked examples showing exact correction formula for undershoot/overshoot scenarios (±1.22°C per 0.6°C margin)
+- **Heating ML Standalone Training Notebook** (`notebooks/analysis/07_heating_ml_standalone.ipynb`): Offline LightGBM training with HA_LOG-style output, commentable feature list for ablation, leave-one-out and group ablation analysis, `indoor_temp` dominance diagnosis with decorrelation experiments, SHAP analysis (optional), residual-based missing-feature analysis, and full diagnostic dashboard
+- **Open-Meteo solar radiation enrichment** in notebook: Fetches historical `shortwave_radiation` (W/m²) from Open-Meteo archive API for 48.928°N/10.069°E, interpolates hourly data to CSV resolution (~6 min), adds `shortwave_radiation_wm2` as 52nd feature. Includes HA REST sensor configuration for live integration.
+- **Residualized label experiment** (Section 11c-bis): Subtracts trivial `indoor_margin/S_H` component to isolate temperature-change perturbation; reveals `living_room_temp` as hidden dominant proxy
+- **New engineered features experiment** (Section 15b): Tests `cumulative_Q_wp_4h` (112 splits), `AT_forecast_trend`, `indoor_accel`, `pv_cumulative_4h`, `thermal_momentum` — combined MAE improvement -0.0035
+
+### Changed
+- **Feature selection refined**: Removed `indoor_temp` and `living_room_temp` (redundant with `indoor_margin` in residualized framework); kept `indoor_margin` (physics input) and `is_overshoot` (HP mode signal)
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
