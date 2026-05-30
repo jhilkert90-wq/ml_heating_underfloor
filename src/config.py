@@ -683,6 +683,25 @@ PRE_COOL_MIN_OUTDOOR_FORECAST_C: float = float(
 # Tooltip: BOTH — controls which method is active vs. shadow.
 PRE_COOL_MODEL_TYPE: str = os.getenv("PRE_COOL_MODEL_TYPE", "trajectory")
 
+# Proportional pre-cooling: scale offset by regression-predicted overshoot.
+PRE_COOL_PROPORTIONAL: bool = (
+    os.getenv("PRE_COOL_PROPORTIONAL", "true").lower() == "true"
+)
+PRE_COOL_MIN_OFFSET_K: float = float(
+    os.getenv("PRE_COOL_MIN_OFFSET_K", "0.2")
+)
+PRE_COOL_MAX_OFFSET_K: float = float(
+    os.getenv("PRE_COOL_MAX_OFFSET_K", "1.0")
+)
+PRE_COOL_OVERSHOOT_GAIN: float = float(
+    os.getenv("PRE_COOL_OVERSHOOT_GAIN", "0.7")
+)
+# Dual-output strategy: "classifier_gate" (conservative, default) or
+# "either_triggers" (aggressive, catches more events).
+PRE_COOL_DUAL_OUTPUT_STRATEGY: str = os.getenv(
+    "PRE_COOL_DUAL_OUTPUT_STRATEGY", "classifier_gate"
+)
+
 _UNIFIED_STATE_DIR: str = os.path.dirname(
     os.getenv("UNIFIED_STATE_FILE", "/opt/ml_heating/unified_thermal_state.json")
 )
@@ -695,6 +714,11 @@ COOLING_ML_MODEL_PATH: str = os.getenv(
 COOLING_ML_METADATA_PATH: str = os.getenv(
     "COOLING_ML_METADATA_PATH",
     os.path.join(_UNIFIED_STATE_DIR, "cooling_ml_metadata.json"),
+)
+# Path to trained LightGBM regressor (joblib) for dual-output mode.
+COOLING_ML_REGRESSOR_PATH: str = os.getenv(
+    "COOLING_ML_REGRESSOR_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "cooling_ml_regressor.joblib"),
 )
 # Path to observation buffer JSON for sliding-window online learning.
 # Tooltip: MODEL-BASED only.

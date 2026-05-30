@@ -477,9 +477,11 @@ class CoolingMLModel:
         self._steps_per_hour = steps_per_hour
 
         self._model: Any = None
+        self._reg_model: Any = None
         self._metadata: dict[str, Any] = {}
         self._feature_cols: list[str] = []
         self._threshold: float = 0.5
+        self._reg_threshold: float = 23.0
         self._loaded = False
 
     # ------------------------------------------------------------------
@@ -510,13 +512,47 @@ class CoolingMLModel:
                 self._metadata = json.load(fh)
             self._feature_cols = self._metadata.get("feature_cols", [])
             self._threshold = float(self._metadata.get("threshold", 0.5))
+            self._reg_threshold = float(
+                self._metadata.get("regression_threshold", 23.0)
+            )
             self._loaded = True
+
+            # Load regression model if available (dual-output mode)
+            self._reg_model = None
+            reg_path = self._metadata.get("reg_model_path", "")
+            if not reg_path:
+                # Derive from classifier path
+                _derived = self._model_path.replace(
+                    "cooling_ml_model.joblib", "cooling_ml_regressor.joblib"
+                )
+                # Only use derived path if the replacement actually changed something
+                if _derived != self._model_path:
+                    reg_path = _derived
+            if os.path.exists(reg_path):
+                try:
+                    self._reg_model = joblib.load(reg_path)
+                    logger.info(
+                        "CoolingMLModel: regressor loaded from %s "
+                        "(threshold=%.2f°C MAE=%.4f)",
+                        os.path.basename(reg_path),
+                        self._reg_threshold,
+                        self._metadata.get("regression_mae", float("nan")),
+                    )
+                except Exception:
+                    logger.warning(
+                        "CoolingMLModel: failed to load regressor from %s "
+                        "— classifier-only mode",
+                        reg_path,
+                    )
+
             logger.info(
-                "CoolingMLModel: loaded %s | features=%d threshold=%.4f AUC=%.4f",
+                "CoolingMLModel: loaded %s | features=%d threshold=%.4f AUC=%.4f"
+                " | regressor=%s",
                 os.path.basename(self._model_path),
                 len(self._feature_cols),
                 self._threshold,
                 self._metadata.get("roc_auc", float("nan")),
+                "yes" if self._reg_model is not None else "no",
             )
             return True
         except Exception:
@@ -571,7 +607,7 @@ class CoolingMLModel:
             return no_risk
 
         try:
-            np = _load_numpy()
+            import pandas as pd
             label_horizon_h = int(self._metadata.get("label_horizon_h", 8))
             vec = build_feature_vector(
                 self._feature_cols,
@@ -581,7 +617,7 @@ class CoolingMLModel:
                 self._steps_per_hour,
                 label_horizon_h,
             )
-            X = np.array(vec, dtype=float).reshape(1, -1)
+            X = pd.DataFrame([vec], columns=self._feature_cols)
             proba = float(self._model.predict_proba(X)[0, 1])
         except Exception:
             logger.exception("CoolingMLModel: inference failed")
@@ -597,20 +633,64 @@ class CoolingMLModel:
         at_now = float(features.get("outdoor_temp", 0.0))
         pv_now = float(features.get("pv_now", 0.0))
 
-        # ── should_cool_now logic (mirrors OverheatingPredictor) ───────
+        # ── Regression prediction (dual-output) ───────────────────────
+        delta_pred = 0.0
+        predicted_max = current_indoor
+        reg_risk = False
+        if self._reg_model is not None:
+            try:
+                delta_pred = float(self._reg_model.predict(X)[0])
+                predicted_max = current_indoor + delta_pred
+                reg_risk = predicted_max > self._reg_threshold
+            except Exception:
+                logger.debug("CoolingMLModel: regression prediction failed")
+
+        # ── should_cool_now logic (dual-output strategy) ─────────────
+        dual_strategy = str(
+            getattr(config, "PRE_COOL_DUAL_OUTPUT_STRATEGY", "classifier_gate")
+        )
         should_cool_now = False
         reason_parts: list[str] = [f"LGBM p={proba:.3f} (thr={self._threshold:.3f})"]
+        if self._reg_model is not None:
+            reason_parts.append(
+                f"reg Δ={delta_pred:+.2f} max={predicted_max:.1f}°C"
+            )
 
-        if current_indoor > target_cooling:
+        if dual_strategy not in ("classifier_gate", "either_triggers"):
+            raise ValueError(
+                f"Invalid PRE_COOL_DUAL_OUTPUT_STRATEGY: {dual_strategy!r}. "
+                "Must be 'classifier_gate' or 'either_triggers'."
+            )
+
+        reactive = current_indoor > target_cooling
+        if reactive:
             should_cool_now = True
             reason_parts.append(
                 f"room {current_indoor:.1f}°C > target {target_cooling:.1f}°C (reactive)"
             )
+        elif self._reg_model is not None:
+            # Dual-output decision
+            if dual_strategy == "either_triggers":
+                # Aggressive: either model can trigger pre-cooling
+                should_cool_now = risk or reg_risk
+            else:
+                # classifier_gate (default): classifier must confirm risk;
+                # regression provides intensity only
+                should_cool_now = risk
+
+            if risk and not reg_risk:
+                reason_parts.append("classifier⬆ reg⬇ (disagree)")
+            elif not risk and reg_risk:
+                reason_parts.append("classifier⬇ reg⬆ (disagree)")
+
+            if should_cool_now:
+                reason_parts.append(
+                    f"dual-output [{dual_strategy}] → pre-cool"
+                )
+            else:
+                reason_parts.append("no overheating risk predicted")
         elif risk:
-            # Model predicts overheating within PRE_COOL_LEAD_TIME_HOURS
-            # (that is the label window used at training time).  A positive
-            # prediction already implies imminent overheating, so we act now
-            # without an additional lead-time gate.
+            # Classifier-only mode (no regression model)
             should_cool_now = True
             reason_parts.append(
                 f"model predicts overheating (p={proba:.3f} > {self._threshold:.3f})"
@@ -619,12 +699,15 @@ class CoolingMLModel:
             reason_parts.append("no overheating risk predicted")
 
         peak_hour = (lead_time / 2.0) if risk else horizon_h
-        # Rough peak_temp proxy: current indoor + margin deficit as lower bound
-        peak_temp_proxy = max(current_indoor, trigger_threshold + 0.1) if risk else current_indoor
+        # Use regression prediction for peak_temp when available
+        if self._reg_model is not None:
+            peak_temp = predicted_max
+        else:
+            peak_temp = max(current_indoor, trigger_threshold + 0.1) if risk else current_indoor
 
         result: dict[str, Any] = {
             "risk": risk,
-            "peak_temp": peak_temp_proxy,
+            "peak_temp": peak_temp,
             "peak_hour": peak_hour,
             "hours_until_peak": peak_hour,
             "should_cool_now": should_cool_now,
@@ -634,6 +717,9 @@ class CoolingMLModel:
             "peak_outdoor": at_now,
             "total_pv_forecast": pv_now,
             "lgbm_proba": proba,
+            "predicted_delta": delta_pred,
+            "predicted_max_temp": predicted_max,
+            "reg_risk": reg_risk,
         }
 
         if should_cool_now:
@@ -668,4 +754,7 @@ class CoolingMLModel:
             "peak_outdoor": float(features.get("outdoor_temp", 0.0)),
             "total_pv_forecast": float(features.get("pv_now", 0.0)),
             "lgbm_proba": 0.0,
+            "predicted_delta": 0.0,
+            "predicted_max_temp": 0.0,
+            "reg_risk": False,
         }

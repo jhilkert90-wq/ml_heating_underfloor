@@ -232,6 +232,21 @@ configuration:
       no model file required). 'lgbm_model' = trained LightGBM classifier. The inactive
       strategy runs in shadow mode and logs its predictions for comparison. Requires
       restart. [BOTH]
+  pre_cool_dual_output_strategy:
+    name: '[ML Pre-Cooling] Dual-Output Strategy'
+    description: "Controls how classifier and regression model combine decisions.
+      'classifier_gate' (recommended) = only pre-cools when the F1-balanced classifier
+      confirms risk — conservative, fewer false triggers. 'either_triggers' = pre-cools
+      when either model detects risk — catches more overheating events but may trigger
+      unnecessary pre-cooling. Both modes use the regression model's predicted overshoot
+      for proportional cooling intensity. [BOTH]"
+  pre_cool_proportional:
+    name: '[ML Pre-Cooling] Proportional Intensity'
+    description: "When enabled, scales the pre-cooling offset based on the regression
+      model's predicted overshoot magnitude instead of using a fixed offset. Bounded
+      between 0.2K and 1.0K. Requires a trained regression model (calibration will
+      train one automatically). Falls back to fixed offset when disabled or when no
+      regression model is available. Default: true. [BOTH]"
   cooling_ml_min_training_samples:
     name: '[ML Pre-Cooling] Minimum Training Samples'
     description: 'Minimum number of labeled cooling observations in the buffer before

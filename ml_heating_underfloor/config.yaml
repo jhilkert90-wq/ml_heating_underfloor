@@ -142,6 +142,12 @@ options:
   # "lgbm_model" = trained LightGBM classifier (MODEL-BASED: requires calibration run).
   # Requires restart to take effect.
   pre_cool_model_type: "trajectory"
+  # Dual-output strategy: how classifier and regression model combine decisions.
+  # "classifier_gate" (default, conservative) = only pre-cools when classifier confirms risk.
+  # "either_triggers" (aggressive) = pre-cools when either model detects risk.
+  pre_cool_dual_output_strategy: "classifier_gate"
+  # Enable proportional pre-cooling intensity based on regression-predicted overshoot.
+  pre_cool_proportional: true
   # Minimum labeled cooling observations required before first train / retrain.
   # [MODEL-BASED only] Default: 200.
   cooling_ml_min_training_samples: 200
@@ -619,6 +625,8 @@ schema:
   pre_cool_min_outdoor_forecast_c: "float(15.0,35.0)"
   # ML-Based Pre-Cooling Model
   pre_cool_model_type: "list(trajectory|lgbm_model)"
+  pre_cool_dual_output_strategy: "list(classifier_gate|either_triggers)"
+  pre_cool_proportional: "bool"
   cooling_ml_min_training_samples: "int(50,2000)"
   cooling_ml_retrain_trigger_k: "int(10,500)"
   cooling_ml_buffer_max_n: "int(100,5000)"

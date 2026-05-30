@@ -583,6 +583,12 @@ def convert_addon_to_env(config):
 
         # --- ML-Based Pre-Cooling Model (LightGBM Overheating Classifier) ---
         'PRE_COOL_MODEL_TYPE': config.get('pre_cool_model_type', 'trajectory'),
+        'PRE_COOL_DUAL_OUTPUT_STRATEGY': config.get(
+            'pre_cool_dual_output_strategy', 'classifier_gate'
+        ),
+        'PRE_COOL_PROPORTIONAL': str(
+            config.get('pre_cool_proportional', True)
+        ).lower(),
         'COOLING_ML_MIN_TRAINING_SAMPLES': str(
             config.get('cooling_ml_min_training_samples', 200)
         ),

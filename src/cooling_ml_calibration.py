@@ -676,6 +676,9 @@ def calibrate_cooling_ml(
         .astype("Int8")             # pandas nullable Int8 preserves pd.NA
     )
 
+    # Regression target: delta_indoor_8h = max(indoor[t:t+8h]) - indoor[t]
+    df["delta_indoor_8h"] = (_label_raw - df["indoor_temp"]).where(_label_raw.notna())
+
     # ── 8. Drop rows with NaN in any feature or label ───────────────────
     # Guard: only keep columns that exist and have >5% coverage
     available_features = []
@@ -693,7 +696,7 @@ def calibrate_cooling_ml(
         logger.error("Too few usable feature columns (%d) — aborting", len(available_features))
         return False
 
-    df_train = df[available_features + ["label"]].dropna().copy()
+    df_train = df[available_features + ["label", "delta_indoor_8h"]].dropna().copy()
     df_train["label"] = df_train["label"].astype(int)
     feature_cols = available_features  # update to what was actually available
 
@@ -719,9 +722,9 @@ def calibrate_cooling_ml(
     df_val   = df_train.iloc[-n_val:].copy()
     df_fit   = df_train.iloc[:-n_val].copy()
 
-    X_fit = df_fit[feature_cols].values.astype(float)
+    X_fit = df_fit[feature_cols].astype(float)
     y_fit = df_fit["label"].values
-    X_val = df_val[feature_cols].values.astype(float)
+    X_val = df_val[feature_cols].astype(float)
     y_val = df_val["label"].values
 
     # ── 9b. Temporal boundary sample weighting (Prio 6) ────────────────
@@ -785,16 +788,16 @@ def calibrate_cooling_ml(
         callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(50)],
     )
 
-    # ── 11. Threshold optimisation (Prio 2: F-beta with β=2, cross-validated)
-    # Use recall-biased threshold to ensure early activation.
+    # ── 11. Threshold optimisation (Prio 2: F-beta with β=1, cross-validated)
+    # Use balanced F1 threshold for precision/recall trade-off.
     # Cross-validate: split training data into 3 temporal folds, find best
     # threshold on each, then average.
     proba_val = model.predict_proba(X_val)[:, 1]
-    threshold, best_fbeta = _optimise_threshold_fbeta(y_val, proba_val, beta=2.0)
-    logger.info("Optimal F2-threshold=%.4f (val F2=%.4f)", threshold, best_fbeta)
+    threshold, best_fbeta = _optimise_threshold_fbeta(y_val, proba_val, beta=1.0)
+    logger.info("Optimal F1-threshold=%.4f (val F1=%.4f)", threshold, best_fbeta)
 
     # Cross-validated threshold confirmation on training folds
-    cv_thresholds = _cross_validate_threshold(X_fit, y_fit, model, beta=2.0, n_folds=3)
+    cv_thresholds = _cross_validate_threshold(X_fit, y_fit, model, beta=1.0, n_folds=3)
     if cv_thresholds:
         cv_mean = float(np.mean(cv_thresholds))
         # Weighted average: CV thresholds are more robust (in-sample but
@@ -870,16 +873,46 @@ def calibrate_cooling_ml(
     )
     final_model = calibrated_model if use_calibrated else model
     final_auc = calibrated_auc if use_calibrated else auc
+    proba_cal_full = None  # initialise before branch; set inside if use_calibrated
     if use_calibrated:
         # Re-optimise threshold on calibrated probabilities over the full val set
         proba_cal_full = calibrated_model.predict_proba(X_val)[:, 1]
-        threshold, best_fbeta = _optimise_threshold_fbeta(y_val, proba_cal_full, beta=2.0)
+        raw_threshold = threshold
+        threshold, best_fbeta = _optimise_threshold_fbeta(y_val, proba_cal_full, beta=1.0)
+        # Log isotonic threshold shift
+        shift = threshold - raw_threshold
+        logger.info(
+            "Isotonic threshold shift: raw=%.4f → calibrated=%.4f (Δ=%+.4f)",
+            raw_threshold, threshold, shift,
+        )
+        if abs(shift) > 0.5 * raw_threshold and raw_threshold > 0.01:
+            logger.warning(
+                "⚠️ Large isotonic threshold shift: %.1f%%",
+                100 * abs(shift) / raw_threshold,
+            )
         logger.info(
             "Using CALIBRATED model (eval AUC=%.4f) with threshold=%.4f",
             calibrated_auc, threshold,
         )
     else:
         logger.info("Using RAW model (calibration did not improve AUC)")
+
+    # ── 11c. Diagnostic F1 / precision / recall summary ─────────────────
+    _diag_proba = proba_cal_full if (use_calibrated and proba_cal_full is not None) else proba_val
+    _diag_pred = (_diag_proba >= threshold).astype(int)
+    _tp = int(((_diag_pred == 1) & (y_val == 1)).sum())
+    _fp = int(((_diag_pred == 1) & (y_val == 0)).sum())
+    _fn = int(((_diag_pred == 0) & (y_val == 1)).sum())
+    _prec = _tp / max(1, _tp + _fp)
+    _rec = _tp / max(1, _tp + _fn)
+    _f1 = 2.0 * _prec * _rec / max(1e-9, _prec + _rec)
+    _pred_pos_rate = 100.0 * _diag_pred.mean()
+    _true_pos_rate = 100.0 * y_val.mean()
+    logger.info(
+        "Diagnostics: F1=%.4f | Precision=%.4f | Recall=%.4f | "
+        "Predicted pos rate=%.1f%% (true=%.1f%%)",
+        _f1, _prec, _rec, _pred_pos_rate, _true_pos_rate,
+    )
 
     # ── 12. Save model + metadata ───────────────────────────────────────
     try:
@@ -902,7 +935,7 @@ def calibrate_cooling_ml(
         "feature_cols": feature_cols,
         "n_features": len(feature_cols),
         "threshold": threshold,
-        "val_f2": best_fbeta,
+        "val_f1": best_fbeta,
         "roc_auc": final_auc,
         "roc_auc_raw": auc,
         "calibrated": use_calibrated,
@@ -917,10 +950,79 @@ def calibrate_cooling_ml(
         "cooling_target_c": cooling_target_c,
         "lookback_hours": lookback_hours,
         "lgb_params": lgb_params,
-        "threshold_method": "f2_cross_validated",
+        "threshold_method": "f1_cross_validated",
         "noise_injection": True,
         "temporal_weighting": True,
     }
+
+    # ── 12b. Train LGBMRegressor on delta_indoor_8h ────────────────────
+    reg_model_path = model_path.replace(
+        "cooling_ml_model.joblib", "cooling_ml_regressor.joblib"
+    )
+    try:
+        y_fit_reg = df_fit["delta_indoor_8h"].values.astype(float)
+        y_val_reg = df_val["delta_indoor_8h"].values.astype(float)
+
+        lgb_params_reg = {
+            "objective": "regression_l1",
+            "metric": "mae",
+            "n_estimators": 300,
+            "learning_rate": 0.05,
+            "max_depth": 6,
+            "num_leaves": 31,
+            "min_child_samples": 20,
+            "random_state": 42,
+            "n_jobs": -1,
+            "verbose": -1,
+        }
+        reg_model = lgb.LGBMRegressor(**lgb_params_reg)
+        reg_model.fit(
+            X_fit, y_fit_reg,
+            eval_set=[(X_val, y_val_reg)],
+            callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(50)],
+        )
+
+        # Evaluate regression
+        from sklearn.metrics import mean_absolute_error  # type: ignore
+        delta_pred_val = reg_model.predict(X_val)
+        reg_mae = float(mean_absolute_error(y_val_reg, delta_pred_val))
+
+        # Derive binary risk from regression: risk = indoor + Δ > threshold
+        indoor_val = df_val["indoor_temp"].values.astype(float)
+        predicted_max_val = indoor_val + delta_pred_val
+        reg_threshold, reg_f1 = _optimise_regression_threshold(
+            y_val, indoor_val, delta_pred_val, cooling_target_c,
+        )
+        # AUC of regression used as classifier (ranking by delta_pred)
+        try:
+            reg_auc = float(roc_auc_score(y_val, delta_pred_val))
+        except Exception:
+            reg_auc = float("nan")
+
+        logger.info(
+            "Regressor: MAE=%.4f | AUC=%.4f | reg_threshold=%.2f°C | F1=%.4f",
+            reg_mae, reg_auc, reg_threshold, reg_f1,
+        )
+
+        # Save regression model
+        tmp_reg = reg_model_path + ".tmp"
+        joblib.dump(reg_model, tmp_reg)
+        os.replace(tmp_reg, reg_model_path)
+
+        metadata["regression_threshold"] = reg_threshold
+        metadata["regression_mae"] = reg_mae
+        metadata["regression_auc"] = reg_auc
+        metadata["regression_f1"] = reg_f1
+        metadata["model_approach"] = "dual"
+        metadata["reg_model_path"] = reg_model_path
+        logger.info("Regressor saved → %s", reg_model_path)
+
+    except Exception:
+        logger.exception(
+            "Regression model training failed — classifier-only mode"
+        )
+        metadata["model_approach"] = "classifier_only"
+
     tmp_meta = metadata_path + ".tmp"
     with open(tmp_meta, "w", encoding="utf-8") as fh:
         json.dump(metadata, fh, indent=2, default=_json_default)
@@ -971,6 +1073,34 @@ def _optimise_threshold_fbeta(y_true, proba, beta: float = 2.0, n_points: int = 
 def _optimise_threshold(y_true, proba, n_points: int = 200) -> tuple[float, float]:
     """Find threshold that maximises F1 score on the given split (legacy)."""
     return _optimise_threshold_fbeta(y_true, proba, beta=1.0, n_points=n_points)
+
+
+def _optimise_regression_threshold(
+    y_true, indoor_temp, delta_pred, cooling_target: float, n_points: int = 200
+) -> tuple[float, float]:
+    """Find temperature threshold on predicted_max that maximises F1.
+
+    Predicted max = indoor_temp + delta_pred.
+    Risk = predicted_max > threshold.
+    Sweeps thresholds around the cooling target to find the F1-optimal one.
+    """
+    import numpy as np
+
+    predicted_max = indoor_temp + delta_pred
+    best_thr = cooling_target
+    best_f1 = 0.0
+    for thr in np.linspace(cooling_target - 2.0, cooling_target + 2.0, n_points):
+        y_pred = (predicted_max > thr).astype(int)
+        tp = int(((y_pred == 1) & (y_true == 1)).sum())
+        fp = int(((y_pred == 1) & (y_true == 0)).sum())
+        fn = int(((y_pred == 0) & (y_true == 1)).sum())
+        prec = tp / max(1, tp + fp)
+        rec = tp / max(1, tp + fn)
+        f1 = 2.0 * prec * rec / max(1e-9, prec + rec)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_thr = float(thr)
+    return best_thr, best_f1
 
 
 def _cross_validate_threshold(

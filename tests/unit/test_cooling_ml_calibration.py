@@ -299,13 +299,21 @@ class TestEndToEndCalibration:
         ])
         mock_lgb_cls.return_value = mock_model
 
+        # Create a mock LGBMRegressor
+        mock_lgb_reg_cls = MagicMock()
+        mock_reg_model = MagicMock()
+        mock_reg_model.predict.side_effect = lambda X: np.random.rand(X.shape[0]) * 0.5
+        mock_lgb_reg_cls.return_value = mock_reg_model
+
         mock_lgb = MagicMock()
         mock_lgb.LGBMClassifier = mock_lgb_cls
+        mock_lgb.LGBMRegressor = mock_lgb_reg_cls
         mock_lgb.early_stopping.return_value = MagicMock()
         mock_lgb.log_evaluation.return_value = MagicMock()
 
         mock_joblib = _make_mock_joblib()
         mock_roc_auc = MagicMock(return_value=0.85)
+        mock_mae = MagicMock(return_value=0.08)
 
         # Patch attributes on the real src.config since `from . import config`
         # resolves to src.config, not sys.modules["config"]
@@ -321,7 +329,10 @@ class TestEndToEndCalibration:
             with patch.dict("sys.modules", {
                 "lightgbm": mock_lgb,
                 "joblib": mock_joblib,
-                "sklearn.metrics": MagicMock(roc_auc_score=mock_roc_auc),
+                "sklearn.metrics": MagicMock(
+                    roc_auc_score=mock_roc_auc,
+                    mean_absolute_error=mock_mae,
+                ),
                 "physics_calibration": mock_physics_cal,
                 "src.physics_calibration": mock_physics_cal,
             }):
@@ -347,20 +358,34 @@ class TestEndToEndCalibration:
             meta = json.load(f)
         expected_keys = {
             "trained_at", "feature_cols", "n_features", "threshold",
-            "val_f2", "roc_auc", "n_train", "n_val", "n_pos", "n_neg",
+            "val_f1", "roc_auc", "n_train", "n_val", "n_pos", "n_neg",
             "scale_pos_weight", "label_horizon_h", "forecast_horizon_h",
             "steps_per_hour", "cooling_target_c", "lookback_hours", "lgb_params",
             "calibrated", "threshold_method", "noise_injection", "temporal_weighting",
+            "model_approach",
         }
         assert expected_keys.issubset(set(meta.keys()))
 
+    def test_regression_metadata_keys(self, model_dir):
+        """Metadata JSON contains regression keys when dual model is trained."""
+        result, _, meta_path, _, _ = self._run_calibration(model_dir)
+        assert result is True
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        if meta.get("model_approach") == "dual":
+            regression_keys = {
+                "regression_threshold", "regression_mae",
+                "regression_auc", "regression_f1",
+            }
+            assert regression_keys.issubset(set(meta.keys()))
+
     def test_joblib_dump_called(self, model_dir):
-        """joblib.dump is called with the trained model."""
+        """joblib.dump is called for classifier (and regressor if dual mode)."""
         result, model_path, _, mock_joblib, _ = self._run_calibration(model_dir)
         assert result is True
-        mock_joblib.dump.assert_called_once()
-        # First arg is the model, second is the temp path
-        call_args = mock_joblib.dump.call_args
+        assert mock_joblib.dump.call_count >= 1
+        # First call is the classifier; check temp path
+        call_args = mock_joblib.dump.call_args_list[0]
         assert model_path + ".tmp" == call_args[0][1]
 
     def test_lgbm_fit_called_with_eval_set(self, model_dir):
@@ -405,8 +430,14 @@ class TestEndToEndCalibration:
         ])
         mock_lgb_cls.return_value = mock_model
 
+        mock_lgb_reg_cls = MagicMock()
+        mock_reg_model = MagicMock()
+        mock_reg_model.predict.side_effect = lambda X: np.random.rand(X.shape[0]) * 0.5
+        mock_lgb_reg_cls.return_value = mock_reg_model
+
         mock_lgb = MagicMock()
         mock_lgb.LGBMClassifier = mock_lgb_cls
+        mock_lgb.LGBMRegressor = mock_lgb_reg_cls
         mock_lgb.early_stopping.return_value = MagicMock()
         mock_lgb.log_evaluation.return_value = MagicMock()
 
@@ -420,7 +451,10 @@ class TestEndToEndCalibration:
             with patch.dict("sys.modules", {
                 "lightgbm": mock_lgb,
                 "joblib": _make_mock_joblib(),
-                "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.9)),
+                "sklearn.metrics": MagicMock(
+                    roc_auc_score=MagicMock(return_value=0.9),
+                    mean_absolute_error=MagicMock(return_value=0.08),
+                ),
                 "physics_calibration": mock_physics_cal,
                 "src.physics_calibration": mock_physics_cal,
             }):

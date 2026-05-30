@@ -760,23 +760,48 @@ def step_pre_cooling(ctx: CycleContext) -> None:
                     )
 
         # Apply pre-cool target shift
+        _offset = 0.0  # initialise; set below if should_cool_now
         if (
             ctx.pre_cool_result.get("should_cool_now")
             and ctx.prediction_indoor_temp <= ctx.target_indoor_temp
         ):
-            _offset = float(
-                getattr(config, "PRE_COOL_TARGET_OFFSET_K", 0.5)
+            # Proportional offset from regression (if available), else fixed
+            _use_proportional = (
+                getattr(config, "PRE_COOL_PROPORTIONAL", True)
+                and ctx.pre_cool_result.get("predicted_delta", 0.0) > 0.0
             )
+            if _use_proportional:
+                _predicted_max = float(
+                    ctx.pre_cool_result.get("predicted_max_temp", 0)
+                )
+                _overshoot = _predicted_max - ctx.target_indoor_temp
+                _gain = float(
+                    getattr(config, "PRE_COOL_OVERSHOOT_GAIN", 0.7)
+                )
+                _min_k = float(
+                    getattr(config, "PRE_COOL_MIN_OFFSET_K", 0.2)
+                )
+                _max_k = float(
+                    getattr(config, "PRE_COOL_MAX_OFFSET_K", 1.0)
+                )
+                _offset = max(_min_k, min(_max_k, _overshoot * _gain))
+            else:
+                _offset = float(
+                    getattr(config, "PRE_COOL_TARGET_OFFSET_K", 0.5)
+                )
             _original_target = ctx.target_indoor_temp
             ctx.target_indoor_temp = ctx.prediction_indoor_temp - _offset
             ctx.pre_cool_active = True
             logging.info(
                 "❄️ PRE-COOL [%s]: target shifted %.1f → %.1f°C "
-                "(room %.1f°C, predicted peak %.1f°C in %.1fh). Reason: %s",
+                "(room %.1f°C, offset=%.2fK%s, predicted peak %.1f°C in %.1fh). "
+                "Reason: %s",
                 ctx.cooling_ml_model_type,
                 _original_target,
                 ctx.target_indoor_temp,
                 ctx.prediction_indoor_temp,
+                _offset,
+                " [proportional]" if _use_proportional else " [fixed]",
                 ctx.pre_cool_result.get("peak_temp", 0),
                 ctx.pre_cool_result.get("peak_hour", 0),
                 ctx.pre_cool_result.get("reason", ""),
@@ -793,6 +818,10 @@ def step_pre_cooling(ctx: CycleContext) -> None:
                     ctx.pre_cool_result.get("peak_hour", 0)
                 ),
                 pre_cool_risk=bool(ctx.pre_cool_result.get("risk", False)),
+                pre_cool_offset_k=float(_offset) if ctx.pre_cool_active else 0.0,
+                pre_cool_predicted_max=float(
+                    ctx.pre_cool_result.get("predicted_max_temp", 0)
+                ) if ctx.pre_cool_active else 0.0,
             )
         except Exception:
             pass

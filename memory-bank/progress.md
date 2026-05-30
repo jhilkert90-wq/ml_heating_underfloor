@@ -1,5 +1,81 @@
 # ML Heating System - Current Progress
 
+## ✅ Code Review: Dual-Output Cooling ML (2026-05-31)
+
+**Status:** COMPLETED — 5 blocking bugs fixed, 1393 tests pass
+
+### Issues Found & Fixed
+1. **`classifier_gate` logic bug** (cooling_ml_model.py): `not self._reg_model` always False inside dual branch → fixed to use `risk` alone as gate
+2. **`_no_risk_result` missing keys** (cooling_ml_model.py): Added `predicted_delta`, `predicted_max_temp`, `reg_risk` to early-exit dict
+3. **`proba_cal_full` NameError** (cooling_ml_calibration.py): Undefined when `use_calibrated=False`; initialised before branch
+4. **`_offset` unbound** (cycle_routes.py): Initialised `_offset = 0.0` before conditional block
+5. **No `ValueError` on invalid strategy** (cooling_ml_model.py): Added validation for `PRE_COOL_DUAL_OUTPUT_STRATEGY`
+
+### Files Changed
+- `src/cooling_ml_model.py` — 3 fixes (classifier_gate logic, _no_risk_result keys, strategy validation)
+- `src/cooling_ml_calibration.py` — 1 fix (proba_cal_full init)
+- `src/cycle_routes.py` — 1 fix (_offset init)
+
+## ✅ Cooling ML: Dual-Output Production Implementation (2026-05-31)
+
+**Status:** COMPLETED — All 6 phases implemented, 1393 tests pass
+
+### Implementation Summary
+- **Phase 1**: Fixed sklearn feature-name warnings — inference uses `pd.DataFrame` instead of `np.array`; calibration trains with DataFrames to preserve feature names
+- **Phase 2**: Added LGBMRegressor training on `delta_indoor_8h` alongside classifier; saves `cooling_ml_regressor.joblib` with threshold/MAE/AUC in metadata
+- **Phase 3**: `CoolingMLModel.load()` loads regressor with graceful fallback; `predict_overheating_risk()` returns `predicted_delta`, `predicted_max_temp`, `reg_risk`
+- **Phase 4**: Proportional pre-cooling offset `clip(overshoot × 0.7, 0.2K, 1.0K)` replaces fixed 0.5K; controlled by `PRE_COOL_PROPORTIONAL`
+- **Phase 5**: Dual-output strategy selector (`classifier_gate`/`either_triggers`) in config + HA dropdown + translations
+- **Phase 6**: Isotonic threshold shift logging, F1/precision/recall diagnostics after calibration
+
+### Files Changed
+- `src/cooling_ml_model.py` — regression loading, dual-output inference, DataFrame predict
+- `src/cooling_ml_calibration.py` — regression training, diagnostics, DataFrame training
+- `src/cycle_routes.py` — proportional offset, enhanced logging
+- `src/config.py` — 6 new PRE_COOL_* constants + COOLING_ML_REGRESSOR_PATH
+- `config_adapter.py` — new config mapping
+- `ml_heating_underfloor/config.yaml` — new options + schema
+- `ml_heating_underfloor/translations/en.yaml` — tooltips
+- `tests/unit/test_cooling_ml_calibration.py` — regression mock + metadata test
+
+## ✅ Cooling ML: R² Improvement Investigation (2026-05-31)
+
+**Status:** COMPLETED
+
+### Results
+- Added Section 4b to `09_cooling_ml_analysis.ipynb`: R² improvement using 07_/08_ heating notebook techniques
+- **Root cause confirmed**: R²=0.36 is mathematically expected — `delta_indoor_8h` has std=0.177 (very low variance), same MAE on `max_indoor_8h` (std=0.400) theoretically gives R²≈0.92
+- **Outlier filtering**: Removed 5,949 window-open contaminated rows (12.4%), no fireplace events in cooling data
+- **New engineered features**: 4 of 5 available (indoor_accel, AT_forecast_trend, thermal_momentum, pv_cumulative_8h)
+- **3 approaches compared**:
+  - A) delta + clean + features: MAE=0.090, R²=0.359, AUC=0.946, F1=0.926
+  - B) max_indoor (original): MAE=0.134, R²=0.716, AUC=0.913, F1=0.891
+  - C) max_indoor + clean + features: MAE=0.129, R²=0.725, AUC=0.898, F1=0.875
+- **Conclusion**: Switching to max_indoor_8h boosts R² (0.36→0.73) but HURTS classifier performance (AUC 0.952→0.898). Original delta approach remains best for pre-cooling decisions.
+- All 26 notebook cells execute successfully
+
+### Files Changed
+- `notebooks/analysis/09_cooling_ml_analysis.ipynb` — Added Section 4b (6 cells: variance analysis, outlier filtering, feature engineering, 3-way comparison, diagnostic plots)
+
+## ✅ Cooling ML: F2→F1 Threshold + 75-Feature Analysis (2026-05-30)
+
+**Status:** COMPLETED
+
+### Results
+- Switched calibration from F2 (β=2) to F1 (β=1) threshold selection in `cooling_ml_calibration.py`
+- Rewrote `09_cooling_ml_analysis.ipynb` for new 75-feature training data (47,941 rows × 76 cols)
+- **Baseline (75 features, F1)**: AUC=0.9434, F1=0.9191, precision=94.9%, recall=89.1%, threshold=0.773
+- **Regression wins again**: AUC=0.9520 → Optuna-tuned AUC=0.9581, F1=0.9363, MAE=0.0828°C
+- **Dual-output approach analyzed**: classifier gate × regression overshoot (P×Δ): AUC=0.9513, F1=0.9349
+- Pruning kept all 75 features (even worst caused >0.001 AUC drop)
+- Isotonic calibration shifts F1 threshold from 0.80→0.65 (explains production 0.049)
+- 1412 unit tests pass, 5 pre-existing integration failures (Docker/HA)
+
+### Files Changed
+- `src/cooling_ml_calibration.py` — beta=2.0→1.0 (3 locations), metadata key val_f2→val_f1, threshold_method f2→f1
+- `tests/unit/test_cooling_ml_calibration.py` — val_f2→val_f1 in expected_keys
+- `notebooks/analysis/09_cooling_ml_analysis.ipynb` — Full rewrite: 33 cells, 10 sections + isotonic + dual-output
+
 ## ✅ Cooling ML Analysis Notebook + Regression Discovery (2026-05-30)
 
 **Status:** COMPLETED
