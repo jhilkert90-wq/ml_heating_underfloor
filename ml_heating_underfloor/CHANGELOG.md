@@ -1,5 +1,36 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.64] - 2026-05-30
+
+### Fixed
+- **Dual-output `classifier_gate` logic bug**: `not self._reg_model` was always `False` inside the dual-output branch, reducing `classifier_gate` to requiring both models to agree; now correctly uses classifier risk alone as the gate
+- **`_no_risk_result` missing new keys**: Added `predicted_delta`, `predicted_max_temp`, `reg_risk` to early-exit result dict so callers never get `KeyError`
+- **`proba_cal_full` NameError**: Variable was only assigned inside `if use_calibrated:` block but referenced unconditionally in Phase 6 diagnostics; initialised to `None` before the branch
+- **`_offset` unbound risk**: Initialised `_offset = 0.0` before conditional assignment in `step_pre_cooling()` to prevent potential `NameError`
+- **Invalid dual-output strategy**: Added `ValueError` for unrecognised `PRE_COOL_DUAL_OUTPUT_STRATEGY` values (was silently defaulting to `classifier_gate`)
+
+### Added
+- **Dual-output cooling ML**: LGBMRegressor trained alongside classifier on `delta_indoor_8h` target; regression model saved as `cooling_ml_regressor.joblib` with threshold, MAE, AUC in metadata
+- **Regression inference in CoolingMLModel**: `predict_overheating_risk()` now returns `predicted_delta`, `predicted_max_temp`, and `reg_risk` alongside classifier probability
+- **Proportional pre-cooling intensity**: Offset scaled by predicted overshoot magnitude (`clip(overshoot × 0.7, 0.2K, 1.0K)`) instead of fixed 0.5K; controlled by `PRE_COOL_PROPORTIONAL` config
+- **Dual-output strategy selector**: HA dropdown `pre_cool_dual_output_strategy` with `classifier_gate` (conservative, default) and `either_triggers` (aggressive) modes
+- **Calibration diagnostics**: Isotonic threshold shift logging with large-shift warning; F1/precision/recall/predicted-pos-rate summary after threshold optimization
+- **Config options**: `PRE_COOL_PROPORTIONAL`, `PRE_COOL_MIN_OFFSET_K`, `PRE_COOL_MAX_OFFSET_K`, `PRE_COOL_OVERSHOOT_GAIN`, `PRE_COOL_DUAL_OUTPUT_STRATEGY`, `COOLING_ML_REGRESSOR_PATH`
+- **HA translations**: Tooltips for dual-output strategy and proportional intensity settings
+- **Notebook 09_: R² improvement investigation (Section 4b)**: Applied techniques from heating notebooks 07_/08_ to cooling regression — variance analysis, outlier filtering, feature engineering, label choice comparison (delta vs max_indoor_8h)
+- **Regression threshold optimizer**: `_optimise_regression_threshold()` helper for F1-optimal temperature threshold on regression predictions
+
+### Changed
+- **Cooling ML inference**: Uses `pd.DataFrame` instead of `np.array` for `predict_proba()` — fixes sklearn feature-name warnings in HA_LOG
+- **Cooling ML calibration**: Trains with DataFrames (preserves feature names in saved model) instead of `.values.astype(float)` numpy arrays
+- **Pre-cooling offset**: Now includes `[proportional]`/`[fixed]` tag and offset value in log messages
+- **Pre-cooling state persistence**: Adds `pre_cool_offset_k` and `pre_cool_predicted_max` to operational state
+- **CoolingMLModel.load()**: Also loads regression model with graceful fallback to classifier-only mode
+- **Cooling ML: F2→F1 threshold selection**: Switched from F2 (β=2, recall-biased) to F1 (balanced precision/recall) threshold in `cooling_ml_calibration.py`. F2 produced threshold≈0.01 (predicted 95%+ positive), F1 gives threshold≈0.77 with 94.9% precision / 89.1% recall.
+- **Cooling ML metadata key**: `val_f2` → `val_f1`, `threshold_method: f2_cross_validated` → `f1_cross_validated`
+- **Notebook 09_ rewritten for 75-feature data**: Updated to use new training data (47,941 rows × 76 cols), removed feature engineering section (features now in CSV), added isotonic calibration analysis, dual-output approach, and R² improvement analysis sections
+- **Test updated**: `test_cooling_ml_calibration.py` metadata key expectation updated `val_f2` → `val_f1`; added regression metadata test and updated mock for LGBMRegressor
+
 ## [0.2.63] - 2026-05-29
 
 ### Added
