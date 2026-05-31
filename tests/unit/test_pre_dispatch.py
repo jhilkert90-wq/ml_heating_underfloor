@@ -196,8 +196,8 @@ class TestInitializeLoopStateClimateMode:
 
         mock_wrapper.export_metrics_to_ha.side_effect = _track_mode_on_export
 
-        def _set_mode(m):
-            mock_wrapper._climate_mode = m
+        def _set_mode(mode):
+            mock_wrapper._climate_mode = mode
 
         mock_wrapper.set_climate_mode.side_effect = _set_mode
 
