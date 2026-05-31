@@ -1,5 +1,5 @@
 """Tests for src.pre_dispatch — pre-dispatch step functions."""
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -237,4 +237,3 @@ class TestInitializeLoopStateClimateMode:
         mock_wrapper.set_climate_mode.assert_not_called()
         # But export should still proceed
         mock_wrapper.export_metrics_to_ha.assert_called_once()
-
