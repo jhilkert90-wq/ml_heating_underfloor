@@ -627,6 +627,24 @@ def initialize_loop_state(
 
     wrapper = get_enhanced_model_wrapper()
     try:
+        from .ha_client import create_ha_client
+
+        _ha_client = create_ha_client()
+        _all_states = _ha_client.get_all_states()
+        _detected_mode = HeatingSystemStateChecker().get_climate_mode(
+            _ha_client, _all_states
+        )
+        wrapper.set_climate_mode(_detected_mode)
+        logging.info(
+            "🌡️ initialize_loop_state: climate mode detected as '%s' before initial export.",
+            _detected_mode,
+        )
+    except Exception as _mode_err:
+        logging.warning(
+            "⚠️ Could not detect climate mode at startup (defaulting to 'heating'): %s",
+            _mode_err,
+        )
+    try:
         wrapper.export_metrics_to_ha()
         logging.info("✅ Initial metrics exported to HA successfully.")
     except Exception as e:

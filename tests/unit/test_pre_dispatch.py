@@ -1,5 +1,5 @@
 """Tests for src.pre_dispatch — pre-dispatch step functions."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -10,6 +10,7 @@ from src.pre_dispatch import (
     check_blocking_state,
     emit_network_error_state,
     handle_grace_period,
+    initialize_loop_state,
     resolve_shadow_mode_for_cycle,
     update_sensor_buffer_and_thermo,
     validate_sensors_once,
@@ -171,3 +172,69 @@ class TestValidateSensorsOnce:
         """Returns False (not done) when no states available."""
         result = validate_sensors_once(None, MagicMock())
         assert result is False
+
+
+class TestInitializeLoopStateClimateMode:
+    """initialize_loop_state sets correct climate mode before export_metrics_to_ha."""
+
+    @patch("src.pre_dispatch.HeatingSystemStateChecker")
+    @patch("src.model_wrapper.get_enhanced_model_wrapper")
+    def test_cooling_mode_set_before_export(
+        self, mock_get_wrapper, mock_checker_cls
+    ):
+        """When HA reports cooling, wrapper.set_climate_mode('cooling') is called
+        before wrapper.export_metrics_to_ha()."""
+        mock_wrapper = MagicMock()
+        mock_wrapper._climate_mode = "heating"
+        mock_get_wrapper.return_value = mock_wrapper
+
+        # Capture _climate_mode at the time export is called
+        captured_mode = {}
+
+        def _track_mode_on_export():
+            captured_mode["mode"] = mock_wrapper._climate_mode
+
+        mock_wrapper.export_metrics_to_ha.side_effect = _track_mode_on_export
+
+        def _set_mode(m):
+            mock_wrapper._climate_mode = m
+
+        mock_wrapper.set_climate_mode.side_effect = _set_mode
+
+        mock_checker = MagicMock()
+        mock_checker.get_climate_mode.return_value = "cooling"
+        mock_checker_cls.return_value = mock_checker
+
+        with patch("src.ha_client.create_ha_client") as mock_create_ha:
+            mock_ha = MagicMock()
+            mock_ha.get_all_states.return_value = {"some": "state"}
+            mock_create_ha.return_value = mock_ha
+
+            initialize_loop_state(sensor_buffer=MagicMock(), influx_service=MagicMock())
+
+        # set_climate_mode("cooling") must be called before export_metrics_to_ha
+        mock_wrapper.set_climate_mode.assert_called_with("cooling")
+        mock_wrapper.export_metrics_to_ha.assert_called_once()
+        assert captured_mode.get("mode") == "cooling"
+
+    @patch("src.pre_dispatch.HeatingSystemStateChecker")
+    @patch("src.model_wrapper.get_enhanced_model_wrapper")
+    def test_falls_back_to_heating_on_ha_error(
+        self, mock_get_wrapper, mock_checker_cls
+    ):
+        """When HA client raises during startup mode detection, wrapper is NOT
+        put into an unknown state — set_climate_mode is not called and the
+        default 'heating' mode is preserved."""
+        mock_wrapper = MagicMock()
+        mock_get_wrapper.return_value = mock_wrapper
+
+        with patch("src.ha_client.create_ha_client") as mock_create_ha:
+            mock_create_ha.side_effect = OSError("HA unavailable")
+
+            initialize_loop_state(sensor_buffer=MagicMock(), influx_service=MagicMock())
+
+        # Mode detection failed → set_climate_mode should NOT have been called
+        mock_wrapper.set_climate_mode.assert_not_called()
+        # But export should still proceed
+        mock_wrapper.export_metrics_to_ha.assert_called_once()
+
