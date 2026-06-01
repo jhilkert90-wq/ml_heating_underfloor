@@ -1,5 +1,11 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.65] - 2026-06-01
+
+### Fixed
+- Cooling physics calibration now aliases the fetched actual outlet column to the target-outlet name before estimating `tau_cooling`, so the cooling τ fit no longer falls back just because the reduced cooling history fetch omits the target-outlet series.
+- Add-on config export and dashboard translations now include `cooling_physics_min_outdoor_rolling_24h_c`, making the warm-season rolling-outdoor filter configurable in `config.yaml`.
+
 ## [0.2.64] - 2026-05-30
 
 ### Fixed
