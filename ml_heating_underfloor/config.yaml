@@ -422,6 +422,10 @@ options:
   optimization_method: "L-BFGS-B"
   # Indoor temperature ceiling for PV calibration
   pv_calibration_indoor_ceiling: 23.0
+  # Minimum 24h rolling mean outdoor temp (°C) for cooling physics calibration.
+  # Only warm-season data above this threshold is used to calibrate the
+  # cooling thermal equilibrium model.
+  cooling_physics_min_outdoor_rolling_24h_c: 16.0
 
   # === Thermal Power Gate Thresholds ===
   # Minimum water-side thermal power (kW) to accept a period as genuine heating.
@@ -749,6 +753,7 @@ schema:
   min_stable_period_minutes: "int(15,120)"
   optimization_method: "str"
   pv_calibration_indoor_ceiling: "float(18.0,30.0)"
+  cooling_physics_min_outdoor_rolling_24h_c: "float(10.0,25.0)"
   # Thermal Power Gate Thresholds
   heating_min_thermal_power_kw: "float(0.1,5.0)"
   cooling_min_thermal_power_kw: "float(-5.0,-0.05)"

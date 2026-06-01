@@ -96,6 +96,11 @@ def main():
         help="Train the LightGBM overheating classifier for ML-based pre-cooling and exit.",
     )
     parser.add_argument(
+        "--calibrate-cooling-physics",
+        action="store_true",
+        help="Calibrate the cooling thermal equilibrium model from warm-season data and exit.",
+    )
+    parser.add_argument(
         "--calibrate-heating-correction-ml",
         action="store_true",
         help="Train the LightGBM heating-correction regressor and exit.",
@@ -171,6 +176,33 @@ def main():
                     logging.error("❌ Cooling ML calibration failed — check logs")
             except Exception as _cml_err:
                 logging.error("❌ Cooling ML calibration error: %s", _cml_err, exc_info=True)
+
+    # --- Cooling Physics Calibration Flag Detection ---
+    _cooling_physics_flag = "/data/config/calibrate_cooling_physics_flag"
+    if os.path.exists(_cooling_physics_flag):
+        logging.info(
+            "🔬 Cooling physics calibrate flag detected — running cooling thermal calibration"
+        )
+        try:
+            os.remove(_cooling_physics_flag)
+        except OSError as _flag_err:
+            logging.error(
+                "❌ Could not remove cooling physics flag %s — skipping to avoid loop: %s",
+                _cooling_physics_flag, _flag_err,
+            )
+            _cooling_physics_flag = None
+        if _cooling_physics_flag is not None:
+            try:
+                from .physics_calibration_cooling import calibrate_cooling_physics
+                _ok = calibrate_cooling_physics()
+                if _ok:
+                    logging.info("✅ Cooling physics model calibrated successfully")
+                else:
+                    logging.error("❌ Cooling physics calibration failed — check logs")
+            except Exception as _cp_err:
+                logging.error(
+                    "❌ Cooling physics calibration error: %s", _cp_err, exc_info=True
+                )
 
     # --- Heating Correction ML Calibration Flag Detection ---
     _heating_ml_flag = "/data/config/calibrate_heating_correction_ml_flag"
@@ -445,6 +477,20 @@ def main():
                 logging.error("❌ Cooling ML calibration failed")
         except Exception as _cml_exc:
             logging.error("Cooling ML calibration error: %s", _cml_exc, exc_info=True)
+        return
+
+    # --- Cooling Physics Calibration (CLI) ---
+    if _bool_arg(args, "calibrate_cooling_physics"):
+        logging.info("=== COOLING PHYSICS CALIBRATION (CLI) ===")
+        try:
+            from .physics_calibration_cooling import calibrate_cooling_physics
+            _ok = calibrate_cooling_physics()
+            if _ok:
+                logging.info("✅ Cooling physics model calibrated successfully")
+            else:
+                logging.error("❌ Cooling physics calibration failed")
+        except Exception as _cp_exc:
+            logging.error("Cooling physics calibration error: %s", _cp_exc, exc_info=True)
         return
 
     # --- Heating Correction ML Calibration (CLI) ---

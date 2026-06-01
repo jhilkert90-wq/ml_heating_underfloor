@@ -513,6 +513,15 @@ OPTIMIZATION_METHOD: str = os.getenv("OPTIMIZATION_METHOD", "L-BFGS-B")
 # "physics": fully analytical, sequential physics-direct path (no scipy).
 CALIBRATION_METHOD: str = os.getenv("CALIBRATION_METHOD", "scipy")
 
+# Minimum 24-hour rolling mean outdoor temperature [°C] for cooling physics
+# calibration.  Only historical rows where the 24h rolling mean of
+# outdoor_temp exceeds this threshold are used for calibrating the cooling
+# thermal equilibrium model.  Default 16°C ensures only genuine warm-season
+# data enters the cooling calibration pipeline.
+COOLING_PHYSICS_MIN_OUTDOOR_ROLLING_24H_C: float = float(
+    os.getenv("COOLING_PHYSICS_MIN_OUTDOOR_ROLLING_24H_C", "16.0")
+)
+
 # Indoor temperature ceiling for PV calibration periods.
 # Periods with indoor_temp >= this value are excluded from PV Pass 2
 # because automated blinds likely closed, blocking solar gain while PV
