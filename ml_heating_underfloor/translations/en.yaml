@@ -154,6 +154,11 @@ configuration:
     name: '[Cooling Physics] Calibration Start Date'
     description: 'Earliest date for cooling physics calibration training data (format:
       DD.MM.YYYY). Leave empty to use the default lookback period.'
+  cooling_physics_min_outdoor_rolling_24h_c:
+    name: '[Cooling Physics] Min 24h Rolling Outdoor Temperature (°C)'
+    description: Only use rows for cooling physics calibration when the 24-hour
+      rolling mean outdoor temperature stays above this threshold. Helps exclude
+      non-summer data from the warm-season fit.
   cycle_interval_minutes:
     name: '[ML] Cycle Interval (minutes)'
     description: 'Time in minutes between each full learn-and-predict cycle. A longer

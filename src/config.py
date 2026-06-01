@@ -917,7 +917,7 @@ COOLING_PHYSICS_CALIBRATION_START_DATE: str = os.getenv(
 )
 
 
-def _parse_physics_start_date(date_str: str) -> "Optional[datetime]":
+def _parse_physics_start_date(date_str: Optional[str]) -> "Optional[datetime]":
     """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
 
     Used by the heating and cooling physics calibration paths.

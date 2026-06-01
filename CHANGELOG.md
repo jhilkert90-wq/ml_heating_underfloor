@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Cooling physics calibration now aliases the fetched actual outlet column to the target-outlet name before estimating `tau_cooling`, so the cooling τ fit no longer falls back just because the reduced cooling history fetch omits the target-outlet series.
+- Add-on config export and dashboard translations now include `cooling_physics_min_outdoor_rolling_24h_c`, making the warm-season rolling-outdoor filter configurable in `config.yaml`.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

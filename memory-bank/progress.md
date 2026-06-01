@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ PR #75 review follow-up: cooling physics calibration fixes (2026-06-01)
+
+**Status:** IN PROGRESS — addressing review comments on cooling physics calibration
+
+### Changes
+1. Removed unused imports and clarified cooling calibration docs/comments in `src/physics_calibration_cooling.py`
+2. Fixed cooling τ calibration to reuse the fetched actual outlet column when the reduced cooling history fetch omits the target-outlet series
+3. Exported `cooling_physics_min_outdoor_rolling_24h_c` from `config_adapter.py` and added dashboard translations
+4. Corrected cooling calibration regression tests for `CoolingThermalStateManager.save_state()` and CLI setup
+
 ## ✅ Code Review: Dual-Output Cooling ML (2026-05-31)
 
 **Status:** COMPLETED — 5 blocking bugs fixed, 1393 tests pass

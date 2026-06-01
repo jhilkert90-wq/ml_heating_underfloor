@@ -44,13 +44,10 @@ try:
     from .unified_thermal_state_cooling import get_cooling_state_manager
     from .physics_calibration import (
         fetch_historical_data_for_calibration,
-        backup_existing_calibration,
         calculate_cooling_time_constant,
         calibrate_delta_t_floor,
         calibrate_solar_decay_tau,
         filter_pv_decay_periods,
-        filter_transient_periods,
-        calibrate_transient_parameters,
     )
     from .physics_calibration_direct import (
         _calibrate_solar_lag_xcorr,
@@ -65,25 +62,16 @@ except ImportError:
     from unified_thermal_state_cooling import get_cooling_state_manager  # type: ignore
     from physics_calibration import (  # type: ignore
         fetch_historical_data_for_calibration,
-        backup_existing_calibration,
         calculate_cooling_time_constant,
         calibrate_delta_t_floor,
         calibrate_solar_decay_tau,
         filter_pv_decay_periods,
-        filter_transient_periods,
-        calibrate_transient_parameters,
     )
     from physics_calibration_direct import (  # type: ignore
         _calibrate_solar_lag_xcorr,
         _calibrate_slab_tau_grid_search,
         _residual_heat_source_weight,
     )
-
-try:
-    from scipy.optimize import minimize_scalar
-except ImportError:
-    minimize_scalar = None
-
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -101,7 +89,7 @@ _MIN_PV_POWER_W: float = 100.0
 # Minimum stable periods required for calibration
 _MIN_STABLE_PERIODS: int = 20
 
-# Minimum R² for slab-tau to override the heating fallback
+# Minimum R² for the cooling room τ estimate to override the heating fallback
 _SLAB_TAU_MIN_R2: float = 0.7
 
 # Minimum cooling drive (T_indoor − T_outlet) in °C for OE estimation.
@@ -175,8 +163,11 @@ def filter_stable_periods_cooling(df: pd.DataFrame) -> list:
 
     Quality gates:
     * Indoor temperature stable (range < threshold in window)
-    * No blocking states (DHW, defrost, etc.)
     * Outlet temperature stable (std < 2 °C)
+
+    Note: the reduced ``purpose="cooling"`` history fetch used here does not
+    include blocking-state sensors, so this filter only validates temperature
+    stability and cooling-direction checks.
     """
     logging.info("=== FILTERING FOR STABLE COOLING PERIODS ===")
 
@@ -665,7 +656,17 @@ def calibrate_cooling_physics(
     tau = _heating_fallback("thermal_time_constant")
 
     # Try cooling curves (HP-off periods where building warms)
-    tau_cooling, tau_r2 = calculate_cooling_time_constant(df)
+    tau_df = df.copy()
+    target_outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    actual_outlet_col = config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    if actual_outlet_col in tau_df.columns:
+        if target_outlet_col in tau_df.columns:
+            tau_df[target_outlet_col] = tau_df[target_outlet_col].fillna(
+                tau_df[actual_outlet_col]
+            )
+        else:
+            tau_df[target_outlet_col] = tau_df[actual_outlet_col]
+    tau_cooling, tau_r2 = calculate_cooling_time_constant(tau_df)
     if tau_cooling is not None and tau_r2 is not None and tau_r2 > _SLAB_TAU_MIN_R2:
         # High confidence — override
         tau = tau_cooling

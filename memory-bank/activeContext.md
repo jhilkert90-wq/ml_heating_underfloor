@@ -1,5 +1,24 @@
 # Active Context - Current Work & Decision State
 
+### ✅ PR #75 review follow-up: cooling physics calibration — 2026-06-01
+
+#### **What changed**
+- Removed unused imports and corrected misleading cooling calibration docs/comments
+- Fixed `calibrate_cooling_physics()` to alias `ACTUAL_OUTLET_TEMP_ENTITY_ID` data into the target-outlet column expected by `calculate_cooling_time_constant()`
+- Added missing add-on config export + dashboard translations for `cooling_physics_min_outdoor_rolling_24h_c`
+- Corrected cooling regression tests to patch the real `save_state()` / `create_influx_service()` call sites
+
+#### **Why**
+- Review found the cooling τ path could never exercise the cooling fit with the reduced `purpose="cooling"` history fetch
+- The new warm-season rolling-outdoor threshold existed in `config.yaml` but was not configurable from the runtime env/dashboard metadata
+- Two new tests were patching the wrong attributes and could miss the intended behavior
+
+#### **Files modified**
+- `src/physics_calibration_cooling.py`, `src/config.py`, `config_adapter.py`
+- `tests/unit/test_physics_calibration_cooling.py`, `tests/unit/test_config_adapter.py`, `tests/unit/test_dashboard_settings.py`
+- `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### ✅ Code Review: Dual-Output Cooling ML — 2026-05-31
 
 #### **What changed**

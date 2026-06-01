@@ -160,6 +160,9 @@ def convert_addon_to_env(config):
         'COOLING_PHYSICS_CALIBRATION_START_DATE': config.get(
             'cooling_physics_calibration_start_date', ''
         ),
+        'COOLING_PHYSICS_MIN_OUTDOOR_ROLLING_24H_C': str(
+            config.get('cooling_physics_min_outdoor_rolling_24h_c', 16.0)
+        ),
         'CYCLE_INTERVAL_MINUTES': str(
             config.get('cycle_interval_minutes', 10)
         ),

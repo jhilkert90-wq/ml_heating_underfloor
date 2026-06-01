@@ -368,8 +368,8 @@ class TestSetCalibratedBaselinePersistsAllKeys:
                 "parameter_adjustments": {},
             },
         }
-        sm._state_file = "/tmp/fake_cooling_state.json"
-        sm._save_state = MagicMock()
+        sm.state_file = "/tmp/fake_cooling_state.json"
+        sm.save_state = MagicMock()
 
         params = {
             "heat_loss_coefficient": 0.12,
@@ -409,7 +409,10 @@ class TestCoolingPhysicsCLIDispatch:
         with patch(
             "src.physics_calibration_cooling.calibrate_cooling_physics",
             return_value=mock_model,
-        ) as mock_fn, patch("src.main.config"), patch("sys.argv", [
+        ) as mock_fn, patch("src.main.load_dotenv"), patch(
+            "src.main.create_influx_service",
+            return_value=MagicMock(),
+        ), patch("sys.argv", [
             "main", "--calibrate-cooling-physics"
         ]):
             from src.main import main
@@ -419,6 +422,97 @@ class TestCoolingPhysicsCLIDispatch:
                 pass
 
             mock_fn.assert_called_once()
+
+    def test_tau_uses_actual_outlet_when_target_outlet_missing(self):
+        """Cooling tau estimation aliases the fetched outlet column for reuse."""
+        from src.physics_calibration_cooling import calibrate_cooling_physics
+        from src import config
+
+        actual_outlet_col = config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+        target_outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+        df = pd.DataFrame(
+            {
+                "_time": pd.date_range("2026-01-01", periods=120, freq="5min"),
+                actual_outlet_col: np.linspace(22.0, 18.0, 120),
+            }
+        )
+
+        heating_sm = MagicMock()
+        heating_sm.state = {"baseline_parameters": {"thermal_time_constant": 4.0}}
+        cooling_sm = MagicMock()
+        cooling_sm.state = {"baseline_parameters": {}, "learning_state": {}}
+
+        with patch(
+            "src.physics_calibration_cooling.get_thermal_state_manager",
+            return_value=heating_sm,
+        ), patch(
+            "src.physics_calibration_cooling.get_cooling_state_manager",
+            return_value=cooling_sm,
+        ), patch(
+            "src.physics_calibration_cooling.fetch_historical_data_for_calibration",
+            return_value=df,
+        ), patch(
+            "src.physics_calibration_cooling._apply_outdoor_rolling_filter",
+            return_value=df,
+        ), patch(
+            "src.physics_calibration_cooling.filter_stable_periods_cooling",
+            return_value=[{}] * 20,
+        ), patch(
+            "src.physics_calibration_cooling._calibrate_hlc_cooling",
+            return_value=0.12,
+        ), patch(
+            "src.physics_calibration_cooling._calibrate_oe_cooling",
+            return_value=0.8,
+        ), patch(
+            "src.physics_calibration_cooling.calculate_cooling_time_constant",
+            return_value=(None, 0.0),
+        ) as mock_tau, patch(
+            "src.physics_calibration_cooling._filter_cooling_pv_periods",
+            return_value=[],
+        ), patch(
+            "src.physics_calibration_cooling._residual_heat_source_weight",
+            return_value=0.0,
+        ), patch(
+            "src.physics_calibration_cooling._calibrate_solar_lag_xcorr",
+            return_value=0.0,
+        ), patch(
+            "src.physics_calibration_cooling.calibrate_delta_t_floor",
+            return_value=2.0,
+        ), patch(
+            "src.physics_calibration_cooling._calibrate_slab_tau_grid_search",
+            return_value=None,
+        ), patch(
+            "src.physics_calibration_cooling.filter_pv_decay_periods",
+            return_value=[],
+        ), patch(
+            "src.physics_calibration_cooling.calibrate_solar_decay_tau",
+            return_value=3.0,
+        ), patch(
+            "src.physics_calibration_cooling.ThermalParameterConfig.get_cooling_default",
+            side_effect=lambda key: {
+                "thermal_time_constant": 4.0,
+                "heat_loss_coefficient": 0.12,
+                "outlet_effectiveness": 0.8,
+                "pv_heat_weight": 0.0,
+                "fireplace_heat_weight": 0.0,
+                "tv_heat_weight": 0.0,
+                "solar_lag_minutes": 0.0,
+                "delta_t_floor": 2.0,
+                "slab_time_constant_hours": 1.5,
+                "fp_decay_time_constant": 2.0,
+                "room_spread_delay_minutes": 30.0,
+                "cloud_factor_exponent": 1.2,
+                "solar_decay_tau_hours": 3.0,
+            }[key],
+        ), patch(
+            "src.physics_calibration_cooling.ThermalParameterConfig.get_cooling_bounds",
+            return_value=(0.0, 10.0),
+        ):
+            calibrate_cooling_physics()
+
+        tau_df = mock_tau.call_args[0][0]
+        assert target_outlet_col in tau_df.columns
+        assert tau_df[target_outlet_col].equals(tau_df[actual_outlet_col])
 
 
 # ---------------------------------------------------------------------------
