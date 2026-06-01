@@ -279,6 +279,8 @@ class CoolingThermalStateManager:
             "delta_t_floor",
             "fp_decay_time_constant",
             "room_spread_delay_minutes",
+            "cloud_factor_exponent",
+            "solar_decay_tau_hours",
         ):
             if key in parameters:
                 baseline[key] = parameters[key]
