@@ -171,20 +171,21 @@ def render_system_controls():
                         st.error(f"Start failed: {output}")
     
     with col3:
-        # Calibration method selector
+        # Calibration method selector (applies to heating thermal model only)
         calib_method = st.radio(
-            "Calibration method:",
+            "Heating calibration method:",
             ["Scipy Optimizer", "Physics Direct"],
             help=(
                 "**Scipy Optimizer**: multi-pass L-BFGS-B joint optimisation (default).\n\n"
                 "**Physics Direct**: fully analytical sequential estimation — "
-                "no scipy dependency, derives every parameter from first principles."
+                "no scipy dependency, derives every parameter from first principles.\n\n"
+                "This selector applies to the heating thermal model only."
             ),
             horizontal=True,
         )
 
-        if st.button("🔧 Recalibrate Model"):
-            with st.spinner("Triggering model recalibration..."):
+        if st.button("🔧 Recalibrate Thermal Heating Model"):
+            with st.spinner("Triggering heating thermal model recalibration..."):
                 if calib_method == "Physics Direct":
                     try:
                         os.makedirs('/data/config', exist_ok=True)
@@ -208,6 +209,32 @@ def render_system_controls():
                         st.info("This will retrain from historical data using scipy optimisation.")
                     else:
                         st.error(f"Recalibration failed: {output}")
+
+        if st.button(
+            "🔄 Recalibrate Thermal Cooling Model",
+            help=(
+                "Calibrate the cooling thermal equilibrium model from warm-season historical data. "
+                "Uses physics-direct analytical methods only (no scipy variant). "
+                "The heating calibration method selector above does not apply to this calibration. "
+                "Requires warm-season data (≥90 days recommended)."
+            ),
+        ):
+            with st.spinner("Triggering cooling thermal model recalibration..."):
+                try:
+                    os.makedirs('/data/config', exist_ok=True)
+                    with open('/data/config/calibrate_cooling_physics_flag', 'w') as f:
+                        f.write(datetime.now().isoformat())
+                    success, output = restart_ml_system()
+                    if success:
+                        st.success(
+                            "Cooling thermal model calibration triggered! "
+                            "The system will calibrate from warm-season historical data "
+                            "on next startup using physics-direct methods."
+                        )
+                    else:
+                        st.warning(f"Flag written but restart failed: {output}")
+                except Exception as e:
+                    st.error(f"Cooling thermal calibration trigger failed: {e}")
 
         if st.button("🤖 Calibrate ML Cooling Model", help="Train the LightGBM overheating classifier for ML-based pre-cooling. Requires warm-season historical data (≥90 days recommended). Model-based strategy only."):
             with st.spinner("Writing ML cooling calibration flag..."):
