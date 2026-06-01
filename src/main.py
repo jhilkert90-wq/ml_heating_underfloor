@@ -268,6 +268,42 @@ def main():
                     "❌ Physics-direct calibration error: %s", _phys_err, exc_info=True
                 )
 
+    # --- Scipy Heating Thermal Calibration Flag Detection ---
+    _recalibrate_flag = "/data/config/recalibrate_flag"
+    if os.path.exists(_recalibrate_flag):
+        logging.info(
+            "🔬 Recalibrate flag detected — running scipy heating thermal calibration"
+        )
+        try:
+            os.remove(_recalibrate_flag)
+        except OSError as _flag_err:
+            logging.error(
+                "❌ Could not remove recalibrate flag %s — skipping "
+                "to avoid infinite loop: %s", _recalibrate_flag, _flag_err
+            )
+            _recalibrate_flag = None
+        if _recalibrate_flag is not None:
+            try:
+                from .physics_calibration import (
+                    backup_existing_calibration,
+                    train_thermal_equilibrium_model,
+                )
+                backup_path = backup_existing_calibration()
+                if backup_path:
+                    logging.info(
+                        "✅ Previous thermal state backed up: %s",
+                        os.path.basename(backup_path),
+                    )
+                _ok = train_thermal_equilibrium_model(method="scipy")
+                if _ok:
+                    logging.info("✅ Scipy heating thermal calibration completed successfully")
+                else:
+                    logging.error("❌ Scipy heating thermal calibration failed — check logs")
+            except Exception as _recal_err:
+                logging.error(
+                    "❌ Scipy heating thermal calibration error: %s", _recal_err, exc_info=True
+                )
+
     # --- InfluxDB Write Permission Check ---
     # Verify early that the token can write to the features bucket
     try:
