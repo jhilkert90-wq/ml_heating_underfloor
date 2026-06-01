@@ -458,6 +458,7 @@ class TestTrainDispatch:
              patch("src.physics_calibration.backup_existing_calibration"):
             mc.CALIBRATION_METHOD = "scipy"
             mc.TRAINING_LOOKBACK_HOURS = 168
+            mc.PHYSICS_CALIBRATION_START_DATE = ""
             mock_fetch.return_value = pd.DataFrame({"_time": [1] * 100})
             mock_filter.return_value = [{}] * 60
             mock_opt.return_value = None  # triggers early return from scipy path
@@ -514,3 +515,124 @@ class TestTrainDispatch:
                 sys.modules["src.physics_calibration_direct"] = original
 
         mock_phys_fn.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TestPhysicsStartDate
+# ---------------------------------------------------------------------------
+
+class TestPhysicsStartDate:
+    """Tests for PHYSICS_CALIBRATION_START_DATE resolution in calibrate_thermal_model_physics."""
+
+    def test_parse_helper_valid_date(self):
+        from src.config import _parse_physics_start_date
+        from datetime import timezone
+        dt = _parse_physics_start_date("01.01.2020")
+        assert dt is not None
+        assert dt.year == 2020 and dt.month == 1 and dt.day == 1
+        assert dt.tzinfo == timezone.utc
+
+    def test_parse_helper_empty_string(self):
+        from src.config import _parse_physics_start_date
+        assert _parse_physics_start_date("") is None
+
+    def test_parse_helper_invalid_format(self):
+        from src.config import _parse_physics_start_date
+        assert _parse_physics_start_date("2020-01-01") is None
+        assert _parse_physics_start_date("not-a-date") is None
+
+    def test_lookback_overridden_by_past_date(self):
+        """calibrate_thermal_model_physics resolves lookback_hours from a past start date."""
+        from src.physics_calibration_direct import calibrate_thermal_model_physics
+        from src.config import _parse_physics_start_date
+
+        captured = {}
+
+        def fake_fetch(lookback_hours, **kwargs):
+            captured["lookback_hours"] = lookback_hours
+            return None  # trigger early return
+
+        with patch(
+            "src.physics_calibration_direct.fetch_historical_data_for_calibration",
+            side_effect=fake_fetch,
+        ), patch(
+            "src.physics_calibration_direct.config"
+        ) as mock_cfg:
+            mock_cfg.TRAINING_LOOKBACK_HOURS = 168
+            mock_cfg.PHYSICS_CALIBRATION_START_DATE = "01.01.2020"
+            mock_cfg._parse_physics_start_date = _parse_physics_start_date
+            calibrate_thermal_model_physics()
+
+        assert "lookback_hours" in captured
+        # Should be many thousands of hours since 2020
+        assert captured["lookback_hours"] > 8760
+
+    def test_empty_start_date_uses_default(self):
+        """Empty PHYSICS_CALIBRATION_START_DATE falls back to TRAINING_LOOKBACK_HOURS."""
+        from src.physics_calibration_direct import calibrate_thermal_model_physics
+
+        captured = {}
+
+        def fake_fetch(lookback_hours, **kwargs):
+            captured["lookback_hours"] = lookback_hours
+            return None
+
+        with patch(
+            "src.physics_calibration_direct.fetch_historical_data_for_calibration",
+            side_effect=fake_fetch,
+        ), patch(
+            "src.physics_calibration_direct.config"
+        ) as mock_cfg:
+            mock_cfg.TRAINING_LOOKBACK_HOURS = 500
+            mock_cfg.PHYSICS_CALIBRATION_START_DATE = ""
+            calibrate_thermal_model_physics()
+
+        assert captured.get("lookback_hours") == 500
+
+    def test_future_date_uses_default(self):
+        """Future PHYSICS_CALIBRATION_START_DATE falls back to default, logs warning."""
+        from src.physics_calibration_direct import calibrate_thermal_model_physics
+        from src.config import _parse_physics_start_date
+
+        captured = {}
+
+        def fake_fetch(lookback_hours, **kwargs):
+            captured["lookback_hours"] = lookback_hours
+            return None
+
+        with patch(
+            "src.physics_calibration_direct.fetch_historical_data_for_calibration",
+            side_effect=fake_fetch,
+        ), patch(
+            "src.physics_calibration_direct.config"
+        ) as mock_cfg:
+            mock_cfg.TRAINING_LOOKBACK_HOURS = 168
+            mock_cfg.PHYSICS_CALIBRATION_START_DATE = "01.01.2099"
+            mock_cfg._parse_physics_start_date = _parse_physics_start_date
+            calibrate_thermal_model_physics()
+
+        assert captured.get("lookback_hours") == 168
+
+    def test_invalid_date_format_uses_default(self):
+        """Invalid PHYSICS_CALIBRATION_START_DATE format falls back to default, logs warning."""
+        from src.physics_calibration_direct import calibrate_thermal_model_physics
+        from src.config import _parse_physics_start_date
+
+        captured = {}
+
+        def fake_fetch(lookback_hours, **kwargs):
+            captured["lookback_hours"] = lookback_hours
+            return None
+
+        with patch(
+            "src.physics_calibration_direct.fetch_historical_data_for_calibration",
+            side_effect=fake_fetch,
+        ), patch(
+            "src.physics_calibration_direct.config"
+        ) as mock_cfg:
+            mock_cfg.TRAINING_LOOKBACK_HOURS = 168
+            mock_cfg.PHYSICS_CALIBRATION_START_DATE = "2020-13-99"
+            mock_cfg._parse_physics_start_date = _parse_physics_start_date
+            calibrate_thermal_model_physics()
+
+        assert captured.get("lookback_hours") == 168

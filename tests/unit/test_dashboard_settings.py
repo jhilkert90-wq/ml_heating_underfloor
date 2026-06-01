@@ -40,9 +40,9 @@ class TestSettingsMetadata:
     def test_metadata_covers_all_addon_options(self):
         metadata = load_settings_metadata()
 
-        assert len(metadata.fields) == 202
-        assert len(metadata.defaults) == 202
-        assert len(metadata.field_order) == 202
+        assert len(metadata.fields) == 207
+        assert len(metadata.defaults) == 207
+        assert len(metadata.field_order) == 207
 
     def test_expected_groups_and_translations_are_loaded(self):
         metadata = load_settings_metadata()
@@ -55,6 +55,8 @@ class TestSettingsMetadata:
 
         assert metadata.fields["target_indoor_temp_entity"].label.startswith("[Core]")
         assert metadata.fields["heating_ml_cv_enabled"].label
+        assert metadata.fields["cooling_physics_min_outdoor_rolling_24h_c"].label
+        assert metadata.fields["cooling_physics_min_outdoor_rolling_24h_c"].description
 
     def test_group_definitions_keep_expected_order(self):
         assert list(GROUP_DEFINITIONS) == [

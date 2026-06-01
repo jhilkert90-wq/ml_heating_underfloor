@@ -47,6 +47,8 @@ fireplace_status, tv_status.
 from __future__ import annotations
 
 import logging
+import math
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -941,8 +943,39 @@ def calibrate_thermal_model_physics(
 
     # --- Fetch data ---
     logging.info("Fetching historical data...")
+    lookback_hours = config.TRAINING_LOOKBACK_HOURS
+    _start_date_str = getattr(config, "PHYSICS_CALIBRATION_START_DATE", "")
+    if _start_date_str and _start_date_str.strip():
+        _parse_fn = getattr(config, "_parse_physics_start_date", None)
+        _start_dt = _parse_fn(_start_date_str) if callable(_parse_fn) else None
+        if _start_dt is not None:
+            _now_utc = datetime.now(timezone.utc)
+            _computed_h = math.ceil(
+                (_now_utc - _start_dt).total_seconds() / 3600
+            )
+            if _computed_h > 0:
+                lookback_hours = _computed_h
+                logging.info(
+                    "Resolved lookback_hours=%d from PHYSICS_CALIBRATION_START_DATE '%s'",
+                    lookback_hours,
+                    _start_date_str,
+                )
+            else:
+                logging.warning(
+                    "PHYSICS_CALIBRATION_START_DATE '%s' is in the future; "
+                    "using default TRAINING_LOOKBACK_HOURS=%d",
+                    _start_date_str,
+                    lookback_hours,
+                )
+        else:
+            logging.warning(
+                "PHYSICS_CALIBRATION_START_DATE '%s' is not a valid DD.MM.YYYY date; "
+                "using default TRAINING_LOOKBACK_HOURS=%d",
+                _start_date_str,
+                lookback_hours,
+            )
     df = fetch_historical_data_for_calibration(
-        lookback_hours=config.TRAINING_LOOKBACK_HOURS
+        lookback_hours=lookback_hours
     )
     if df is None or df.empty:
         logging.error("❌ Failed to fetch historical data")

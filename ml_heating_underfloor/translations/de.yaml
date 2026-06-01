@@ -146,6 +146,20 @@ configuration:
     name: '[ML] Trainings-Rückblick (Stunden)'
     description: Number of hours of historical data used for initial calibration.
       168 h = 7 days (default). More data generally improves initial calibration quality.
+  physics_calibration_start_date:
+    name: '[Physics Calibration] Start Date'
+    description: 'Earliest date for heating physics calibration training data (format:
+      DD.MM.YYYY). Leave empty to use the default lookback period.'
+  cooling_physics_calibration_start_date:
+    name: '[Cooling Physics] Calibration Start Date'
+    description: 'Earliest date for cooling physics calibration training data (format:
+      DD.MM.YYYY). Leave empty to use the default lookback period.'
+  cooling_physics_min_outdoor_rolling_24h_c:
+    name: '[Cooling Physics] Minimale 24h-Außentemperatur (gleitend, °C)'
+    description: Verwende Zeilen für die Cooling-Physics-Kalibrierung nur dann,
+      wenn der gleitende 24-Stunden-Mittelwert der Außentemperatur über diesem
+      Schwellwert liegt. So werden Nicht-Sommerdaten aus dem Warmseason-Fit
+      ausgeschlossen.
   cycle_interval_minutes:
     name: '[ML] Zyklusintervall (Minuten)'
     description: 'Time in minutes between each full learn-and-predict cycle. A longer

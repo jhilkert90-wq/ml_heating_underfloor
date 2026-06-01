@@ -154,6 +154,15 @@ def convert_addon_to_env(config):
         'TRAINING_LOOKBACK_HOURS': str(
             config.get('training_lookback_hours', 168)
         ),
+        'PHYSICS_CALIBRATION_START_DATE': config.get(
+            'physics_calibration_start_date', ''
+        ),
+        'COOLING_PHYSICS_CALIBRATION_START_DATE': config.get(
+            'cooling_physics_calibration_start_date', ''
+        ),
+        'COOLING_PHYSICS_MIN_OUTDOOR_ROLLING_24H_C': str(
+            config.get('cooling_physics_min_outdoor_rolling_24h_c', 16.0)
+        ),
         'CYCLE_INTERVAL_MINUTES': str(
             config.get('cycle_interval_minutes', 10)
         ),

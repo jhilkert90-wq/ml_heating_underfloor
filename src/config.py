@@ -513,6 +513,15 @@ OPTIMIZATION_METHOD: str = os.getenv("OPTIMIZATION_METHOD", "L-BFGS-B")
 # "physics": fully analytical, sequential physics-direct path (no scipy).
 CALIBRATION_METHOD: str = os.getenv("CALIBRATION_METHOD", "scipy")
 
+# Minimum 24-hour rolling mean outdoor temperature [°C] for cooling physics
+# calibration.  Only historical rows where the 24h rolling mean of
+# outdoor_temp exceeds this threshold are used for calibrating the cooling
+# thermal equilibrium model.  Default 16°C ensures only genuine warm-season
+# data enters the cooling calibration pipeline.
+COOLING_PHYSICS_MIN_OUTDOOR_ROLLING_24H_C: float = float(
+    os.getenv("COOLING_PHYSICS_MIN_OUTDOOR_ROLLING_24H_C", "16.0")
+)
+
 # Indoor temperature ceiling for PV calibration periods.
 # Periods with indoor_temp >= this value are excluded from PV Pass 2
 # because automated blinds likely closed, blocking solar gain while PV
@@ -891,6 +900,41 @@ HEATING_ML_CV_ENABLED: bool = (
 HEATING_ML_CV_N_SPLITS: int = int(
     os.getenv("HEATING_ML_CV_N_SPLITS", "3")
 )
+
+# Earliest date for heating physics calibration training data.  Format: DD.MM.YYYY.
+# When set, train_thermal_equilibrium_model() / calibrate_thermal_model_physics()
+# compute lookback_hours as (now − start_date).
+# Leave empty to use the default TRAINING_LOOKBACK_HOURS.
+PHYSICS_CALIBRATION_START_DATE: str = os.getenv(
+    "PHYSICS_CALIBRATION_START_DATE", ""
+)
+
+# Earliest date for cooling physics calibration training data.  Format: DD.MM.YYYY.
+# When set, calibrate_cooling_physics() computes lookback_hours as (now − start_date).
+# Leave empty to use the default TRAINING_LOOKBACK_HOURS × 2 lookback.
+COOLING_PHYSICS_CALIBRATION_START_DATE: str = os.getenv(
+    "COOLING_PHYSICS_CALIBRATION_START_DATE", ""
+)
+
+
+def _parse_physics_start_date(date_str: Optional[str]) -> "Optional[datetime]":
+    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
+
+    Used by the heating and cooling physics calibration paths.
+    """
+    from datetime import datetime, timezone  # local import avoids circular issues
+    s = (date_str or "").strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s, "%d.%m.%Y")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+# Alias used by the cooling physics calibration path.
+_parse_cooling_physics_start_date = _parse_physics_start_date
 
 
 def _parse_heating_start_date(date_str: str) -> "Optional[datetime]":
