@@ -102,6 +102,14 @@ _MIN_STABLE_PERIODS: int = 20
 # Minimum R² for slab-tau to override the heating fallback
 _SLAB_TAU_MIN_R2: float = 0.7
 
+# Minimum cooling drive (T_indoor − T_outlet) in °C for OE estimation.
+# Below this the algebraic inversion is numerically unstable.
+_MIN_COOLING_DRIVE_K: float = 0.2
+
+# Minimum outdoor−indoor ΔT in °C for HLC regression samples.
+# Smaller differences produce unreliable heat-gain estimates.
+_MIN_HLC_DELTA_T_K: float = 0.5
+
 
 # ---------------------------------------------------------------------------
 # Data filtering for cooling
@@ -364,7 +372,7 @@ def _calibrate_oe_cooling(
 
         # Cooling drive: room is warmer than outlet
         drive = t_in - t_outlet
-        if drive <= 0.2:
+        if drive <= _MIN_COOLING_DRIVE_K:
             continue  # Insufficient cooling drive
 
         # Outdoor heat gain: outdoor warmer than indoor
@@ -430,10 +438,11 @@ def _calibrate_hlc_cooling(stable_periods: list) -> Optional[float]:
     """
     logging.info("=== COOLING HLC ESTIMATION (warm-season data) ===")
 
-    # Use periods where flow rate > 0 (HP running in cooling mode)
+    # Use periods where HP is actively cooling (thermal_power < threshold,
+    # e.g. < -0.5 kW means at least 0.5 kW of cooling is being delivered)
     cooling_active = [
         p for p in stable_periods
-        if p.get('thermal_power_kw', 0) < config.COOLING_MIN_THERMAL_POWER_KW
+        if p.get('thermal_power_kw', 0) <= config.COOLING_MIN_THERMAL_POWER_KW
         and p.get('indoor_temp', 20) > p.get('outlet_temp', 25)
         and p.get('outdoor_temp', 20) > p.get('indoor_temp', 20)
     ]
@@ -457,7 +466,7 @@ def _calibrate_hlc_cooling(stable_periods: list) -> Optional[float]:
 
     for p in cooling_active:
         dt = p['outdoor_temp'] - p['indoor_temp']
-        if dt <= 0.5:
+        if dt <= _MIN_HLC_DELTA_T_K:
             continue  # Need meaningful temperature difference
         q_cool = abs(p['thermal_power_kw'])
         x_vals.append(dt)
@@ -715,6 +724,8 @@ def calibrate_cooling_physics(
         "slab_time_constant_hours": slab_tau,
         "fp_decay_time_constant": fp_decay_tau,
         "room_spread_delay_minutes": room_spread_delay,
+        "cloud_factor_exponent": cloud_exponent,
+        "solar_decay_tau_hours": solar_decay_tau,
     }
 
     # --- Build thermal model ---
