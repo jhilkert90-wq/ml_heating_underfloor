@@ -26,6 +26,7 @@ def mock_config():
         mock_config.GRACE_PERIOD_MAX_MINUTES = 30
         mock_config.DEFROST_RECOVERY_GRACE_MINUTES = 45
         mock_config.TRAINING_LOOKBACK_HOURS = 24
+        mock_config.PHYSICS_CALIBRATION_START_DATE = ""
         mock_config.PV_CALIBRATION_INDOOR_CEILING = 23.0
         mock_config.CLOUD_COVER_CORRECTION_ENABLED = False
         mock_config.LIVING_ROOM_TEMP_ENTITY_ID = "sensor.living_room_temp"

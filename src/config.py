@@ -901,6 +901,54 @@ HEATING_ML_CV_N_SPLITS: int = int(
     os.getenv("HEATING_ML_CV_N_SPLITS", "3")
 )
 
+# Earliest date for heating physics calibration training data.  Format: DD.MM.YYYY.
+# When set, train_thermal_equilibrium_model() / calibrate_thermal_model_physics()
+# compute lookback_hours as (now − start_date).
+# Leave empty to use the default TRAINING_LOOKBACK_HOURS.
+PHYSICS_CALIBRATION_START_DATE: str = os.getenv(
+    "PHYSICS_CALIBRATION_START_DATE", ""
+)
+
+# Earliest date for cooling physics calibration training data.  Format: DD.MM.YYYY.
+# When set, calibrate_cooling_physics() computes lookback_hours as (now − start_date).
+# Leave empty to use the default TRAINING_LOOKBACK_HOURS × 2 lookback.
+COOLING_PHYSICS_CALIBRATION_START_DATE: str = os.getenv(
+    "COOLING_PHYSICS_CALIBRATION_START_DATE", ""
+)
+
+
+def _parse_physics_start_date(date_str: str) -> "Optional[datetime]":
+    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
+
+    Used by the heating physics calibration paths
+    (``train_thermal_equilibrium_model`` and ``calibrate_thermal_model_physics``).
+    """
+    from datetime import datetime, timezone  # local import avoids circular issues
+    s = (date_str or "").strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s, "%d.%m.%Y")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _parse_cooling_physics_start_date(date_str: str) -> "Optional[datetime]":
+    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
+
+    Used by the cooling physics calibration path (``calibrate_cooling_physics``).
+    """
+    from datetime import datetime, timezone  # local import avoids circular issues
+    s = (date_str or "").strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s, "%d.%m.%Y")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
 
 def _parse_heating_start_date(date_str: str) -> "Optional[datetime]":
     """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.

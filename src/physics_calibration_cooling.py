@@ -29,6 +29,8 @@ or triggered by the dashboard flag file.
 from __future__ import annotations
 
 import logging
+import math
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 import numpy as np
@@ -580,8 +582,40 @@ def calibrate_cooling_physics(
 
     # --- Fetch historical data ---
     logging.info("Fetching historical data for cooling calibration...")
+    _default_lookback = getattr(config, "TRAINING_LOOKBACK_HOURS", 168) * 2
+    lookback_hours = _default_lookback
+    _start_date_str = getattr(config, "COOLING_PHYSICS_CALIBRATION_START_DATE", "")
+    if _start_date_str and _start_date_str.strip():
+        _parse_fn = getattr(config, "_parse_cooling_physics_start_date", None)
+        _start_dt = _parse_fn(_start_date_str) if callable(_parse_fn) else None
+        if _start_dt is not None:
+            _now_utc = datetime.now(timezone.utc)
+            _computed_h = math.ceil(
+                (_now_utc - _start_dt).total_seconds() / 3600
+            )
+            if _computed_h > 0:
+                lookback_hours = _computed_h
+                logging.info(
+                    "Resolved lookback_hours=%d from COOLING_PHYSICS_CALIBRATION_START_DATE '%s'",
+                    lookback_hours,
+                    _start_date_str,
+                )
+            else:
+                logging.warning(
+                    "COOLING_PHYSICS_CALIBRATION_START_DATE '%s' is in the future; "
+                    "using default TRAINING_LOOKBACK_HOURS×2=%d",
+                    _start_date_str,
+                    lookback_hours,
+                )
+        else:
+            logging.warning(
+                "COOLING_PHYSICS_CALIBRATION_START_DATE '%s' is not a valid DD.MM.YYYY date; "
+                "using default TRAINING_LOOKBACK_HOURS×2=%d",
+                _start_date_str,
+                lookback_hours,
+            )
     df = fetch_historical_data_for_calibration(
-        lookback_hours=getattr(config, "TRAINING_LOOKBACK_HOURS", 168) * 2,
+        lookback_hours=lookback_hours,
         purpose="cooling",
     )
     if df is None or df.empty:

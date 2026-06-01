@@ -95,6 +95,12 @@ options:
   prediction_horizon_steps: 24
   # The number of hours of historical data to use for initial training
   training_lookback_hours: 1800
+  # Earliest date for heating physics calibration training data. Format: DD.MM.YYYY.
+  # Leave empty to use the default training_lookback_hours.
+  physics_calibration_start_date: ""
+  # Earliest date for cooling physics calibration training data. Format: DD.MM.YYYY.
+  # Leave empty to use the default training_lookback_hours × 2.
+  cooling_physics_calibration_start_date: ""
   # The time in minutes between each full cycle of learning and prediction
   cycle_interval_minutes: 10
   # The maximum allowable change (in degrees) for the outlet temperature setpoint in a single cycle
@@ -608,6 +614,8 @@ schema:
   history_step_minutes: "int(5,30)"
   prediction_horizon_steps: "int(12,96)"
   training_lookback_hours: "int(24,2000)"
+  physics_calibration_start_date: "str?"
+  cooling_physics_calibration_start_date: "str?"
   cycle_interval_minutes: "int(5,60)"
   max_temp_change_per_cycle: "int(1,10)"
   training_data_source: "list(auto|influx|ha_history)"
