@@ -920,8 +920,7 @@ COOLING_PHYSICS_CALIBRATION_START_DATE: str = os.getenv(
 def _parse_physics_start_date(date_str: str) -> "Optional[datetime]":
     """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
 
-    Used by the heating physics calibration paths
-    (``train_thermal_equilibrium_model`` and ``calibrate_thermal_model_physics``).
+    Used by the heating and cooling physics calibration paths.
     """
     from datetime import datetime, timezone  # local import avoids circular issues
     s = (date_str or "").strip()
@@ -934,20 +933,8 @@ def _parse_physics_start_date(date_str: str) -> "Optional[datetime]":
         return None
 
 
-def _parse_cooling_physics_start_date(date_str: str) -> "Optional[datetime]":
-    """Parse DD.MM.YYYY string to a timezone-aware UTC datetime, or return None.
-
-    Used by the cooling physics calibration path (``calibrate_cooling_physics``).
-    """
-    from datetime import datetime, timezone  # local import avoids circular issues
-    s = (date_str or "").strip()
-    if not s:
-        return None
-    try:
-        dt = datetime.strptime(s, "%d.%m.%Y")
-        return dt.replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
+# Alias used by the cooling physics calibration path.
+_parse_cooling_physics_start_date = _parse_physics_start_date
 
 
 def _parse_heating_start_date(date_str: str) -> "Optional[datetime]":
