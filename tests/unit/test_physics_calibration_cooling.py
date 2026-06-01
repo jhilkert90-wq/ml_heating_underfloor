@@ -510,6 +510,7 @@ class TestCoolingPhysicsCLIDispatch:
         ):
             calibrate_cooling_physics()
 
+        mock_tau.assert_called_once()
         tau_df = mock_tau.call_args[0][0]
         assert target_outlet_col in tau_df.columns
         assert tau_df[target_outlet_col].equals(tau_df[actual_outlet_col])
