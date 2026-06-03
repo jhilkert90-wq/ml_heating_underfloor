@@ -456,7 +456,7 @@ def calibrate_heating_correction_ml(
     if "living_room_temp" in df.columns:
         df["living_room_temp"] = pd.to_numeric(
             df["living_room_temp"], errors="coerce"
-        ).fillna(method="ffill").fillna(df["indoor_temp"])
+        ).ffill().fillna(df["indoor_temp"])
     else:
         df["living_room_temp"] = df["indoor_temp"]
 
@@ -603,7 +603,44 @@ def calibrate_heating_correction_ml(
         (df["indoor_temp"] - df["AT"]) * df["wind_speed"]
     ).fillna(0.0)
 
-    # ── 4e. Trajectory-derived physics features (vectorized) ────────────
+    # ── 4e. NB08-derived features ──────────────────────────────────────
+    # 5 new features identified in notebook optimisation (NB08)
+
+    # cumulative_Q_wp_4h: rolling sum of Q_wp over label horizon → total heat
+    # energy injected into the slab over the look-ahead window
+    df["cumulative_Q_wp_4h"] = (
+        df["Q_wp"]
+        .rolling(label_horizon_steps, min_periods=1)
+        .sum()
+        .fillna(0.0)
+    )
+
+    # indoor_accel: second derivative of indoor temperature → acceleration
+    df["indoor_accel"] = df["indoor_trend_1h"].diff(1).fillna(0.0)
+
+    # AT_forecast_trend: AT at max forecast hour minus current AT
+    _max_at_h = max(at_forecast_hours) if at_forecast_hours else 4
+    _at_max_col = f"AT_roh_{_max_at_h}h"
+    if _at_max_col in df.columns:
+        df["AT_forecast_trend"] = (df[_at_max_col] - df["AT"]).fillna(0.0)
+    else:
+        df["AT_forecast_trend"] = 0.0
+
+    # pv_cumulative_4h: rolling sum of PV_Generate over label horizon
+    df["pv_cumulative_4h"] = (
+        df["PV_Generate"]
+        .rolling(label_horizon_steps, min_periods=1)
+        .sum()
+        .fillna(0.0)
+    )
+
+    # thermal_momentum: thermal_power_rolling_1h × delta_t
+    # Encodes how much thermal energy is being actively exchanged across the slab
+    df["thermal_momentum"] = (
+        df["thermal_power_rolling_1h"] * df["delta_t"]
+    ).fillna(0.0)
+
+    # ── 4f. Trajectory-derived physics features (vectorized) ────────────
     # Analytical Newton-decay approximation of what the trajectory simulator
     # would predict, computed per row using calibrated τ, η, U.  Provides
     # the ML model with the physics engine's forward-looking expectations.
@@ -692,28 +729,85 @@ def calibrate_heating_correction_ml(
             "fell back to config defaults → S_H=%.4f",
             _s_h_degenerate, s_h,
         )
+    if s_h < 0.01:
+        logger.error("S_H=%.6f still degenerate after fallback — aborting", s_h)
+        return False
     logger.info(
         "S_H estimate: η=%.4f U=%.4f τ=%.2fh H=%dh → S_H=%.4f",
         eta, u_loss, tau_room, label_horizon_h, s_h,
     )
 
-    # label[t] = −(T_indoor[t + N_steps] − T_target) / S_H
-    # Positive label means outlet should have been raised (undershoot),
-    # negative label means outlet should have been lowered (overshoot).
+    # ── 5b. Residualized label ──────────────────────────────────────────
+    # adjusted_label[t] = -(T_indoor[t + N_steps] - T_indoor[t]) / S_H
+    # This removes indoor_temp from the label, preventing feature–label leakage.
+    # At inference the full correction is reconstructed:
+    #   full_correction = model.predict(X) - indoor_margin / S_H
     future_indoor = df["indoor_temp"].shift(-label_horizon_steps)
-    raw_label = -(future_indoor - heating_target_c) / s_h
-
-    # Rows with trivially small margin contribute a label ≈ 0; use 0 directly
-    trivial_mask = df["indoor_margin"].abs() <= 0.05
-    raw_label = raw_label.where(~trivial_mask, other=0.0)
-
-    # Clip label to ±5 °C: extreme values indicate DHW, sensor glitch, etc.
-    raw_label = raw_label.clip(-5.0, 5.0)
+    raw_label = -(future_indoor - df["indoor_temp"]) / s_h
     df["label"] = raw_label
 
+    # ── 5c. Forward-looking outlier filtering ────────────────────────────
+    n_before = len(df)
+
+    # 1) Fireplace: any fireplace_on=1 in [t, t+label_horizon_steps] → drop row
+    if "fireplace_on" in df.columns:
+        fp_fwd = (
+            df["fireplace_on"]
+            .iloc[::-1]
+            .rolling(label_horizon_steps, min_periods=1)
+            .max()
+            .iloc[::-1]
+        )
+        fp_mask = fp_fwd > 0.5
+        n_fp = int(fp_mask.sum())
+        df = df[~fp_mask].copy()
+        logger.info("Outlier filter: fireplace forward-look → removed %d rows", n_fp)
+
+    # 2) Window-open proxy: indoor drop > 0.3°C in 3 steps, forward mask
+    indoor_drop_3 = df["indoor_temp"].diff(3)
+    window_mask_base = indoor_drop_3 < -0.3
+    window_fwd = (
+        window_mask_base.astype(float)
+        .iloc[::-1]
+        .rolling(label_horizon_steps, min_periods=1)
+        .max()
+        .iloc[::-1]
+    )
+    n_win = int((window_fwd > 0.5).sum())
+    df = df[window_fwd <= 0.5].copy()
+    logger.info("Outlier filter: window-open proxy → removed %d rows", n_win)
+
+    # 3) PV spike: PV > p99.9 × 1.5 (sensor glitch / inverter spike)
+    if "PV_Generate" in df.columns and df["PV_Generate"].max() > 0:
+        pv_p999 = df["PV_Generate"].quantile(0.999)
+        pv_spike_mask = df["PV_Generate"] > pv_p999 * 1.5
+        n_pv = int(pv_spike_mask.sum())
+        df = df[~pv_spike_mask].copy()
+        logger.info("Outlier filter: PV spike → removed %d rows", n_pv)
+
+    # 4) Extreme label: |label| > 5.0 (physically implausible — DHW, sensor glitch)
+    extreme_mask = df["label"].abs() > 5.0
+    n_ext = int(extreme_mask.sum())
+    df = df[~extreme_mask].copy()
+    logger.info("Outlier filter: extreme label → removed %d rows", n_ext)
+
+    df = df.reset_index(drop=True)
+    logger.info(
+        "Outlier filtering total: %d → %d rows (%.1f%% removed)",
+        n_before, len(df), 100.0 * (1 - len(df) / max(1, n_before)),
+    )
+
+    if len(df) < 100:
+        logger.error(
+            "Outlier filters removed too many rows (%d remaining) — aborting",
+            len(df),
+        )
+        return False
+
     # ── 6. Feature set ──────────────────────────────────────────────────
+    # indoor_temp and living_room_temp removed: redundant with indoor_margin
+    # in the residualized label framework (they caused feature–label leakage).
     feature_cols = [
-        "indoor_temp",
         "indoor_margin",
         "indoor_trend_30m",
         "indoor_trend_1h",
@@ -767,7 +861,6 @@ def calibrate_heating_correction_ml(
     feature_cols += [
         "wind_speed",               # PI=0.0000 — retained for model backward-compat; heat_loss_interaction captures its interaction effect
         "indoor_temp_gradient",     # PI=0.0000
-        "living_room_temp",
         "is_hp_active",
         "is_weekend",
         "thermal_power_rolling_1h",  # rolling mean in W
@@ -803,6 +896,15 @@ def calibrate_heating_correction_ml(
         "traj_reaches_target_hours",   # Analytical time to reach target (capped at horizon)
         "traj_overshoot_magnitude",    # max(0, max_predicted − target): predicted overshoot
         "traj_equilibrium_gap",        # T_eq − T_target: steady-state error signal
+    ]
+
+    # NB08-derived features (residualized label optimisation)
+    feature_cols += [
+        "cumulative_Q_wp_4h",          # Rolling sum of Q_wp over label horizon
+        "indoor_accel",                # Second derivative of indoor temperature
+        "AT_forecast_trend",           # AT at max forecast hour minus current AT
+        "pv_cumulative_4h",            # Rolling sum of PV_Generate over label horizon
+        "thermal_momentum",            # thermal_power_rolling_1h × delta_t
     ]
 
     # Guard: only keep columns that exist and have > 5% coverage
@@ -1162,6 +1264,7 @@ def calibrate_heating_correction_ml(
 
     metadata = {
         "trained_at": datetime.now(tz=timezone.utc).isoformat(),
+        "label_type": "residualized",
         "feature_cols": feature_cols,
         "n_features": len(feature_cols),
         "val_mae": val_mae,

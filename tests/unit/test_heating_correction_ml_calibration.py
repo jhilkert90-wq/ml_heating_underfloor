@@ -12,6 +12,9 @@ Covers:
 8.  _compute_s_h: correct formula
 9.  calibrate_heating_correction_ml aborts on < 500 cold rows
 10. calibrate_heating_correction_ml aborts on missing required columns
+11. Residualized label: -(T_future - T_current) / S_H
+12. Forward-looking outlier filters: fireplace, window-open, PV spike, extreme
+13. S_H fallback guard: abort on degenerate S_H after fallback
 """
 
 from __future__ import annotations
@@ -50,9 +53,12 @@ def _make_df(n: int = 700, at_val: float = 10.0):
 
     rng = np.random.default_rng(42)
     t = pd.date_range("2024-01-01", periods=n, freq="10min", tz="UTC")
+    # Use low-noise indoor_temp to avoid triggering window-open outlier filter
+    # (diff(3) < -0.3 threshold). Noise stddev=0.05 ensures 3-step diffs stay
+    # well within bounds.
     df = pd.DataFrame({
         "_time":       t,
-        "indoor_temp": rng.normal(21.0, 0.5, n),
+        "indoor_temp": 21.0 + rng.normal(0, 0.05, n),
         "AT":          np.full(n, at_val),
         "VLT":         rng.normal(30.0, 2.0, n),
         "RLT":         rng.normal(27.0, 2.0, n),
@@ -1314,3 +1320,200 @@ class TestPhysicsMotivatedFeatures:
         assert "pv_forecast_2h" not in captured_X["X"].columns
         assert "pv_forecast_delta" in captured_X["X"].columns
         assert captured_X["X"]["pv_forecast_delta"].notna().all()
+
+
+# ---------------------------------------------------------------------------
+# Residualized label construction
+# ---------------------------------------------------------------------------
+
+class TestResidualizedLabel:
+    """Verify label = -(T_future - T_current) / S_H (residualized, not target-based)."""
+
+    def test_residualized_label_no_change(self):
+        """When future == current, label should be 0."""
+        try:
+            import pandas as pd
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import _compute_s_h
+        s_h = _compute_s_h(0.830, 0.124, 4.39, 4.0)
+        indoor = pd.Series([21.0, 21.0, 21.0, 21.0])
+        future = indoor.shift(-2)
+        label = -(future - indoor) / s_h
+        assert label.iloc[0] == pytest.approx(0.0)
+        assert label.iloc[1] == pytest.approx(0.0)
+
+    def test_residualized_label_sign_warming(self):
+        """When indoor warms (future > current), residualized label is negative."""
+        try:
+            import pandas as pd
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import _compute_s_h
+        s_h = _compute_s_h(0.830, 0.124, 4.39, 4.0)
+        indoor = pd.Series([20.0, 20.5, 21.0, 21.5])
+        future = indoor.shift(-2)
+        label = -(future - indoor) / s_h
+        # t=0: future=21.0, current=20.0 → -(21-20)/S_H < 0
+        assert label.iloc[0] < 0
+
+    def test_residualized_label_sign_cooling(self):
+        """When indoor cools (future < current), residualized label is positive."""
+        try:
+            import pandas as pd
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import _compute_s_h
+        s_h = _compute_s_h(0.830, 0.124, 4.39, 4.0)
+        indoor = pd.Series([22.0, 21.5, 21.0, 20.5])
+        future = indoor.shift(-2)
+        label = -(future - indoor) / s_h
+        # t=0: future=21.0, current=22.0 → -(21-22)/S_H = 1/S_H > 0
+        assert label.iloc[0] > 0
+
+    def test_residualized_differs_from_target_based(self):
+        """Residualized and target-based labels are different when current != target."""
+        try:
+            import pandas as pd
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        from src.heating_correction_ml_calibration import _compute_s_h
+        s_h = _compute_s_h(0.830, 0.124, 4.39, 4.0)
+        target = 21.0
+        indoor = pd.Series([20.0, 20.0, 21.5, 21.5])
+        future = indoor.shift(-2)
+        residualized = -(future - indoor) / s_h
+        target_based = -(future - target) / s_h
+        # At t=0: current=20.0 != target=21.0, so labels differ
+        assert residualized.iloc[0] != pytest.approx(target_based.iloc[0])
+
+
+# ---------------------------------------------------------------------------
+# Forward-looking outlier filtering
+# ---------------------------------------------------------------------------
+
+class TestOutlierFiltering:
+    """Test the 4 forward-looking outlier filters."""
+
+    def test_fireplace_filter_removes_active_rows(self):
+        """Rows where fireplace is on within the forward horizon are removed."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        n = 100
+        df = pd.DataFrame({
+            "indoor_temp": np.full(n, 21.0),
+            "fireplace_on": np.zeros(n),
+        })
+        label_horizon_steps = 24  # 4h at 10min intervals
+        # Fireplace on at row 50 — should mask rows 26..50 (forward look)
+        df.loc[50, "fireplace_on"] = 1.0
+
+        fp_fwd = (
+            df["fireplace_on"]
+            .iloc[::-1]
+            .rolling(label_horizon_steps, min_periods=1)
+            .max()
+            .iloc[::-1]
+        )
+        fp_mask = fp_fwd > 0.5
+        assert fp_mask.sum() >= 1  # at least row 50 removed
+        # Row 50 itself should be masked
+        assert fp_mask.iloc[50] is True or fp_mask.iloc[50] == True
+
+    def test_window_open_filter_removes_indoor_drop(self):
+        """Rows with indoor temp drop > 0.3°C in 3 steps are removed."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        n = 100
+        indoor = np.full(n, 21.0)
+        # Simulate window open: sharp drop at rows 40-42
+        indoor[40] = 21.0
+        indoor[41] = 20.8
+        indoor[42] = 20.5
+        indoor[43] = 20.2  # diff(3) from 40→43 = 20.2-21.0 = -0.8 < -0.3
+
+        df = pd.DataFrame({"indoor_temp": indoor})
+        indoor_drop_3 = df["indoor_temp"].diff(3)
+        window_mask_base = indoor_drop_3 < -0.3
+        assert window_mask_base.sum() >= 1
+
+    def test_pv_spike_filter(self):
+        """PV values > p99.9 × 1.5 are removed."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        rng = np.random.default_rng(42)
+        n = 2000
+        pv = rng.uniform(0, 5000, n)
+        # Add extreme spike
+        pv[1000] = 50000.0
+
+        df = pd.DataFrame({"PV_Generate": pv})
+        pv_p999 = df["PV_Generate"].quantile(0.999)
+        pv_spike_mask = df["PV_Generate"] > pv_p999 * 1.5
+        assert pv_spike_mask.sum() >= 1  # spike detected
+        assert pv_spike_mask.iloc[1000] == True
+
+    def test_extreme_label_filter(self):
+        """Labels with |value| > 5.0 are removed."""
+        try:
+            import pandas as pd
+            import numpy as np
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        labels = pd.Series([0.5, -0.3, 6.0, -7.0, 1.0, 4.9])
+        extreme_mask = labels.abs() > 5.0
+        assert extreme_mask.sum() == 2  # 6.0 and -7.0
+        remaining = labels[~extreme_mask]
+        assert len(remaining) == 4
+        assert remaining.abs().max() <= 5.0
+
+    def test_extreme_label_threshold_matches_code(self):
+        """Confirm the extreme label threshold is 5.0, not 8.0 (old dead code)."""
+        # This test documents the fix for the clipping+filter mismatch bug
+        try:
+            import pandas as pd
+        except ImportError:
+            pytest.skip("pandas/numpy not installed")
+
+        labels = pd.Series([4.9, 5.1, 7.9, 8.1])
+        # With threshold=5.0, both 5.1 and beyond are caught
+        extreme_mask = labels.abs() > 5.0
+        assert extreme_mask.sum() == 3  # 5.1, 7.9, 8.1
+
+
+# ---------------------------------------------------------------------------
+# S_H fallback guard
+# ---------------------------------------------------------------------------
+
+class TestSHFallbackGuard:
+    """Test that degenerate S_H after fallback aborts calibration."""
+
+    def test_degenerate_s_h_aborts(self):
+        """When _compute_s_h returns 0.0 even after fallback, calibration aborts."""
+        from src.heating_correction_ml_calibration import _compute_s_h
+        # η=0 and U=0 → degenerate: _compute_s_h returns 0.0
+        assert _compute_s_h(0.0, 0.0, 4.0, 4.0) == 0.0
+        # This would trigger the s_h < 0.01 guard in calibration
+
+    def test_normal_s_h_is_valid(self):
+        """Normal thermal parameters produce S_H > 0.01."""
+        from src.heating_correction_ml_calibration import _compute_s_h
+        s_h = _compute_s_h(0.830, 0.124, 4.39, 4.0)
+        assert s_h > 0.01

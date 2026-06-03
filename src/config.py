@@ -901,6 +901,115 @@ HEATING_ML_CV_N_SPLITS: int = int(
     os.getenv("HEATING_ML_CV_N_SPLITS", "3")
 )
 
+# ============================================================================
+# Cooling ML Correction (LightGBM Regressor)
+# ============================================================================
+# Analogous to the heating ML correction but for cooling mode.
+# Uses a residualized label: adjusted_label = -(T_future - T_current) / S_H_cool
+# where S_H_cool uses the cooling outlet-effectiveness (OE_cooling ≈ 0.20).
+
+# Cooling outlet effectiveness — calibrated from cooling training data.
+COOLING_OUTLET_EFFECTIVENESS: float = float(
+    os.getenv("COOLING_OUTLET_EFFECTIVENESS", "0.20")
+)
+
+# Cooling correction algorithm selector.
+# "physics" — physics Newton step (default).
+# "ml"      — LightGBM regressor (requires cooling correction calibration).
+COOLING_CORRECTION_MODE: str = os.getenv("COOLING_CORRECTION_MODE", "physics")
+
+# Minimum outdoor temperature for warm-season filtering (cooling data).
+COOLING_ML_CORRECTION_WARM_THRESHOLD_C: float = float(
+    os.getenv("COOLING_ML_CORRECTION_WARM_THRESHOLD_C", "18.0")
+)
+# Earliest date for cooling correction ML training data.  Format: DD.MM.YYYY.
+COOLING_ML_CORRECTION_CALIBRATION_START_DATE: str = os.getenv(
+    "COOLING_ML_CORRECTION_CALIBRATION_START_DATE", ""
+)
+# Comma-separated AT forecast hours for cooling correction features.
+COOLING_ML_CORRECTION_AT_FORECAST_HOURS: str = os.getenv(
+    "COOLING_ML_CORRECTION_AT_FORECAST_HOURS", "1,2,3,4"
+)
+# Comma-separated PV forecast hours for cooling correction features.
+COOLING_ML_CORRECTION_PV_FORECAST_HOURS: str = os.getenv(
+    "COOLING_ML_CORRECTION_PV_FORECAST_HOURS", "1,2,3,4"
+)
+# Comma-separated fireplace lag hours for cooling correction features.
+COOLING_ML_CORRECTION_FIREPLACE_LAG_HOURS: str = os.getenv(
+    "COOLING_ML_CORRECTION_FIREPLACE_LAG_HOURS", "1,2"
+)
+# Comma-separated TV lag hours for cooling correction features.
+COOLING_ML_CORRECTION_TV_LAG_HOURS: str = os.getenv(
+    "COOLING_ML_CORRECTION_TV_LAG_HOURS", "0.5,1"
+)
+# Label lookahead horizon [hours].
+COOLING_ML_CORRECTION_LABEL_HORIZON_H: int = int(
+    os.getenv("COOLING_ML_CORRECTION_LABEL_HORIZON_H", "4")
+)
+# Path to trained LightGBM cooling correction regressor (joblib).
+COOLING_ML_CORRECTION_MODEL_PATH: str = os.getenv(
+    "COOLING_ML_CORRECTION_MODEL_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "cooling_correction_ml_model.joblib"),
+)
+# Path to cooling ML model metadata JSON.
+COOLING_ML_CORRECTION_METADATA_PATH: str = os.getenv(
+    "COOLING_ML_CORRECTION_METADATA_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "cooling_correction_ml_metadata.json"),
+)
+# Path to the online-learning observation buffer JSON.
+COOLING_ML_CORRECTION_OBS_BUFFER_PATH: str = os.getenv(
+    "COOLING_ML_CORRECTION_OBS_BUFFER_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "cooling_correction_ml_obs_buffer.json"),
+)
+# Minimum warm-season rows required before training is accepted.
+COOLING_ML_CORRECTION_MIN_TRAINING_SAMPLES: int = int(
+    os.getenv("COOLING_ML_CORRECTION_MIN_TRAINING_SAMPLES", "200")
+)
+# Minimum R² for the ML model to participate in the blend.
+COOLING_ML_CORRECTION_BLEND_MIN_R2: float = float(
+    os.getenv("COOLING_ML_CORRECTION_BLEND_MIN_R2", "0.3")
+)
+# Fraction of training data held out for validation.
+COOLING_ML_CORRECTION_RETRAIN_VAL_FRACTION: float = float(
+    os.getenv("COOLING_ML_CORRECTION_RETRAIN_VAL_FRACTION", "0.25")
+)
+# Number of new labeled observations that triggers automatic retrain.
+COOLING_ML_CORRECTION_RETRAIN_TRIGGER_K: int = int(
+    os.getenv("COOLING_ML_CORRECTION_RETRAIN_TRIGGER_K", "50")
+)
+# Rolling buffer size: keep the last N labeled observations.
+COOLING_ML_CORRECTION_BUFFER_MAX_N: int = int(
+    os.getenv("COOLING_ML_CORRECTION_BUFFER_MAX_N", "500")
+)
+# Feature pruning (permutation importance-based).
+COOLING_ML_CORRECTION_FEATURE_PRUNING_ENABLED: bool = (
+    os.getenv("COOLING_ML_CORRECTION_FEATURE_PRUNING_ENABLED", "true").lower() == "true"
+)
+COOLING_ML_CORRECTION_PRUNE_PI_THRESHOLD: float = float(
+    os.getenv("COOLING_ML_CORRECTION_PRUNE_PI_THRESHOLD", "0.0")
+)
+# LightGBM regularization.
+COOLING_ML_CORRECTION_REG_ALPHA: float = float(
+    os.getenv("COOLING_ML_CORRECTION_REG_ALPHA", "0.1")
+)
+COOLING_ML_CORRECTION_REG_LAMBDA: float = float(
+    os.getenv("COOLING_ML_CORRECTION_REG_LAMBDA", "1.0")
+)
+# Optuna HPO (optional).
+COOLING_ML_CORRECTION_OPTUNA_ENABLED: bool = (
+    os.getenv("COOLING_ML_CORRECTION_OPTUNA_ENABLED", "false").lower() == "true"
+)
+COOLING_ML_CORRECTION_OPTUNA_N_TRIALS: int = int(
+    os.getenv("COOLING_ML_CORRECTION_OPTUNA_N_TRIALS", "20")
+)
+# Time-series cross-validation.
+COOLING_ML_CORRECTION_CV_ENABLED: bool = (
+    os.getenv("COOLING_ML_CORRECTION_CV_ENABLED", "false").lower() == "true"
+)
+COOLING_ML_CORRECTION_CV_N_SPLITS: int = int(
+    os.getenv("COOLING_ML_CORRECTION_CV_N_SPLITS", "3")
+)
+
 # Earliest date for heating physics calibration training data.  Format: DD.MM.YYYY.
 # When set, train_thermal_equilibrium_model() / calibrate_thermal_model_physics()
 # compute lookback_hours as (now − start_date).

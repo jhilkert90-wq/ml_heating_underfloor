@@ -144,7 +144,7 @@ class ThermalParameterConfig:
     COOLING_DEFAULTS = {
         'outlet_temp_max': 24.0,            # °C (cooling max)
         'outlet_temp_min': 18.0,            # °C (HP shutdown limit)
-        'thermal_time_constant': 3.0,       # hours (cooling response is faster)
+        'thermal_time_constant': 4.8,       # hours (same slab, locked from heating)
         'equilibrium_ratio': 0.20,          # dimensionless (higher: outdoor heat gain)
         'total_conductance': 0.6,           # 1/hour
         'pv_heat_weight': 0.002,            # °C/W (building property — same as heating)
@@ -158,7 +158,7 @@ class ThermalParameterConfig:
         'min_learning_rate': 0.001,
         'max_learning_rate': 0.08,
         'heat_loss_coefficient': 0.12,      # 1/hour (heat gain from outside)
-        'outlet_effectiveness': 0.90,       # dimensionless (cooling effectiveness)
+        'outlet_effectiveness': 0.20,       # dimensionless (calibrated from cooling data)
         'delta_t_floor': 2.5,               # °C (cooling delta-T floor), changed to 2.5 by user
         'cloud_factor_exponent': 1.0,       # dimensionless
         'solar_lag_minutes': 45.0,          # minutes
@@ -184,7 +184,7 @@ class ThermalParameterConfig:
         'min_learning_rate': (0.0001, 0.01),
         'max_learning_rate': (0.01, 0.2),
         'heat_loss_coefficient': (0.01, 1.0),
-        'outlet_effectiveness': (0.3, 2.0),
+        'outlet_effectiveness': (0.05, 2.0),
         'delta_t_floor': (0.0, 8.0),
         'cloud_factor_exponent': (0.1, 3.0),
         'solar_lag_minutes': (0.0, 180.0),

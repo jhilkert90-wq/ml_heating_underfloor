@@ -423,13 +423,12 @@ class TestCoolingPhysicsCLIDispatch:
 
             mock_fn.assert_called_once()
 
-    def test_tau_uses_actual_outlet_when_target_outlet_missing(self):
-        """Cooling tau estimation aliases the fetched outlet column for reuse."""
+    def test_tau_locked_from_heating_state(self):
+        """Cooling tau is locked from heating calibration (slab property)."""
         from src.physics_calibration_cooling import calibrate_cooling_physics
         from src import config
 
         actual_outlet_col = config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-        target_outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
         df = pd.DataFrame(
             {
                 "_time": pd.date_range("2026-01-01", periods=120, freq="5min"),
@@ -458,15 +457,9 @@ class TestCoolingPhysicsCLIDispatch:
             "src.physics_calibration_cooling.filter_stable_periods_cooling",
             return_value=[{}] * 20,
         ), patch(
-            "src.physics_calibration_cooling._calibrate_hlc_cooling",
-            return_value=0.12,
-        ), patch(
             "src.physics_calibration_cooling._calibrate_oe_cooling",
             return_value=0.8,
         ), patch(
-            "src.physics_calibration_cooling.calculate_cooling_time_constant",
-            return_value=(None, 0.0),
-        ) as mock_tau, patch(
             "src.physics_calibration_cooling._filter_cooling_pv_periods",
             return_value=[],
         ), patch(
@@ -508,12 +501,11 @@ class TestCoolingPhysicsCLIDispatch:
             "src.physics_calibration_cooling.ThermalParameterConfig.get_cooling_bounds",
             return_value=(0.0, 10.0),
         ):
-            calibrate_cooling_physics()
+            model = calibrate_cooling_physics()
 
-        mock_tau.assert_called_once()
-        tau_df = mock_tau.call_args[0][0]
-        assert target_outlet_col in tau_df.columns
-        assert tau_df[target_outlet_col].equals(tau_df[actual_outlet_col])
+        # τ should be locked from heating state (4.0h), not re-calibrated
+        assert model is not None
+        assert model.thermal_time_constant == 4.0
 
 
 # ---------------------------------------------------------------------------

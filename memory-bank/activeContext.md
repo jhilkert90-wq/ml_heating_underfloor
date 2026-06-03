@@ -1,5 +1,254 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Code Review + Bugfixes — 2026-06-03
+
+#### **What changed**
+- Fixed deprecated `.fillna(method="ffill")` in heating calibration
+- Fixed extreme label filter dead code (threshold was 8.0 after ±5.0 clipping)
+- Added `COOLING_OUTLET_EFFECTIVENESS` config parameter
+- Added secondary S_H fallback guard, degenerate S_H logging, early abort after outlier filters
+- Added 11 tests for outlier filtering, residualized label, and S_H fallback
+
+#### **Why**
+- Code review identified 3 bugs and 3 edge cases in the recent ML implementation
+
+#### **Files modified**
+- `src/heating_correction_ml_calibration.py`, `src/cooling_correction_ml_calibration.py`
+- `src/config.py`, `src/heating_correction_ml_model.py`, `src/cooling_correction_ml_model.py`
+- `tests/unit/test_heating_correction_ml_calibration.py`
+
+### ✅ Production Integration: Heating ML Update + Cooling ML Pipeline — 2025-01-28
+
+#### **What changed**
+- Updated heating ML calibration/inference with residualized label, outlier filtering, 5 NB08 features
+- Created full cooling ML correction pipeline (calibration + inference + config + dashboard + translations)
+- Added 69 new tests across 3 test files; full suite: 1524 passed
+
+#### **Why**
+- NB08/NB09 notebook analysis showed residualized labels improve model quality
+- Forward-looking outlier filtering removes fireplace/window-open/PV spike contamination
+- Cooling ML correction needed for summer operation parity with heating ML
+
+#### **Files modified**
+- `src/heating_correction_ml_calibration.py`, `src/heating_correction_ml_model.py`
+- `src/cooling_correction_ml_calibration.py` (NEW), `src/cooling_correction_ml_model.py` (NEW)
+- `src/config.py`, `src/main.py`, `src/model_wrapper.py`
+- `dashboard/components/control.py`, `dashboard/config_schema.py`
+- `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`
+- 3 new test files in `tests/unit/`
+
+### ✅ NB09: Cooling ML Correction — Regression Model — 2026-06-04
+
+#### **What changed**
+- Created `notebooks/analysis/09_cooling_ml_correction.ipynb` — first cooling-mode regression correction model
+- Computed regression label from binary cooling CSV: `-(indoor_temp.shift(-24) - 23.0) / S_H_cooling`
+- Applied same residualized label architecture as heating NB08
+- Trained LightGBM with 63 features, evaluated via PI-pruning, Optuna, 5-fold TSCV
+
+#### **Why**
+- Existing cooling ML was a binary classifier (overheating yes/no) — no regression correction for outlet temp
+- Need a cooling analog to the heating correction model for symmetric mode coverage
+
+#### **Key findings**
+- R² parity with heating (0.9654 vs 0.9653) confirms comparable model quality
+- Higher MAE (0.277 vs 0.133) is a scale effect from lower S_H (0.35 vs 0.49)
+- indoor_margin dominates (PI=1.54, 26x second place) — same pattern as heating but more extreme
+- Many features have negative PI but cannot be pruned (removing worst caused +2.27% MAE regression)
+- Residual bias: positive at high PV/warm AT → solar thermal gain not fully captured
+- Fireplace/wind_speed features always zero in cooling data (no effect)
+
+### ✅ NB16: Constrained Cooling OE Calibration — 2026-06-03
+
+#### **What changed**
+- Created NB16 analysis notebook and standalone calibration script
+- Modified `physics_calibration_cooling.py` to lock HLC and τ from heating state
+- Replaced naive algebraic OE inversion with scipy.optimize RMSE minimisation
+- Updated cooling defaults: OE 0.90→0.20, τ 3.0→4.8h, OE lower bound 0.3→0.05
+- Updated test to verify τ is locked from heating state
+
+#### **Why**
+- Production OE=0.953 was never properly calibrated (config default drifted by online learning)
+- HLC and OE are confounded when HP saturates at 18°C min outlet → OE unidentifiable
+- HLC and τ are building/slab physics — mode-invariant, confirmed by NB10 scipy
+- Locking these 2 parameters leaves only OE free → well-conditioned 1-parameter optimization
+
+#### **Key findings**
+- OE_cooling ≈ 0.20 (passive convection, 4x lower than heating's 0.83 forced flow)
+- Production RMSE: 3.06°C → Calibrated: 2.62°C (14% improvement)
+- Hot outdoor (AT≥28°C) subset: RMSE=0.86°C, near-zero bias — cleanest data
+- +2°C bias in moderate weather from unmodeled solar/internal gains
+- Dual-HLC (HLC_on=0.158, HLC_off=0.032) gives 9.7% additional improvement
+
+#### **Files modified**
+- `src/physics_calibration_cooling.py`, `src/thermal_config.py`
+- `tests/unit/test_physics_calibration_cooling.py`
+- `notebooks/analysis/16_constrained_cooling_oe_calibration.ipynb`
+
+### ✅ NB15 Phase D-bis: Bias-Corrected Cross-Mode Analysis — 2026-06-03
+
+#### **What changed**
+- Added bias-corrected analysis cell (Phase D-bis) to NB15
+- Subtracted mode-specific a0 bias from residuals: heating=-2.098°C, cooling=+0.700°C
+- Re-evaluated all 5 correction methods with bias-corrected residuals
+- Ran standalone script to generate results (notebook cell also inserted)
+
+#### **Why**
+- Test whether the -2°C heating bias was the sole cause of cross-mode LUT failure
+- Determine if "shared LUT + per-mode offset" is viable (simpler than mode-specific LUTs)
+
+#### **Key findings**
+- **Cross-mode RMSE drops 45-53%** after bias correction (2.58→1.42)
+- Cross-mode Elev×Az RMSE (1.418) is actually BETTER than same-mode heating (1.432)
+- **Shared LUT + per-mode offset confirmed viable** — no need for separate mode-specific LUTs
+- Same-mode also improves significantly: heating 2.57→1.42, cooling 0.81→0.58
+- Priority 4 (joint HLC/OE recalibration) is validated as the right path
+- Revised implementation: single elevation-based LUT calibrated on pooled data + a0 offset per mode
+
+#### **Implementation plan update**
+- Priorities 1-2 (lock learning, mode-aware calibration) remain unchanged
+- Priority 3 (GHI replacement) — now optional, PV sensor works fine with bias correction
+- **Priority 4 revised**: Joint recalibration should fit a0_heat + a0_cool + shared solar_w simultaneously. A single Elev×Az LUT trained on cooling data (more signal) transfers perfectly to heating after bias removal.
+
+### ✅ NB15: Solar Weight — Heating Data + Cross-Dataset Comparison — 2026-06-03
+
+#### **What changed**
+- Created NB15 (22 cells): repeats NB14 solar_w calibration on heating_training_data.csv.gz
+- Compared heating vs cooling training datasets side-by-side
+- Built cross-dataset calibration sweep (cal on cool → eval on heat and vice versa)
+- Created 4-priority implementation plan for main workflow changes
+
+#### **Why**
+- Validate NB14 findings with independent dataset (heating_training_data, 85k rows)
+- Determine if cooling-calibrated solar_w transfers to heating mode prediction
+- Create actionable implementation plan
+
+#### **Key findings**
+- Both datasets confirm: solar_w undetectable in heating mode, near-zero in cooling
+- Heating data cooling subset gives SMALLER solar_w (0.000013) than NB14 (0.000062) — colder AT reduces solar visibility
+- Cross-mode calibration doesn't transfer (RMSE 3.14 vs 1.43)
+- Production solar_w (0.001659) is >80x physical value in both datasets
+
+#### **Implementation plan (4 priorities)**
+1. IMMEDIATE: Lock solar learning to stop oscillation
+2. SHORT-TERM: Mode-aware calibration (only update from cooling/passive data)
+3. MEDIUM-TERM: Replace PV sensor with Open Meteo GHI
+4. LONG-TERM: Joint HLC/OE/solar_w recalibration to remove -2°C bias
+
+### ✅ NB14: Solar Weight Calibration in Heating Mode — 2026-06-03
+
+#### **What changed**
+- Created NB14 (27 cells): calibrates pv_heat_weight across heating/cooling modes
+- Discovered solar weight undetectable in heating mode due to -2°C HP equilibrium bias
+- Cooling calibration gives w_pv=0.000062 (27x smaller than production 0.001659)
+- GHI weight drops with sun elevation (Fresnel effect), West windows dominate at low angles
+- Hour-of-day LUT best correction (RMSE improvement -0.34°C vs single weight)
+- Open Meteo forecast API available for PV_forecast replacement
+
+#### **Why**
+- Root cause of pv_heat_weight oscillation (0.0003↔0.003) investigated
+- Hypothesis: blind discontinuity at 23°C causes the oscillation
+- Result: PARTIALLY CONFIRMED — but the bigger issue is that production solar_w (0.001659) is 27x the physical value, compensating for HLC/OE bias
+
+#### **Implications for production code**
+- Lock solar learning immediately (oscillation driven by bias, not signal)
+- Production pv_heat_weight absorbs model errors — changing it alone will break predictions
+- Full fix requires joint HLC/OE/solar_w recalibration
+- Open Meteo GHI can replace PV sensor (blind-invariant, 16-day forecast)
+
+### ✅ NB13: Physics Solar Calibration — 2026-06-03
+
+#### **What changed**
+- Created NB13 with 4 physics solar models (Erbs, Kasten, Meteo, Naive) + astral sun positions
+- Ran 32 single-HLC calibrations (4 models × 8 EMA settings) + 2 dual-HLC comparisons
+- Found and fixed critical dt_h bug (5min, not 30min) that caused RMSE=20+ instead of ~0.33
+- Physics solar gives only 1.3% improvement (0.0045°C); dual-HLC gap unchanged
+
+#### **Why**
+- Hypothesis: dual-HLC gap caused by naive solar model absorbing into HLC_on (solar proxy)
+- Result: DISPROVEN — gap persists and slightly widens with physics solar
+- Dual-HLC (HLC_on=2.5× HLC_off) is a real physical effect, likely HP fan convective mixing
+
+#### **Implications for production code**
+- No need to implement physics solar in production (marginal benefit)
+- Dual-HLC should remain in thermal_equilibrium_model.py
+- tau_env ≈ 84h (much higher than the current online estimate of ~41h)
+
+### ✅ HLC/Beschattung Analysis + Phase 2 Prompt Correction — 2026-06-03
+
+#### **What changed**
+- Analyzed HLC_on/HLC_off ratio: investigated if 9.4x ratio from NB10 is Beschattung artifact or physical
+- Added Section F cells (4 cells) to NB12 for drift analysis, visualization, night calibration, interpretation
+- Created standalone scripts for faster analysis (section_f_analysis.py, analyze_hlc_*.py)
+- Night-filtered calibration result: HLC_on=0.327, HLC_off=0.005, OE=0.500, tau=15.0, RMSE=0.4285
+- Ratio INCREASED to 65.4x with clean nighttime data (no solar/Beschattung confound)
+- Updated Phase 2 prompt: HLC_off lower bound stays 0.005 (not raised to 0.02), interpretation corrected
+
+#### **Why**
+- User asked to understand why HLC_on/HLC_off ratio is so large before proceeding with Phase 2
+- Hypothesis was Beschattung (automated blinds) makes HP-off periods look stable, deflating HLC_off
+- Result: Beschattung DOES reduce apparent exchange by 46%, but nighttime (pure signal) shows even LOWER HLC_off
+- Conclusion: dual-HLC is physical — HP fan forced convection vs natural convection
+
+#### **Key decision: Phase 2 awaiting user confirmation**
+
+### ✅ Solar Parameter Replacement + Implementation Plans — 2026-06-02
+
+#### **What changed**
+- Created and executed Notebook 12: Solar Parameter Replacement Analysis (23 cells, all passing)
+- Fetched 6 Open Meteo variables (GHI, direct, diffuse, DNI, GTI, sunshine_duration) — 9,504 hours
+- Ran dual-HLC thermal calibration with all 6 solar variants + PV + no-solar baseline
+- Trained 4 LGBM classifiers comparing PV vs GHI vs combined vs no-solar features
+- Created prompt file for Phase 2 (cooling calibration adaptation from NB10)
+- Created prompt file for Phase 3 (pre-cooling adaptation from NB11)
+
+#### **Why**
+- Need to determine if Open Meteo radiation can replace PV sensor dependency for cooling control
+- PV sensor is site-specific (panel area, orientation, efficiency); GHI is universal
+- Future systems could use Open Meteo directly without requiring PV hardware
+
+#### **Key findings for production**
+- **Thermal model**: GHI (RMSE=0.476) beats PV (RMSE=0.528) by 10% — GHI is the recommended replacement
+- **Weight conversion**: pv_weight=0.000493 kW/W → ghi_weight=0.004144 kW/(W/m²), scale ratio=7.94
+- **Lag**: GHI peaks at lag=0min vs current solar_lag=45min — lag should be reduced for GHI
+- **cloud_factor_exponent**: may be redundant with GHI (GHI already accounts for cloud cover)
+- **ML classifier**: PV still wins (AUC=0.945 vs GHI=0.931, Δ=-0.014) — marginal, acceptable
+- **Forecast**: GHI forecast correlates better with indoor_trend than PV forecast at 1-4h horizons
+- **GTI** (tilted irradiance) is promising but requires panel tilt/azimuth configuration
+- **Diffuse** gave best RMSE (0.460) but optimizer hit bounds — needs wider investigation
+
+#### **Files created**
+- `notebooks/analysis/12_solar_parameter_replacement.ipynb`
+- `scripts/create_notebook_12.py`
+- `prompts/plan-cooling-calibration-nb10.prompt.md`
+- `prompts/plan-precooling-nb11.prompt.md`
+
+### ✅ Cooling Analysis Notebooks — 2026-06-02
+
+#### **What changed**
+- Created notebook 10 (offline thermal calibration) and notebook 11 (cycle-by-cycle analysis)
+- Fixed scipy optimization bounds (OE≤1.0, τ≤8h), switched to differential_evolution
+- Fixed Open Meteo API fetch: added `verify=False` SSL bypass, monthly chunking, forecast API fallback
+- Open Meteo now fetches 9,504 hourly records (GHI, DNI, direct, diffuse) for full solar comparison
+- Updated comparison cell to dual-source analysis (Open Meteo + PV side-by-side)
+- Added LGBM threshold sensitivity analysis showing bimodal distribution
+- Fixed multiple string quoting issues in generator scripts (\n splitting in notebook JSON)
+
+#### **Why**
+- Online-learned parameters (HLC=0.049, τ=41h) were far from physical reality
+- LGBM pre-cooling was assumed near-constant but is actually bimodal (threshold too low)
+- Needed offline calibration data to validate/correct production parameters
+
+#### **Key findings for production**
+- Dual-HLC: HLC_on=0.146, HLC_off=0.016 (9.4x ratio, 85.8% RMSE improvement)
+- Cooling OE=0.19 (must be separate from heating OE=0.83)
+- τ should be capped at 15h for cooling, default 8h
+- LGBM threshold should be raised from 0.345 to ~0.50 to reject 19% of marginal cycles
+- Trajectory pre-cooling should be primary trigger (12% rejection rate)
+
+#### **Files modified**
+- `notebooks/analysis/10_cooling_thermal_calibration.ipynb`, `notebooks/analysis/11_cooling_cycle_analysis.ipynb`
+- `scripts/create_notebook_10.py`, `scripts/create_notebook_11.py`
+
 ### ✅ PR #75 review follow-up: cooling physics calibration — 2026-06-01
 
 #### **What changed**

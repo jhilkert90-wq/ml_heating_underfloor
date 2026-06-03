@@ -505,6 +505,38 @@ def _extract_heating_feature(
     if col == "traj_equilibrium_gap":
         return _compute_traj_equilibrium_gap(physics, target_indoor)
 
+    # ── NB08-derived features ──────────────────────────────────────────
+    if col == "cumulative_Q_wp_4h":
+        return float(physics.get("cumulative_Q_wp_4h", 0.0) or 0.0)
+
+    if col == "indoor_accel":
+        return float(physics.get("indoor_accel", 0.0) or 0.0)
+
+    if col == "AT_forecast_trend":
+        val = physics.get("AT_forecast_trend")
+        if val is not None:
+            return float(val)
+        # Fallback: max AT forecast minus current AT
+        outdoor = physics.get("outdoor_temp", 0.0) or 0.0
+        for h in [4, 3, 2, 1]:
+            fkey = f"AT_roh_{h}h"
+            fval = physics.get(fkey)
+            if fval is not None:
+                return float(fval) - float(outdoor)
+        return 0.0
+
+    if col == "pv_cumulative_4h":
+        return float(physics.get("pv_cumulative_4h", 0.0) or 0.0)
+
+    if col == "thermal_momentum":
+        val = physics.get("thermal_momentum")
+        if val is not None:
+            return float(val)
+        # Fallback: compute from available components
+        tp = physics.get("thermal_power_rolling_1h", 0.0) or 0.0
+        dt = physics.get("delta_t", 0.0) or 0.0
+        return float(tp) * float(dt)
+
     logger.warning(
         "HeatingCorrectionMLModel: unknown feature column '%s', filling 0.0", col
     )
@@ -545,6 +577,8 @@ class HeatingCorrectionMLModel:
         self._metadata: dict[str, Any] = {}
         self._feature_cols: list[str] = []
         self._r2_score: float = 0.0
+        self._label_type: str = ""
+        self._s_h: float = 0.0
         self._loaded = False
 
     # ------------------------------------------------------------------
@@ -575,6 +609,14 @@ class HeatingCorrectionMLModel:
                 self._metadata = json.load(fh)
             self._feature_cols = self._metadata.get("feature_cols", [])
             self._r2_score = float(self._metadata.get("val_r2", 0.0))
+            self._label_type = self._metadata.get("label_type", "")
+            self._s_h = float(self._metadata.get("s_h_estimated", 0.0))
+            if self._label_type == "residualized" and self._s_h <= 0.05:
+                logger.warning(
+                    "HeatingCorrectionMLModel: label_type='residualized' but "
+                    "S_H=%.4f (≤0.05) — residualized reconstruction will be skipped",
+                    self._s_h,
+                )
             self._loaded = True
             logger.info(
                 "HeatingCorrectionMLModel: loaded %s | features=%d R²=%.4f MAE=%.4f",
@@ -639,10 +681,28 @@ class HeatingCorrectionMLModel:
             )
             X = pd.DataFrame([vec], columns=self._feature_cols)
             delta: float = float(self._model.predict(X)[0])
-            logger.debug(
-                "HeatingCorrectionMLModel: raw ΔT_outlet=%.3f°C (R²=%.4f)",
-                delta, self._r2_score,
-            )
+
+            # Residualized label reconstruction:
+            # Model was trained on adjusted_label = -(T_future - T_current) / S_H.
+            # To get the full correction we reconstruct:
+            #   full_correction = delta - indoor_margin / S_H
+            # where indoor_margin = target - indoor (positive = undershoot).
+            if self._label_type == "residualized" and self._s_h > 0.05:
+                indoor_margin = _extract_heating_feature(
+                    "indoor_margin", features, target_indoor
+                )
+                delta = delta - indoor_margin / self._s_h
+                logger.debug(
+                    "HeatingCorrectionMLModel: residualized → "
+                    "raw=%.3f margin=%.3f s_h=%.3f → full=%.3f°C",
+                    float(self._model.predict(X)[0]),
+                    indoor_margin, self._s_h, delta,
+                )
+            else:
+                logger.debug(
+                    "HeatingCorrectionMLModel: raw ΔT_outlet=%.3f°C (R²=%.4f)",
+                    delta, self._r2_score,
+                )
             return delta
         except Exception:
             logger.exception("HeatingCorrectionMLModel: inference failed")

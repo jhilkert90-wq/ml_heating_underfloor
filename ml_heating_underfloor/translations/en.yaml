@@ -367,6 +367,81 @@ configuration:
     name: '[ML Heating] Time-Series CV Splits'
     description: 'Number of CV splits (folds) for time-series cross-validation.  Default:
       3.'
+  cooling_correction_mode:
+    name: '[ML Cooling Correction] Correction Mode'
+    description: 'Cooling correction algorithm: "physics" uses the Newton step (default),
+      "ml" uses the LightGBM regressor (requires calibration).'
+  cooling_ml_correction_warm_threshold_c:
+    name: '[ML Cooling Correction] Warm Threshold (°C)'
+    description: 'Minimum outdoor temperature for warm-season filtering. Only rows
+      with AT ≥ this value are used for training. Default: 18.0°C.'
+  cooling_ml_correction_calibration_start_date:
+    name: '[ML Cooling Correction] Calibration Start Date'
+    description: 'Earliest date for cooling ML correction training data (format: DD.MM.YYYY).
+      When set, lookback_hours is computed as (now − start_date). Leave empty for default.'
+  cooling_ml_correction_at_forecast_hours:
+    name: '[ML Cooling Correction] AT Forecast Hours'
+    description: 'Comma-separated outdoor temperature forecast hours for cooling correction
+      features. Default: "1,2,3,4".'
+  cooling_ml_correction_pv_forecast_hours:
+    name: '[ML Cooling Correction] PV Forecast Hours'
+    description: 'Comma-separated PV forecast hours for cooling correction features.
+      Default: "1,2,3,4".'
+  cooling_ml_correction_fireplace_lag_hours:
+    name: '[ML Cooling Correction] Fireplace Lag Hours'
+    description: 'Comma-separated fireplace lag window sizes in hours. Default: "1,2".'
+  cooling_ml_correction_tv_lag_hours:
+    name: '[ML Cooling Correction] TV Lag Hours'
+    description: 'Comma-separated TV lag window sizes in hours. Default: "0.5,1".'
+  cooling_ml_correction_min_training_samples:
+    name: '[ML Cooling Correction] Min Training Samples'
+    description: 'Minimum warm-season rows required before training. Default: 200.'
+  cooling_ml_correction_label_horizon_h:
+    name: '[ML Cooling Correction] Label Horizon (hours)'
+    description: 'Label lookahead horizon in hours. Should match trajectory steps.
+      Default: 4.'
+  cooling_ml_correction_blend_min_r2:
+    name: '[ML Cooling Correction] Blend Min R²'
+    description: 'Minimum R² for the ML model to participate in the correction blend.
+      Below this threshold, pure physics is used. Default: 0.3.'
+  cooling_ml_correction_retrain_val_fraction:
+    name: '[ML Cooling Correction] Validation Fraction'
+    description: 'Fraction of training data held out for validation. Default: 0.25.'
+  cooling_ml_correction_retrain_trigger_k:
+    name: '[ML Cooling Correction] Retrain Trigger K'
+    description: 'Number of new labeled observations that triggers automatic retrain.
+      Default: 50.'
+  cooling_ml_correction_buffer_max_n:
+    name: '[ML Cooling Correction] Buffer Max N'
+    description: 'Rolling buffer size for online learning observations. Default: 500.'
+  cooling_ml_correction_feature_pruning_enabled:
+    name: '[ML Cooling Correction] Feature Pruning'
+    description: 'Enable permutation-importance-based feature pruning. Default: true.'
+  cooling_ml_correction_prune_pi_threshold:
+    name: '[ML Cooling Correction] Prune PI Threshold'
+    description: 'Permutation importance cutoff for pruning. Features at or below
+      this value are candidates for removal. Default: 0.0.'
+  cooling_ml_correction_reg_alpha:
+    name: '[ML Cooling Correction] L1 Regularization (α)'
+    description: 'LightGBM reg_alpha (L1). Default: 0.1.'
+  cooling_ml_correction_reg_lambda:
+    name: '[ML Cooling Correction] L2 Regularization (λ)'
+    description: 'LightGBM reg_lambda (L2). Default: 1.0.'
+  cooling_ml_correction_optuna_enabled:
+    name: '[ML Cooling Correction] Optuna HPO'
+    description: 'Enable Optuna hyper-parameter optimisation. Adds training time.
+      Default: false.'
+  cooling_ml_correction_optuna_n_trials:
+    name: '[ML Cooling Correction] Optuna Trials'
+    description: 'Number of Optuna trials when HPO is enabled. Default: 20.'
+  cooling_ml_correction_cv_enabled:
+    name: '[ML Cooling Correction] Cross-Validation'
+    description: 'Enable time-series cross-validation for performance reporting.
+      Default: false.'
+  cooling_ml_correction_cv_n_splits:
+    name: '[ML Cooling Correction] CV Splits'
+    description: 'Number of CV splits (folds) for time-series cross-validation.
+      Default: 3.'
   influx_url:
     name: '[InfluxDB] InfluxDB URL'
     description: Full URL of your InfluxDB instance including protocol and port (e.g.

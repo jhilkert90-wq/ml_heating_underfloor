@@ -226,6 +226,54 @@ options:
   # Number of CV splits (folds) for time-series cross-validation.  Default: 3.
   heating_ml_cv_n_splits: 3
 
+  # === ML-Based Cooling Correction (LightGBM Regressor) ===
+  # Analogous to heating ML correction but for cooling mode.
+  # Uses residualized label with cooling outlet-effectiveness.
+  # --- Cooling Correction Mode ---
+  # "physics" — physics Newton step (default).
+  # "ml"      — LightGBM regressor (requires calibration).
+  cooling_correction_mode: "physics"
+  # Minimum outdoor temperature for warm-season filtering.
+  cooling_ml_correction_warm_threshold_c: 18.0
+  # Earliest date for cooling ML correction training data (format: DD.MM.YYYY).
+  cooling_ml_correction_calibration_start_date: ""
+  # Comma-separated AT forecast hours.
+  cooling_ml_correction_at_forecast_hours: "1,2,3,4"
+  # Comma-separated PV forecast hours.
+  cooling_ml_correction_pv_forecast_hours: "1,2,3,4"
+  # Comma-separated fireplace lag hours.
+  cooling_ml_correction_fireplace_lag_hours: "1,2"
+  # Comma-separated TV lag hours.
+  cooling_ml_correction_tv_lag_hours: "0.5,1"
+  # Minimum warm-season rows required before training.
+  cooling_ml_correction_min_training_samples: 200
+  # Label lookahead horizon [hours].
+  cooling_ml_correction_label_horizon_h: 4
+  # Minimum R² for ML model to participate in the correction blend.
+  cooling_ml_correction_blend_min_r2: 0.3
+  # Fraction of training data held out for validation.
+  cooling_ml_correction_retrain_val_fraction: 0.25
+  # Number of new labeled observations that triggers automatic retrain.
+  cooling_ml_correction_retrain_trigger_k: 50
+  # Rolling buffer size: keep the last N labeled observations.
+  cooling_ml_correction_buffer_max_n: 500
+  # Enable permutation-importance-based feature pruning.
+  cooling_ml_correction_feature_pruning_enabled: true
+  # Permutation importance cutoff for pruning.
+  cooling_ml_correction_prune_pi_threshold: 0.0
+  # LightGBM L1 regularization.
+  cooling_ml_correction_reg_alpha: 0.1
+  # LightGBM L2 regularization.
+  cooling_ml_correction_reg_lambda: 1.0
+  # Enable Optuna hyper-parameter optimisation.
+  cooling_ml_correction_optuna_enabled: false
+  # Number of Optuna trials.
+  cooling_ml_correction_optuna_n_trials: 20
+  # Enable time-series cross-validation.
+  cooling_ml_correction_cv_enabled: false
+  # Number of CV splits (folds).
+  cooling_ml_correction_cv_n_splits: 3
+
   # === InfluxDB Configuration ===
   # URL of your InfluxDB instance, including the protocol and port
   influx_url: "http://192.168.0.223:8089"
@@ -665,6 +713,28 @@ schema:
   heating_ml_optuna_n_trials: "int(5,100)"
   heating_ml_cv_enabled: "bool"
   heating_ml_cv_n_splits: "int(2,10)"
+  # ML-Based Cooling Correction
+  cooling_correction_mode: "list(physics|ml)"
+  cooling_ml_correction_warm_threshold_c: "float(10.0,30.0)"
+  cooling_ml_correction_calibration_start_date: "str?"
+  cooling_ml_correction_at_forecast_hours: "str"
+  cooling_ml_correction_pv_forecast_hours: "str"
+  cooling_ml_correction_fireplace_lag_hours: "str"
+  cooling_ml_correction_tv_lag_hours: "str"
+  cooling_ml_correction_min_training_samples: "int(50,2000)"
+  cooling_ml_correction_label_horizon_h: "int(1,12)"
+  cooling_ml_correction_blend_min_r2: "float(0.0,1.0)"
+  cooling_ml_correction_retrain_val_fraction: "float(0.05,0.5)"
+  cooling_ml_correction_retrain_trigger_k: "int(10,500)"
+  cooling_ml_correction_buffer_max_n: "int(100,5000)"
+  cooling_ml_correction_feature_pruning_enabled: "bool"
+  cooling_ml_correction_prune_pi_threshold: "float(-1.0,1.0)"
+  cooling_ml_correction_reg_alpha: "float(0.0,10.0)"
+  cooling_ml_correction_reg_lambda: "float(0.0,10.0)"
+  cooling_ml_correction_optuna_enabled: "bool"
+  cooling_ml_correction_optuna_n_trials: "int(5,100)"
+  cooling_ml_correction_cv_enabled: "bool"
+  cooling_ml_correction_cv_n_splits: "int(2,10)"
   # InfluxDB Configuration
   influx_url: "str"
   influx_token: "str"

@@ -314,48 +314,31 @@ def _filter_cooling_active_periods(stable_periods: list) -> list:
 def _calibrate_oe_cooling(
     stable_periods: list, hlc: float
 ) -> Optional[float]:
-    """Estimate outlet_effectiveness from cooling periods.
+    """Estimate outlet_effectiveness from cooling periods via RMSE minimisation.
 
-    In cooling mode the equilibrium equation is the same:
+    Uses scipy.optimize.minimize_scalar to find the OE that minimises
+    the equilibrium residual RMSE on non-saturated cooling periods:
+
         T_eq = (OE × T_outlet + HLC × T_outdoor) / (OE + HLC)
+        residual = T_indoor − T_eq
 
-    But the drive is inverted: T_indoor > T_outlet (heat flows from room
-    into cooler slab/water).
-
-    OE = HLC × (T_outdoor − T_indoor) / (T_outlet − T_indoor)
-
-    Since T_outdoor > T_indoor in cooling season and T_outlet < T_indoor:
-    * numerator (T_outdoor − T_indoor) > 0
-    * denominator (T_outlet − T_indoor) < 0
-    → raw OE would be negative.
-
-    Rearranging correctly for cooling equilibrium where room temp is
-    maintained by balance of outdoor heat gain and slab cooling:
-        T_indoor = (OE × T_outlet + HLC × T_outdoor) / (OE + HLC)
-
-    Solving for OE:
-        T_indoor × (OE + HLC) = OE × T_outlet + HLC × T_outdoor
-        OE × T_indoor + HLC × T_indoor = OE × T_outlet + HLC × T_outdoor
-        OE × (T_indoor − T_outlet) = HLC × (T_outdoor − T_indoor)
-        OE = HLC × (T_outdoor − T_indoor) / (T_indoor − T_outlet)
-
-    Both numerator and denominator are positive in cooling mode.
+    Only uses periods where the cooling drive (T_indoor − T_outlet) exceeds
+    ``_MIN_COOLING_DRIVE_K`` to avoid numerically unstable / HP-saturated
+    regimes.
     """
-    logging.info("=== COOLING OE ESTIMATION ===")
+    logging.info("=== COOLING OE ESTIMATION (RMSE minimisation) ===")
+    from scipy import optimize as sp_optimize
 
     if hlc <= 0:
         logging.warning("⚠️ OE calibration skipped — HLC ≤ 0")
         return None
 
-    cooling_periods = _filter_cooling_active_periods(stable_periods)
-    if not cooling_periods:
-        logging.warning("⚠️ No cooling-active periods for OE calibration")
-        return None
+    # Collect non-saturated cooling periods
+    t_indoor_list = []
+    t_outdoor_list = []
+    t_outlet_list = []
 
-    oe_values = []
-    weights = []
-
-    for p in cooling_periods:
+    for p in stable_periods:
         t_in = p.get("indoor_temp")
         t_out = p.get("outdoor_temp")
         t_outlet = p.get("effective_temp", p.get("outlet_temp"))
@@ -363,44 +346,48 @@ def _calibrate_oe_cooling(
         if t_in is None or t_out is None or t_outlet is None:
             continue
 
-        # Cooling drive: room is warmer than outlet
+        # Non-saturated: sufficient cooling drive
         drive = t_in - t_outlet
-        if drive <= _MIN_COOLING_DRIVE_K:
-            continue  # Insufficient cooling drive
+        if drive < _MIN_COOLING_DRIVE_K:
+            continue
 
-        # Outdoor heat gain: outdoor warmer than indoor
-        delta_outdoor = t_out - t_in
-        if delta_outdoor <= 0:
-            continue  # No outdoor heat gain — unusual for cooling season
+        t_indoor_list.append(t_in)
+        t_outdoor_list.append(t_out)
+        t_outlet_list.append(t_outlet)
 
-        oe = hlc * delta_outdoor / drive
-
-        # Validate against cooling bounds
-        bounds = ThermalParameterConfig.get_cooling_bounds("outlet_effectiveness")
-        if bounds[0] <= oe <= bounds[1]:
-            oe_values.append(oe)
-            weights.append(drive)
-
-    if len(oe_values) < 10:
+    if len(t_indoor_list) < 10:
         logging.warning(
             "⚠️ Insufficient cooling periods for OE: %d (need ≥10)",
-            len(oe_values),
+            len(t_indoor_list),
         )
         return None
 
-    # Weighted median
-    sorted_pairs = sorted(zip(oe_values, weights), key=lambda x: x[0])
-    sorted_oe = [x[0] for x in sorted_pairs]
-    sorted_w = [x[1] for x in sorted_pairs]
-    cum_w = np.cumsum(sorted_w)
-    total_w = cum_w[-1]
-    median_idx = np.searchsorted(cum_w, total_w / 2.0)
-    median_idx = min(median_idx, len(sorted_oe) - 1)
-    oe_estimate = sorted_oe[median_idx]
+    t_indoor = np.array(t_indoor_list)
+    t_outdoor = np.array(t_outdoor_list)
+    t_outlet = np.array(t_outlet_list)
+
+    def _rmse_objective(oe: float) -> float:
+        denom = oe + hlc
+        t_eq = (oe * t_outlet + hlc * t_outdoor) / denom
+        return float(np.sqrt(np.mean((t_indoor - t_eq) ** 2)))
+
+    bounds = ThermalParameterConfig.get_cooling_bounds("outlet_effectiveness")
+    result = sp_optimize.minimize_scalar(
+        _rmse_objective,
+        bounds=(bounds[0], bounds[1]),
+        method="bounded",
+    )
+    oe_estimate = float(result.x)
+    rmse_val = float(result.fun)
+
+    # Also compute bias for diagnostics
+    denom = oe_estimate + hlc
+    t_eq = (oe_estimate * t_outlet + hlc * t_outdoor) / denom
+    bias = float(np.mean(t_indoor - t_eq))
 
     logging.info(
-        "✅ Cooling OE estimate: %.4f kW/K (from %d periods, weighted median)",
-        oe_estimate, len(oe_values),
+        "✅ Cooling OE estimate: %.4f (RMSE=%.4f°C, bias=%+.4f°C, n=%d periods)",
+        oe_estimate, rmse_val, bias, len(t_indoor_list),
     )
     return oe_estimate
 
@@ -634,14 +621,16 @@ def calibrate_cooling_physics(
         return None
     logging.info("✅ Found %d stable cooling periods", len(stable_periods))
 
-    # --- Step 1: HLC (re-calibrate from warm-season data) ---
-    logging.info("Step 1: Cooling HLC estimation...")
-    hlc = _calibrate_hlc_cooling(stable_periods)
-    if hlc is None:
-        logging.warning(
-            "⚠️ Cooling HLC calibration failed — using heating fallback"
-        )
-        hlc = _heating_fallback("heat_loss_coefficient")
+    # --- Step 1: HLC — LOCKED from heating calibration ---
+    # HLC is a building property (envelope conductance), mode-invariant.
+    # NB10 scipy confirms heating and cooling converge to the same value.
+    # Re-calibrating from cooling data introduces noise → lock it.
+    logging.info("Step 1: HLC — locked from heating calibration (building property)...")
+    hlc = _heating_fallback("heat_loss_coefficient")
+    logging.info(
+        "  Using heating-calibrated HLC = %.5f kW/K (locked, mode-invariant)",
+        hlc,
+    )
 
     # --- Step 2: OE ---
     logging.info("Step 2: Cooling OE estimation...")
@@ -650,35 +639,16 @@ def calibrate_cooling_physics(
         logging.warning("⚠️ Cooling OE calibration failed — using fallback")
         oe = _cooling_fallback("outlet_effectiveness")
 
-    # --- Step 3: Thermal time constant ---
-    # Use heating value as prior; only override if cooling data is good
-    logging.info("Step 3: Thermal time constant (heating fallback + cooling check)...")
+    # --- Step 3: Thermal time constant — LOCKED from heating ---
+    # The slab time constant is a physical property of the screed mass, not
+    # mode-dependent.  Cooling τ estimates are noisy because the HP saturates
+    # at 18°C minimum outlet and the response is barely visible.
+    logging.info("Step 3: Thermal time constant — locked from heating (slab property)...")
     tau = _heating_fallback("thermal_time_constant")
-
-    # Try cooling curves (HP-off periods where building warms)
-    tau_df = df.copy()
-    target_outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-    actual_outlet_col = config.ACTUAL_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-    if actual_outlet_col in tau_df.columns:
-        if target_outlet_col in tau_df.columns:
-            tau_df[target_outlet_col] = tau_df[target_outlet_col].fillna(
-                tau_df[actual_outlet_col]
-            )
-        else:
-            tau_df[target_outlet_col] = tau_df[actual_outlet_col]
-    tau_cooling, tau_r2 = calculate_cooling_time_constant(tau_df)
-    if tau_cooling is not None and tau_r2 is not None and tau_r2 > _SLAB_TAU_MIN_R2:
-        # High confidence — override
-        tau = tau_cooling
-        logging.info(
-            "✅ Cooling τ_room = %.2fh (R²=%.3f) — overrides heating fallback",
-            tau, tau_r2,
-        )
-    else:
-        logging.info(
-            "Using heating-calibrated τ_room = %.2fh (cooling R²=%.3f insufficient)",
-            tau, tau_r2 or 0.0,
-        )
+    logging.info(
+        "  Using heating-calibrated τ = %.2fh (locked, slab property)",
+        tau,
+    )
 
     # --- Step 4: PV heat weight ---
     logging.info("Step 4: PV heat weight (from cooling periods with PV)...")
@@ -709,28 +679,10 @@ def calibrate_cooling_physics(
         logging.warning("⚠️ delta_t_floor calibration failed — using fallback")
         delta_t_floor_val = _cooling_fallback("delta_t_floor")
 
-    # --- Step 9: Slab time constant ---
-    # Use heating value as prior; only override if cooling result is high confidence
-    logging.info("Step 9: Slab time constant (heating fallback + cooling check)...")
+    # --- Step 9: Slab time constant — LOCKED from heating ---
+    logging.info("Step 9: Slab time constant — locked from heating (same physical slab)...")
     slab_tau = _heating_fallback("slab_time_constant_hours")
-
-    slab_tau_cooling = _calibrate_slab_tau_grid_search(df, delta_t_floor=delta_t_floor_val)
-    if slab_tau_cooling is not None:
-        # The grid search succeeded — validate reasonableness
-        bounds = ThermalParameterConfig.get_cooling_bounds("slab_time_constant_hours")
-        if bounds[0] <= slab_tau_cooling <= bounds[1]:
-            slab_tau = slab_tau_cooling
-            logging.info(
-                "✅ Cooling slab τ = %.2fh — overrides heating fallback",
-                slab_tau,
-            )
-        else:
-            logging.warning(
-                "⚠️ Cooling slab τ %.2fh outside bounds — keeping heating fallback %.2fh",
-                slab_tau_cooling, slab_tau,
-            )
-    else:
-        logging.info("Using heating-calibrated slab τ = %.2fh", slab_tau)
+    logging.info("  Using heating-calibrated slab τ = %.2fh", slab_tau)
 
     # --- Step 10-11: FP decay / room spread — skip (not relevant for cooling) ---
     fp_decay_tau = ThermalParameterConfig.get_cooling_default("fp_decay_time_constant")

@@ -105,6 +105,11 @@ def main():
         action="store_true",
         help="Train the LightGBM heating-correction regressor and exit.",
     )
+    parser.add_argument(
+        "--calibrate-cooling-correction-ml",
+        action="store_true",
+        help="Train the LightGBM cooling-correction regressor and exit.",
+    )
     args = parser.parse_args()
     # Load environment variables and configure logging.
     load_dotenv()
@@ -236,6 +241,40 @@ def main():
                 logging.error(
                     "❌ Heating correction ML calibration error: %s",
                     _hml_err, exc_info=True,
+                )
+
+    # --- Cooling Correction ML Calibration Flag Detection ---
+    _cooling_ml_corr_flag = "/data/config/calibrate_cooling_correction_ml_flag"
+    if os.path.exists(_cooling_ml_corr_flag):
+        logging.info(
+            "🧊 Cooling correction ML calibrate flag detected — running LGBM training"
+        )
+        try:
+            os.remove(_cooling_ml_corr_flag)
+        except OSError as _flag_err:
+            logging.error(
+                "❌ Could not remove cooling ML correction flag %s — skipping to avoid loop: %s",
+                _cooling_ml_corr_flag, _flag_err,
+            )
+            _cooling_ml_corr_flag = None
+        if _cooling_ml_corr_flag is not None:
+            try:
+                from .cooling_correction_ml_calibration import (
+                    calibrate_cooling_correction_ml,
+                )
+                _ok = calibrate_cooling_correction_ml()
+                if _ok:
+                    logging.info(
+                        "✅ Cooling correction ML model calibrated successfully"
+                    )
+                else:
+                    logging.error(
+                        "❌ Cooling correction ML calibration failed — check logs"
+                    )
+            except Exception as _cml_err:
+                logging.error(
+                    "❌ Cooling correction ML calibration error: %s",
+                    _cml_err, exc_info=True,
                 )
 
     # --- Physics-Direct Calibration Flag Detection ---
@@ -547,6 +586,27 @@ def main():
             logging.error(
                 "Heating correction ML calibration error: %s",
                 _hml_exc, exc_info=True,
+            )
+        return
+
+    # --- Cooling Correction ML Calibration (CLI) ---
+    if _bool_arg(args, "calibrate_cooling_correction_ml"):
+        logging.info("=== COOLING CORRECTION ML CALIBRATION (CLI) ===")
+        try:
+            from .cooling_correction_ml_calibration import (
+                calibrate_cooling_correction_ml,
+            )
+            _ok = calibrate_cooling_correction_ml()
+            if _ok:
+                logging.info(
+                    "✅ Cooling correction ML model trained and saved successfully"
+                )
+            else:
+                logging.error("❌ Cooling correction ML calibration failed")
+        except Exception as _cml_exc:
+            logging.error(
+                "Cooling correction ML calibration error: %s",
+                _cml_exc, exc_info=True,
             )
         return
 

@@ -1952,19 +1952,32 @@ class EnhancedModelWrapper:
                 )
 
             # Calculate correction using the configured mode.
-            # In cooling mode, always use "physics" (Newton) — the ML model
-            # is trained only for heating and must not be applied here.
+            # In cooling mode, check COOLING_CORRECTION_MODE for ML correction.
             _correction_mode = getattr(
                 config, "HEATING_CORRECTION_MODE", "legacy"
             )
-            if self._climate_mode == "cooling" and _correction_mode == "ml":
-                logging.debug(
-                    "❄️ Cooling mode: overriding HEATING_CORRECTION_MODE='ml' "
-                    "→ using physics Newton correction (ML is heating-only)."
+            if self._climate_mode == "cooling":
+                _cooling_correction_mode = getattr(
+                    config, "COOLING_CORRECTION_MODE", "physics"
                 )
-                _correction_mode = "physics"
+                if _cooling_correction_mode == "ml":
+                    _correction_mode = "cooling_ml"
+                elif _correction_mode == "ml":
+                    # Heating ML model must not be applied in cooling mode
+                    logging.debug(
+                        "❄️ Cooling mode: overriding HEATING_CORRECTION_MODE='ml' "
+                        "→ using physics Newton correction (heating ML is heating-only)."
+                    )
+                    _correction_mode = "physics"
 
-            if _correction_mode == "physics":
+            if _correction_mode == "cooling_ml":
+                corrected_outlet = self._calculate_cooling_ml_correction(
+                    outlet_temp=outlet_temp,
+                    trajectory=trajectory,
+                    target_indoor=target_indoor,
+                    cycle_hours=cycle_hours,
+                )
+            elif _correction_mode == "physics":
                 corrected_outlet = self._calculate_physics_newton_correction(
                     outlet_temp=outlet_temp,
                     trajectory=trajectory,
@@ -2614,6 +2627,91 @@ class EnhancedModelWrapper:
 
         logging.info(
             "🤖 [ML correction] R²=%.3f w=%.3f Δphysics=%+.3f°C "
+            "Δml=%+.3f°C Δblend=%+.3f°C → outlet=%.1f°C",
+            r2, w, delta_physics, delta_ml, delta_blend, corrected,
+        )
+        return corrected
+
+    # ------------------------------------------------------------------
+    # Cooling ML correction
+    # ------------------------------------------------------------------
+
+    _cooling_correction_ml_model = None  # class-level singleton
+
+    @classmethod
+    def _get_cooling_correction_ml_model(cls):
+        """Load or return the cached CoolingCorrectionMLModel singleton."""
+        if cls._cooling_correction_ml_model is not None:
+            return cls._cooling_correction_ml_model
+        try:
+            from src.cooling_correction_ml_model import CoolingCorrectionMLModel
+        except ImportError:
+            return None
+        model_path = getattr(
+            config,
+            "COOLING_ML_CORRECTION_MODEL_PATH",
+            "/opt/ml_heating/cooling_correction_ml_model.joblib",
+        )
+        metadata_path = getattr(
+            config,
+            "COOLING_ML_CORRECTION_METADATA_PATH",
+            "/opt/ml_heating/cooling_correction_ml_metadata.json",
+        )
+        ml_model = CoolingCorrectionMLModel(model_path, metadata_path)
+        if ml_model.load():
+            cls._cooling_correction_ml_model = ml_model
+            return ml_model
+        return None
+
+    def _calculate_cooling_ml_correction(
+        self,
+        outlet_temp: float,
+        trajectory: Dict,
+        target_indoor: float,
+        cycle_hours: float,
+    ) -> float:
+        """
+        Cooling ML correction: confidence-weighted blend of physics Newton step
+        and LightGBM cooling correction regressor prediction.
+
+        Mirrors _calculate_ml_correction but uses cooling-specific model + config.
+        Falls back to physics Newton when model unavailable or R² too low.
+        """
+        physics_outlet = self._calculate_physics_newton_correction(
+            outlet_temp, trajectory, target_indoor, cycle_hours
+        )
+        delta_physics = physics_outlet - outlet_temp
+
+        ml_model = self._get_cooling_correction_ml_model()
+        if ml_model is None:
+            logging.debug(
+                "[Cooling ML correction] Model not loaded — using physics Newton."
+            )
+            return physics_outlet
+
+        features = getattr(self, "_current_features", {}) or {}
+        features["_last_trajectory"] = trajectory
+        delta_ml = ml_model.predict(features, target_indoor)
+        if delta_ml is None:
+            logging.debug(
+                "[Cooling ML correction] ML inference returned None — "
+                "using physics Newton."
+            )
+            return physics_outlet
+
+        blend_min_r2 = float(
+            getattr(config, "COOLING_ML_CORRECTION_BLEND_MIN_R2", 0.3)
+        )
+        r2 = ml_model.r2_score
+        w = 0.0 if r2 < blend_min_r2 else max(0.0, min(1.0, r2))
+        delta_blend = (1.0 - w) * delta_physics + w * delta_ml
+
+        corrected = outlet_temp + delta_blend
+        clamp_min, clamp_max = config.get_outlet_bounds(self._climate_mode)
+        corrected = max(clamp_min, min(clamp_max, corrected))
+
+        logging.info(
+            "🧊 [Cooling ML correction] R²=%.3f w=%.3f Δphysics=%+.3f°C "
             "Δml=%+.3f°C Δblend=%+.3f°C → outlet=%.1f°C",
             r2, w, delta_physics, delta_ml, delta_blend, corrected,
         )

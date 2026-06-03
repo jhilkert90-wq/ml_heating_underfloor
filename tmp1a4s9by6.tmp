@@ -2,8 +2,8 @@
   "metadata": {
     "version": "1.0",
     "format": "unified_thermal_state",
-    "created": "2026-05-31T00:35:37.901635",
-    "last_updated": "2026-05-31T00:35:37.905646"
+    "created": "2026-06-03T23:12:51.020018",
+    "last_updated": "2026-06-03T23:12:51.020018"
   },
   "baseline_parameters": {
     "thermal_time_constant": 4.0,
@@ -56,7 +56,7 @@
     "heat_source_channels": {},
     "prediction_history": [
       {
-        "timestamp": "2026-05-31T00:35:37.901635",
+        "timestamp": "2026-06-03T23:12:51.020018",
         "predicted": 21.0,
         "actual": 21.2,
         "error": 0.1999999999999993,
@@ -72,7 +72,7 @@
         }
       },
       {
-        "timestamp": "2026-05-31T00:35:37.905646",
+        "timestamp": "2026-06-03T23:12:51.020018",
         "predicted": 21.0,
         "actual": 21.2,
         "error": 0.1999999999999993,
