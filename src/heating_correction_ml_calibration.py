@@ -741,7 +741,8 @@ def calibrate_heating_correction_ml(
     # adjusted_label[t] = -(T_indoor[t + N_steps] - T_indoor[t]) / S_H
     # This removes indoor_temp from the label, preventing feature–label leakage.
     # At inference the full correction is reconstructed:
-    #   full_correction = model.predict(X) - indoor_margin / S_H
+    #   full_correction = model.predict(X) + indoor_margin / S_H
+    #   where indoor_margin = target - indoor (positive = undershoot)
     future_indoor = df["indoor_temp"].shift(-label_horizon_steps)
     raw_label = -(future_indoor - df["indoor_temp"]) / s_h
     df["label"] = raw_label

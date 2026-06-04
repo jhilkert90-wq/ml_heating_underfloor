@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### ✅ Sign Fix + Cooling Pipeline Fix — 2026-06-04
+
+#### **What changed**
+- Fixed residualized reconstruction sign: `delta - margin/S_H` → `delta + margin/S_H`
+- Fixed cooling calibration data pipeline (3 sub-bugs: purpose, attr names, column rename)
+- Created NB17 notebook to compare original vs residualized label strategies
+
+#### **Why**
+- HA log showed ML correction +2.3°C during 1°C overshoot (should be negative)
+- Cooling calibration always failed with "Missing required column 'indoor_temp'"
+- NB08 R²=0.975 was inflated; need NB17 to determine best label approach
+
+#### **Next Steps**
+- Retrain heating model on production (sign-fixed code will produce correct corrections)
+- Retrain cooling model (pipeline fix enables calibration to succeed)
+- Monitor ML correction direction in HA logs after deployment
+
 ### ✅ Code Review + Bugfixes — 2026-06-03
 
 #### **What changed**

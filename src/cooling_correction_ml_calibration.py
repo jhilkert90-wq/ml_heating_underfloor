@@ -237,40 +237,77 @@ def calibrate_cooling_correction_ml(
     )
 
     # ── 2. Fetch historical data ────────────────────────────────────────
-    df = fetch_historical_data_for_calibration(lookback_hours)
+    df = fetch_historical_data_for_calibration(
+        lookback_hours=lookback_hours,
+        purpose="cooling",
+    )
     if df is None or df.empty:
         logger.error("No historical data returned — aborting cooling ML calibration")
         return False
 
     logger.info("Fetched %d rows of historical data", len(df))
 
-    # ── 3. Column mapping ───────────────────────────────────────────────
-    col_map = {}
-    if config is not None:
-        for model_name, attr_name in [
-            ("indoor_temp", "INDOOR_TEMP_ENTITY"),
-            ("VLT", "VLT_ENTITY"),
-            ("RLT", "RLT_ENTITY"),
-            ("AT", "AT_ENTITY"),
-            ("PV_Generate", "PV_ENTITY"),
-            ("fireplace_on", "FIREPLACE_ENTITY"),
-            ("tv_on", "TV_ENTITY"),
-            ("wind_speed", "WIND_SPEED_ENTITY"),
-            ("flow_rate", "FLOW_RATE_ENTITY"),
-            ("living_room_temp", "LIVING_ROOM_TEMP_ENTITY"),
-        ]:
-            entity_id = getattr(config, attr_name, None)
-            if entity_id and entity_id in df.columns:
-                col_map[entity_id] = model_name
+    # ── 3. Rename entity-ID columns → model-friendly names ─────────────
+    indoor_col = getattr(
+        config, "INDOOR_TEMP_ENTITY_ID", "sensor.rt_mittelwert"
+    ).split(".", 1)[-1]
+    outdoor_col = getattr(
+        config, "OUTDOOR_TEMP_ENTITY_ID", "sensor.nibe_bt1_outdoor_temperature"
+    ).split(".", 1)[-1]
+    outlet_col = getattr(
+        config, "OUTLET_TEMP_ENTITY_ID", "sensor.nibe_bt2_supply_temp_s1"
+    ).split(".", 1)[-1]
+    inlet_col = getattr(
+        config, "INLET_TEMP_ENTITY_ID", "sensor.nibe_eb100_ep14_bt3_return_temp"
+    ).split(".", 1)[-1]
+    flow_col = getattr(
+        config, "FLOW_RATE_ENTITY_ID", "input_number.hp_current_flow_rate"
+    ).split(".", 1)[-1]
+    power_col = getattr(
+        config, "POWER_CONSUMPTION_ENTITY_ID", "sensor.nibe_el_leistung"
+    ).split(".", 1)[-1]
+    pv_col = getattr(
+        config, "PV_POWER_ENTITY_ID", "sensor.pv_leistung_gefiltert"
+    ).split(".", 1)[-1]
+    fireplace_col = getattr(
+        config, "FIREPLACE_STATUS_ENTITY_ID", "binary_sensor.fireplace_active"
+    ).split(".", 1)[-1]
+    tv_col = getattr(
+        config, "TV_STATUS_ENTITY_ID", "input_boolean.fernseher"
+    ).split(".", 1)[-1]
+    living_room_col = getattr(
+        config, "LIVING_ROOM_TEMP_ENTITY_ID", "sensor.rt_wz"
+    ).split(".", 1)[-1]
+    wind_col = getattr(
+        config, "WIND_SPEED_ENTITY_ID", "sensor.wind_speed"
+    ).split(".", 1)[-1]
 
-    if col_map:
-        df.rename(columns=col_map, inplace=True)
+    rename_map = {
+        indoor_col:      "indoor_temp",
+        outdoor_col:     "AT",
+        outlet_col:      "VLT",
+        inlet_col:       "RLT",
+        flow_col:        "flow_rate",
+        power_col:       "power_w",
+        pv_col:          "PV_Generate",
+        fireplace_col:   "fireplace_on",
+        tv_col:          "tv_on",
+        living_room_col: "living_room_temp",
+        wind_col:        "wind_speed",
+    }
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
-    # Ensure essential columns exist
-    for required in ["indoor_temp", "VLT", "RLT", "AT"]:
-        if required not in df.columns:
-            logger.error("Missing required column '%s' — aborting", required)
-            return False
+    required = ["indoor_temp", "AT", "VLT", "RLT"]
+    missing_cols = [c for c in required if c not in df.columns]
+    if missing_cols:
+        logger.error(
+            "Missing required columns after rename: %s — aborting", missing_cols
+        )
+        return False
+
+    # Sort by time
+    if "_time" in df.columns:
+        df = df.sort_values("_time").reset_index(drop=True)
 
     # Coerce numeric
     for col in ["indoor_temp", "VLT", "RLT", "AT"]:

@@ -287,7 +287,7 @@ class TestCoolingCorrectionMLModelPredict:
         indoor_margin = target - indoor  # 0.5
 
         result = model.predict({"indoor_temp": indoor}, target)
-        expected = raw_pred - indoor_margin / s_h
+        expected = raw_pred + indoor_margin / s_h
         assert result == pytest.approx(expected, rel=1e-3)
 
     def test_predict_returns_none_on_inference_error(self, tmp_path):

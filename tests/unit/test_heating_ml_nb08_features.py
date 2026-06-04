@@ -125,7 +125,7 @@ class TestHeatingMLResidualizedReconstruction:
         indoor_margin = target - indoor  # 0.6
 
         result = model.predict({"indoor_temp": indoor}, target)
-        expected = raw_pred - indoor_margin / s_h
+        expected = raw_pred + indoor_margin / s_h
         assert result == pytest.approx(expected, rel=1e-3)
 
     def test_non_residualized_returns_raw(self, tmp_path):

@@ -658,12 +658,14 @@ class CoolingCorrectionMLModel:
             X = pd.DataFrame([vec], columns=self._feature_cols)
             delta: float = float(self._model.predict(X)[0])
 
-            # Residualized label reconstruction
+            # Residualized label reconstruction:
+            # adjusted_label = -(T_future - T_current) / S_H
+            # original = adjusted + indoor_margin / S_H  (indoor_margin = target - indoor)
             if self._label_type == "residualized" and self._s_h > 0.05:
                 indoor_margin = _extract_cooling_correction_feature(
                     "indoor_margin", features, target_indoor
                 )
-                delta = delta - indoor_margin / self._s_h
+                delta = delta + indoor_margin / self._s_h
                 logger.debug(
                     "CoolingCorrectionMLModel: residualized → "
                     "raw=%.3f margin=%.3f s_h=%.3f → full=%.3f°C",

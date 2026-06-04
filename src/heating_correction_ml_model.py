@@ -684,14 +684,15 @@ class HeatingCorrectionMLModel:
 
             # Residualized label reconstruction:
             # Model was trained on adjusted_label = -(T_future - T_current) / S_H.
-            # To get the full correction we reconstruct:
-            #   full_correction = delta - indoor_margin / S_H
-            # where indoor_margin = target - indoor (positive = undershoot).
+            # The original (full) label is: -(T_future - T_target) / S_H.
+            # With indoor_margin = target - indoor:
+            #   original = adjusted + indoor_margin / S_H
+            # So: full_correction = delta + indoor_margin / S_H
             if self._label_type == "residualized" and self._s_h > 0.05:
                 indoor_margin = _extract_heating_feature(
                     "indoor_margin", features, target_indoor
                 )
-                delta = delta - indoor_margin / self._s_h
+                delta = delta + indoor_margin / self._s_h
                 logger.debug(
                     "HeatingCorrectionMLModel: residualized → "
                     "raw=%.3f margin=%.3f s_h=%.3f → full=%.3f°C",

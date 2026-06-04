@@ -1,5 +1,22 @@
 # ML Heating System - Current Progress
 
+## ✅ Sign Fix + Cooling Pipeline Fix (2026-06-04)
+
+**Status:** COMPLETED — 2 critical bugs fixed, NB17 created, 1535 tests passing
+
+### Critical Fixes
+- Reconstruction sign error: `delta - margin/S_H` → `delta + margin/S_H` (both models)
+- Cooling calibration pipeline: added `purpose="cooling"`, fixed entity ID attrs, fixed column rename
+
+### Files Changed
+- `src/heating_correction_ml_model.py` — sign fix + comment
+- `src/cooling_correction_ml_model.py` — sign fix + comment
+- `src/cooling_correction_ml_calibration.py` — data pipeline fix (purpose, attrs, rename)
+- `src/heating_correction_ml_calibration.py` — comment fix
+- `tests/unit/test_heating_ml_nb08_features.py` — updated expected values
+- `tests/unit/test_cooling_correction_ml_model.py` — updated expected values
+- `notebooks/analysis/17_label_comparison.ipynb` — NEW
+
 ## ✅ Code Review + Bugfixes (2026-06-03)
 
 **Status:** COMPLETED — 6 bugs/edge cases fixed, 11 new tests added, 1535 passing
