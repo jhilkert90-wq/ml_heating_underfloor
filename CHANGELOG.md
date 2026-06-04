@@ -7,14 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **Remove physics-ML blend** (`src/model_wrapper.py`) — When ML correction mode is active, use 100% ML correction instead of R²-weighted blend of physics and ML. Removed `HEATING_ML_BLEND_MIN_R2` and `COOLING_ML_CORRECTION_BLEND_MIN_R2` config keys from `src/config.py`, `config.yaml`, `config_adapter.py`, and translations.
-- **Log reconstructed R²** (`src/heating_correction_ml_calibration.py`, `src/cooling_correction_ml_calibration.py`) — Calibration log now shows both residualized R² and reconstructed (original label scale) R² for easier comparison with notebook results.
-
 ### Fixed
-- **7 additional config options not reaching runtime** (`config_adapter.py`) — Added missing env var mappings for `cloud_factor_exponent`, `heating_min_thermal_power_kw`, `cooling_min_thermal_power_kw`, `hp_active_min_power_kw`, `hlc_window_size_rows`, `hlc_min_flow_rate_lpm`, `hlc_regression_intercept`, and `solar_decay_tau_hours`. Added sync notice comments to both `config.yaml` and `config_adapter.py`.
-- **Cooling correction config not reaching calibration** (`config_adapter.py`) — Missing env var mappings for `COOLING_ML_CORRECTION_WARM_THRESHOLD_C`, `COOLING_ML_CORRECTION_CALIBRATION_START_DATE`, and all other cooling correction ML config keys. Caused defaults (warm_threshold=18.0 instead of 12.0, lookback=2160h instead of start date) to be used.
-- **sklearn InconsistentVersionWarning at startup** (`src/cooling_ml_model.py`, `src/heating_correction_ml_model.py`, `src/cooling_correction_ml_model.py`) — Wrapped `joblib.load()` calls with `warnings.catch_warnings()` to suppress benign sklearn version mismatch warnings during model deserialization. Pinned `scikit-learn>=1.8.0,<2.0` in `requirements.txt`.
 - **CRITICAL: Residualized label reconstruction sign error** (`src/heating_correction_ml_model.py`, `src/cooling_correction_ml_model.py`) — Formula used `delta - indoor_margin/S_H` (wrong) instead of `delta + indoor_margin/S_H` (correct). This caused the ML correction to raise outlet temp during overshoot instead of lowering it. Derived from NB08's `indoor_margin = indoor - target` convention being copied into production where `indoor_margin = target - indoor`.
 - **CRITICAL: Cooling calibration data pipeline broken** (`src/cooling_correction_ml_calibration.py`) — Three compounding bugs: (1) missing `purpose="cooling"` in `fetch_historical_data_for_calibration()` call; (2) wrong config attribute names (e.g., `INDOOR_TEMP_ENTITY` instead of `INDOOR_TEMP_ENTITY_ID`); (3) column renaming tried to match full entity IDs against short DataFrame column names. Now mirrors the working heating calibration pattern.
 
