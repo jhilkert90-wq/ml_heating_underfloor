@@ -1,5 +1,32 @@
 # Active Context - Current Work & Decision State
 
+### Blend Removal + Config Fix + sklearn Warning Fix — 2026-06-04
+
+#### **What changed**
+- Removed physics-ML blend entirely: when ML mode active, 100% ML correction applied (no R²-weighted blending)
+- Fixed cooling config adapter: 20+ missing env var mappings added to `config_adapter.py` (warm_threshold, start_date, all cooling correction ML keys)
+- Suppressed sklearn `InconsistentVersionWarning` around `joblib.load()` in 3 model files
+- Added reconstructed R² (original label scale) to calibration log output for both heating and cooling
+- Pinned `scikit-learn>=1.8.0,<2.0` in requirements.txt
+
+#### **Why**
+- Cooling calibration used default threshold=18.0 instead of config value=12.0, and default lookback=2160h instead of start_date-derived ~8853h
+- R²-weighted blend was diluting ML correction (only 62% applied at R²=0.618)
+- sklearn version mismatch warnings cluttered production logs on every startup
+- Production R²=0.6178 (residualized) vs NB17 R²=0.8244 (original) — different label scales, not a bug. Reconstructed R² logged for comparability.
+
+#### **Files changed**
+- `config_adapter.py` — added cooling correction ML env var mappings, removed blend mapping
+- `src/model_wrapper.py` — removed blend formula from `_calculate_ml_correction()` and `_calculate_cooling_ml_correction()`
+- `src/config.py` — removed `HEATING_ML_BLEND_MIN_R2` and `COOLING_ML_CORRECTION_BLEND_MIN_R2`
+- `src/cooling_ml_model.py`, `src/heating_correction_ml_model.py`, `src/cooling_correction_ml_model.py` — sklearn warning suppression
+- `src/heating_correction_ml_calibration.py`, `src/cooling_correction_ml_calibration.py` — reconstructed R² logging
+- `ml_heating_underfloor/config.yaml` — removed blend entries from options + schema
+- `ml_heating_underfloor/translations/en.yaml`, `de.yaml` — removed blend translations
+- `requirements.txt` — pinned sklearn >=1.8.0,<2.0
+- `tests/unit/test_heating_correction_ml_model.py` — updated blend tests for full ML
+- `tests/unit/test_cooling_correction_ml_calibration.py` — removed blend config test
+
 ### ✅ Sign Fix + Cooling Pipeline Fix — 2026-06-04
 
 #### **What changed**

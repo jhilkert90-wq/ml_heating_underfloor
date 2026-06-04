@@ -303,11 +303,6 @@ configuration:
     name: '[ML Heizen] Label-Horizont (h)'
     description: 'Label lookahead horizon in hours. Should match trajectory_steps.
       Default: 4.'
-  heating_ml_blend_min_r2:
-    name: '[ML Heizen] Minimales Blend-R²'
-    description: 'Minimum validation R² required for the ML model to participate in
-      the blend. Below this threshold, only the physics Newton step is used. Default:
-      0.3.'
   heating_ml_retrain_val_fraction:
     name: '[ML Heizen] Validierungsanteil für Neu-Training'
     description: 'Fraction of training set held out for validation metrics (0.0–1.0).

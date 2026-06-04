@@ -1074,6 +1074,20 @@ def calibrate_heating_correction_ml(
     val_r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
     logger.info("Val MAE=%.4f°C, Val R²=%.4f", val_mae, val_r2)
 
+    # Reconstructed R² (on original label scale, for notebook comparison)
+    if s_h > 0.05 and "indoor_margin" in df_val.columns:
+        margin_val = df_val["indoor_margin"].values
+        y_recon_pred = y_pred + margin_val / s_h
+        y_recon_true = y_val + margin_val / s_h
+        ss_res_r = float(np.sum((y_recon_true - y_recon_pred) ** 2))
+        ss_tot_r = float(np.sum((y_recon_true - float(np.mean(y_recon_true))) ** 2))
+        recon_r2 = 1.0 - ss_res_r / ss_tot_r if ss_tot_r > 1e-12 else 0.0
+        recon_mae = float(np.mean(np.abs(y_recon_true - y_recon_pred)))
+        logger.info(
+            "Reconstructed (original label scale): MAE=%.4f°C, R²=%.4f",
+            recon_mae, recon_r2,
+        )
+
     # ── 10a. Optional: Time-series cross-validation metrics ─────────────
     cv_enabled = getattr(config, "HEATING_ML_CV_ENABLED", False)
     if cv_enabled:

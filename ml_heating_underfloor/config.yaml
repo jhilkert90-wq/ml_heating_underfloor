@@ -22,6 +22,12 @@ apparmor: false
 hassio_api: true
 homeassistant_api: true
 options:
+  # ╔════════════════════════════════════════════════════════════════╗
+  # ║  SYNC NOTICE: Every option below must have a matching         ║
+  # ║  env-var mapping in config_adapter.py (convert_addon_to_env)  ║
+  # ║  AND a corresponding entry in src/config.py.                  ║
+  # ║  When adding or removing options here, update both files.     ║
+  # ╚════════════════════════════════════════════════════════════════╝
   # === Core Entity Configuration ===
   # An input_number or sensor that holds the desired target indoor temperature
   target_indoor_temp_entity: "input_number.soll_rt"
@@ -190,9 +196,7 @@ options:
   heating_ml_min_training_samples: 200
   # Label lookahead horizon [hours]. Should match trajectory_steps.
   heating_ml_label_horizon_h: 4
-  # Minimum validation R² required for the ML model to participate in the blend.
-  # Below this threshold the system uses only the physics Newton step.
-  heating_ml_blend_min_r2: 0.3
+
   # Fraction of training set held out for validation metrics (0.0–1.0).
   # Default: 0.25.
   heating_ml_retrain_val_fraction: 0.25
@@ -249,8 +253,6 @@ options:
   cooling_ml_correction_min_training_samples: 200
   # Label lookahead horizon [hours].
   cooling_ml_correction_label_horizon_h: 4
-  # Minimum R² for ML model to participate in the correction blend.
-  cooling_ml_correction_blend_min_r2: 0.3
   # Fraction of training data held out for validation.
   cooling_ml_correction_retrain_val_fraction: 0.25
   # Number of new labeled observations that triggers automatic retrain.
@@ -701,7 +703,6 @@ schema:
   heating_ml_tv_lag_hours: "str"
   heating_ml_min_training_samples: "int(50,2000)"
   heating_ml_label_horizon_h: "int(1,12)"
-  heating_ml_blend_min_r2: "float(0.0,1.0)"
   heating_ml_retrain_val_fraction: "float(0.05,0.5)"
   heating_ml_retrain_trigger_k: "int(10,500)"
   heating_ml_buffer_max_n: "int(100,5000)"
@@ -723,7 +724,6 @@ schema:
   cooling_ml_correction_tv_lag_hours: "str"
   cooling_ml_correction_min_training_samples: "int(50,2000)"
   cooling_ml_correction_label_horizon_h: "int(1,12)"
-  cooling_ml_correction_blend_min_r2: "float(0.0,1.0)"
   cooling_ml_correction_retrain_val_fraction: "float(0.05,0.5)"
   cooling_ml_correction_retrain_trigger_k: "int(10,500)"
   cooling_ml_correction_buffer_max_n: "int(100,5000)"

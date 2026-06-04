@@ -627,11 +627,9 @@ class TestMLCorrectionBlend:
     """
     Tests for _calculate_ml_correction() in model_wrapper.
 
-    The blend is:
-        delta_physics = physics_outlet - outlet_temp
-        w = max(0, min(1, r2)) if r2 >= HEATING_ML_BLEND_MIN_R2 else 0
-        delta_blend = (1-w)*delta_physics + w*delta_ml
-        corrected = outlet_temp + delta_blend   [clamped]
+    When ML model is loaded and returns a prediction, the full ML delta
+    is applied (no physics blend).  Falls back to physics when model
+    unavailable or predict() returns None.
     """
 
     def setup_method(self):
@@ -683,9 +681,8 @@ class TestMLCorrectionBlend:
     @patch("src.model_wrapper.config.TRAJECTORY_STEPS", 4)
     @patch("src.model_wrapper.config.CLAMP_MIN_ABS", 20.0)
     @patch("src.model_wrapper.config.CLAMP_MAX_ABS", 55.0)
-    @patch("src.model_wrapper.config.HEATING_ML_BLEND_MIN_R2", 0.3)
     def test_w1_pure_ml(self):
-        """When R²=1.0, blend weight w=1.0 → corrected = outlet + delta_ml."""
+        """When ML model is loaded, full ML correction is applied."""
         outlet = 25.0
         delta_ml = 1.2
         self.wrapper._current_indoor = 21.0
@@ -722,9 +719,8 @@ class TestMLCorrectionBlend:
     @patch("src.model_wrapper.config.TRAJECTORY_STEPS", 4)
     @patch("src.model_wrapper.config.CLAMP_MIN_ABS", 20.0)
     @patch("src.model_wrapper.config.CLAMP_MAX_ABS", 55.0)
-    @patch("src.model_wrapper.config.HEATING_ML_BLEND_MIN_R2", 0.3)
-    def test_w05_blended(self):
-        """When R²=0.5, blend weight w=0.5 → weighted average of deltas."""
+    def test_low_r2_still_uses_full_ml(self):
+        """When R²=0.5, full ML correction is still applied (no blend)."""
         outlet = 25.0
         physics_outlet = 26.0  # delta_physics = 1.0
         delta_ml = 0.4
@@ -756,27 +752,25 @@ class TestMLCorrectionBlend:
                 cycle_hours=10 / 60,
             )
 
-        delta_physics = physics_outlet - outlet  # 1.0
-        w = 0.5
-        expected_delta = (1 - w) * delta_physics + w * delta_ml  # 0.5*1.0 + 0.5*0.4
-        assert result == pytest.approx(outlet + expected_delta, abs=0.01)
+        # Full ML: corrected = outlet + delta_ml = 25.0 + 0.4 = 25.4
+        assert result == pytest.approx(outlet + delta_ml, abs=0.01)
 
     @patch("src.model_wrapper.config.TRAJECTORY_STEPS", 4)
     @patch("src.model_wrapper.config.CLAMP_MIN_ABS", 20.0)
     @patch("src.model_wrapper.config.CLAMP_MAX_ABS", 55.0)
-    @patch("src.model_wrapper.config.HEATING_ML_BLEND_MIN_R2", 0.3)
-    def test_r2_below_threshold_uses_physics(self):
-        """When R² < HEATING_ML_BLEND_MIN_R2, w=0 → pure physics output."""
+    def test_very_low_r2_still_uses_full_ml(self):
+        """Even when R² is very low, full ML correction is applied (no blend)."""
         outlet = 25.0
         physics_outlet = 26.0
+        delta_ml = 2.0
         self.wrapper._current_indoor = 21.0
         self.wrapper._current_features = {"indoor_temp_delta_60m": -0.1}
         self.wrapper._climate_mode = "heating"
 
         mock_ml_model = MagicMock()
         mock_ml_model.is_loaded = True
-        mock_ml_model.r2_score = 0.2  # below 0.3 threshold
-        mock_ml_model.predict.return_value = 2.0
+        mock_ml_model.r2_score = 0.2  # very low R²
+        mock_ml_model.predict.return_value = delta_ml
 
         with patch.object(
             self.wrapper,
@@ -797,8 +791,8 @@ class TestMLCorrectionBlend:
                 cycle_hours=10 / 60,
             )
 
-        # w=0 → pure physics
-        assert result == pytest.approx(physics_outlet, abs=0.01)
+        # Full ML: corrected = outlet + delta_ml = 25.0 + 2.0 = 27.0
+        assert result == pytest.approx(outlet + delta_ml, abs=0.01)
 
     @patch("src.model_wrapper.config.TRAJECTORY_STEPS", 4)
     @patch("src.model_wrapper.config.CLAMP_MIN_ABS", 20.0)

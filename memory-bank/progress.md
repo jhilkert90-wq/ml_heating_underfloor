@@ -1,5 +1,18 @@
 # ML Heating System - Current Progress
 
+## Blend Removal + Config Fix + sklearn Warning Fix (2026-06-04)
+
+**Status:** COMPLETED — 1534 tests passing (6 pre-existing integration failures, 8 Docker errors)
+
+### Changes
+- **Removed physics-ML blend**: 100% ML correction when ML mode active (no R²-weighted blend)
+- **Fixed cooling config adapter**: 20+ missing env var mappings (warm_threshold, start_date, all cooling ML keys)
+- **Suppressed sklearn warnings**: `InconsistentVersionWarning` on `joblib.load()` in 3 model files
+- **Added reconstructed R²**: Calibration log now shows both residualized and original-label-scale R²
+- **Pinned sklearn**: `>=1.8.0,<2.0` in requirements.txt
+
+### Files: config_adapter.py, src/model_wrapper.py, src/config.py, 3 model files, 2 calibration files, config.yaml, translations, requirements.txt, 2 test files
+
 ## ✅ Sign Fix + Cooling Pipeline Fix (2026-06-04)
 
 **Status:** COMPLETED — 2 critical bugs fixed, NB17 created, 1535 tests passing

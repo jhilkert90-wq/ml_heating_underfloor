@@ -2576,16 +2576,11 @@ class EnhancedModelWrapper:
         cycle_hours: float,
     ) -> float:
         """
-        ML-based correction: confidence-weighted blend of physics Newton step
-        and LightGBM regressor prediction.
+        ML-based correction: when the ML model is loaded and inference
+        succeeds, the full ML delta is applied (no physics blend).
 
-        Blend formula:
-            w = max(0, min(1, R²)) clamped to 0 if R² < HEATING_ML_BLEND_MIN_R2
-            delta_blend = (1 − w) × delta_physics + w × delta_ml
-            corrected_outlet = outlet_temp + delta_blend
-
-        Falls back to the physics Newton step when the model is not loaded,
-        inference fails, or R² is below the configured minimum threshold.
+        Falls back to the physics Newton step when the model is not loaded
+        or inference fails.
         """
         # Step 1: physics Newton delta (always computed as a safe baseline)
         physics_outlet = self._calculate_physics_newton_correction(
@@ -2613,22 +2608,15 @@ class EnhancedModelWrapper:
             )
             return physics_outlet
 
-        # Step 4: confidence-weighted blend
-        blend_min_r2 = float(
-            getattr(config, "HEATING_ML_BLEND_MIN_R2", 0.3)
-        )
+        # Step 4: apply full ML correction (no physics blend)
         r2 = ml_model.r2_score
-        w = 0.0 if r2 < blend_min_r2 else max(0.0, min(1.0, r2))
-        delta_blend = (1.0 - w) * delta_physics + w * delta_ml
-
-        corrected = outlet_temp + delta_blend
+        corrected = outlet_temp + delta_ml
         clamp_min, clamp_max = config.get_outlet_bounds(self._climate_mode)
         corrected = max(clamp_min, min(clamp_max, corrected))
 
         logging.info(
-            "🤖 [ML correction] R²=%.3f w=%.3f Δphysics=%+.3f°C "
-            "Δml=%+.3f°C Δblend=%+.3f°C → outlet=%.1f°C",
-            r2, w, delta_physics, delta_ml, delta_blend, corrected,
+            "🤖 [ML correction] R²=%.3f Δml=%+.3f°C → outlet=%.1f°C",
+            r2, delta_ml, corrected,
         )
         return corrected
 
@@ -2671,11 +2659,10 @@ class EnhancedModelWrapper:
         cycle_hours: float,
     ) -> float:
         """
-        Cooling ML correction: confidence-weighted blend of physics Newton step
-        and LightGBM cooling correction regressor prediction.
+        Cooling ML correction: when the ML model is loaded and inference
+        succeeds, the full ML delta is applied (no physics blend).
 
-        Mirrors _calculate_ml_correction but uses cooling-specific model + config.
-        Falls back to physics Newton when model unavailable or R² too low.
+        Falls back to physics Newton when model unavailable.
         """
         physics_outlet = self._calculate_physics_newton_correction(
             outlet_temp, trajectory, target_indoor, cycle_hours
@@ -2699,21 +2686,14 @@ class EnhancedModelWrapper:
             )
             return physics_outlet
 
-        blend_min_r2 = float(
-            getattr(config, "COOLING_ML_CORRECTION_BLEND_MIN_R2", 0.3)
-        )
         r2 = ml_model.r2_score
-        w = 0.0 if r2 < blend_min_r2 else max(0.0, min(1.0, r2))
-        delta_blend = (1.0 - w) * delta_physics + w * delta_ml
-
-        corrected = outlet_temp + delta_blend
+        corrected = outlet_temp + delta_ml
         clamp_min, clamp_max = config.get_outlet_bounds(self._climate_mode)
         corrected = max(clamp_min, min(clamp_max, corrected))
 
         logging.info(
-            "🧊 [Cooling ML correction] R²=%.3f w=%.3f Δphysics=%+.3f°C "
-            "Δml=%+.3f°C Δblend=%+.3f°C → outlet=%.1f°C",
-            r2, w, delta_physics, delta_ml, delta_blend, corrected,
+            "🧊 [Cooling ML correction] R²=%.3f Δml=%+.3f°C → outlet=%.1f°C",
+            r2, delta_ml, corrected,
         )
         return corrected
 

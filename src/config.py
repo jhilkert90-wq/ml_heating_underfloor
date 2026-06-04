@@ -850,11 +850,6 @@ HEATING_ML_RETRAIN_VAL_FRACTION: float = float(
 HEATING_ML_LABEL_HORIZON_H: int = int(
     os.getenv("HEATING_ML_LABEL_HORIZON_H", "4")
 )
-# Minimum R² score for the ML model to participate in the blend.
-# Below this threshold the blend weight is forced to 0 (pure physics Newton).
-HEATING_ML_BLEND_MIN_R2: float = float(
-    os.getenv("HEATING_ML_BLEND_MIN_R2", "0.3")
-)
 # Path to the online-learning observation buffer JSON for the heating correction
 # regressor.  Defaults to the same directory as UNIFIED_STATE_FILE so all
 # runtime state lives in one place.
@@ -964,10 +959,6 @@ COOLING_ML_CORRECTION_OBS_BUFFER_PATH: str = os.getenv(
 # Minimum warm-season rows required before training is accepted.
 COOLING_ML_CORRECTION_MIN_TRAINING_SAMPLES: int = int(
     os.getenv("COOLING_ML_CORRECTION_MIN_TRAINING_SAMPLES", "200")
-)
-# Minimum R² for the ML model to participate in the blend.
-COOLING_ML_CORRECTION_BLEND_MIN_R2: float = float(
-    os.getenv("COOLING_ML_CORRECTION_BLEND_MIN_R2", "0.3")
 )
 # Fraction of training data held out for validation.
 COOLING_ML_CORRECTION_RETRAIN_VAL_FRACTION: float = float(

@@ -122,9 +122,6 @@ class TestCoolingMLCorrectionConfigDefaults:
     def test_label_horizon_default(self):
         assert config.COOLING_ML_CORRECTION_LABEL_HORIZON_H == 4
 
-    def test_blend_min_r2_default(self):
-        assert config.COOLING_ML_CORRECTION_BLEND_MIN_R2 == 0.3
-
     def test_feature_pruning_enabled_default(self):
         assert config.COOLING_ML_CORRECTION_FEATURE_PRUNING_ENABLED is True
 

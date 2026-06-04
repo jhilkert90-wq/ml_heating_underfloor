@@ -317,11 +317,6 @@ configuration:
     name: '[ML Heating] Label Horizon (h)'
     description: 'Label lookahead horizon in hours. Should match trajectory_steps.
       Default: 4.'
-  heating_ml_blend_min_r2:
-    name: '[ML Heating] Blend Min R²'
-    description: 'Minimum validation R² required for the ML model to participate in
-      the blend. Below this threshold, only the physics Newton step is used. Default:
-      0.3.'
   heating_ml_retrain_val_fraction:
     name: '[ML Heating] Retrain Validation Fraction'
     description: 'Fraction of training set held out for validation metrics (0.0–1.0).
@@ -400,10 +395,6 @@ configuration:
     name: '[ML Cooling Correction] Label Horizon (hours)'
     description: 'Label lookahead horizon in hours. Should match trajectory steps.
       Default: 4.'
-  cooling_ml_correction_blend_min_r2:
-    name: '[ML Cooling Correction] Blend Min R²'
-    description: 'Minimum R² for the ML model to participate in the correction blend.
-      Below this threshold, pure physics is used. Default: 0.3.'
   cooling_ml_correction_retrain_val_fraction:
     name: '[ML Cooling Correction] Validation Fraction'
     description: 'Fraction of training data held out for validation. Default: 0.25.'

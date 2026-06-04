@@ -70,6 +70,13 @@ def convert_addon_to_env(config):
     schemas and the comprehensive ``ml_heating_underfloor`` schema work.
     """
 
+    # ╔════════════════════════════════════════════════════════════════╗
+    # ║  SYNC NOTICE: Every option in ml_heating_underfloor/config.yaml ║
+    # ║  must have a corresponding env-var mapping below.               ║
+    # ║  When adding or removing a config.yaml option, update this      ║
+    # ║  function AND src/config.py to match.                           ║
+    # ╚════════════════════════════════════════════════════════════════╝
+
     # Home Assistant API configuration (internal supervisor access)
     env_vars = {
         'HASS_URL': 'http://supervisor/core',
@@ -321,6 +328,23 @@ def convert_addon_to_env(config):
         'ROOM_SPREAD_DELAY_MINUTES': str(
             config.get('room_spread_delay_minutes', 18.0)
         ),
+        'CLOUD_FACTOR_EXPONENT': str(
+            config.get('cloud_factor_exponent', 1.0)
+        ),
+        'SOLAR_DECAY_TAU_HOURS': str(
+            config.get('solar_decay_tau_hours', 1.0)
+        ),
+
+        # --- Thermal Power Gate Thresholds ---
+        'HEATING_MIN_THERMAL_POWER_KW': str(
+            config.get('heating_min_thermal_power_kw', 0.5)
+        ),
+        'COOLING_MIN_THERMAL_POWER_KW': str(
+            config.get('cooling_min_thermal_power_kw', -0.5)
+        ),
+        'HP_ACTIVE_MIN_POWER_KW': str(
+            config.get('hp_active_min_power_kw', 0.05)
+        ),
 
         # --- Adaptive Learning Parameters ---
         'ADAPTIVE_LEARNING_RATE': str(
@@ -451,6 +475,15 @@ def convert_addon_to_env(config):
         'HLC_CALIBRATION_MIN_PERIODS': str(
             config.get('hlc_calibration_min_periods', 20)
         ),
+        'HLC_WINDOW_SIZE_ROWS': str(
+            config.get('hlc_window_size_rows', 12)
+        ),
+        'HLC_MIN_FLOW_RATE_LPM': str(
+            config.get('hlc_min_flow_rate_lpm', 0.5)
+        ),
+        'HLC_REGRESSION_INTERCEPT': str(
+            config.get('hlc_regression_intercept', False)
+        ).lower(),
 
         # --- Delta Forecast Calibration ---
         'ENABLE_DELTA_FORECAST_CALIBRATION': str(
@@ -642,9 +675,6 @@ def convert_addon_to_env(config):
         'HEATING_ML_LABEL_HORIZON_H': str(
             config.get('heating_ml_label_horizon_h', 4)
         ),
-        'HEATING_ML_BLEND_MIN_R2': str(
-            config.get('heating_ml_blend_min_r2', 0.3)
-        ),
         'HEATING_ML_RETRAIN_VAL_FRACTION': str(
             config.get('heating_ml_retrain_val_fraction', 0.25)
         ),
@@ -677,6 +707,68 @@ def convert_addon_to_env(config):
         ).lower(),
         'HEATING_ML_CV_N_SPLITS': str(
             config.get('heating_ml_cv_n_splits', 3)
+        ),
+
+        # --- ML-Based Cooling Correction (LightGBM Regressor) ---
+        'COOLING_CORRECTION_MODE': config.get(
+            'cooling_correction_mode', 'physics'
+        ),
+        'COOLING_ML_CORRECTION_WARM_THRESHOLD_C': str(
+            config.get('cooling_ml_correction_warm_threshold_c', 18.0)
+        ),
+        'COOLING_ML_CORRECTION_CALIBRATION_START_DATE': config.get(
+            'cooling_ml_correction_calibration_start_date', ''
+        ),
+        'COOLING_ML_CORRECTION_AT_FORECAST_HOURS': config.get(
+            'cooling_ml_correction_at_forecast_hours', '1,2,3,4'
+        ),
+        'COOLING_ML_CORRECTION_PV_FORECAST_HOURS': config.get(
+            'cooling_ml_correction_pv_forecast_hours', '1,2,3,4'
+        ),
+        'COOLING_ML_CORRECTION_FIREPLACE_LAG_HOURS': config.get(
+            'cooling_ml_correction_fireplace_lag_hours', '1,2'
+        ),
+        'COOLING_ML_CORRECTION_TV_LAG_HOURS': config.get(
+            'cooling_ml_correction_tv_lag_hours', '0.5,1'
+        ),
+        'COOLING_ML_CORRECTION_MIN_TRAINING_SAMPLES': str(
+            config.get('cooling_ml_correction_min_training_samples', 200)
+        ),
+        'COOLING_ML_CORRECTION_LABEL_HORIZON_H': str(
+            config.get('cooling_ml_correction_label_horizon_h', 4)
+        ),
+        'COOLING_ML_CORRECTION_RETRAIN_VAL_FRACTION': str(
+            config.get('cooling_ml_correction_retrain_val_fraction', 0.25)
+        ),
+        'COOLING_ML_CORRECTION_RETRAIN_TRIGGER_K': str(
+            config.get('cooling_ml_correction_retrain_trigger_k', 50)
+        ),
+        'COOLING_ML_CORRECTION_BUFFER_MAX_N': str(
+            config.get('cooling_ml_correction_buffer_max_n', 500)
+        ),
+        'COOLING_ML_CORRECTION_FEATURE_PRUNING_ENABLED': str(
+            config.get('cooling_ml_correction_feature_pruning_enabled', True)
+        ).lower(),
+        'COOLING_ML_CORRECTION_PRUNE_PI_THRESHOLD': str(
+            config.get('cooling_ml_correction_prune_pi_threshold', 0.0)
+        ),
+        'COOLING_ML_CORRECTION_REG_ALPHA': str(
+            config.get('cooling_ml_correction_reg_alpha', 0.1)
+        ),
+        'COOLING_ML_CORRECTION_REG_LAMBDA': str(
+            config.get('cooling_ml_correction_reg_lambda', 1.0)
+        ),
+        'COOLING_ML_CORRECTION_OPTUNA_ENABLED': str(
+            config.get('cooling_ml_correction_optuna_enabled', False)
+        ).lower(),
+        'COOLING_ML_CORRECTION_OPTUNA_N_TRIALS': str(
+            config.get('cooling_ml_correction_optuna_n_trials', 20)
+        ),
+        'COOLING_ML_CORRECTION_CV_ENABLED': str(
+            config.get('cooling_ml_correction_cv_enabled', False)
+        ).lower(),
+        'COOLING_ML_CORRECTION_CV_N_SPLITS': str(
+            config.get('cooling_ml_correction_cv_n_splits', 3)
         ),
     }
 

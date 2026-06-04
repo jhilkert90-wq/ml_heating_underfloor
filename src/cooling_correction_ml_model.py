@@ -580,7 +580,14 @@ class CoolingCorrectionMLModel:
             self._loaded = False
             return False
         try:
-            self._model = joblib.load(self._model_path)
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="Trying to unpickle estimator",
+                    category=UserWarning,
+                )
+                self._model = joblib.load(self._model_path)
             with open(self._metadata_path, "r", encoding="utf-8") as fh:
                 self._metadata = json.load(fh)
             self._feature_cols = self._metadata.get("feature_cols", [])
