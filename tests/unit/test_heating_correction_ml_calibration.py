@@ -721,6 +721,30 @@ class TestMLCalibrationConfigDefaults:
                 os.environ["HEATING_ML_PRUNE_PI_THRESHOLD"] = orig
             importlib.reload(cfg)
 
+    def test_incremental_pruning_disabled_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("HEATING_ML_INCREMENTAL_PRUNING_ENABLED", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.HEATING_ML_INCREMENTAL_PRUNING_ENABLED is False
+        finally:
+            if orig is not None:
+                os.environ["HEATING_ML_INCREMENTAL_PRUNING_ENABLED"] = orig
+            importlib.reload(cfg)
+
+    def test_incremental_prune_pi_threshold_default(self):
+        import importlib
+        import src.config as cfg
+        orig = os.environ.pop("HEATING_ML_INCREMENTAL_PRUNE_PI_THRESHOLD", None)
+        try:
+            importlib.reload(cfg)
+            assert cfg.HEATING_ML_INCREMENTAL_PRUNE_PI_THRESHOLD == pytest.approx(0.001)
+        finally:
+            if orig is not None:
+                os.environ["HEATING_ML_INCREMENTAL_PRUNE_PI_THRESHOLD"] = orig
+            importlib.reload(cfg)
+
     def test_reg_alpha_default(self):
         import importlib
         import src.config as cfg
@@ -947,6 +971,111 @@ class TestFeaturePruningLogic:
 
         # Only 1 fit call (initial), no pruning retrain
         assert fit_call_count[0] == 1
+
+    def test_incremental_pruning_enabled_retrains_stepwise(self):
+        """Incremental pruning should execute at least one additional retrain step."""
+        try:
+            import numpy as np
+            import types
+        except ImportError:
+            pytest.skip("numpy not installed")
+
+        from src.heating_correction_ml_calibration import calibrate_heating_correction_ml
+        df = _make_df(800, at_val=8.0)
+        fit_call_count = [0]
+        pi_call_count = [0]
+
+        class _FakePIResult:
+            def __init__(self, vals):
+                self.importances_mean = np.array(vals, dtype=float)
+
+        def _fake_permutation_importance(model, X, y, **kwargs):
+            pi_call_count[0] += 1
+            n = X.shape[1]
+            vals = [0.1] * n
+            if pi_call_count[0] == 2 and n > 0:
+                vals[0] = -0.2
+            return _FakePIResult(vals)
+
+        class _CountingLGBMRegressor(BaseEstimator, RegressorMixin):
+            def __init__(self, **kwargs):
+                self.feature_importances_ = np.ones(128, dtype=int)
+
+            def fit(self, X, y, **kw):
+                fit_call_count[0] += 1
+                self.feature_importances_ = np.ones(X.shape[1], dtype=int)
+
+            def predict(self, X):
+                return np.zeros(len(X))
+
+        fake_inspection = types.ModuleType("sklearn.inspection")
+        fake_inspection.permutation_importance = _fake_permutation_importance
+        fake_sklearn = types.ModuleType("sklearn")
+        fake_sklearn.inspection = fake_inspection
+
+        with patch(
+            "src.heating_correction_ml_calibration"
+            ".fetch_historical_data_for_calibration",
+            return_value=df,
+        ), patch(
+            "src.heating_correction_ml_calibration._read_baseline_thermal_params",
+            return_value=(0.830, 0.124, 4.39),
+        ), patch(
+            "src.heating_correction_ml_calibration.config"
+        ) as mock_cfg:
+            mock_cfg.HEATING_ML_CALIBRATION_START_DATE = ""
+            mock_cfg.HEATING_ML_COLD_THRESHOLD_C = 18.0
+            mock_cfg.HEATING_ML_LABEL_HORIZON_H = 4
+            mock_cfg.HEATING_ML_AT_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_PV_FORECAST_HOURS = "1"
+            mock_cfg.HEATING_ML_FIREPLACE_LAG_HOURS = "1"
+            mock_cfg.HEATING_ML_TV_LAG_HOURS = "0.5"
+            mock_cfg.CYCLE_INTERVAL_MINUTES = 10
+            mock_cfg.HLC_DEFAULT_TARGET_TEMP = 21.0
+            mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186
+            mock_cfg.HEATING_ML_MIN_TRAINING_SAMPLES = 50
+            mock_cfg.HEATING_ML_RETRAIN_VAL_FRACTION = 0.25
+            mock_cfg.OUTLET_EFFECTIVENESS = 0.830
+            mock_cfg.HEAT_LOSS_COEFFICIENT = 0.124
+            mock_cfg.THERMAL_TIME_CONSTANT = 4.39
+            mock_cfg.HEATING_ML_CORRECTION_MODEL_PATH = "/tmp/hml_inc.joblib"
+            mock_cfg.HEATING_ML_CORRECTION_METADATA_PATH = "/tmp/hml_inc_meta.json"
+            mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
+            mock_cfg.OUTDOOR_TEMP_ENTITY_ID = "sensor.outdoor"
+            mock_cfg.OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
+            mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
+            mock_cfg.FLOW_RATE_ENTITY_ID = "input_number.flow"
+            mock_cfg.POWER_CONSUMPTION_ENTITY_ID = "sensor.power"
+            mock_cfg.PV_POWER_ENTITY_ID = "sensor.pv"
+            mock_cfg.FIREPLACE_STATUS_ENTITY_ID = "binary_sensor.fireplace_active"
+            mock_cfg.TV_STATUS_ENTITY_ID = "input_boolean.fernseher"
+            mock_cfg.HEATING_ML_REG_ALPHA = 0.1
+            mock_cfg.HEATING_ML_REG_LAMBDA = 1.0
+            mock_cfg.HEATING_ML_FEATURE_PRUNING_ENABLED = True
+            mock_cfg.HEATING_ML_PRUNE_PI_THRESHOLD = 0.0
+            mock_cfg.HEATING_ML_INCREMENTAL_PRUNING_ENABLED = True
+            mock_cfg.HEATING_ML_INCREMENTAL_PRUNE_PI_THRESHOLD = 0.001
+            mock_cfg.HEATING_ML_OPTUNA_ENABLED = False
+            mock_cfg.HEATING_ML_CV_ENABLED = False
+
+            mock_lgb = MagicMock()
+            mock_lgb.LGBMRegressor = _CountingLGBMRegressor
+            mock_lgb.early_stopping.return_value = object()
+            mock_lgb.log_evaluation.return_value = object()
+
+            with patch.dict(
+                "sys.modules",
+                {
+                    "lightgbm": mock_lgb,
+                    "sklearn": fake_sklearn,
+                    "sklearn.inspection": fake_inspection,
+                },
+            ), patch("joblib.dump"), patch("os.replace"):
+                result = calibrate_heating_correction_ml()
+
+        assert result is True
+        # initial fit + at least one accepted incremental-pruning retrain
+        assert fit_call_count[0] >= 2
 
 
 class TestHoldoutIsolation:

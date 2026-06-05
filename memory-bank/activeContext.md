@@ -1,5 +1,34 @@
 # Active Context - Current Work & Decision State
 
+### Incremental PI Pruning Dashboard Controls — 2026-06-05
+
+#### **What changed**
+- Added Home Assistant dashboard controls to switch pruning strategy and set incremental PI thresholds for both models:
+  - Heating: `heating_ml_incremental_pruning_enabled`, `heating_ml_incremental_prune_pi_threshold`
+  - Cooling: `cooling_ml_correction_incremental_pruning_enabled`, `cooling_ml_correction_incremental_prune_pi_threshold`
+- Added runtime/env wiring for the new settings in `config_adapter.py` and `src/config.py`.
+- Implemented dual-mode pruning logic in both calibration pipelines:
+  - **Standard mode (OFF)**: existing one-shot pruning using existing `*_prune_pi_threshold`
+  - **Incremental mode (ON)**: remove one worst PI feature per step, retrain each step, accept only when MAE regression <= 0.5%, stop when converged or <5 features remain.
+- Extended saved metadata with pruning observability fields (mode, thresholds, incremental enabled flag, steps applied, dropped features).
+
+#### **Why**
+- One-shot pruning can be too aggressive in some datasets.
+- Notebook experiments showed value in incremental feature removal with acceptance gating.
+- User requested runtime configurability via dashboard: off = existing behavior, on = incremental behavior with configurable threshold.
+
+#### **Files changed**
+- `ml_heating_underfloor/config.yaml`
+- `ml_heating_underfloor/translations/en.yaml`
+- `ml_heating_underfloor/translations/de.yaml`
+- `config_adapter.py`
+- `src/config.py`
+- `src/heating_correction_ml_calibration.py`
+- `src/cooling_correction_ml_calibration.py`
+- `tests/unit/test_heating_correction_ml_calibration.py`
+- `tests/unit/test_cooling_correction_ml_calibration.py`
+- `CHANGELOG.md`
+
 ### Blend Removal + Config Fix + sklearn Warning Fix — 2026-06-04
 
 #### **What changed**

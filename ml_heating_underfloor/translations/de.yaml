@@ -324,6 +324,17 @@ configuration:
     name: '[ML Heizen] Pruning-Schwelle Permutations-Importance'
     description: Permutation importance cutoff.  Features at or below this value are
       pruned. Default 0.0 removes only noise/harmful features (negative or zero PI).
+  heating_ml_incremental_pruning_enabled:
+    name: '[ML Heizen] Inkrementelles PI-Pruning'
+    description: 'Wenn aktiviert, erfolgt das Feature-Pruning schrittweise: pro Schritt
+      wird das schlechteste PI-Feature entfernt, neu trainiert und nur akzeptiert,
+      wenn die MAE-Verschlechterung innerhalb der Guard-Rails bleibt. Wenn deaktiviert,
+      wird das Standard-One-Shot-Pruning verwendet. Standard: false.'
+  heating_ml_incremental_prune_pi_threshold:
+    name: '[ML Heizen] PI-Schwelle für inkrementelles Pruning'
+    description: 'Permutation-Importance-Grenzwert fuer inkrementelles Pruning.
+      Features mit PI <= diesem Wert sind Kandidaten fuer schrittweise Entfernung.
+      Standard: 0.001.'
   heating_ml_reg_alpha:
     name: '[ML Heizen] LightGBM-L1-Regularisierung (alpha)'
     description: 'L1 regularisation for LightGBM (reduces overfitting).  Default:
@@ -348,6 +359,17 @@ configuration:
     name: '[ML Heizen] Zeitreihen-CV-Splits'
     description: 'Number of CV splits (folds) for time-series cross-validation.  Default:
       3.'
+  cooling_ml_correction_incremental_pruning_enabled:
+    name: '[ML Kuehlkorrektur] Inkrementelles PI-Pruning'
+    description: 'Wenn aktiviert, erfolgt das Feature-Pruning schrittweise: pro Schritt
+      wird das schlechteste PI-Feature entfernt, neu trainiert und nur akzeptiert,
+      wenn die MAE-Verschlechterung innerhalb der Guard-Rails bleibt. Wenn deaktiviert,
+      wird das Standard-One-Shot-Pruning verwendet. Standard: false.'
+  cooling_ml_correction_incremental_prune_pi_threshold:
+    name: '[ML Kuehlkorrektur] PI-Schwelle fuer inkrementelles Pruning'
+    description: 'Permutation-Importance-Grenzwert fuer inkrementelles Pruning.
+      Features mit PI <= diesem Wert sind Kandidaten fuer schrittweise Entfernung.
+      Standard: 0.001.'
   influx_url:
     name: '[InfluxDB] InfluxDB-URL'
     description: Full URL of your InfluxDB instance including protocol and port (e.g.

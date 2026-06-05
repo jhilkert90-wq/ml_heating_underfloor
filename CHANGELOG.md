@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **NB17: Label Strategy Comparison** (`notebooks/analysis/17_label_comparison.ipynb`) — Head-to-head comparison of original label `-(T_future - T_target)/S_H` vs residualized `-(T_future - T_current)/S_H` with correct math. Results: residualized wins with 8.2% lower holdout MAE (0.1625 vs 0.1770), higher R² (0.8244 vs 0.8092), and 4.1% lower CV MAE. Decision: keep residualized label with sign fix.
+- **Dashboard controls for incremental PI-based pruning** (`ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `config_adapter.py`, `src/config.py`) — Added per-model switch + threshold for heating and cooling correction ML:
+	- `*_incremental_pruning_enabled` (default: `false`)
+	- `*_incremental_prune_pi_threshold` (default: `0.001`)
+
+### Changed
+- **Heating and cooling calibration pruning flow now supports two modes** (`src/heating_correction_ml_calibration.py`, `src/cooling_correction_ml_calibration.py`) —
+	- Incremental mode ON: iterative worst-PI feature removal with retrain/accept loop (MAE regression guard <= 0.5%, min 5 features)
+	- Incremental mode OFF: existing standard one-shot pruning with existing standard PI threshold
+- **Calibration metadata now records pruning strategy** (`src/heating_correction_ml_calibration.py`, `src/cooling_correction_ml_calibration.py`) — saved fields include pruning mode, thresholds, incremental flag, applied steps, and dropped features.
 
 ## [0.2.0] - 2026-02-10
 

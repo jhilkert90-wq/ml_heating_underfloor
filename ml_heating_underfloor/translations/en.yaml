@@ -338,6 +338,16 @@ configuration:
     name: '[ML Heating] Permutation-Importance Pruning Threshold'
     description: Permutation importance cutoff.  Features at or below this value are
       pruned. Default 0.0 removes only noise/harmful features (negative or zero PI).
+  heating_ml_incremental_pruning_enabled:
+    name: '[ML Heating] Incremental PI-Based Pruning'
+    description: 'When enabled, feature pruning runs incrementally: drop one worst-PI
+      feature per step, retrain, and accept only if MAE regression stays within guard
+      rails. When disabled, standard one-shot pruning is used. Default: false.'
+  heating_ml_incremental_prune_pi_threshold:
+    name: '[ML Heating] Incremental Pruning PI Threshold'
+    description: 'Permutation importance cutoff for incremental pruning. Features
+      with PI at or below this value are candidates for stepwise removal. Default:
+      0.001.'
   heating_ml_reg_alpha:
     name: '[ML Heating] LightGBM L1 Regularisation (alpha)'
     description: 'L1 regularisation for LightGBM (reduces overfitting).  Default:
@@ -412,6 +422,16 @@ configuration:
     name: '[ML Cooling Correction] Prune PI Threshold'
     description: 'Permutation importance cutoff for pruning. Features at or below
       this value are candidates for removal. Default: 0.0.'
+  cooling_ml_correction_incremental_pruning_enabled:
+    name: '[ML Cooling Correction] Incremental PI-Based Pruning'
+    description: 'When enabled, feature pruning runs incrementally: drop one worst-PI
+      feature per step, retrain, and accept only if MAE regression stays within guard
+      rails. When disabled, standard one-shot pruning is used. Default: false.'
+  cooling_ml_correction_incremental_prune_pi_threshold:
+    name: '[ML Cooling Correction] Incremental Pruning PI Threshold'
+    description: 'Permutation importance cutoff for incremental pruning. Features
+      with PI at or below this value are candidates for stepwise removal. Default:
+      0.001.'
   cooling_ml_correction_reg_alpha:
     name: '[ML Cooling Correction] L1 Regularization (α)'
     description: 'LightGBM reg_alpha (L1). Default: 0.1.'

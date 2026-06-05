@@ -1,5 +1,32 @@
 # ML Heating System - Current Progress
 
+## Incremental PI Pruning Controls (2026-06-05)
+
+**Status:** COMPLETED — heating/cooling calibration now support standard vs incremental pruning selectable from Home Assistant dashboard
+
+### Changes
+- Added per-model dashboard settings for incremental pruning enable/disable and incremental PI threshold:
+   - `heating_ml_incremental_pruning_enabled`, `heating_ml_incremental_prune_pi_threshold`
+   - `cooling_ml_correction_incremental_pruning_enabled`, `cooling_ml_correction_incremental_prune_pi_threshold`
+- Wired full settings path: addon options/schema/translations -> `config_adapter.py` env mapping -> `src/config.py` runtime vars
+- Implemented pruning mode branch in both calibrators:
+   - OFF: existing one-shot pruning with existing threshold
+   - ON: iterative worst-feature PI pruning with retrain after each step, MAE regression guard (<=0.5%), min-feature guard (>=5)
+- Extended calibration metadata with pruning diagnostics (mode, thresholds, applied steps, dropped features)
+- Added/updated unit tests for new config defaults and incremental-pruning behavior paths
+
+### Files
+- `ml_heating_underfloor/config.yaml`
+- `ml_heating_underfloor/translations/en.yaml`
+- `ml_heating_underfloor/translations/de.yaml`
+- `config_adapter.py`
+- `src/config.py`
+- `src/heating_correction_ml_calibration.py`
+- `src/cooling_correction_ml_calibration.py`
+- `tests/unit/test_heating_correction_ml_calibration.py`
+- `tests/unit/test_cooling_correction_ml_calibration.py`
+- `CHANGELOG.md`
+
 ## Blend Removal + Config Fix + sklearn Warning Fix (2026-06-04)
 
 **Status:** COMPLETED — 1534 tests passing (6 pre-existing integration failures, 8 Docker errors)

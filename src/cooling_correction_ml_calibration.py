@@ -856,58 +856,176 @@ def calibrate_cooling_correction_ml(
     prune_threshold = float(
         getattr(config, "COOLING_ML_CORRECTION_PRUNE_PI_THRESHOLD", 0.0)
     )
+    incremental_pruning_enabled = bool(
+        getattr(config, "COOLING_ML_CORRECTION_INCREMENTAL_PRUNING_ENABLED", False)
+    )
+    incremental_pi_threshold = float(
+        getattr(config, "COOLING_ML_CORRECTION_INCREMENTAL_PRUNE_PI_THRESHOLD", 0.001)
+    )
+    pruning_mode = "disabled"
+    pruning_dropped_features: list[str] = []
+    pruning_steps_applied = 0
 
     if pruning_enabled and len(feature_cols) > 5:
         from sklearn.inspection import permutation_importance  # type: ignore
 
-        pi_result = permutation_importance(
-            model, X_val, y_val, n_repeats=5,
-            scoring="neg_mean_absolute_error", random_state=42,
-        )
-        pi_means = pi_result.importances_mean
+        if incremental_pruning_enabled:
+            pruning_mode = "incremental"
+            current_features = list(feature_cols)
+            current_model = model
+            current_mae = val_mae
+            current_r2 = val_r2
+            max_steps = max(0, len(current_features) - 5)
 
-        keep_mask = pi_means > prune_threshold
-        pruned_cols = [c for c, keep in zip(feature_cols, keep_mask) if keep]
-        dropped_cols = [c for c, keep in zip(feature_cols, keep_mask) if not keep]
-
-        if dropped_cols and len(pruned_cols) >= 5:
             logger.info(
-                "Pruning: dropping %d features with PI ≤ %.4f: %s",
-                len(dropped_cols), prune_threshold, dropped_cols,
+                "Incremental pruning enabled (PI threshold <= %.4f)",
+                incremental_pi_threshold,
             )
-            model_pruned = lgb.LGBMRegressor(**lgb_params)
-            model_pruned.fit(
-                df_fit[pruned_cols], y_fit,
-                eval_set=[(df_val[pruned_cols], y_val)],
-                callbacks=[lgb.early_stopping(50, verbose=False)],
-            )
-            y_pred_pruned = model_pruned.predict(df_val[pruned_cols])
-            pruned_mae = float(np.mean(np.abs(y_val - y_pred_pruned)))
 
-            regression_pct = (
-                (pruned_mae - val_mae) / max(val_mae, 1e-10)
-            ) * 100.0
-
-            if regression_pct <= 0.5:
-                logger.info(
-                    "Pruned model accepted: MAE=%.4f (regression=%.2f%%)",
-                    pruned_mae, regression_pct,
+            for step_idx in range(1, max_steps + 1):
+                step_pi = permutation_importance(
+                    current_model,
+                    df_val[current_features],
+                    y_val,
+                    n_repeats=5,
+                    scoring="neg_mean_absolute_error",
+                    random_state=42,
                 )
-                model = model_pruned
-                feature_cols = pruned_cols
-                val_mae = pruned_mae
-                ss_res_p = float(np.sum((y_val - y_pred_pruned) ** 2))
-                val_r2 = 1.0 - ss_res_p / max(ss_tot, 1e-10)
-                feat_imp_pairs = sorted(
-                    zip(feature_cols, model.feature_importances_),
+                step_pairs = sorted(
+                    zip(current_features, step_pi.importances_mean),
                     key=lambda x: x[1],
-                    reverse=True,
                 )
-            else:
+                candidates = [
+                    (fname, imp)
+                    for fname, imp in step_pairs
+                    if imp <= incremental_pi_threshold
+                ]
+                if not candidates:
+                    logger.info(
+                        "Incremental pruning converged after %d accepted steps",
+                        pruning_steps_applied,
+                    )
+                    break
+
+                worst_feature, worst_pi = candidates[0]
+                remaining_features = [
+                    fname for fname in current_features if fname != worst_feature
+                ]
+                if len(remaining_features) < 5:
+                    logger.info(
+                        "Incremental pruning stopped: removing '%s' would leave %d features",
+                        worst_feature,
+                        len(remaining_features),
+                    )
+                    break
+
+                model_step = lgb.LGBMRegressor(**lgb_params)
+                model_step.fit(
+                    df_fit[remaining_features],
+                    y_fit,
+                    eval_set=[(df_val[remaining_features], y_val)],
+                    callbacks=[lgb.early_stopping(50, verbose=False)],
+                )
+                y_pred_step = model_step.predict(df_val[remaining_features])
+                step_mae = float(np.mean(np.abs(y_val - y_pred_step)))
+                step_ss_res = float(np.sum((y_val - y_pred_step) ** 2))
+                step_r2 = 1.0 - step_ss_res / max(ss_tot, 1e-10)
+                regression_pct = (
+                    (step_mae - current_mae) / max(current_mae, 1e-10)
+                ) * 100.0
+
+                if regression_pct <= 0.5:
+                    logger.info(
+                        "Incremental pruning step %d accepted: drop '%s' (PI=%.4f), "
+                        "MAE %.4f -> %.4f (%+.2f%%), features %d -> %d",
+                        step_idx,
+                        worst_feature,
+                        worst_pi,
+                        current_mae,
+                        step_mae,
+                        regression_pct,
+                        len(current_features),
+                        len(remaining_features),
+                    )
+                    current_features = remaining_features
+                    current_model = model_step
+                    current_mae = step_mae
+                    current_r2 = step_r2
+                    pruning_steps_applied += 1
+                    pruning_dropped_features.append(worst_feature)
+                else:
+                    logger.info(
+                        "Incremental pruning stopped: rejecting drop '%s' (PI=%.4f), "
+                        "MAE regression %+.2f%% > 0.5%%",
+                        worst_feature,
+                        worst_pi,
+                        regression_pct,
+                    )
+                    break
+
+            model = current_model
+            feature_cols = current_features
+            val_mae = current_mae
+            val_r2 = current_r2
+            feat_imp_pairs = sorted(
+                zip(feature_cols, model.feature_importances_),
+                key=lambda x: x[1],
+                reverse=True,
+            )
+        else:
+            pruning_mode = "standard"
+            pi_result = permutation_importance(
+                model, X_val, y_val, n_repeats=5,
+                scoring="neg_mean_absolute_error", random_state=42,
+            )
+            pi_means = pi_result.importances_mean
+
+            keep_mask = pi_means > prune_threshold
+            pruned_cols = [c for c, keep in zip(feature_cols, keep_mask) if keep]
+            dropped_cols = [c for c, keep in zip(feature_cols, keep_mask) if not keep]
+
+            if dropped_cols and len(pruned_cols) >= 5:
                 logger.info(
-                    "Pruned model rejected: MAE regression %.2f%% > 0.5%%",
-                    regression_pct,
+                    "Pruning: dropping %d features with PI <= %.4f: %s",
+                    len(dropped_cols), prune_threshold, dropped_cols,
                 )
+                model_pruned = lgb.LGBMRegressor(**lgb_params)
+                model_pruned.fit(
+                    df_fit[pruned_cols], y_fit,
+                    eval_set=[(df_val[pruned_cols], y_val)],
+                    callbacks=[lgb.early_stopping(50, verbose=False)],
+                )
+                y_pred_pruned = model_pruned.predict(df_val[pruned_cols])
+                pruned_mae = float(np.mean(np.abs(y_val - y_pred_pruned)))
+
+                regression_pct = (
+                    (pruned_mae - val_mae) / max(val_mae, 1e-10)
+                ) * 100.0
+
+                if regression_pct <= 0.5:
+                    logger.info(
+                        "Pruned model accepted: MAE=%.4f (regression=%.2f%%)",
+                        pruned_mae, regression_pct,
+                    )
+                    model = model_pruned
+                    feature_cols = pruned_cols
+                    val_mae = pruned_mae
+                    ss_res_p = float(np.sum((y_val - y_pred_pruned) ** 2))
+                    val_r2 = 1.0 - ss_res_p / max(ss_tot, 1e-10)
+                    pruning_steps_applied = 1
+                    pruning_dropped_features = list(dropped_cols)
+                    feat_imp_pairs = sorted(
+                        zip(feature_cols, model.feature_importances_),
+                        key=lambda x: x[1],
+                        reverse=True,
+                    )
+                else:
+                    logger.info(
+                        "Pruned model rejected: MAE regression %.2f%% > 0.5%%",
+                        regression_pct,
+                    )
+    elif pruning_enabled:
+        pruning_mode = "skipped_too_few_features"
 
     # ── 11. Optional Optuna HPO ─────────────────────────────────────────
     optuna_enabled = bool(
@@ -1077,6 +1195,12 @@ def calibrate_cooling_correction_ml(
         "fireplace_lag_hours": fireplace_lag_hours,
         "tv_lag_hours": tv_lag_hours,
         "lgb_params": lgb_params,
+        "pruning_mode": pruning_mode,
+        "pruning_threshold_standard": prune_threshold,
+        "pruning_threshold_incremental": incremental_pi_threshold,
+        "incremental_pruning_enabled": incremental_pruning_enabled,
+        "pruning_steps_applied": pruning_steps_applied,
+        "pruning_dropped_features": pruning_dropped_features,
         "feature_importances": {
             fname: int(imp) for fname, imp in feat_imp_pairs
         },

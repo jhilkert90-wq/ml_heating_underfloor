@@ -213,6 +213,15 @@ options:
   # Permutation importance cutoff.  Features at or below this value are pruned.
   # Default 0.0 removes only noise/harmful features (negative or zero PI).
   heating_ml_prune_pi_threshold: 0.0
+  # Enable incremental PI-based feature pruning.
+  # When true, pruning drops one worst-PI feature at a time and retrains between
+  # steps; each step is accepted only if MAE regression stays within guard rails.
+  # When false, standard one-shot pruning is used.
+  heating_ml_incremental_pruning_enabled: false
+  # Permutation importance cutoff used by incremental pruning.
+  # Features with PI at or below this threshold become removal candidates.
+  # Default 0.001 allows pruning near-zero-contribution features.
+  heating_ml_incremental_prune_pi_threshold: 0.001
   # L1 regularisation for LightGBM (reduces overfitting).  Default: 0.1.
   heating_ml_reg_alpha: 0.1
   # L2 regularisation for LightGBM (reduces overfitting).  Default: 1.0.
@@ -263,6 +272,13 @@ options:
   cooling_ml_correction_feature_pruning_enabled: true
   # Permutation importance cutoff for pruning.
   cooling_ml_correction_prune_pi_threshold: 0.0
+  # Enable incremental PI-based feature pruning for cooling correction.
+  # When true, pruning removes one worst-PI feature per step with retraining and
+  # MAE-regression acceptance checks. When false, standard one-shot pruning is used.
+  cooling_ml_correction_incremental_pruning_enabled: false
+  # Permutation importance cutoff used by cooling incremental pruning.
+  # Features with PI at or below this threshold become removal candidates.
+  cooling_ml_correction_incremental_prune_pi_threshold: 0.001
   # LightGBM L1 regularization.
   cooling_ml_correction_reg_alpha: 0.1
   # LightGBM L2 regularization.
@@ -708,6 +724,8 @@ schema:
   heating_ml_buffer_max_n: "int(100,5000)"
   heating_ml_feature_pruning_enabled: "bool"
   heating_ml_prune_pi_threshold: "float(-1.0,1.0)"
+  heating_ml_incremental_pruning_enabled: "bool"
+  heating_ml_incremental_prune_pi_threshold: "float(-1.0,1.0)"
   heating_ml_reg_alpha: "float(0.0,10.0)"
   heating_ml_reg_lambda: "float(0.0,10.0)"
   heating_ml_optuna_enabled: "bool"
@@ -729,6 +747,8 @@ schema:
   cooling_ml_correction_buffer_max_n: "int(100,5000)"
   cooling_ml_correction_feature_pruning_enabled: "bool"
   cooling_ml_correction_prune_pi_threshold: "float(-1.0,1.0)"
+  cooling_ml_correction_incremental_pruning_enabled: "bool"
+  cooling_ml_correction_incremental_prune_pi_threshold: "float(-1.0,1.0)"
   cooling_ml_correction_reg_alpha: "float(0.0,10.0)"
   cooling_ml_correction_reg_lambda: "float(0.0,10.0)"
   cooling_ml_correction_optuna_enabled: "bool"

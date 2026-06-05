@@ -874,6 +874,16 @@ HEATING_ML_FEATURE_PRUNING_ENABLED: bool = (
 HEATING_ML_PRUNE_PI_THRESHOLD: float = float(
     os.getenv("HEATING_ML_PRUNE_PI_THRESHOLD", "0.0")
 )
+# Incremental feature pruning mode switch.
+# false -> standard one-shot pruning (existing behavior)
+# true  -> iterative worst-feature pruning with retraining after each step.
+HEATING_ML_INCREMENTAL_PRUNING_ENABLED: bool = (
+    os.getenv("HEATING_ML_INCREMENTAL_PRUNING_ENABLED", "false").lower() == "true"
+)
+# PI cutoff used by incremental pruning candidate selection.
+HEATING_ML_INCREMENTAL_PRUNE_PI_THRESHOLD: float = float(
+    os.getenv("HEATING_ML_INCREMENTAL_PRUNE_PI_THRESHOLD", "0.001")
+)
 # --- LightGBM regularization ---
 HEATING_ML_REG_ALPHA: float = float(
     os.getenv("HEATING_ML_REG_ALPHA", "0.1")
@@ -978,6 +988,18 @@ COOLING_ML_CORRECTION_FEATURE_PRUNING_ENABLED: bool = (
 )
 COOLING_ML_CORRECTION_PRUNE_PI_THRESHOLD: float = float(
     os.getenv("COOLING_ML_CORRECTION_PRUNE_PI_THRESHOLD", "0.0")
+)
+# Incremental feature pruning mode switch.
+# false -> standard one-shot pruning (existing behavior)
+# true  -> iterative worst-feature pruning with retraining after each step.
+COOLING_ML_CORRECTION_INCREMENTAL_PRUNING_ENABLED: bool = (
+    os.getenv(
+        "COOLING_ML_CORRECTION_INCREMENTAL_PRUNING_ENABLED", "false"
+    ).lower() == "true"
+)
+# PI cutoff used by incremental pruning candidate selection.
+COOLING_ML_CORRECTION_INCREMENTAL_PRUNE_PI_THRESHOLD: float = float(
+    os.getenv("COOLING_ML_CORRECTION_INCREMENTAL_PRUNE_PI_THRESHOLD", "0.001")
 )
 # LightGBM regularization.
 COOLING_ML_CORRECTION_REG_ALPHA: float = float(

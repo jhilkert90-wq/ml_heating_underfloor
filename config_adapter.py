@@ -690,6 +690,12 @@ def convert_addon_to_env(config):
         'HEATING_ML_PRUNE_PI_THRESHOLD': str(
             config.get('heating_ml_prune_pi_threshold', 0.0)
         ),
+        'HEATING_ML_INCREMENTAL_PRUNING_ENABLED': str(
+            config.get('heating_ml_incremental_pruning_enabled', False)
+        ).lower(),
+        'HEATING_ML_INCREMENTAL_PRUNE_PI_THRESHOLD': str(
+            config.get('heating_ml_incremental_prune_pi_threshold', 0.001)
+        ),
         'HEATING_ML_REG_ALPHA': str(
             config.get('heating_ml_reg_alpha', 0.1)
         ),
@@ -751,6 +757,12 @@ def convert_addon_to_env(config):
         ).lower(),
         'COOLING_ML_CORRECTION_PRUNE_PI_THRESHOLD': str(
             config.get('cooling_ml_correction_prune_pi_threshold', 0.0)
+        ),
+        'COOLING_ML_CORRECTION_INCREMENTAL_PRUNING_ENABLED': str(
+            config.get('cooling_ml_correction_incremental_pruning_enabled', False)
+        ).lower(),
+        'COOLING_ML_CORRECTION_INCREMENTAL_PRUNE_PI_THRESHOLD': str(
+            config.get('cooling_ml_correction_incremental_prune_pi_threshold', 0.001)
         ),
         'COOLING_ML_CORRECTION_REG_ALPHA': str(
             config.get('cooling_ml_correction_reg_alpha', 0.1)
