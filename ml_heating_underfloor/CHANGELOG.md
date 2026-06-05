@@ -1,5 +1,14 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.71] - 2026-06-05
+
+### Fixed
+- **CRITICAL: Residualized label reconstruction sign error** (`src/heating_correction_ml_model.py`, `src/cooling_correction_ml_model.py`) — Formula used `delta - indoor_margin/S_H` (wrong) instead of `delta + indoor_margin/S_H` (correct). This caused the ML correction to raise outlet temp during overshoot instead of lowering it. Derived from NB08's `indoor_margin = indoor - target` convention being copied into production where `indoor_margin = target - indoor`.
+- **CRITICAL: Cooling calibration data pipeline broken** (`src/cooling_correction_ml_calibration.py`) — Three compounding bugs: (1) missing `purpose="cooling"` in `fetch_historical_data_for_calibration()` call; (2) wrong config attribute names (e.g., `INDOOR_TEMP_ENTITY` instead of `INDOOR_TEMP_ENTITY_ID`); (3) column renaming tried to match full entity IDs against short DataFrame column names. Now mirrors the working heating calibration pattern.
+
+### Added
+- **NB17: Label Strategy Comparison** (`notebooks/analysis/17_label_comparison.ipynb`) — Head-to-head comparison of original label `-(T_future - T_target)/S_H` vs residualized `-(T_future - T_current)/S_H` with correct math. Results: residualized wins with 8.2% lower holdout MAE (0.1625 vs 0.1770), higher R² (0.8244 vs 0.8092), and 4.1% lower CV MAE. Decision: keep residualized label with sign fix.
+
 ## [0.2.70] - 2026-06-04
 
 ### Fixed
