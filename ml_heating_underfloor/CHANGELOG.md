@@ -1,5 +1,22 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.72] - 2026-06-27
+
+### Added
+- Replay fast-path support in thermal feedback updates via `skip_trajectory_recompute` to avoid duplicate trajectory calculations when callers already provide trajectory-based predictions.
+- Deferred persistence controls in `ThermalEquilibriumModel` (`begin_deferred_persistence`, `flush_deferred_persistence`, `end_deferred_persistence`) to keep replay updates in memory and persist once at the end.
+
+### Changed
+- Optimized notebook replay engine in `18_online_replay_calibration.ipynb` with vectorized forecast precomputation (`np.column_stack`) and precomputed PV scalar extraction.
+- Replay loop now passes `skip_trajectory_recompute=True` to preserve production learning semantics while reducing per-cycle math overhead.
+- Replay model creation now resolves final state destination by climate mode: heating writes to `UNIFIED_STATE_FILE` and cooling writes to `UNIFIED_STATE_FILE_COOLING`.
+- Online replay now defers channel-state writes during cycle loop and performs a single final flush to unified state file at run end.
+
+### Fixed
+- **Cooling ML calibration physics features bug**: Trajectory-derived physics features (traj_predicted_error, traj_convergence_rate, etc.) now use actively-learned heat pump channel parameters (η, U, τ) from cooling thermal state instead of stale heating-mode parameters. Ensures ML training features reflect actual system behavior during cooling periods. Raises `RuntimeError` if cooling heat pump channel not initialized, forcing correct initialization order.
+- **Cooling correction ML calibration S_H parameters bug**: Sensible heat (S_H) computation in cooling correction model now loads all three parameters (outlet_effectiveness, heat_loss_coefficient, thermal_time_constant) from cooling heat pump channel instead of heating state. Eliminates silent fallback to config defaults. Validates parameter types and ranges with specific error guidance.
+- **Heating correction ML calibration channel-precedence mismatch**: S_H parameter loading now always prioritizes `heat_source_channels.heat_pump.parameters` when available (independent of channel history count) and refreshes unified state before reading. Prevents unintended fallback to computed baseline parameters when valid heat-pump channel parameters exist.
+
 ## [0.2.71] - 2026-06-05
 
 ### Fixed
