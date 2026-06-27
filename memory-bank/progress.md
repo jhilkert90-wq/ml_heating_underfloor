@@ -1,5 +1,61 @@
 # ML Heating System - Current Progress
 
+## Heating Correction ML Calibration Channel-Precedence Fix (2026-06-27)
+
+**Status:** COMPLETED — heating correction S_H parameter loading now consistently uses heat pump channel parameters when available
+
+### Changes
+- Fixed `_read_baseline_thermal_params()` in `heating_correction_ml_calibration.py`:
+   - Added explicit `load_state()` before reading parameters from unified state
+   - Removed history/activity gate (`history_count` / `history`) for heat pump channel selection
+   - Now always uses `heat_source_channels.heat_pump.parameters` when channel params exist and channels are enabled
+- Updated unit test to enforce new precedence behavior:
+   - `test_heat_pump_channel_parameters_take_precedence_even_without_history`
+   - Confirms channel parameters are used even with `history_count=0`
+
+### Root Cause
+Heating correction parameter loading required channel history/activity to consider heat pump channel parameters as "active". This could incorrectly skip valid channel parameters and fallback to baseline/computed values, even though channel parameters were present and should have precedence.
+
+### Impact
+- Before: valid `heat_source_channels.heat_pump.parameters` could be ignored when history was empty
+- After: channel parameters are used consistently whenever available
+
+### Files
+- `src/heating_correction_ml_calibration.py`
+- `tests/unit/test_heating_correction_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+## Cooling Correction ML Calibration S_H Parameters Bug Fix (2026-06-27)
+
+**Status:** COMPLETED — S_H computation now uses actively-learned cooling heat pump channel parameters instead of heating state parameters
+
+### Changes
+- Fixed parameter loading in `cooling_correction_ml_calibration.py` (lines 87-143):
+   - Changed from `get_thermal_state_manager()` (heating) to `get_cooling_state_manager()` (cooling)
+   - Extract heat pump channel parameters directly: `learning_state → heat_source_channels → heat_pump → parameters`
+   - All three parameters (η, U, τ) come from heat pump channel which reflects actively-learned runtime values
+   - Raise `RuntimeError` with specific guidance if cooling heat pump channel not initialized
+   - Added 3-layer validation: presence → type conversion → range validation
+- Updated docstring to explain parameter source and error handling
+- Enhanced logging showing loaded parameter values with 4-decimal precision
+- Eliminated silent fallback to config defaults (OE=0.20, HLC=0.124, τ=4.39)
+
+### Root Cause
+The cooling correction model was loading heating-mode thermal state when reading S_H computation parameters. The heat_pump channel in cooling state contains actively-learned parameters reflecting what the system was actually using during model training. Using heating state would cause S_H to be computed with incorrect values (OE=0.20 vs 0.4808), degrading correction model accuracy.
+
+### Impact
+- Before: S_H params logged as OE=0.2000 HLC=0.1206 τ=4.84h (heating config)
+- After: S_H params logged as OE=0.4808 HLC=0.1342 τ=4.8957h (cooling heat pump channel)
+- Cooling correction ML model now trains with correct system sensitivity parameters
+
+### Files
+- `src/cooling_correction_ml_calibration.py` — parameter loading + docstring
+- `CHANGELOG.md` — [Fixed] entry
+- `memory-bank/progress.md` — this entry
+- `memory-bank/activeContext.md` — context entry
+
 ## Cooling ML Calibration Physics Features Bug Fix (2026-06-27)
 
 **Status:** COMPLETED — trajectory-derived features now use actively-learned heat pump channel parameters instead of stale heating-mode values

@@ -325,6 +325,22 @@ class TestEndToEndCalibration:
         # real HA connections during the `from src.physics_calibration import ...` fallback
         mock_physics_cal = MagicMock()
         mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        mock_cooling_state_mgr = MagicMock()
+        mock_cooling_state_mgr.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.4808,
+                            "heat_loss_coefficient": 0.1342,
+                            "thermal_time_constant": 4.8957,
+                        }
+                    }
+                }
+            }
+        }
+        mock_unified_cooling = MagicMock()
+        mock_unified_cooling.get_cooling_state_manager = MagicMock(return_value=mock_cooling_state_mgr)
         try:
             with patch.dict("sys.modules", {
                 "lightgbm": mock_lgb,
@@ -335,6 +351,7 @@ class TestEndToEndCalibration:
                 ),
                 "physics_calibration": mock_physics_cal,
                 "src.physics_calibration": mock_physics_cal,
+                "src.unified_thermal_state_cooling": mock_unified_cooling,
             }):
                 from src.cooling_ml_calibration import calibrate_cooling_ml
                 result = calibrate_cooling_ml()
@@ -447,6 +464,22 @@ class TestEndToEndCalibration:
 
         mock_physics_cal = MagicMock()
         mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        mock_cooling_state_mgr = MagicMock()
+        mock_cooling_state_mgr.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.4808,
+                            "heat_loss_coefficient": 0.1342,
+                            "thermal_time_constant": 4.8957,
+                        }
+                    }
+                }
+            }
+        }
+        mock_unified_cooling = MagicMock()
+        mock_unified_cooling.get_cooling_state_manager = MagicMock(return_value=mock_cooling_state_mgr)
         try:
             with patch.dict("sys.modules", {
                 "lightgbm": mock_lgb,
@@ -457,6 +490,7 @@ class TestEndToEndCalibration:
                 ),
                 "physics_calibration": mock_physics_cal,
                 "src.physics_calibration": mock_physics_cal,
+                "src.unified_thermal_state_cooling": mock_unified_cooling,
             }):
                 from src.cooling_ml_calibration import calibrate_cooling_ml
                 result = calibrate_cooling_ml(cooling_target_c=25.0)
@@ -507,6 +541,22 @@ class TestFeatureColumnGuard:
 
         mock_physics_cal = MagicMock()
         mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        mock_cooling_state_mgr = MagicMock()
+        mock_cooling_state_mgr.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.4808,
+                            "heat_loss_coefficient": 0.1342,
+                            "thermal_time_constant": 4.8957,
+                        }
+                    }
+                }
+            }
+        }
+        mock_unified_cooling = MagicMock()
+        mock_unified_cooling.get_cooling_state_manager = MagicMock(return_value=mock_cooling_state_mgr)
         try:
             with patch.dict("sys.modules", {
                 "lightgbm": mock_lgb,
@@ -514,6 +564,7 @@ class TestFeatureColumnGuard:
                 "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
                 "physics_calibration": mock_physics_cal,
                 "src.physics_calibration": mock_physics_cal,
+                "src.unified_thermal_state_cooling": mock_unified_cooling,
             }):
                 from src.cooling_ml_calibration import calibrate_cooling_ml
                 result = calibrate_cooling_ml()
@@ -630,6 +681,22 @@ class TestForecastHourSelection:
 
         mock_physics_cal = MagicMock()
         mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        mock_cooling_state_mgr = MagicMock()
+        mock_cooling_state_mgr.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.4808,
+                            "heat_loss_coefficient": 0.1342,
+                            "thermal_time_constant": 4.8957,
+                        }
+                    }
+                }
+            }
+        }
+        mock_unified_cooling = MagicMock()
+        mock_unified_cooling.get_cooling_state_manager = MagicMock(return_value=mock_cooling_state_mgr)
         try:
             with patch.dict("sys.modules", {
                 "lightgbm": mock_lgb,
@@ -637,6 +704,7 @@ class TestForecastHourSelection:
                 "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
                 "physics_calibration": mock_physics_cal,
                 "src.physics_calibration": mock_physics_cal,
+                "src.unified_thermal_state_cooling": mock_unified_cooling,
             }), patch.dict("os.environ", env_overrides, clear=False):
                 from src.cooling_ml_calibration import calibrate_cooling_ml
                 result = calibrate_cooling_ml()
@@ -711,6 +779,22 @@ class TestForecastHourSelection:
 
         mock_physics_cal = MagicMock()
         mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
+        mock_cooling_state_mgr = MagicMock()
+        mock_cooling_state_mgr.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.4808,
+                            "heat_loss_coefficient": 0.1342,
+                            "thermal_time_constant": 4.8957,
+                        }
+                    }
+                }
+            }
+        }
+        mock_unified_cooling = MagicMock()
+        mock_unified_cooling.get_cooling_state_manager = MagicMock(return_value=mock_cooling_state_mgr)
         try:
             with patch.dict("sys.modules", {
                 "lightgbm": mock_lgb,
@@ -718,6 +802,7 @@ class TestForecastHourSelection:
                 "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
                 "physics_calibration": mock_physics_cal,
                 "src.physics_calibration": mock_physics_cal,
+                "src.unified_thermal_state_cooling": mock_unified_cooling,
             }), patch.dict("os.environ", clean_env, clear=True):
                 from src.cooling_ml_calibration import calibrate_cooling_ml
                 result = calibrate_cooling_ml()
@@ -783,6 +868,22 @@ class TestForecastHourSelection:
         clean_env["COOLING_ML_FORECAST_HOURS"] = "4,8"
         # COOLING_ML_PV_FORECAST_HOURS is absent, so it defaults to all 12 hours
 
+        mock_cooling_state_mgr = MagicMock()
+        mock_cooling_state_mgr.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.4808,
+                            "heat_loss_coefficient": 0.1342,
+                            "thermal_time_constant": 4.8957,
+                        }
+                    }
+                }
+            }
+        }
+        mock_unified_cooling = MagicMock()
+        mock_unified_cooling.get_cooling_state_manager = MagicMock(return_value=mock_cooling_state_mgr)
         try:
             with patch.dict("sys.modules", {
                 "lightgbm": mock_lgb,
@@ -790,6 +891,7 @@ class TestForecastHourSelection:
                 "sklearn.metrics": MagicMock(roc_auc_score=MagicMock(return_value=0.8)),
                 "physics_calibration": mock_physics_cal,
                 "src.physics_calibration": mock_physics_cal,
+                "src.unified_thermal_state_cooling": mock_unified_cooling,
             }), patch.dict("os.environ", clean_env, clear=True):
                 from src.cooling_ml_calibration import calibrate_cooling_ml
                 result = calibrate_cooling_ml()

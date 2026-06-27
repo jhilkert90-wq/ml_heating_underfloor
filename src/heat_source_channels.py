@@ -571,7 +571,7 @@ class SolarChannel(HeatSourceChannel):
             self.pv_heat_weight = _clip_to_parameter_bounds(
                 "pv_heat_weight",
                 self.pv_heat_weight + max(-0.0002, min(0.0002, delta)),
-                (0.0001, 0.005),
+                (0.00001, 0.005),
             )
         if "solar_lag_minutes" in gradients:
             delta = gradients["solar_lag_minutes"] * learning_rate

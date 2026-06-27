@@ -51,6 +51,104 @@ class TestCoolingComputeSH:
         assert _compute_s_h(0.5, 0.5, 0.0, 4.0) == 0.0
 
 
+class TestReadCoolingThermalParams:
+    def test_uses_heat_pump_channel_parameters(self):
+        from src.cooling_correction_ml_calibration import _read_cooling_thermal_params
+
+        cfg = type("Cfg", (), {})()
+
+        fake_manager = MagicMock()
+        fake_manager.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.4808,
+                            "heat_loss_coefficient": 0.1342,
+                            "thermal_time_constant": 4.8957,
+                        }
+                    }
+                }
+            }
+        }
+
+        with patch(
+            "src.unified_thermal_state_cooling.get_cooling_state_manager",
+            return_value=fake_manager,
+        ):
+            oe, hlc, tau = _read_cooling_thermal_params(cfg)
+
+        fake_manager.load_state.assert_called_once_with()
+        assert oe == pytest.approx(0.4808)
+        assert hlc == pytest.approx(0.1342)
+        assert tau == pytest.approx(4.8957)
+
+    def test_raises_runtime_error_when_heat_pump_channel_missing(self):
+        from src.cooling_correction_ml_calibration import _read_cooling_thermal_params
+
+        cfg = type("Cfg", (), {})()
+
+        fake_manager = MagicMock()
+        fake_manager.state = {"learning_state": {"heat_source_channels": {}}}
+
+        with patch(
+            "src.unified_thermal_state_cooling.get_cooling_state_manager",
+            return_value=fake_manager,
+        ), pytest.raises(RuntimeError, match="Cooling heat pump channel not initialized"):
+            _read_cooling_thermal_params(cfg)
+
+    def test_raises_runtime_error_when_required_key_missing(self):
+        from src.cooling_correction_ml_calibration import _read_cooling_thermal_params
+
+        cfg = type("Cfg", (), {})()
+
+        fake_manager = MagicMock()
+        fake_manager.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.4808,
+                            "heat_loss_coefficient": 0.1342,
+                        }
+                    }
+                }
+            }
+        }
+
+        with patch(
+            "src.unified_thermal_state_cooling.get_cooling_state_manager",
+            return_value=fake_manager,
+        ), pytest.raises(RuntimeError, match="missing keys"):
+            _read_cooling_thermal_params(cfg)
+
+    def test_raises_runtime_error_when_parameter_out_of_bounds(self):
+        from src.cooling_correction_ml_calibration import _read_cooling_thermal_params
+
+        cfg = type("Cfg", (), {})()
+
+        fake_manager = MagicMock()
+        fake_manager.state = {
+            "learning_state": {
+                "heat_source_channels": {
+                    "heat_pump": {
+                        "parameters": {
+                            "outlet_effectiveness": 0.049,
+                            "heat_loss_coefficient": 0.1342,
+                            "thermal_time_constant": 4.8957,
+                        }
+                    }
+                }
+            }
+        }
+
+        with patch(
+            "src.unified_thermal_state_cooling.get_cooling_state_manager",
+            return_value=fake_manager,
+        ), pytest.raises(RuntimeError, match="Invalid cooling outlet_effectiveness"):
+            _read_cooling_thermal_params(cfg)
+
+
 # ---------------------------------------------------------------------------
 # Warm-season filter
 # ---------------------------------------------------------------------------

@@ -1,5 +1,57 @@
 # Active Context - Current Work & Decision State
 
+### Heating Correction ML Calibration Channel-Precedence Fix — 2026-06-27
+
+#### **What changed**
+- Fixed `_read_baseline_thermal_params()` in `src/heating_correction_ml_calibration.py`:
+  - Added explicit `state_manager.load_state()` before reads
+  - Removed "channel active" requirement based on `history_count/history`
+  - Now selects `heat_source_channels.heat_pump.parameters` whenever present (with channels enabled)
+- Updated unit test behavior in `tests/unit/test_heating_correction_ml_calibration.py`:
+  - Replaced fallback expectation with channel precedence expectation even when history is empty
+
+#### **Why**
+- **Root cause**: valid heat pump channel parameters were conditionally ignored unless channel history indicated prior participation
+- **Impact**: S_H in heating correction training could be computed from fallback/computed parameters instead of actual channel parameters
+- **Decision**: channel parameter presence is the correct readiness signal for calibration usage; history count is not required
+
+#### **Files changed**
+- `src/heating_correction_ml_calibration.py`
+- `tests/unit/test_heating_correction_ml_calibration.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+### Cooling Correction ML Calibration S_H Parameters Bug Fix — 2026-06-27
+
+#### **What changed**
+- Fixed parameter loading in `src/cooling_correction_ml_calibration.py` (lines 87-143):
+  - Replaced `get_thermal_state_manager()` (heating state) with `get_cooling_state_manager()` (cooling state)
+  - Now directly extracts all three heat pump channel parameters: `learning_state["heat_source_channels"]["heat_pump"]["parameters"]`
+  - Uses actively-learned η, U, τ values from cooling heat pump channel instead of heating state defaults
+  - Added `RuntimeError` with specific guidance if cooling heat pump channel not initialized
+  - Implemented 3-layer validation: presence check → type conversion → range validation
+- Updated docstring to explain parameter source and error handling
+- Added detailed logging with 4-decimal precision showing loaded parameter values
+- Eliminated silent fallback to config defaults (OE=0.20, HLC=0.124, τ=4.39)
+
+#### **Why**
+- **Root cause**: S_H (sensible heat) computation was using heating state, causing S_H to be calculated with wrong system parameters
+- **Impact**: S_H values off by ~140% (OE=0.20 vs 0.4808), meaning cooling correction ML model trained with incorrect system sensitivity
+- **Solution**: Load all three parameters from cooling heat pump channel which contains actively-learned values
+- **Benefit**: Cooling correction model now trains with correct S_H values, improving prediction accuracy during warm season
+
+#### **Decision history**
+- Identified same bug pattern as cooling_ml_calibration fix: heating state used instead of cooling state
+- Chose strict error handling (RuntimeError + guidance) to force initialization before using calibration
+- Applied identical 3-layer validation pattern proven effective in cooling_ml_calibration
+
+#### **Files changed**
+- `src/cooling_correction_ml_calibration.py` (parameter loading, lines 87-143)
+- `CHANGELOG.md` ([Fixed] entry added)
+- `memory-bank/progress.md` (milestone)
+- `memory-bank/activeContext.md` (this entry)
+
 ### Cooling ML Calibration Physics Features Bug Fix — 2026-06-27
 
 #### **What changed**

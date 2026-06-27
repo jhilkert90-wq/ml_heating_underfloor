@@ -391,7 +391,7 @@ def test_build_pv_params():
     names, values, bounds = physics_calibration._build_pv_params(current_params)
     assert names == ['pv_heat_weight']
     assert values == [0.002]
-    assert bounds[0] == (0.0001, 0.005)
+    assert bounds[0] == (0.00001, 0.005)
 
 
 def test_calculate_mae_for_params_with_frozen_params(stable_periods_fixture):
@@ -686,10 +686,10 @@ def test_filter_pv_only_periods_no_hlc_keeps_all():
 
 
 def test_pv_heat_weight_new_bounds():
-    """ThermalParameterConfig bounds for pv_heat_weight updated to (0.0001, 0.005)."""
+    """ThermalParameterConfig bounds for pv_heat_weight updated to (0.00001, 0.005)."""
     from src.thermal_config import ThermalParameterConfig
     lo, hi = ThermalParameterConfig.get_bounds('pv_heat_weight')
-    assert lo == 0.0001
+    assert lo == 0.00001
     assert hi == 0.005
     # Default must lie within the valid bounds
     default = ThermalParameterConfig.get_default('pv_heat_weight')

@@ -98,13 +98,16 @@ def _read_baseline_thermal_params(config) -> tuple[float, float, float]:
     Returns (outlet_effectiveness, heat_loss_coefficient, thermal_time_constant).
 
     Precedence:
-    1) Active heat-pump channel parameters (when channels are enabled)
+    1) Heat-pump channel parameters (when channels are enabled and present)
     2) Baseline + learning adjustments (computed parameters)
     3) Config defaults
     """
     try:
         from src.unified_thermal_state import get_thermal_state_manager
         state_manager = get_thermal_state_manager()
+        _load_state = getattr(state_manager, "load_state", None)
+        if callable(_load_state):
+            _load_state()
 
         eta_default = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
         u_default = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
@@ -134,12 +137,7 @@ def _read_baseline_thermal_params(config) -> tuple[float, float, float]:
             channels = get_ch_state() if callable(get_ch_state) else {}
             hp_state = (channels or {}).get("heat_pump", {})
             hp_params = hp_state.get("parameters", {})
-            hp_history = hp_state.get("history", [])
-            hp_history_count = int(hp_state.get("history_count", len(hp_history) or 0))
-
-            # Treat channel as active only when there is evidence it has participated.
-            hp_active = hp_history_count > 0 or bool(hp_history)
-            if hp_active and hp_params:
+            if hp_params:
                 eta = _to_float_or(hp_params.get("outlet_effectiveness"), eta_computed)
                 u = _to_float_or(hp_params.get("heat_loss_coefficient"), u_computed)
                 tau = _to_float_or(hp_params.get("thermal_time_constant"), tau_computed)

@@ -2427,7 +2427,7 @@ def _build_pv_params(current_params):
     """
     param_names = ['pv_heat_weight']
     param_values = [current_params['pv_heat_weight']]
-    param_bounds = [(0.0001, 0.005)]
+    param_bounds = [(0.00001, 0.005)]
     return param_names, param_values, param_bounds
 
 

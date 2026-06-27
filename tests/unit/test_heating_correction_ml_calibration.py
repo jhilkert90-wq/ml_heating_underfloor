@@ -155,7 +155,7 @@ class TestReadBaselineThermalParams:
         assert u == pytest.approx(0.120)
         assert tau == pytest.approx(4.835)
 
-    def test_inactive_heat_pump_channel_falls_back_to_computed(self):
+    def test_heat_pump_channel_parameters_take_precedence_even_without_history(self):
         from src.heating_correction_ml_calibration import _read_baseline_thermal_params
 
         cfg = SimpleNamespace(
@@ -190,9 +190,88 @@ class TestReadBaselineThermalParams:
         ):
             eta, u, tau = _read_baseline_thermal_params(cfg)
 
-        assert eta == pytest.approx(0.811)
-        assert u == pytest.approx(0.133)
-        assert tau == pytest.approx(4.612)
+        assert eta == pytest.approx(0.84)
+        assert u == pytest.approx(0.119)
+        assert tau == pytest.approx(4.83)
+
+    def test_load_state_called_when_available(self):
+        from src.heating_correction_ml_calibration import _read_baseline_thermal_params
+
+        cfg = SimpleNamespace(
+            ENABLE_HEAT_SOURCE_CHANNELS=True,
+            OUTLET_EFFECTIVENESS=0.95,
+            HEAT_LOSS_COEFFICIENT=0.12,
+            THERMAL_TIME_CONSTANT=4.39,
+        )
+
+        load_state_mock = MagicMock()
+        fake_manager = SimpleNamespace(
+            load_state=load_state_mock,
+            get_heat_source_channel_state=lambda: {
+                "heat_pump": {
+                    "parameters": {
+                        "outlet_effectiveness": 0.84,
+                        "heat_loss_coefficient": 0.119,
+                        "thermal_time_constant": 4.83,
+                    },
+                    "history_count": 0,
+                    "history": [],
+                }
+            },
+            get_computed_parameters=lambda: {
+                "outlet_effectiveness": 0.811,
+                "heat_loss_coefficient": 0.133,
+                "thermal_time_constant": 4.612,
+            },
+        )
+
+        with patch(
+            "src.unified_thermal_state.get_thermal_state_manager",
+            return_value=fake_manager,
+        ):
+            eta, u, tau = _read_baseline_thermal_params(cfg)
+
+        load_state_mock.assert_called_once_with()
+        assert eta == pytest.approx(0.84)
+        assert u == pytest.approx(0.119)
+        assert tau == pytest.approx(4.83)
+
+    def test_missing_load_state_method_still_uses_channel_parameters(self):
+        from src.heating_correction_ml_calibration import _read_baseline_thermal_params
+
+        cfg = SimpleNamespace(
+            ENABLE_HEAT_SOURCE_CHANNELS=True,
+            OUTLET_EFFECTIVENESS=0.95,
+            HEAT_LOSS_COEFFICIENT=0.12,
+            THERMAL_TIME_CONSTANT=4.39,
+        )
+
+        fake_manager = SimpleNamespace(
+            get_heat_source_channel_state=lambda: {
+                "heat_pump": {
+                    "parameters": {
+                        "outlet_effectiveness": 0.84,
+                        "heat_loss_coefficient": 0.119,
+                        "thermal_time_constant": 4.83,
+                    },
+                }
+            },
+            get_computed_parameters=lambda: {
+                "outlet_effectiveness": 0.811,
+                "heat_loss_coefficient": 0.133,
+                "thermal_time_constant": 4.612,
+            },
+        )
+
+        with patch(
+            "src.unified_thermal_state.get_thermal_state_manager",
+            return_value=fake_manager,
+        ):
+            eta, u, tau = _read_baseline_thermal_params(cfg)
+
+        assert eta == pytest.approx(0.84)
+        assert u == pytest.approx(0.119)
+        assert tau == pytest.approx(4.83)
 
 
 # ---------------------------------------------------------------------------

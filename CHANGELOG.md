@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Cooling ML calibration physics features bug**: Trajectory-derived physics features (traj_predicted_error, traj_convergence_rate, etc.) now use actively-learned heat pump channel parameters (η, U, τ) from cooling thermal state instead of stale heating-mode parameters. Ensures ML training features reflect actual system behavior during cooling periods. Raises `RuntimeError` if cooling heat pump channel not initialized, forcing correct initialization order.
+- **Cooling correction ML calibration S_H parameters bug**: Sensible heat (S_H) computation in cooling correction model now loads all three parameters (outlet_effectiveness, heat_loss_coefficient, thermal_time_constant) from cooling heat pump channel instead of heating state. Eliminates silent fallback to config defaults. Validates parameter types and ranges with specific error guidance.
+- **Heating correction ML calibration channel-precedence mismatch**: S_H parameter loading now always prioritizes `heat_source_channels.heat_pump.parameters` when available (independent of channel history count) and refreshes unified state before reading. Prevents unintended fallback to computed baseline parameters when valid heat-pump channel parameters exist.
 
 ## [0.2.0] - 2026-02-10
 

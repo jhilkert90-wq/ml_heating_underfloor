@@ -86,59 +86,100 @@ def _compute_s_h(eta: float, u_loss: float, tau_room: float, h: float) -> float:
 
 
 def _read_cooling_thermal_params(config) -> tuple[float, float, float]:
-    """Read OE_cooling, HLC, τ for the cooling S_H computation.
+    """Read cooling heat pump channel parameters for the cooling S_H computation.
 
     Returns (outlet_effectiveness_cooling, heat_loss_coefficient, thermal_time_constant).
 
-    Cooling uses its own OE (typically ~0.20), but HLC and τ are locked
-    from the heating calibration (shared building physics).
+    All three parameters are extracted from the actively-learned heat_pump channel in the
+    cooling thermal state. If cooling physics calibration has not been run, raises RuntimeError
+    with guidance to run ``python -m src.main --calibrate-cooling-physics`` first.
+
+    Error handling: All exceptions (missing state, invalid types, out-of-range values) are
+    converted to RuntimeError with specific guidance. Silent fallback to config defaults is
+    NOT performed to ensure incorrect parameters are never silently used in S_H computation.
     """
     try:
-        from src.unified_thermal_state import get_thermal_state_manager
-        state_manager = get_thermal_state_manager()
-
-        oe_default = float(getattr(config, "COOLING_OUTLET_EFFECTIVENESS", 0.20))
-        hlc_default = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
-        tau_default = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
-
-        def _to_float_or(value, fallback: float) -> float:
-            try:
-                if value is None:
-                    return fallback
-                return float(value)
-            except (TypeError, ValueError):
-                return fallback
-
-        # Try cooling-specific parameters from unified state
-        get_computed = getattr(state_manager, "get_computed_parameters", None)
-        computed = get_computed() if callable(get_computed) else {}
-
-        # Cooling OE from cooling channel or config default
-        state = getattr(state_manager, "state", {}) or {}
-        cooling_params = state.get("cooling_parameters", {}) or {}
-        oe_cooling = _to_float_or(
-            cooling_params.get("outlet_effectiveness"),
-            _to_float_or(computed.get("cooling_outlet_effectiveness"), oe_default),
-        )
-
-        # HLC and τ from heating calibration (shared physics)
-        hlc = _to_float_or(computed.get("heat_loss_coefficient"), hlc_default)
-        tau = _to_float_or(computed.get("thermal_time_constant"), tau_default)
-
+        from src.unified_thermal_state_cooling import get_cooling_state_manager
+        _state_mgr = get_cooling_state_manager()
+        _state_mgr.load_state()
+        
+        # Extract heat pump channel parameters from cooling state
+        _hp_params = _state_mgr.state.get("learning_state", {}).get("heat_source_channels", {}).get("heat_pump", {}).get("parameters", {})
+        
+        # Layer 1: Presence validation
+        if not _hp_params:
+            raise RuntimeError(
+                "Cooling heat pump channel not initialized. "
+                "Run `python -m src.main --calibrate-cooling-physics` first, "
+                "then restart the calibration."
+            )
+        
+        # Layer 2: Check all required keys present
+        _required_keys = ["outlet_effectiveness", "heat_loss_coefficient", "thermal_time_constant"]
+        _missing_keys = [k for k in _required_keys if k not in _hp_params]
+        if _missing_keys:
+            raise RuntimeError(
+                f"Cooling heat pump parameters incomplete; missing keys: {_missing_keys}. "
+                "Run `python -m src.main --calibrate-cooling-physics` first to regenerate."
+            )
+        
+        # Layer 3: Type conversion + range validation
+        try:
+            _oe = float(_hp_params["outlet_effectiveness"])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Cooling heat pump outlet_effectiveness corrupted (non-numeric): {exc}. "
+                "Run `python -m src.main --calibrate-cooling-physics` to regenerate."
+            ) from exc
+        
+        if not (0.05 <= _oe < 2.0):
+            raise RuntimeError(
+                f"Invalid cooling outlet_effectiveness {_oe:.4f} (must be 0.05 ≤ η < 2.0). "
+                "Run `python -m src.main --calibrate-cooling-physics` to regenerate."
+            )
+        
+        try:
+            _hlc = float(_hp_params["heat_loss_coefficient"])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Cooling heat pump heat_loss_coefficient corrupted (non-numeric): {exc}. "
+                "Run `python -m src.main --calibrate-cooling-physics` to regenerate."
+            ) from exc
+        
+        if not (0.01 <= _hlc <= 1.0):
+            raise RuntimeError(
+                f"Invalid cooling heat_loss_coefficient {_hlc:.4f} (must be 0.01 ≤ U ≤ 1.0). "
+                "Run `python -m src.main --calibrate-cooling-physics` to regenerate."
+            )
+        
+        try:
+            _tau = float(_hp_params["thermal_time_constant"])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Cooling heat pump thermal_time_constant corrupted (non-numeric): {exc}. "
+                "Run `python -m src.main --calibrate-cooling-physics` to regenerate."
+            ) from exc
+        
+        if not (1.0 <= _tau <= 50.0):
+            raise RuntimeError(
+                f"Invalid cooling thermal_time_constant {_tau:.4f} (must be 1.0 ≤ τ ≤ 50.0). "
+                "Run `python -m src.main --calibrate-cooling-physics` to regenerate."
+            )
+        
         logger.info(
-            "Cooling S_H params: OE=%.4f HLC=%.4f τ=%.2fh",
-            oe_cooling, hlc, tau,
+            "Cooling S_H params (from heat_pump channel): OE=%.4f HLC=%.4f τ=%.4fh",
+            _oe, _hlc, _tau,
         )
-        return oe_cooling, hlc, tau
-
-    except Exception:
-        logger.warning(
-            "Could not read unified thermal state; using config defaults for cooling S_H"
-        )
-        oe = float(getattr(config, "COOLING_OUTLET_EFFECTIVENESS", 0.20))
-        hlc = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
-        tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
-        return oe, hlc, tau
+        return _oe, _hlc, _tau
+    
+    except RuntimeError:
+        # Re-raise RuntimeError as-is (already has guidance)
+        raise
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to load cooling thermal state: {exc}. "
+            "Run `python -m src.main --calibrate-cooling-physics` first."
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
