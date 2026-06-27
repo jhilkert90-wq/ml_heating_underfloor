@@ -1,0 +1,141 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "format": "unified_thermal_state",
+    "created": "2026-06-11T19:36:49.759671",
+    "last_updated": "2026-06-12T10:20:19.213066"
+  },
+  "baseline_parameters": {
+    "thermal_time_constant": 4.390554703745845,
+    "equilibrium_ratio": 0.17,
+    "total_conductance": 0.8,
+    "heat_loss_coefficient": 0.1245214561975565,
+    "outlet_effectiveness": 0.9526723072021629,
+    "solar_lag_minutes": 45.0,
+    "slab_time_constant_hours": 3.19,
+    "pv_heat_weight": 0.0020704649305198215,
+    "fireplace_heat_weight": 0.387,
+    "tv_heat_weight": 0.35,
+    "delta_t_floor": 2.3,
+    "fp_decay_time_constant": 3.9144707244638868,
+    "room_spread_delay_minutes": 18.0,
+    "cloud_factor_exponent": 1.0,
+    "solar_decay_tau_hours": 1.0,
+    "source": "config_defaults",
+    "calibration_date": null,
+    "calibration_cycles": 0
+  },
+  "learning_state": {
+    "cycle_count": 0,
+    "learning_confidence": 3.0,
+    "learning_enabled": true,
+    "parameter_adjustments": {
+      "equilibrium_ratio_delta": 0.0,
+      "total_conductance_delta": 0.0,
+      "heat_loss_coefficient_delta": 0.0,
+      "outlet_effectiveness_delta": 0.0,
+      "thermal_time_constant_delta": 0.0,
+      "pv_heat_weight_delta": 0.0,
+      "tv_heat_weight_delta": 0.0,
+      "solar_lag_minutes_delta": 0.0,
+      "slab_time_constant_delta": 0.0,
+      "delta_t_floor_delta": 0.0,
+      "fp_decay_time_constant_delta": 0.0,
+      "room_spread_delay_minutes_delta": 0.0
+    },
+    "parameter_bounds": {
+      "equilibrium_ratio": [
+        0.1,
+        0.9
+      ],
+      "total_conductance": [
+        0.1,
+        0.8
+      ]
+    },
+    "heat_source_channels": {
+      "heat_pump": {
+        "parameters": {
+          "thermal_time_constant": 4.390554703745845,
+          "heat_loss_coefficient": 0.1245214561975565,
+          "outlet_effectiveness": 0.9526723072021629,
+          "slab_time_constant_hours": 3.19,
+          "delta_t_floor": 2.3
+        },
+        "history_count": 0,
+        "history": [],
+        "last_saved": "2026-06-12T10:20:19.213039"
+      },
+      "pv": {
+        "parameters": {
+          "pv_heat_weight": 0.0020704649305198215,
+          "solar_lag_minutes": 45.0,
+          "cloud_factor_exponent": 1.0,
+          "solar_decay_tau_hours": 1.0
+        },
+        "history_count": 0,
+        "history": [],
+        "last_saved": "2026-06-12T10:20:19.213039"
+      },
+      "fireplace": {
+        "parameters": {
+          "fp_heat_output_kw": 0.387,
+          "fp_decay_time_constant": 3.9144707244638868,
+          "room_spread_delay_minutes": 18.0
+        },
+        "history_count": 0,
+        "history": [],
+        "last_saved": "2026-06-12T10:20:19.213039"
+      },
+      "tv": {
+        "parameters": {
+          "tv_heat_weight": 0.35
+        },
+        "history_count": 0,
+        "history": [],
+        "last_saved": "2026-06-12T10:20:19.213039"
+      },
+      "_orchestrator": {
+        "fireplace_was_on": false,
+        "fireplace_off_cycle_count": 0,
+        "pv_was_active": false,
+        "pv_off_cycle_count": 0
+      }
+    },
+    "prediction_history": [],
+    "parameter_history": []
+  },
+  "prediction_metrics": {
+    "total_predictions": 0,
+    "accuracy_stats": {
+      "mae_1h": 0.0,
+      "rmse_1h": 0.0,
+      "mae_6h": 0.0,
+      "rmse_6h": 0.0,
+      "mae_24h": 0.0,
+      "rmse_24h": 0.0,
+      "mae_all_time": 0.0,
+      "rmse_all_time": 0.0
+    },
+    "recent_performance": {
+      "last_10_mae": 0.0,
+      "last_10_max_error": 0.0,
+      "last_10_count": 0
+    }
+  },
+  "operational_state": {
+    "last_indoor_temp": null,
+    "last_outdoor_temp": null,
+    "last_outlet_temp": null,
+    "last_prediction": null,
+    "last_run_time": null,
+    "is_calibrating": false,
+    "last_run_features": null,
+    "last_final_temp": null,
+    "last_avg_other_rooms_temp": null,
+    "last_fireplace_on": false,
+    "last_is_blocking": false,
+    "last_blocking_reasons": [],
+    "last_blocking_end_time": null
+  }
+}

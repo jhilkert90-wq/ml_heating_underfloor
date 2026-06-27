@@ -1,5 +1,71 @@
 # ML Heating System - Current Progress
 
+## Cooling ML Calibration Physics Features Bug Fix (2026-06-27)
+
+**Status:** COMPLETED — trajectory-derived features now use actively-learned heat pump channel parameters instead of stale heating-mode values
+
+### Changes
+- Fixed parameter loading in `cooling_ml_calibration.py` (lines 470-520):
+   - Changed from `get_thermal_state_manager()` (heating) to `get_cooling_state_manager()` (cooling)
+   - Extract heat pump channel parameters directly: `learning_state → heat_source_channels → heat_pump → parameters`
+   - Use η (outlet_effectiveness), U (heat_loss_coefficient), τ (thermal_time_constant) from heat pump channel (reflects actual runtime parameters)
+   - Raise `RuntimeError` if cooling heat pump channel not initialized, enforcing correct initialization order
+- Updated docstring to explain parameter source and error handling
+- Added detailed logging showing loaded parameter values
+- Enhanced guard logic with warning messages for parameter edge cases
+
+### Root Cause
+The cooling ML calibration was using heating-mode thermal state when computing trajectory physics features. The heat_source_channels["heat_pump"] parameters are actively-learned during runtime and reflect what the system was actually using during the training period. Using baseline + global adjustments would be stale.
+
+### Files
+- `src/cooling_ml_calibration.py` — parameter loading + docstring
+- `CHANGELOG.md` — [Fixed] entry
+- `memory-bank/progress.md` — this entry
+- `memory-bank/activeContext.md` — context entry
+
+## Replay Deferred Persistence + Final Unified-State Flush (2026-06-27)
+
+**Status:** COMPLETED — replay learning now stays in memory during cycles and writes once at end to climate-mode unified state file
+
+### Changes
+- Added deferred persistence mode to `ThermalEquilibriumModel`:
+   - `begin_deferred_persistence()`
+   - `flush_deferred_persistence(force_save=True)`
+   - `end_deferred_persistence(flush=True)`
+- Updated `_persist_heat_source_channel_state(...)` to buffer channel updates in memory when deferred mode is active.
+- Updated notebook replay model creation to select destination by mode:
+   - heating -> `UNIFIED_STATE_FILE`
+   - cooling -> `UNIFIED_STATE_FILE_COOLING`
+- Updated replay engine to:
+   - enable deferred persistence at run start,
+   - flush once at run end.
+
+### Files
+- `src/thermal_equilibrium_model.py`
+- `notebooks/analysis/18_online_replay_calibration.ipynb`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+## Replay Runtime Optimization (Vectorized Precompute + Trajectory Fast-Path) (2026-06-12)
+
+**Status:** COMPLETED — online replay updated with vectorized preprocessing and redundant trajectory recomputation removed from feedback path
+
+### Changes
+- Added optional `skip_trajectory_recompute` parameter to `ThermalEquilibriumModel.update_prediction_feedback()`.
+- Gated internal trajectory recomputation in feedback updates behind the new flag.
+- Updated notebook replay engine (`18_online_replay_calibration.ipynb`) to:
+   - precompute forecast matrices with `np.column_stack` (AT/PV horizons),
+   - precompute `pv_scalar` array once,
+   - pass `skip_trajectory_recompute=True` because replay already computes trajectory-based prediction per cycle.
+
+### Files
+- `src/thermal_equilibrium_model.py`
+- `notebooks/analysis/18_online_replay_calibration.ipynb`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ## Incremental PI Pruning Controls (2026-06-05)
 
 **Status:** COMPLETED — heating/cooling calibration now support standard vs incremental pruning selectable from Home Assistant dashboard

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Replay fast-path support in thermal feedback updates via `skip_trajectory_recompute` to avoid duplicate trajectory calculations when callers already provide trajectory-based predictions.
+- Deferred persistence controls in `ThermalEquilibriumModel` (`begin_deferred_persistence`, `flush_deferred_persistence`, `end_deferred_persistence`) to keep replay updates in memory and persist once at the end.
+
+### Changed
+- Optimized notebook replay engine in `18_online_replay_calibration.ipynb` with vectorized forecast precomputation (`np.column_stack`) and precomputed PV scalar extraction.
+- Replay loop now passes `skip_trajectory_recompute=True` to preserve production learning semantics while reducing per-cycle math overhead.
+- Replay model creation now resolves final state destination by climate mode: heating writes to `UNIFIED_STATE_FILE` and cooling writes to `UNIFIED_STATE_FILE_COOLING`.
+- Online replay now defers channel-state writes during cycle loop and performs a single final flush to unified state file at run end.
+
+### Fixed
+- **Cooling ML calibration physics features bug**: Trajectory-derived physics features (traj_predicted_error, traj_convergence_rate, etc.) now use actively-learned heat pump channel parameters (η, U, τ) from cooling thermal state instead of stale heating-mode parameters. Ensures ML training features reflect actual system behavior during cooling periods. Raises `RuntimeError` if cooling heat pump channel not initialized, forcing correct initialization order.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

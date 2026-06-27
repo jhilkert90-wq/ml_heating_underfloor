@@ -16,6 +16,7 @@ Key features:
 import json
 import os
 import logging
+import time
 from copy import deepcopy
 from typing import Dict, Any, Optional, Set
 from datetime import datetime
@@ -269,6 +270,7 @@ class ThermalStateManager:
     def save_state(self) -> bool:
         """Save thermal state to JSON file (atomic write)."""
         import tempfile
+        tmp_path = None
         try:
             # Update metadata
             self.state["metadata"]["last_updated"] = datetime.now().isoformat()
@@ -290,13 +292,47 @@ class ThermalStateManager:
                 json.dump(serializable_state, tmp_f, indent=2)
                 tmp_path = tmp_f.name
 
-            os.replace(tmp_path, self.state_file)
+            replace_error = None
+            for attempt in range(5):
+                try:
+                    os.replace(tmp_path, self.state_file)
+                    tmp_path = None
+                    logging.debug(
+                        "💾 Saved unified thermal state to %s", self.state_file
+                    )
+                    return True
+                except PermissionError as err:
+                    replace_error = err
+                    if attempt < 4:
+                        time.sleep(0.1 * (attempt + 1))
 
-            logging.debug("💾 Saved unified thermal state to %s", self.state_file)
-            return True
+            # Fallback path when atomic replacement is blocked (e.g. transient
+            # Windows file locking in synced folders). Keep functionality alive
+            # instead of dropping learning updates.
+            try:
+                with open(self.state_file, 'w', encoding='utf-8') as state_f:
+                    json.dump(serializable_state, state_f, indent=2)
+                if replace_error is not None:
+                    logging.warning(
+                        "⚠️ Atomic save fallback used for %s after replace failure: %s",
+                        self.state_file,
+                        replace_error,
+                    )
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                logging.debug("💾 Saved unified thermal state to %s", self.state_file)
+                return True
+            except Exception:
+                # Re-raise to outer handler for consistent error logging.
+                raise
 
         except Exception as e:
             logging.error("❌ Failed to save thermal state: %s", e)
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
             return False
 
     def _merge_with_defaults(self, loaded_state: Dict) -> Dict:

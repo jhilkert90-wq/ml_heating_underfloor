@@ -95,6 +95,10 @@ def calibrate_cooling_ml(
     """
     Train and persist the LightGBM cooling classifier.
 
+    Physics-derived trajectory features use actively-learned heat pump channel
+    parameters (η, U, τ) from the cooling thermal state, not baseline calibration,
+    ensuring ML training reflects actual system behavior during the training period.
+
     Parameters
     ----------
     state_manager:
@@ -108,6 +112,12 @@ def calibrate_cooling_ml(
     Returns
     -------
     bool: True on success, False on failure.
+
+    Raises
+    ------
+    RuntimeError:
+        If cooling heat pump channel parameters are not initialized.
+        Run ``calibrate_cooling_physics()`` first.
     """
     try:
         from . import config
@@ -468,33 +478,98 @@ def calibrate_cooling_ml(
 
     # ── 5d. Trajectory-derived physics features (vectorized) ────────────
     # Analytical Newton-decay approximation of what the trajectory simulator
-    # would predict, computed per row using calibrated τ, η, U.  Provides
-    # the ML model with the physics engine's forward-looking expectations.
+    # would predict, computed per row using actively-learned heat pump parameters.
+    # Uses heat_source_channels["heat_pump"] parameters (not baseline calibration),
+    # which reflect the system state during the training period.
     _traj_eta = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
     _traj_u = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
     _traj_tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
 
-    # Try reading calibrated parameters from unified thermal state
+    # Load actively-learned heat pump parameters from cooling thermal state
     try:
-        from src.unified_thermal_state import get_thermal_state_manager
-        _state_mgr = get_thermal_state_manager()
-        _get_computed = getattr(_state_mgr, "get_computed_parameters", None)
-        _computed = _get_computed() if callable(_get_computed) else {}
-        if _computed.get("outlet_effectiveness") is not None:
-            _traj_eta = float(_computed["outlet_effectiveness"])
-        if _computed.get("heat_loss_coefficient") is not None:
-            _traj_u = float(_computed["heat_loss_coefficient"])
-        if _computed.get("thermal_time_constant") is not None:
-            _traj_tau = float(_computed["thermal_time_constant"])
-    except Exception:
-        pass  # Use config defaults
+        from src.unified_thermal_state_cooling import get_cooling_state_manager
+        _state_mgr = get_cooling_state_manager()
+        _state_mgr.load_state()
+        _hp_params = _state_mgr.state.get("learning_state", {}).get("heat_source_channels", {}).get("heat_pump", {}).get("parameters", {})
+        
+        if not _hp_params:
+            raise RuntimeError(
+                "Cooling heat pump channel not initialized. "
+                "Run `python -m src.main --calibrate-cooling-physics` first."
+            )
+        
+        # Extract and validate all required parameters
+        _required_keys = ["outlet_effectiveness", "heat_loss_coefficient", "thermal_time_constant"]
+        _missing_keys = [k for k in _required_keys if k not in _hp_params]
+        if _missing_keys:
+            raise RuntimeError(
+                f"Cooling heat pump parameters incomplete; missing keys: {_missing_keys}. "
+                "Run `python -m src.main --calibrate-cooling-physics` first."
+            )
+        
+        # Extract and validate parameter values
+        try:
+            _traj_eta_loaded = float(_hp_params["outlet_effectiveness"])
+            _traj_u_loaded = float(_hp_params["heat_loss_coefficient"])
+            _traj_tau_loaded = float(_hp_params["thermal_time_constant"])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Cooling heat pump parameters corrupted (non-numeric): {exc}. "
+                "Run `python -m src.main --calibrate-cooling-physics` first."
+            ) from exc
+        
+        # Validate parameter ranges (catch NaN, inf, etc.)
+        if not (0 < _traj_eta_loaded < 2.0):
+            raise RuntimeError(
+                f"Invalid outlet_effectiveness {_traj_eta_loaded} (must be 0 < η < 2.0). "
+                "Cooling state corrupted."
+            )
+        if not (0 < _traj_u_loaded < 1.5):
+            raise RuntimeError(
+                f"Invalid heat_loss_coefficient {_traj_u_loaded} (must be 0 < U < 1.5). "
+                "Cooling state corrupted."
+            )
+        if not (0.1 <= _traj_tau_loaded < 20.0):
+            raise RuntimeError(
+                f"Invalid thermal_time_constant {_traj_tau_loaded} (must be 0.1 ≤ τ < 20h). "
+                "Cooling state corrupted."
+            )
+        
+        # All validations passed — use loaded values
+        _traj_eta = _traj_eta_loaded
+        _traj_u = _traj_u_loaded
+        _traj_tau = _traj_tau_loaded
+        
+        logger.info(
+            "Loaded cooling trajectory parameters from heat_pump channel "
+            "(outlet_effectiveness=%.4f, heat_loss_coefficient=%.4f, thermal_time_constant=%.2f)",
+            _traj_eta, _traj_u, _traj_tau
+        )
+    except RuntimeError:
+        raise  # Re-raise initialization errors with context
+    except Exception as exc:
+        # Any other exception (ImportError, KeyError, IOError, etc.) is treated as initialization error
+        raise RuntimeError(
+            f"Failed to load cooling heat pump parameters: {exc}. "
+            "Run `python -m src.main --calibrate-cooling-physics` first."
+        ) from exc
 
-    # Guard: τ < 0.1 h is physically impossible for underfloor slab systems
+    # Sanity guard: τ < 0.1 h should not happen after validation, but check anyway
     if _traj_tau < 0.1:
-        _traj_tau = float(getattr(config, "THERMAL_TIME_CONSTANT", 4.39))
+        logger.error(
+            "INTERNAL ERROR: Thermal time constant %.4f passed validation but is < 0.1h. "
+            "This indicates corrupted state or validation logic error.",
+            _traj_tau
+        )
+        raise RuntimeError("Invalid thermal time constant passed validation — corrupted state")
+    
+    # Guard: sum of η + U should be reasonable (shouldn't happen after validation)
     if (_traj_eta + _traj_u) < 1e-6:
-        _traj_eta = float(getattr(config, "OUTLET_EFFECTIVENESS", 0.830))
-        _traj_u = float(getattr(config, "HEAT_LOSS_COEFFICIENT", 0.124))
+        logger.error(
+            "INTERNAL ERROR: η+U sum %.2e is too small. This indicates validation logic error.",
+            _traj_eta + _traj_u
+        )
+        raise RuntimeError("Invalid parameter sum passed validation — corrupted state")
 
     # Equilibrium temperature: T_eq = (η×VLT + U×AT) / (η + U)
     _traj_denom = _traj_eta + _traj_u

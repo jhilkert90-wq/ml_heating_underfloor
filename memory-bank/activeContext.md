@@ -1,5 +1,80 @@
 # Active Context - Current Work & Decision State
 
+### Cooling ML Calibration Physics Features Bug Fix — 2026-06-27
+
+#### **What changed**
+- Fixed parameter loading in `src/cooling_ml_calibration.py` (lines 470-520):
+  - Replaced `get_thermal_state_manager()` (heating state) with `get_cooling_state_manager()` (cooling state)
+  - Now directly extracts heat pump channel parameters: `learning_state["heat_source_channels"]["heat_pump"]["parameters"]`
+  - Uses actively-learned η, U, τ values from the heat pump channel instead of baseline + global adjustments
+  - Added `RuntimeError` if cooling heat pump channel not initialized, enforcing initialization order
+- Updated `calibrate_cooling_ml()` docstring to explain physics feature source and error handling
+- Added detailed logging to show loaded parameter values
+- Enhanced parameter validation with warning messages for edge cases
+
+#### **Why**
+- **Root cause**: ML training features were computed using stale heating-mode parameters instead of cooling-calibrated values
+- **Impact**: Trajectory physics features (traj_predicted_error, traj_convergence_rate, etc.) would use wrong system parameters
+- **Solution**: Use actively-learned heat pump channel parameters, which reflect what the system was actually using during training period
+- **Benefit**: ML training features now match runtime prediction features, improving model accuracy
+
+#### **Decision history**
+- Initially considered checking `context["heat_pump_active"]` per-row; user simplified: always use heat pump channel params
+- Chose strict error handling (RuntimeError) vs lenient fallback to enforce correct initialization order
+
+#### **Files changed**
+- `src/cooling_ml_calibration.py` (parameter loading + docstring)
+- `CHANGELOG.md` ([Fixed] entry)
+- `memory-bank/progress.md` (milestone)
+- `memory-bank/activeContext.md` (this entry)
+
+### Replay Deferred Persistence + Final Unified-State Flush — 2026-06-27
+
+#### **What changed**
+- Added deferred persistence controls to `ThermalEquilibriumModel`:
+  - `begin_deferred_persistence()`
+  - `flush_deferred_persistence(force_save=True)`
+  - `end_deferred_persistence(flush=True)`
+- `_persist_heat_source_channel_state(...)` now buffers updates in memory while deferred mode is active.
+- Updated replay notebook model creation to resolve output state file from climate mode:
+  - heating -> `UNIFIED_STATE_FILE`
+  - cooling -> `UNIFIED_STATE_FILE_COOLING`
+- Updated replay engine to enable deferred mode during loop and flush once at the end.
+
+#### **Why**
+- Frequent per-cycle JSON writes are expensive and unnecessary for replay.
+- Requirement was to keep updates in memory and write final result once.
+- Climate-mode routing ensures output lands in the correct unified state file for heating vs cooling replay.
+
+#### **Files changed**
+- `src/thermal_equilibrium_model.py`
+- `notebooks/analysis/18_online_replay_calibration.ipynb`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+### Replay Runtime Optimization (Vectorized Precompute + Trajectory Fast-Path) — 2026-06-12
+
+#### **What changed**
+- Added `skip_trajectory_recompute: bool = False` to `ThermalEquilibriumModel.update_prediction_feedback()`.
+- Internal trajectory recomputation inside feedback is now skipped when this flag is enabled.
+- Updated `notebooks/analysis/18_online_replay_calibration.ipynb` replay loop to:
+  - build forecast matrices (`AT_roh_*h`, `pv_forecast_*h`) via `np.column_stack`,
+  - precompute per-cycle `pv_scalar` values once,
+  - call `update_prediction_feedback(..., skip_trajectory_recompute=True)`.
+
+#### **Why**
+- Replay already computes trajectory-based prediction each cycle.
+- Feedback was recomputing another trajectory with equivalent inputs, adding major per-cycle overhead.
+- This preserves production learning logic while reducing runtime pressure toward the <=5 minute goal.
+
+#### **Files changed**
+- `src/thermal_equilibrium_model.py`
+- `notebooks/analysis/18_online_replay_calibration.ipynb`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ### Incremental PI Pruning Dashboard Controls — 2026-06-05
 
 #### **What changed**

@@ -36,6 +36,9 @@ class ThermalEquilibriumModel:
         # wrapper) this instance reads from / writes to the supplied manager
         # instead of the global heating singleton.
         self._state_manager = state_manager
+        self._defer_persistence = False
+        self._deferred_channel_history_records: List[Dict] = []
+        self._deferred_channel_state_dirty = False
 
         # Initialize default attributes to ensure existence
         self.solar_lag_minutes = config.SOLAR_LAG_MINUTES
@@ -492,6 +495,14 @@ class ThermalEquilibriumModel:
         if self.orchestrator is None:
             return
 
+        if self._defer_persistence:
+            if parameter_history_records:
+                self._deferred_channel_history_records.extend(
+                    parameter_history_records
+                )
+            self._deferred_channel_state_dirty = True
+            return
+
         try:
             state_manager = self._get_state_manager()
             if parameter_history_records:
@@ -506,6 +517,45 @@ class ThermalEquilibriumModel:
             logging.warning(
                 "⚠️ Failed to persist heat-source channel state: %s", exc
             )
+
+    def begin_deferred_persistence(self) -> None:
+        """Keep learning updates in memory until an explicit flush call."""
+        self._defer_persistence = True
+        self._deferred_channel_history_records = []
+        self._deferred_channel_state_dirty = False
+
+    def flush_deferred_persistence(self, force_save: bool = True) -> None:
+        """Write any deferred learning updates to the configured state file."""
+        if self.orchestrator is None:
+            return
+
+        try:
+            state_manager = self._get_state_manager()
+            if self._deferred_channel_history_records:
+                for parameter_record in self._deferred_channel_history_records:
+                    state_manager.add_parameter_history_record(
+                        parameter_record
+                    )
+                self._deferred_channel_history_records = []
+
+            if self._deferred_channel_state_dirty:
+                state_manager.set_heat_source_channel_state(
+                    self.orchestrator.get_channel_state()
+                )
+                self._deferred_channel_state_dirty = False
+            elif force_save and hasattr(state_manager, "save_state"):
+                state_manager.save_state()
+        except Exception as exc:
+            logging.warning(
+                "⚠️ Failed to flush deferred heat-source channel state: %s",
+                exc,
+            )
+
+    def end_deferred_persistence(self, flush: bool = True) -> None:
+        """Exit deferred mode and optionally persist buffered updates."""
+        if flush:
+            self.flush_deferred_persistence(force_save=True)
+        self._defer_persistence = False
 
     def _sync_orchestrator_parameter_if_needed(
         self, values: Dict[str, float]
@@ -968,6 +1018,7 @@ class ThermalEquilibriumModel:
         prediction_context: Dict,
         timestamp: Optional[str] = None,
         is_blocking_active: bool = False,
+        skip_trajectory_recompute: bool = False,
     ):
         """
         Update the model with real-world feedback to enable adaptive learning.
@@ -1040,38 +1091,34 @@ class ThermalEquilibriumModel:
         if pv_input is None:
             pv_input = prediction_context.get("pv_power", 0)
 
-        # Build forecast-aware outdoor array for trajectory-aligned learning.
-        # Uses the same horizon (TRAJECTORY_STEPS) as the optimization so that
-        # gradients capture the effect of future PV / weather on the outlet
-        # decision that was made.
-        _outdoor_now = prediction_context.get("outdoor_temp", 10.0)
-        _outdoor_forecast = prediction_context.get("outdoor_forecast")
-        if _outdoor_forecast:
-            _outdoor_arr = [_outdoor_now] + list(_outdoor_forecast)
-        else:
-            _outdoor_arr = _outdoor_now  # scalar fallback
+        if not skip_trajectory_recompute:
+            # Build forecast-aware outdoor array for trajectory-aligned
+            # learning. Uses the same horizon (TRAJECTORY_STEPS) as the
+            # optimization so that gradients capture the effect of future PV /
+            # weather on the outlet decision that was made.
+            _outdoor_now = prediction_context.get("outdoor_temp", 10.0)
+            _outdoor_forecast = prediction_context.get("outdoor_forecast")
+            if _outdoor_forecast:
+                _outdoor_arr = [_outdoor_now] + list(_outdoor_forecast)
+            else:
+                _outdoor_arr = _outdoor_now  # scalar fallback
 
-        _pv_forecast = prediction_context.get("pv_forecast")
+            _pv_forecast = prediction_context.get("pv_forecast")
 
-        predicted_trajectory = self.predict_thermal_trajectory(
-            current_indoor=current_indoor,
-            target_indoor=current_indoor,
-            outlet_temp=outlet_temp,
-            outdoor_temp=_outdoor_arr,
-            time_horizon_hours=float(config.TRAJECTORY_STEPS),
-            time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
-            pv_power=pv_input,
-            pv_forecasts=_pv_forecast,
-            fireplace_on=prediction_context.get("fireplace_on", 0),
-            tv_on=prediction_context.get("tv_on", 0),
-            thermal_power=prediction_context.get("thermal_power"),
-            cloud_cover_pct=prediction_context.get("avg_cloud_cover", 50.0),
-        )
-        predicted_temp_at_cycle_end = predicted_trajectory["trajectory"][-1]
-
-        system_state = (
-            "shadow_mode_physics" if config.SHADOW_MODE else "active_mode"
-        )
+            self.predict_thermal_trajectory(
+                current_indoor=current_indoor,
+                target_indoor=current_indoor,
+                outlet_temp=outlet_temp,
+                outdoor_temp=_outdoor_arr,
+                time_horizon_hours=float(config.TRAJECTORY_STEPS),
+                time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
+                pv_power=pv_input,
+                pv_forecasts=_pv_forecast,
+                fireplace_on=prediction_context.get("fireplace_on", 0),
+                tv_on=prediction_context.get("tv_on", 0),
+                thermal_power=prediction_context.get("thermal_power"),
+                cloud_cover_pct=prediction_context.get("avg_cloud_cover", 50.0),
+            )
 
         prediction_record = {
             "timestamp": timestamp,
