@@ -299,6 +299,10 @@ class OverheatingPredictor:
         max_pv_forecast: float,
     ) -> float:
         """Return an upper bound for passive indoor peaks."""
+        # The passive envelope should never fall below the dominant reference
+        # temperature already present in the system (current room, cooling
+        # target, or peak outdoor).  The outdoor allowance then grants only a
+        # limited extra rise above that dominant baseline.
         base_limit = max(current_indoor, target_cooling, peak_outdoor)
         outdoor_allowance = float(
             getattr(config, "PRE_COOL_MAX_PEAK_ABOVE_OUTDOOR_K", 2.0)
