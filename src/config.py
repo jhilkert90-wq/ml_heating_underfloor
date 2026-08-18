@@ -705,6 +705,32 @@ PRE_COOL_MAX_OFFSET_K: float = float(
 PRE_COOL_OVERSHOOT_GAIN: float = float(
     os.getenv("PRE_COOL_OVERSHOOT_GAIN", "0.7")
 )
+# Dedicated cap for passive pre-cool trajectory solar gain [kW].
+PRE_COOL_PASSIVE_SOLAR_CAP_KW: float = float(
+    os.getenv("PRE_COOL_PASSIVE_SOLAR_CAP_KW", "1.5")
+)
+# Plausibility envelope for passive pre-cool peaks.
+PRE_COOL_MAX_PEAK_ABOVE_OUTDOOR_K: float = float(
+    os.getenv("PRE_COOL_MAX_PEAK_ABOVE_OUTDOOR_K", "2.0")
+)
+PRE_COOL_PEAK_ALLOWANCE_PER_KW_PV: float = float(
+    os.getenv("PRE_COOL_PEAK_ALLOWANCE_PER_KW_PV", "0.4")
+)
+PRE_COOL_MAX_PV_PEAK_ALLOWANCE_K: float = float(
+    os.getenv("PRE_COOL_MAX_PV_PEAK_ALLOWANCE_K", "1.0")
+)
+# Suppress trajectory-triggered pre-cool when the shadow LGBM model strongly
+# disagrees with a much lower predicted peak.
+PRE_COOL_SHADOW_DISAGREEMENT_GUARD_ENABLED: bool = (
+    os.getenv("PRE_COOL_SHADOW_DISAGREEMENT_GUARD_ENABLED", "true").lower()
+    == "true"
+)
+PRE_COOL_SHADOW_MAX_LGBM_PROBA: float = float(
+    os.getenv("PRE_COOL_SHADOW_MAX_LGBM_PROBA", "0.10")
+)
+PRE_COOL_SHADOW_MIN_PEAK_GAP_K: float = float(
+    os.getenv("PRE_COOL_SHADOW_MIN_PEAK_GAP_K", "2.0")
+)
 # Dual-output strategy: "classifier_gate" (conservative, default) or
 # "either_triggers" (aggressive, catches more events).
 PRE_COOL_DUAL_OUTPUT_STRATEGY: str = os.getenv(

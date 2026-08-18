@@ -1,5 +1,68 @@
 # ML Heating System - Current Progress
 
+## Pre-Cool Max Offset Clamp Review Fix (2026-08-18)
+
+**Status:** COMPLETED — fallback pre-cool minimum target logic now correctly enforces `PRE_COOL_MAX_OFFSET_K` as an upper bound when fixed offsets are larger, with regression coverage
+
+### Changes
+- Fixed `src/cycle_routes.py`:
+  - Changed `_resolve_pre_cool_min_target()` fallback cap calculation from `max(...)` to `min(...)` so configured max offset is a true upper bound
+- Added unit test in `tests/unit/test_cycle_routes.py`:
+  - Verifies oversized fixed pre-cool offsets are clamped to `PRE_COOL_MAX_OFFSET_K`
+
+### Root Cause
+- The fallback path selected the larger of `PRE_COOL_MAX_OFFSET_K` and the requested offset, which inverted the cap logic and allowed larger-than-configured target drops.
+
+### Impact
+- Before: if `PRE_COOL_TARGET_OFFSET_K` exceeded `PRE_COOL_MAX_OFFSET_K`, pre-cooling could still apply the larger drop.
+- After: fallback pre-cool minimum target always respects the configured maximum drop.
+
+### Files
+- `src/cycle_routes.py`
+- `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+## Cooling Pre-Cool Trajectory Guard Fixes (2026-08-18)
+
+**Status:** COMPLETED — predictive cooling now shifts from the configured cooling target, passive pre-cool trajectories are capped and sanity-checked, and the reported extreme 26.3°C spike is covered by regression tests
+
+### Changes
+- Fixed `src/cycle_routes.py`:
+  - Pre-cool target shifts now subtract from the configured cooling target instead of the current room temperature
+  - Added minimum-target clamping using the HA cooling target entity's configured `min` when available
+  - Added an LGBM shadow-disagreement guard to suppress implausible trajectory-only pre-cool triggers
+  - Persisted shadow pre-cool peak/probability metadata in cooling operational state updates
+- Fixed `src/overheating_predictor.py`:
+  - Added a passive pre-cool plausibility envelope for predicted indoor peaks
+  - Applied a dedicated passive solar cap during HP-off overheating simulations
+- Fixed `src/thermal_equilibrium_model.py`:
+  - Added an optional per-call solar contribution cap so pre-cool risk scans can use stricter passive-solar limits without changing normal runtime physics
+- Added regression tests in:
+  - `tests/unit/test_pre_cooling_integration.py`
+  - `tests/unit/test_overheating_predictor.py`
+
+### Root Cause
+- Pre-cool target shifting incorrectly used `current_room - offset`, which made predictive cooling much more aggressive than the configured offset whenever the room was already below target.
+- The passive trajectory path could accept a much stronger solar contribution than warranted for long-horizon HP-off pre-cool scans, allowing implausible overheating peaks to survive unchecked.
+- Trajectory pre-cool activation had no final sanity check against the shadow LGBM model, so large model disagreements could still trigger proactive cooling.
+
+### Impact
+- Before: a fixed `0.5 K` pre-cool offset could turn a `23.0°C` cooling target into `21.8°C`, and extreme passive peaks such as `26.3°C` could trigger unnecessary proactive cooling.
+- After: pre-cool offsets respect the configured cooling target and minimum, passive overheating peaks are capped and plausibility-checked, and strong shadow-model disagreement suppresses suspicious trajectory triggers.
+
+### Files
+- `src/config.py`
+- `src/cycle_routes.py`
+- `src/overheating_predictor.py`
+- `src/thermal_equilibrium_model.py`
+- `tests/unit/test_pre_cooling_integration.py`
+- `tests/unit/test_overheating_predictor.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ## Cooling ML Calibration Target + Forecast Horizon Fix (2026-08-18)
 
 **Status:** COMPLETED — cooling ML calibration now uses the current HA cooling target, runtime cooling features expose the full pre-cool forecast horizon, and rare-positive splits no longer crash classifier training

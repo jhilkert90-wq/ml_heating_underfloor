@@ -884,6 +884,7 @@ class ThermalEquilibriumModel:
         fireplace_power_kw: float = None,
         cloud_cover_pct: float = 50.0,
         fireplace_decay_kw: float = 0.0,
+        solar_contribution_cap_kw: float | None = None,
     ) -> float:
         """
         Predict equilibrium temperature using standard heat balance physics.
@@ -902,7 +903,11 @@ class ThermalEquilibriumModel:
         raw_heat_from_pv = effective_pv * pv_weight_adjusted
         # tanh saturation: caps solar contribution to prevent unbounded
         # gain from collapsing the outlet temperature during PV spikes.
-        cap = PhysicsConstants.MAX_SOLAR_CONTRIBUTION
+        cap = (
+            float(solar_contribution_cap_kw)
+            if solar_contribution_cap_kw is not None
+            else PhysicsConstants.MAX_SOLAR_CONTRIBUTION
+        )
         if cap > 0 and raw_heat_from_pv != 0:
             heat_from_pv = cap * np.tanh(raw_heat_from_pv / cap)
         else:
@@ -2159,6 +2164,9 @@ class ThermalEquilibriumModel:
         indoor_trend_60m = float(
             external_sources.get("indoor_temp_delta_60m", 0.0)
         )
+        solar_contribution_cap_kw = external_sources.get(
+            "solar_contribution_cap_kw"
+        )
         # _resolve_delta_t_floor already substitutes the HP channel's learned
         # value (~2 °C) when measured < 1.0, so no hardcoded fallback needed.
 
@@ -2288,6 +2296,7 @@ class ThermalEquilibriumModel:
                 fireplace_power_kw=fireplace_power_kw,
                 cloud_cover_pct=cloud_cover_pct,
                 fireplace_decay_kw=fireplace_decay_kw,
+                solar_contribution_cap_kw=solar_contribution_cap_kw,
             )
 
             time_constant_hours = (

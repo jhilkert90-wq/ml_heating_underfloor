@@ -146,6 +146,7 @@ class OverheatingPredictor:
         # Compute aggregate PV/outdoor for result dict
         total_pv = sum(pv_forecast)
         peak_outdoor = max(outdoor_forecast)
+        max_pv_forecast = max(pv_forecast) if pv_forecast else 0.0
 
         # ── Run passive trajectory (HP OFF → outlet = inlet) ─────────
         try:
@@ -173,6 +174,9 @@ class OverheatingPredictor:
                     features.get("indoor_temp_delta_60m", 0.0)
                 ),
                 climate_mode="cooling",
+                solar_contribution_cap_kw=float(
+                    getattr(config, "PRE_COOL_PASSIVE_SOLAR_CAP_KW", 1.5)
+                ),
             )
         except Exception as exc:
             logger.warning("Pre-cool trajectory simulation failed: %s", exc)
@@ -194,6 +198,30 @@ class OverheatingPredictor:
         peak_temp = max(trajectory)
         peak_idx = trajectory.index(peak_temp)
         peak_hour = times[peak_idx] if peak_idx < len(times) else 0.0
+
+        plausible_peak_limit = self._compute_plausible_peak_limit(
+            current_indoor=current_indoor,
+            target_cooling=target_cooling,
+            peak_outdoor=peak_outdoor,
+            max_pv_forecast=max_pv_forecast,
+        )
+        if (
+            current_indoor <= target_cooling
+            and peak_temp > plausible_peak_limit
+        ):
+            no_risk.update(
+                {
+                    "peak_temp": peak_temp,
+                    "peak_hour": peak_hour,
+                    "hours_until_peak": peak_hour,
+                }
+            )
+            no_risk["reason"] = (
+                f"plausibility guard: predicted peak {peak_temp:.1f}°C "
+                f"exceeds passive limit {plausible_peak_limit:.1f}°C"
+            )
+            logger.info("❄️ Pre-cool blocked: %s", no_risk["reason"])
+            return no_risk
 
         trigger_margin = float(
             getattr(config, "PRE_COOL_TRIGGER_MARGIN_K", 0.5)
@@ -261,3 +289,32 @@ class OverheatingPredictor:
             logger.debug("❄️ Pre-cool: no risk — %s", reason)
 
         return result
+
+    def _compute_plausible_peak_limit(
+        self,
+        *,
+        current_indoor: float,
+        target_cooling: float,
+        peak_outdoor: float,
+        max_pv_forecast: float,
+    ) -> float:
+        """Return an upper bound for passive indoor peaks."""
+        # The passive envelope should never fall below the dominant reference
+        # temperature already present in the system (current room, cooling
+        # target, or peak outdoor).  The outdoor allowance then grants only a
+        # limited extra rise above that dominant baseline.
+        base_limit = max(current_indoor, target_cooling, peak_outdoor)
+        outdoor_allowance = float(
+            getattr(config, "PRE_COOL_MAX_PEAK_ABOVE_OUTDOOR_K", 2.0)
+        )
+        pv_allowance_per_kw = float(
+            getattr(config, "PRE_COOL_PEAK_ALLOWANCE_PER_KW_PV", 0.4)
+        )
+        pv_allowance_cap = float(
+            getattr(config, "PRE_COOL_MAX_PV_PEAK_ALLOWANCE_K", 1.0)
+        )
+        pv_allowance = min(
+            pv_allowance_cap,
+            max(0.0, max_pv_forecast) / 1000.0 * pv_allowance_per_kw,
+        )
+        return base_limit + outdoor_allowance + pv_allowance

@@ -701,6 +701,66 @@ class TestEdgeCases:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Plausibility / Passive-Solar Guard Tests
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPlausibilityGuards:
+    """Regression coverage for implausible passive pre-cool peaks."""
+
+    def test_passive_precool_uses_dedicated_solar_cap(self):
+        """Pre-cool trajectory should use a stricter passive solar cap."""
+        features = _make_features(
+            outdoor_temp=20.3,
+            pv_now=1798.6,
+            pv_forecasts=[2175.0, 2011.0] + [0.0] * 10,
+            outdoor_forecasts=[20.33, 20.53, 21.33] + [20.33] * 9,
+        )
+        model = _make_trajectory_model([22.4, 22.6], [1.0, 2.0])
+        predictor = OverheatingPredictor()
+
+        predictor.predict_overheating_risk(
+            22.3, 23.0, features, model, "cooling"
+        )
+
+        call_kwargs = model.predict_thermal_trajectory.call_args.kwargs
+        assert call_kwargs["solar_contribution_cap_kw"] == pytest.approx(1.5)
+
+    @patch.object(config, "PRE_COOL_MAX_PEAK_ABOVE_OUTDOOR_K", 2.0, create=True)
+    @patch.object(
+        config, "PRE_COOL_PEAK_ALLOWANCE_PER_KW_PV", 0.4, create=True
+    )
+    @patch.object(config, "PRE_COOL_MAX_PV_PEAK_ALLOWANCE_K", 1.0, create=True)
+    def test_implausible_passive_peak_is_blocked(self):
+        """An extreme passive peak should be rejected by the plausibility guard."""
+        features = _make_features(
+            inlet_temp=20.5,
+            outdoor_temp=20.3,
+            pv_now=1798.6,
+            pv_forecasts=[
+                2175.0, 2011.0, 2206.5, 1593.5, 724.0, 727.2,
+                284.5, 10.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+            outdoor_forecasts=[
+                20.33, 20.53, 21.33, 21.63, 22.03, 22.83,
+                22.83, 22.43, 22.03, 21.23, 20.73, 20.53,
+            ],
+        )
+        model = _make_trajectory_model(
+            [22.6, 23.1, 24.0, 26.3], [1.0, 3.0, 5.0, 7.3]
+        )
+        predictor = OverheatingPredictor()
+
+        result = predictor.predict_overheating_risk(
+            22.3, 23.0, features, model, "cooling"
+        )
+
+        assert result["risk"] is False
+        assert result["should_cool_now"] is False
+        assert "plausibility" in result["reason"]
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # PV Key Contract Regression Tests
 # ═══════════════════════════════════════════════════════════════════════
 
