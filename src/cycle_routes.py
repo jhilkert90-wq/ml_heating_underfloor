@@ -317,7 +317,10 @@ def _apply_shadow_pre_cool_guard(
         f"{trajectory_result.get('reason', '')}; blocked by LGBM shadow "
         f"(p={lgbm_proba:.3f}, peak={lgbm_peak:.1f}°C, Δpeak={peak_gap:.1f}K)"
     ).strip("; ")
-    logging.info("❄️ PRE-COOL shadow guard blocked trajectory trigger: %s", blocked["reason"])
+    logging.info(
+        "❄️ PRE-COOL shadow guard blocked trajectory trigger: %s",
+        blocked["reason"],
+    )
     return blocked
 
 

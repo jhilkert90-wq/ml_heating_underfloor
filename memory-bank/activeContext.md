@@ -1,5 +1,38 @@
 # Active Context - Current Work & Decision State
 
+### Cooling Pre-Cool Trajectory Guard Fixes — 2026-08-18
+
+#### **What changed**
+- Fixed `src/cycle_routes.py`:
+  - Pre-cool target shifts now use `cooling_target - offset` instead of `current_room - offset`
+  - Added a floor clamp from the HA cooling target entity's `min` attribute when available
+  - Added a shadow-model disagreement guard that blocks trajectory-triggered pre-cool when the LGBM shadow model predicts low risk and a much lower peak
+  - Persisted shadow peak/probability metadata with cooling operational state updates
+- Fixed `src/overheating_predictor.py`:
+  - Added a plausibility guard for passive indoor peaks based on outdoor forecast and PV allowance
+  - Added a dedicated passive pre-cool solar cap for HP-off overheating simulations
+- Fixed `src/thermal_equilibrium_model.py`:
+  - Added an optional per-call solar contribution cap used by passive pre-cool trajectory scans
+- Added regression coverage in:
+  - `tests/unit/test_pre_cooling_integration.py`
+  - `tests/unit/test_overheating_predictor.py`
+
+#### **Why**
+- **Root cause 1**: predictive cooling used the current room temperature as the shift origin, so a fixed pre-cool offset could become much larger than configured.
+- **Root cause 2**: passive trajectory risk scans reused the normal solar cap, which was too permissive for long HP-off pre-cool simulations and allowed implausibly high indoor peaks.
+- **Root cause 3**: large disagreements between the trajectory model and the shadow LGBM model had no final guard, so obviously suspicious trajectory spikes could still activate pre-cooling.
+
+#### **Files changed**
+- `src/config.py`
+- `src/cycle_routes.py`
+- `src/overheating_predictor.py`
+- `src/thermal_equilibrium_model.py`
+- `tests/unit/test_pre_cooling_integration.py`
+- `tests/unit/test_overheating_predictor.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ### Cooling ML Calibration Target + Forecast Horizon Fix — 2026-08-18
 
 #### **What changed**

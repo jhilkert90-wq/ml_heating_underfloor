@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Hardened cooling pre-cool logic by shifting predictive offsets from the configured cooling target instead of the current room temperature, with minimum-target clamping.
+- Added passive pre-cool plausibility and shadow-disagreement guards to suppress implausible overheating spikes from the trajectory path.
+- Capped passive pre-cool solar contribution and added regression coverage for forecast anchoring and the reported 26.3°C cooling scenario.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
