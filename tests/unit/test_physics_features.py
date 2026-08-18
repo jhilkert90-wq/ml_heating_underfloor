@@ -159,6 +159,33 @@ def test_build_physics_features_heating_demand_keeps_heating_sign(
     assert features_df["combined_forecast_thermal_load"][0] == pytest.approx(0.3)
 
 
+def test_build_physics_features_cooling_extends_to_pre_cool_horizon(
+    mock_ha_client, mock_influx_service, monkeypatch
+):
+    """Cooling mode should expose live forecast keys up to PRE_COOL_HORIZON_HOURS."""
+    monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+    monkeypatch.setattr(config, "PRE_COOL_ENABLED", True)
+    monkeypatch.setattr(config, "PRE_COOL_HORIZON_HOURS", 12)
+    monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+    mock_ha_client.get_calibrated_hourly_forecast.return_value = [float(h) for h in range(1, 13)]
+
+    features_df, _ = build_physics_features(
+        mock_ha_client,
+        mock_influx_service,
+        climate_mode="cooling",
+    )
+
+    assert features_df is not None
+    mock_ha_client.get_calibrated_hourly_forecast.assert_called_once_with(
+        current_outdoor_temp=5.0,
+        enable_delta_calibration=True,
+        n=12,
+    )
+    for h in range(1, 13):
+        assert f"temp_forecast_{h}h" in features_df.columns
+        assert f"pv_forecast_{h}h" in features_df.columns
+
+
 def test_build_physics_features_missing_data(mock_ha_client, mock_influx_service):
     """Test feature building with missing critical data."""
     # Fail on first critical sensor (Indoor Temp)

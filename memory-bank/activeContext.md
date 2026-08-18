@@ -1,5 +1,35 @@
 # Active Context - Current Work & Decision State
 
+### Cooling ML Calibration Target + Forecast Horizon Fix — 2026-08-18
+
+#### **What changed**
+- Fixed `src/cooling_ml_calibration.py`:
+  - Default cooling calibration target now resolves from `TARGET_INDOOR_TEMP_COOLING_ENTITY_ID` via the current HA state
+  - Clamp-derived fallback is only used when the HA target cannot be read
+  - Added class-distribution checks before LightGBM training
+  - Added temporal split selection that keeps both classes in the training split when positives occur late
+  - Skips isotonic calibration when validation sub-splits lack both classes
+- Fixed `src/physics_features.py`:
+  - Cooling mode now fetches live forecast features up to `PRE_COOL_HORIZON_HOURS`
+  - Short forecast arrays are padded instead of being replaced wholesale with current outdoor temperature
+- Added regression coverage in:
+  - `tests/unit/test_cooling_ml_calibration.py`
+  - `tests/unit/test_physics_features.py`
+
+#### **Why**
+- **Root cause 1**: calibration used a fallback threshold derived from clamp settings instead of the live cooling target, which could push `cooling_target_c` too high and suppress positive overheating labels.
+- **Root cause 2**: runtime cooling features were still limited by the shorter trajectory horizon, so pre-cooling could silently lose real forecast information beyond hour 4.
+- **Root cause 3**: rare late positives could leave the temporal training fold single-class, causing LightGBM validation to fail with unseen label errors.
+
+#### **Files changed**
+- `src/cooling_ml_calibration.py`
+- `src/physics_features.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `tests/unit/test_physics_features.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ### Heating Correction ML Calibration Channel-Precedence Fix — 2026-06-27
 
 #### **What changed**
