@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Cooling ML calibration now resolves its target from the current Home Assistant cooling target entity before falling back to clamp-based defaults, preventing inflated thresholds such as 25.0°C during training.
-- Cooling ML calibration now guards against single-class datasets and adjusts temporal train/validation splits so rare positive labels remain in the training set instead of crashing LightGBM.
-- Cooling-mode runtime feature building now fetches live forecast features through the full pre-cooling horizon and preserves shorter forecast arrays by padding them instead of replacing them with current outdoor temperature.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added

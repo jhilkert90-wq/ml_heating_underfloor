@@ -1,5 +1,12 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.73] - 2026-08-18
+
+### Fixed
+- Cooling ML calibration now resolves its target from the current Home Assistant cooling target entity before falling back to clamp-based defaults, preventing inflated thresholds such as 25.0°C during training.
+- Cooling ML calibration now guards against single-class datasets and adjusts temporal train/validation splits so rare positive labels remain in the training set instead of crashing LightGBM.
+- Cooling-mode runtime feature building now fetches live forecast features through the full pre-cooling horizon and preserves shorter forecast arrays by padding them instead of replacing them with current outdoor temperature.
+
 ## [0.2.72] - 2026-06-27
 
 ### Added
