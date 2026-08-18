@@ -243,6 +243,84 @@ def step_prediction(ctx: CycleContext) -> None:
     )
 
 
+def _resolve_pre_cool_min_target(
+    ctx: CycleContext, original_target: float, offset: float
+) -> float:
+    """Resolve the minimum allowed indoor target for pre-cooling."""
+    entity_id = getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
+    if entity_id:
+        entity_state = (ctx.all_states or {}).get(entity_id) or {}
+        attrs = entity_state.get("attributes") or {}
+        minimum = attrs.get("min")
+        if minimum is not None:
+            try:
+                return float(minimum)
+            except (TypeError, ValueError):
+                logging.debug(
+                    "Ignoring non-numeric cooling target min attribute %r",
+                    minimum,
+                )
+    max_offset = max(
+        float(getattr(config, "PRE_COOL_MAX_OFFSET_K", offset)),
+        float(offset),
+    )
+    return original_target - max_offset
+
+
+def _apply_shadow_pre_cool_guard(
+    ctx: CycleContext, trajectory_result: dict, lgbm_result: dict | None
+) -> dict:
+    """Suppress implausible trajectory-triggered pre-cool when shadow disagrees."""
+    if (
+        not lgbm_result
+        or not getattr(
+            config, "PRE_COOL_SHADOW_DISAGREEMENT_GUARD_ENABLED", True
+        )
+        or ctx.cooling_ml_model_type != "trajectory"
+        or not trajectory_result.get("should_cool_now")
+        or ctx.prediction_indoor_temp > ctx.target_indoor_temp
+    ):
+        return trajectory_result
+
+    lgbm_proba = float(lgbm_result.get("lgbm_proba", 0.0))
+    lgbm_peak = float(
+        lgbm_result.get(
+            "predicted_max_temp",
+            lgbm_result.get("peak_temp", ctx.prediction_indoor_temp),
+        )
+    )
+    trajectory_peak = float(
+        trajectory_result.get("peak_temp", ctx.prediction_indoor_temp)
+    )
+    peak_gap = trajectory_peak - lgbm_peak
+    max_lgbm_proba = float(
+        getattr(config, "PRE_COOL_SHADOW_MAX_LGBM_PROBA", 0.10)
+    )
+    min_peak_gap = float(
+        getattr(config, "PRE_COOL_SHADOW_MIN_PEAK_GAP_K", 2.0)
+    )
+    if (
+        lgbm_result.get("should_cool_now")
+        or lgbm_result.get("risk")
+        or lgbm_proba > max_lgbm_proba
+        or peak_gap < min_peak_gap
+    ):
+        return trajectory_result
+
+    blocked = dict(trajectory_result)
+    blocked["risk"] = False
+    blocked["should_cool_now"] = False
+    blocked["shadow_blocked"] = True
+    blocked["shadow_peak_temp"] = lgbm_peak
+    blocked["shadow_lgbm_proba"] = lgbm_proba
+    blocked["reason"] = (
+        f"{trajectory_result.get('reason', '')}; blocked by LGBM shadow "
+        f"(p={lgbm_proba:.3f}, peak={lgbm_peak:.1f}°C, Δpeak={peak_gap:.1f}K)"
+    ).strip("; ")
+    logging.info("❄️ PRE-COOL shadow guard blocked trajectory trigger: %s", blocked["reason"])
+    return blocked
+
+
 def step_gradual_control(ctx: CycleContext) -> None:
     """Apply gradual temperature change limiting."""
     if ctx.actual_outlet_temp is None:
@@ -694,6 +772,9 @@ def step_pre_cooling(ctx: CycleContext) -> None:
                     _lgbm_result.get("lgbm_proba", 0.0),
                     _lgbm_result.get("should_cool_now"),
                 )
+                ctx.pre_cool_result = _apply_shadow_pre_cool_guard(
+                    ctx, ctx.pre_cool_result, _lgbm_result
+                )
 
         # Observation buffer: accumulate features + resolve labels
         if ctx.cooling_obs_buffer is not None:
@@ -790,7 +871,12 @@ def step_pre_cooling(ctx: CycleContext) -> None:
                     getattr(config, "PRE_COOL_TARGET_OFFSET_K", 0.5)
                 )
             _original_target = ctx.target_indoor_temp
-            ctx.target_indoor_temp = ctx.prediction_indoor_temp - _offset
+            _min_target = _resolve_pre_cool_min_target(
+                ctx, _original_target, _offset
+            )
+            ctx.target_indoor_temp = max(
+                _min_target, _original_target - _offset
+            )
             ctx.pre_cool_active = True
             logging.info(
                 "❄️ PRE-COOL [%s]: target shifted %.1f → %.1f°C "
@@ -822,6 +908,15 @@ def step_pre_cooling(ctx: CycleContext) -> None:
                 pre_cool_predicted_max=float(
                     ctx.pre_cool_result.get("predicted_max_temp", 0)
                 ) if ctx.pre_cool_active else 0.0,
+                pre_cool_shadow_peak_temp=float(
+                    _lgbm_result.get(
+                        "predicted_max_temp",
+                        _lgbm_result.get("peak_temp", 0),
+                    )
+                ) if _lgbm_result is not None else 0.0,
+                pre_cool_shadow_lgbm_proba=float(
+                    _lgbm_result.get("lgbm_proba", 0.0)
+                ) if _lgbm_result is not None else 0.0,
             )
         except Exception:
             pass
