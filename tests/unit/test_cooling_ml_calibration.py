@@ -440,6 +440,7 @@ class TestEndToEndCalibration:
             TARGET_INDOOR_TEMP_COOLING_ENTITY_ID="",
         )
         df = _make_warm_df(n_rows=800)
+        df.loc[df.index[-80:], "rt_mittelwert"] = 26.0
 
         mock_lgb_cls = MagicMock()
         mock_model = MagicMock()
@@ -592,86 +593,16 @@ class TestEndToEndCalibration:
             meta = json.load(f)
         assert meta["cooling_target_c"] == 23.0
 
-    def test_adjusts_temporal_split_when_positives_only_appear_late(self, model_dir):
-        """Calibration should shift the split so training still sees both classes."""
-        import src.config as real_config
+    def test_adjusts_temporal_split_when_positives_only_appear_late(self):
+        """The split helper should move the boundary so fit sees both classes."""
+        from src.cooling_ml_calibration import _select_temporal_train_val_split
 
-        model_path = str(model_dir / "model_split.joblib")
-        meta_path = str(model_dir / "meta_split.json")
-        overrides = dict(
-            COOLING_ML_MODEL_PATH=model_path,
-            COOLING_ML_METADATA_PATH=meta_path,
-            COOLING_ML_MIN_TRAINING_SAMPLES=10,
-            TARGET_INDOOR_TEMP_COOLING_ENTITY_ID="",
-        )
-        df = _make_warm_df(n_rows=800, indoor_base=22.0)
-        df.loc[df.index[-60:], "rt_mittelwert"] = 24.5
+        df = pd.DataFrame({"label": ([0] * 75) + ([1] * 5)})
+        df_fit, df_val = _select_temporal_train_val_split(df, "label", 0.25)
 
-        mock_lgb_cls = MagicMock()
-        mock_model = MagicMock()
-        mock_model.predict_proba.side_effect = lambda X: np.column_stack([
-            np.random.rand(X.shape[0]),
-            np.random.rand(X.shape[0]),
-        ])
-        mock_lgb_cls.return_value = mock_model
-
-        mock_lgb_reg_cls = MagicMock()
-        mock_reg_model = MagicMock()
-        mock_reg_model.predict.side_effect = lambda X: np.random.rand(X.shape[0]) * 0.5
-        mock_lgb_reg_cls.return_value = mock_reg_model
-
-        mock_lgb = MagicMock()
-        mock_lgb.LGBMClassifier = mock_lgb_cls
-        mock_lgb.LGBMRegressor = mock_lgb_reg_cls
-        mock_lgb.early_stopping.return_value = MagicMock()
-        mock_lgb.log_evaluation.return_value = MagicMock()
-
-        mock_physics_cal = MagicMock()
-        mock_physics_cal.fetch_historical_data_for_calibration = MagicMock(return_value=df)
-        mock_cooling_state_mgr = MagicMock()
-        mock_cooling_state_mgr.state = {
-            "learning_state": {
-                "heat_source_channels": {
-                    "heat_pump": {
-                        "parameters": {
-                            "outlet_effectiveness": 0.4808,
-                            "heat_loss_coefficient": 0.1342,
-                            "thermal_time_constant": 4.8957,
-                        }
-                    }
-                }
-            }
-        }
-        mock_unified_cooling = MagicMock()
-        mock_unified_cooling.get_cooling_state_manager = MagicMock(return_value=mock_cooling_state_mgr)
-
-        config_patches = {k: patch.object(real_config, k, v, create=True) for k, v in overrides.items()}
-        for p in config_patches.values():
-            p.start()
-        try:
-            with patch.dict("sys.modules", {
-                "lightgbm": mock_lgb,
-                "joblib": _make_mock_joblib(),
-                "sklearn.metrics": MagicMock(
-                    roc_auc_score=MagicMock(return_value=0.82),
-                    mean_absolute_error=MagicMock(return_value=0.08),
-                ),
-                "physics_calibration": mock_physics_cal,
-                "src.physics_calibration": mock_physics_cal,
-                "src.unified_thermal_state_cooling": mock_unified_cooling,
-            }):
-                from src.cooling_ml_calibration import calibrate_cooling_ml
-                result = calibrate_cooling_ml(cooling_target_c=23.0)
-        finally:
-            for p in config_patches.values():
-                p.stop()
-
-        assert result is True
-        y_fit = mock_model.fit.call_args.args[1]
-        assert set(np.unique(y_fit)) == {0, 1}
-        with open(meta_path, "r") as f:
-            meta = json.load(f)
-        assert meta["n_train"] > 600
+        assert set(df_fit["label"].unique()) == {0, 1}
+        assert len(df_fit) > 60  # default 75/25 split would have ended at 60
+        assert len(df_val) > 0
 
 
 # ===========================================================================

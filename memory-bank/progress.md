@@ -1,5 +1,42 @@
 # ML Heating System - Current Progress
 
+## Cooling ML Calibration Target + Forecast Horizon Fix (2026-08-18)
+
+**Status:** COMPLETED — cooling ML calibration now uses the current HA cooling target, runtime cooling features expose the full pre-cool forecast horizon, and rare-positive splits no longer crash classifier training
+
+### Changes
+- Fixed `src/cooling_ml_calibration.py`:
+  - Calibration now resolves `cooling_target_c` from the configured HA cooling target entity when no explicit override is provided
+  - Added graceful fallback to clamp-based defaults when the HA target is unavailable
+  - Added dataset/split guards for single-class label distributions
+  - Added temporal split selection that preserves both classes in the training fold for rare-positive datasets
+  - Skips isotonic calibration when validation sub-splits do not contain both classes
+- Fixed `src/physics_features.py`:
+  - Cooling-mode runtime feature building now fetches forecast values through `PRE_COOL_HORIZON_HOURS`
+  - Shorter forecast arrays are padded from the last known value instead of being discarded
+- Added regression tests:
+  - HA cooling target resolution during calibration
+  - Cooling-mode 12h forecast feature expansion
+  - Temporal split adjustment for late positive labels
+
+### Root Cause
+- Cooling ML calibration used a clamp-derived fallback target instead of the configured cooling target entity, which could inflate the overheating threshold and suppress positive labels.
+- Runtime cooling feature construction was still bounded by the shorter trajectory horizon, so pre-cooling could end up using incomplete live forecast data beyond hour 4.
+- Rare positive events near the end of the dataset could leave the temporal training split with only class `0`, causing the LightGBM label encoder to reject validation labels containing `1`.
+
+### Impact
+- Before: calibration could train against the wrong cooling threshold, produce too few positive labels, and fail with `y contains previously unseen labels`.
+- After: calibration aligns with the live cooling target, runtime pre-cooling sees the intended 1h-12h forecast window, and classifier training handles rare-positive time series safely.
+
+### Files
+- `src/cooling_ml_calibration.py`
+- `src/physics_features.py`
+- `tests/unit/test_cooling_ml_calibration.py`
+- `tests/unit/test_physics_features.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ## Heating Correction ML Calibration Channel-Precedence Fix (2026-06-27)
 
 **Status:** COMPLETED — heating correction S_H parameter loading now consistently uses heat pump channel parameters when available

@@ -129,19 +129,31 @@ def _select_temporal_train_val_split(
     val_fraction: float,
 ) -> tuple[Any, Any]:
     """Choose the closest temporal split that keeps both classes in training."""
+    import numpy as np  # type: ignore
+
+    labels = np.asarray(df_train[label_col].values, dtype=int)
+    total_pos = int((labels == 1).sum())
+    total_neg = int((labels == 0).sum())
+    if total_pos == 0 or total_neg == 0:
+        raise ValueError("dataset contains only one class")
+
     preferred_n_val = max(1, int(len(df_train) * val_fraction))
     preferred_split_idx = len(df_train) - preferred_n_val
+    pos_prefix = np.cumsum(labels == 1)
+    neg_prefix = np.cumsum(labels == 0)
     best_split_idx = None
     best_score = None
 
     for split_idx in range(1, len(df_train)):
-        y_fit = df_train[label_col].iloc[:split_idx].values
-        y_val = df_train[label_col].iloc[split_idx:].values
-        if len(y_val) == 0 or not _has_both_classes(y_fit):
+        fit_pos = int(pos_prefix[split_idx - 1])
+        fit_neg = int(neg_prefix[split_idx - 1])
+        val_pos = total_pos - fit_pos
+        val_neg = total_neg - fit_neg
+        if fit_pos == 0 or fit_neg == 0 or (val_pos + val_neg) == 0:
             continue
 
         score = abs(split_idx - preferred_split_idx)
-        if not _has_both_classes(y_val):
+        if val_pos == 0 or val_neg == 0:
             score += len(df_train)
 
         if best_score is None or score < best_score:
@@ -907,14 +919,6 @@ def calibrate_cooling_ml(
     y_fit = df_fit["label"].values
     X_val = df_val[feature_cols].astype(float)
     y_val = df_val["label"].values
-    if not _has_both_classes(y_fit):
-        logger.error(
-            "Cooling ML calibration aborted: training split is single-class "
-            "(pos=%d neg=%d).",
-            int(y_fit.sum()),
-            int(len(y_fit) - y_fit.sum()),
-        )
-        return False
     if not _has_both_classes(y_val):
         logger.warning(
             "Cooling ML validation split is single-class (pos=%d neg=%d); "

@@ -482,10 +482,12 @@ def build_physics_features(
         else:
             temp_forecasts = ha_client.get_hourly_forecast(n=_n_fc_full)
         # Ensure we have a valid list of forecasts
-        if not isinstance(temp_forecasts, list) or len(temp_forecasts) < _n_fc_full:
+        if not isinstance(temp_forecasts, list) or len(temp_forecasts) == 0:
             # Fallback to default values if forecasts are invalid
             temp_forecasts = [outdoor_temp_f] * _n_fc_full
-        # Pad to _n_fc_full if less
+        # Pad short-but-valid arrays from the last available forecast so we
+        # preserve real forecast structure instead of replacing it with the
+        # current outdoor temperature.
         while len(temp_forecasts) < _n_fc_full:
             temp_forecasts.append(temp_forecasts[-1] if temp_forecasts else outdoor_temp_f)
     except Exception as e:
