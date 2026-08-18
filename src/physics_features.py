@@ -288,13 +288,34 @@ def build_physics_features(
     # PV Forecasts with correct 'watts' attribute parsing (support up to _n_fc_full hours:
     # TRAJECTORY_STEPS when forecast mode is off, max(TRAJECTORY_STEPS, PV_TRAJ_MAX_STEPS) when on)
     _n_fc = config.TRAJECTORY_STEPS
+    _pre_cool_horizon = int(getattr(config, "PRE_COOL_HORIZON_HOURS", _n_fc))
+    # When cooling pre-cool is active, fetch the full pre-cool horizon so
+    # runtime decisions can use live 1h..12h forecasts instead of falling back
+    # to repeated current conditions beyond TRAJECTORY_STEPS.
+    _cooling_forecast_horizon = (
+        max(_n_fc, _pre_cool_horizon)
+        if (
+            normalized_climate_mode == "cooling"
+            and getattr(config, "PRE_COOL_ENABLED", True)
+        )
+        else _n_fc
+    )
     # When forecast-driven trajectory mode is active, fetch a wider horizon so
     # compute_forecast_driven_trajectory_steps() can see beyond TRAJECTORY_STEPS.
     _n_fc_full = (
-        max(_n_fc, int(getattr(config, "PV_TRAJ_MAX_STEPS", _n_fc)))
+        max(_cooling_forecast_horizon, int(getattr(config, "PV_TRAJ_MAX_STEPS", _cooling_forecast_horizon)))
         if getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
-        else _n_fc
+        else _cooling_forecast_horizon
     )
+    if _n_fc_full > _n_fc:
+        logging.debug(
+            "Extending runtime forecast feature horizon: base=%dh full=%dh "
+            "(mode=%s, pre_cool_horizon=%dh)",
+            _n_fc,
+            _n_fc_full,
+            normalized_climate_mode,
+            _pre_cool_horizon,
+        )
     pv_forecasts = [0.0] * _n_fc_full
     if config.PV_FORECAST_ENTITY_ID:
         try:

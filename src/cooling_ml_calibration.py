@@ -72,6 +72,91 @@ class _IsotonicCalibratedModel:
         return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
 
+def _resolve_current_cooling_target(config_module: Any, fallback_target_c: float) -> float:
+    """Read the current cooling target from Home Assistant, else return fallback."""
+    target_entity_id = str(
+        getattr(config_module, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "") or ""
+    ).strip()
+    if not target_entity_id:
+        logger.info(
+            "Cooling target entity not configured; using fallback cooling_target=%.1f°C",
+            fallback_target_c,
+        )
+        return fallback_target_c
+
+    try:
+        try:
+            from .ha_client import create_ha_client
+        except ImportError:
+            from ha_client import create_ha_client  # type: ignore
+
+        ha_client = create_ha_client()
+        all_states = ha_client.get_all_states()
+        current_target = ha_client.get_state(target_entity_id, all_states)
+        if current_target is None:
+            raise ValueError("state unavailable")
+        resolved_target = float(current_target)
+        logger.info(
+            "Resolved cooling_target=%.1f°C from HA entity %s",
+            resolved_target,
+            target_entity_id,
+        )
+        return resolved_target
+    except Exception as exc:
+        logger.warning(
+            "Failed to resolve cooling target from %s (%s); using fallback %.1f°C",
+            target_entity_id,
+            exc,
+            fallback_target_c,
+        )
+        return fallback_target_c
+
+
+def _has_both_classes(y: Any) -> bool:
+    """Return True when the label array contains both 0 and 1."""
+    import numpy as np  # type: ignore
+
+    try:
+        y_arr = np.asarray(y, dtype=int)
+    except Exception:
+        y_arr = np.asarray(y)
+    return len(np.unique(y_arr)) >= 2
+
+
+def _select_temporal_train_val_split(
+    df_train: Any,
+    label_col: str,
+    val_fraction: float,
+) -> tuple[Any, Any]:
+    """Choose the closest temporal split that keeps both classes in training."""
+    preferred_n_val = max(1, int(len(df_train) * val_fraction))
+    preferred_split_idx = len(df_train) - preferred_n_val
+    best_split_idx = None
+    best_score = None
+
+    for split_idx in range(1, len(df_train)):
+        y_fit = df_train[label_col].iloc[:split_idx].values
+        y_val = df_train[label_col].iloc[split_idx:].values
+        if len(y_val) == 0 or not _has_both_classes(y_fit):
+            continue
+
+        score = abs(split_idx - preferred_split_idx)
+        if not _has_both_classes(y_val):
+            score += len(df_train)
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best_split_idx = split_idx
+
+    if best_split_idx is None:
+        raise ValueError("no temporal split keeps both classes in training")
+
+    return (
+        df_train.iloc[:best_split_idx].copy(),
+        df_train.iloc[best_split_idx:].copy(),
+    )
+
+
 # Module-level import of shared training-data export helper.
 try:
     from .calibration_data_export import export_training_data
@@ -178,7 +263,7 @@ def calibrate_cooling_ml(
 
     if cooling_target_c is None:
         clamp_max = float(getattr(config, "COOLING_CLAMP_MAX_ABS", 24.0))
-        cooling_target_c = clamp_max - 1.0
+        cooling_target_c = _resolve_current_cooling_target(config, clamp_max - 1.0)
     logger.info(
         "Calibration params: label_horizon=%dh (%d steps), "
         "forecast_horizon=%dh, cooling_target=%.1f°C, "
@@ -793,14 +878,50 @@ def calibrate_cooling_ml(
 
     # ── 9. Train / val split (temporal) ────────────────────────────────
     val_fraction = float(getattr(config, "COOLING_ML_RETRAIN_VAL_FRACTION", 0.25))
-    n_val = max(1, int(len(df_train) * val_fraction))
-    df_val   = df_train.iloc[-n_val:].copy()
-    df_fit   = df_train.iloc[:-n_val].copy()
+    total_pos = int(df_train["label"].sum())
+    total_neg = int(len(df_train) - total_pos)
+    if total_pos == 0 or total_neg == 0:
+        logger.error(
+            "Cooling ML calibration aborted: dataset contains only one class "
+            "(pos=%d neg=%d). Check cooling_target and warm-season filtering.",
+            total_pos,
+            total_neg,
+        )
+        return False
+
+    try:
+        df_fit, df_val = _select_temporal_train_val_split(
+            df_train, "label", val_fraction
+        )
+    except ValueError:
+        logger.error(
+            "Cooling ML calibration aborted: unable to create a temporal split "
+            "with both classes in training (pos=%d neg=%d). Check cooling_target "
+            "and label distribution.",
+            total_pos,
+            total_neg,
+        )
+        return False
 
     X_fit = df_fit[feature_cols].astype(float)
     y_fit = df_fit["label"].values
     X_val = df_val[feature_cols].astype(float)
     y_val = df_val["label"].values
+    if not _has_both_classes(y_fit):
+        logger.error(
+            "Cooling ML calibration aborted: training split is single-class "
+            "(pos=%d neg=%d).",
+            int(y_fit.sum()),
+            int(len(y_fit) - y_fit.sum()),
+        )
+        return False
+    if not _has_both_classes(y_val):
+        logger.warning(
+            "Cooling ML validation split is single-class (pos=%d neg=%d); "
+            "AUC/calibration metrics will be limited.",
+            int(y_val.sum()),
+            int(len(y_val) - y_val.sum()),
+        )
 
     # ── 9b. Temporal boundary sample weighting (Prio 6) ────────────────
     # Upweight samples at the critical 0→1 label transition boundary and
@@ -906,38 +1027,46 @@ def calibrate_cooling_ml(
     n_cal_iso = len(X_val) // 2
     X_cal_iso, y_cal_iso = X_val[:n_cal_iso], y_val[:n_cal_iso]
     X_eval_iso, y_eval_iso = X_val[n_cal_iso:], y_val[n_cal_iso:]
-    try:
-        from sklearn.calibration import CalibratedClassifierCV  # type: ignore
-        # sklearn >=1.6 removed cv="prefit"; fall back to fitting an
-        # IsotonicRegression directly on the base model's probabilities so
-        # the base model weights are never changed (unlike cv=2 which refits
-        # cloned estimators on the calibration split).
+    if (
+        n_cal_iso < 2
+        or len(y_eval_iso) < 2
+        or not _has_both_classes(y_cal_iso)
+        or not _has_both_classes(y_eval_iso)
+    ):
+        logger.info(
+            "Skipping isotonic calibration: insufficient class diversity in "
+            "validation sub-splits"
+        )
+        auc_eval = auc
+    else:
         try:
-            calibrated_model = CalibratedClassifierCV(
-                estimator=model, method="isotonic", cv="prefit"
-            )
-            calibrated_model.fit(X_cal_iso, y_cal_iso)
-        except (TypeError, ValueError):
-            from sklearn.isotonic import IsotonicRegression  # type: ignore
-            _iso = IsotonicRegression(out_of_bounds="clip")
-            _iso.fit(model.predict_proba(X_cal_iso)[:, 1], y_cal_iso)
-            calibrated_model = _IsotonicCalibratedModel(model, _iso)
-        proba_cal_eval = calibrated_model.predict_proba(X_eval_iso)[:, 1]
-        proba_raw_eval = model.predict_proba(X_eval_iso)[:, 1]
-        if len(y_eval_iso) > 0 and y_eval_iso.sum() > 0:
+            from sklearn.calibration import CalibratedClassifierCV  # type: ignore
+            # sklearn >=1.6 removed cv="prefit"; fall back to fitting an
+            # IsotonicRegression directly on the base model's probabilities so
+            # the base model weights are never changed (unlike cv=2 which refits
+            # cloned estimators on the calibration split).
+            try:
+                calibrated_model = CalibratedClassifierCV(
+                    estimator=model, method="isotonic", cv="prefit"
+                )
+                calibrated_model.fit(X_cal_iso, y_cal_iso)
+            except (TypeError, ValueError):
+                from sklearn.isotonic import IsotonicRegression  # type: ignore
+                _iso = IsotonicRegression(out_of_bounds="clip")
+                _iso.fit(model.predict_proba(X_cal_iso)[:, 1], y_cal_iso)
+                calibrated_model = _IsotonicCalibratedModel(model, _iso)
+            proba_cal_eval = calibrated_model.predict_proba(X_eval_iso)[:, 1]
+            proba_raw_eval = model.predict_proba(X_eval_iso)[:, 1]
             calibrated_auc = float(roc_auc_score(y_eval_iso, proba_cal_eval))
             auc_eval = float(roc_auc_score(y_eval_iso, proba_raw_eval))
-        else:
-            calibrated_auc = float("nan")
-            auc_eval = float("nan")
-        logger.info(
-            "Calibrated model eval-split AUC=%.4f (raw eval-split AUC=%.4f)",
-            calibrated_auc, auc_eval,
-        )
-    except Exception as exc:
-        logger.warning("Isotonic calibration failed: %s — using raw model", exc)
-        calibrated_model = None
-        auc_eval = auc
+            logger.info(
+                "Calibrated model eval-split AUC=%.4f (raw eval-split AUC=%.4f)",
+                calibrated_auc, auc_eval,
+            )
+        except Exception as exc:
+            logger.warning("Isotonic calibration failed: %s — using raw model", exc)
+            calibrated_model = None
+            auc_eval = auc
 
     # Decision: use calibrated model if it doesn't degrade AUC on held-out eval split
     use_calibrated = (
