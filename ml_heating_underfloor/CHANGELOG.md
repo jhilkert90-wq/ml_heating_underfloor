@@ -1,5 +1,13 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.74] - 2026-08-18
+
+### Fixed
+- Hardened cooling pre-cool logic by shifting predictive offsets from the configured cooling target instead of the current room temperature, with minimum-target clamping.
+- Added passive pre-cool plausibility and shadow-disagreement guards to suppress implausible overheating spikes from the trajectory path.
+- Capped passive pre-cool solar contribution and added regression coverage for forecast anchoring and the reported 26.3°C cooling scenario.
+- Clamped fallback pre-cool target offsets to `PRE_COOL_MAX_OFFSET_K` so fixed offsets cannot exceed the configured maximum drop.
+
 ## [0.2.73] - 2026-08-18
 
 ### Fixed
