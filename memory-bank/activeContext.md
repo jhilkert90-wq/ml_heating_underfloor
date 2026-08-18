@@ -1,5 +1,25 @@
 # Active Context - Current Work & Decision State
 
+### Pre-Cool Max Offset Clamp Review Fix — 2026-08-18
+
+#### **What changed**
+- Fixed `src/cycle_routes.py`:
+  - Updated `_resolve_pre_cool_min_target()` fallback cap selection to use `min(PRE_COOL_MAX_OFFSET_K, offset)` so max-offset behavior matches configuration intent.
+- Added regression test in `tests/unit/test_cycle_routes.py`:
+  - `test_clamps_pre_cool_offset_to_max_bound` ensures oversized fixed offsets are clamped by `PRE_COOL_MAX_OFFSET_K`.
+
+#### **Why**
+- **Root cause**: fallback pre-cool cap logic used `max(...)`, which treated `PRE_COOL_MAX_OFFSET_K` as a floor instead of a ceiling.
+- **Impact**: a fixed pre-cool offset larger than `PRE_COOL_MAX_OFFSET_K` could produce an overly aggressive cooling-target drop.
+- **Decision**: apply a minimal surgical correction and lock behavior with a focused unit test.
+
+#### **Files changed**
+- `src/cycle_routes.py`
+- `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ### Cooling Pre-Cool Trajectory Guard Fixes — 2026-08-18
 
 #### **What changed**

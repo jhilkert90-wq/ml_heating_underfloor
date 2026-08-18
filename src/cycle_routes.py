@@ -247,6 +247,7 @@ def _resolve_pre_cool_min_target(
     ctx: CycleContext, original_target: float, offset: float
 ) -> float:
     """Resolve the minimum allowed indoor target for pre-cooling."""
+    entity_minimum = None
     entity_id = getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
     if entity_id:
         entity_state = (ctx.all_states or {}).get(entity_id) or {}
@@ -254,17 +255,18 @@ def _resolve_pre_cool_min_target(
         minimum = attrs.get("min")
         if minimum is not None:
             try:
-                return float(minimum)
+                entity_minimum = float(minimum)
             except (TypeError, ValueError):
                 logging.debug(
                     "Ignoring non-numeric cooling target min attribute %r",
                     minimum,
                 )
-    max_offset = max(
+    max_offset = min(
         float(getattr(config, "PRE_COOL_MAX_OFFSET_K", offset)),
         float(offset),
     )
-    return original_target - max_offset
+    target = original_target - max_offset
+    return max(entity_minimum, target) if entity_minimum is not None else target
 
 
 def _apply_shadow_pre_cool_guard(
@@ -883,9 +885,7 @@ def step_pre_cooling(ctx: CycleContext) -> None:
             _min_target = _resolve_pre_cool_min_target(
                 ctx, _original_target, _offset
             )
-            ctx.target_indoor_temp = max(
-                _min_target, _original_target - _offset
-            )
+            ctx.target_indoor_temp = _min_target
             ctx.pre_cool_active = True
             logging.info(
                 "❄️ PRE-COOL [%s]: target shifted %.1f → %.1f°C "

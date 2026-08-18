@@ -10,6 +10,7 @@ from src.cycle_routes import (
     run_idle_route,
     run_heating_route,
     run_cooling_route,
+    _resolve_pre_cool_min_target,
     step_get_sensor_data,
     step_apply_cooling_target,
     step_determine_prediction_indoor,
@@ -97,6 +98,42 @@ class TestStepApplyCoolingTarget:
         ctx = _make_ctx(climate_mode="heating", target_indoor_temp=22.0)
         step_apply_cooling_target(ctx)
         assert ctx.target_indoor_temp == 22.0  # unchanged
+
+
+class TestResolvePreCoolMinTarget:
+    """Test minimum target resolution for pre-cooling."""
+
+    @patch("src.cycle_routes.config")
+    def test_clamps_pre_cool_offset_to_max_bound(self, mock_config):
+        mock_config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID = ""
+        mock_config.PRE_COOL_MAX_OFFSET_K = 1.0
+        ctx = _make_ctx()
+
+        result = _resolve_pre_cool_min_target(
+            ctx, original_target=23.0, offset=2.0
+        )
+
+        assert result == 22.0
+
+    @patch("src.cycle_routes.config")
+    def test_respects_entity_minimum_after_offset_clamp(self, mock_config):
+        mock_config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID = (
+            "input_number.cooling_target"
+        )
+        mock_config.PRE_COOL_MAX_OFFSET_K = 1.0
+        ctx = _make_ctx(
+            all_states={
+                "input_number.cooling_target": {
+                    "attributes": {"min": 22.4}
+                }
+            }
+        )
+
+        result = _resolve_pre_cool_min_target(
+            ctx, original_target=23.0, offset=2.0
+        )
+
+        assert result == 22.4
 
 
 class TestStepDeterminePredictionIndoor:

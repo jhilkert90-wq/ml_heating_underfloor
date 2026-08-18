@@ -1,5 +1,29 @@
 # ML Heating System - Current Progress
 
+## Pre-Cool Max Offset Clamp Review Fix (2026-08-18)
+
+**Status:** COMPLETED — fallback pre-cool minimum target logic now correctly enforces `PRE_COOL_MAX_OFFSET_K` as an upper bound when fixed offsets are larger, with regression coverage
+
+### Changes
+- Fixed `src/cycle_routes.py`:
+  - Changed `_resolve_pre_cool_min_target()` fallback cap calculation from `max(...)` to `min(...)` so configured max offset is a true upper bound
+- Added unit test in `tests/unit/test_cycle_routes.py`:
+  - Verifies oversized fixed pre-cool offsets are clamped to `PRE_COOL_MAX_OFFSET_K`
+
+### Root Cause
+- The fallback path selected the larger of `PRE_COOL_MAX_OFFSET_K` and the requested offset, which inverted the cap logic and allowed larger-than-configured target drops.
+
+### Impact
+- Before: if `PRE_COOL_TARGET_OFFSET_K` exceeded `PRE_COOL_MAX_OFFSET_K`, pre-cooling could still apply the larger drop.
+- After: fallback pre-cool minimum target always respects the configured maximum drop.
+
+### Files
+- `src/cycle_routes.py`
+- `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ## Cooling Pre-Cool Trajectory Guard Fixes (2026-08-18)
 
 **Status:** COMPLETED — predictive cooling now shifts from the configured cooling target, passive pre-cool trajectories are capped and sanity-checked, and the reported extreme 26.3°C spike is covered by regression tests
