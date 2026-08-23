@@ -116,6 +116,114 @@ class TestCheckAndResolveClimateMode:
         assert climate_mode == "heating"
         wrapper.set_climate_mode.assert_called_once_with("heating")
 
+    @patch("src.pre_dispatch.os.path.exists", return_value=False)
+    @patch("src.pre_dispatch.HeatingSystemStateChecker")
+    @patch("src.pre_dispatch.load_state")
+    def test_warm_restart_exits_on_genuine_transition(
+        self, mock_load, mock_checker_cls, mock_exists
+    ):
+        mock_checker = MagicMock()
+        mock_checker.check_heating_active.return_value = True
+        mock_checker.get_climate_mode.return_value = "cooling"
+        mock_checker_cls.return_value = mock_checker
+        mock_load.return_value = {"last_climate_mode": "heating"}
+
+        old_mgr = MagicMock()
+        new_mgr = MagicMock()
+        wrapper = MagicMock()
+        wrapper.state_manager = old_mgr
+        wrapper.set_climate_mode.side_effect = lambda _mode: setattr(
+            wrapper, "state_manager", new_mgr
+        )
+
+        with patch("src.pre_dispatch.os.makedirs"), patch(
+            "builtins.open"
+        ) as mock_open:
+            with pytest.raises(SystemExit):
+                check_and_resolve_climate_mode(MagicMock(), {}, wrapper)
+        mock_open.assert_called_with(
+            "/data/config/warm_restart_mode_sentinel", "w", encoding="utf-8"
+        )
+
+    @patch("src.pre_dispatch.os.remove")
+    @patch("src.pre_dispatch.os.path.exists", return_value=True)
+    @patch("src.pre_dispatch.HeatingSystemStateChecker")
+    @patch("src.pre_dispatch.load_state")
+    def test_warm_restart_sentinel_prevents_repeat_exit(
+        self, mock_load, mock_checker_cls, mock_exists, mock_remove
+    ):
+        mock_checker = MagicMock()
+        mock_checker.check_heating_active.return_value = True
+        mock_checker.get_climate_mode.return_value = "cooling"
+        mock_checker_cls.return_value = mock_checker
+        mock_load.return_value = {"last_climate_mode": "heating"}
+
+        old_mgr = MagicMock()
+        new_mgr = MagicMock()
+        wrapper = MagicMock()
+        wrapper.state_manager = old_mgr
+        wrapper.set_climate_mode.side_effect = lambda _mode: setattr(
+            wrapper, "state_manager", new_mgr
+        )
+
+        with patch("builtins.open") as mock_open, patch("src.pre_dispatch.sys.exit") as mock_exit:
+            mock_open.return_value.__enter__.return_value.read.return_value = "cooling"
+            check_and_resolve_climate_mode(MagicMock(), {}, wrapper)
+        mock_remove.assert_called_once_with("/data/config/warm_restart_mode_sentinel")
+        mock_exit.assert_not_called()
+
+    @patch("src.pre_dispatch.os.path.exists", return_value=False)
+    @patch("src.pre_dispatch.HeatingSystemStateChecker")
+    @patch("src.pre_dispatch.load_state")
+    def test_warm_restart_write_failure_skips_exit(
+        self, mock_load, mock_checker_cls, mock_exists
+    ):
+        mock_checker = MagicMock()
+        mock_checker.check_heating_active.return_value = True
+        mock_checker.get_climate_mode.return_value = "cooling"
+        mock_checker_cls.return_value = mock_checker
+        mock_load.return_value = {"last_climate_mode": "heating"}
+
+        old_mgr = MagicMock()
+        new_mgr = MagicMock()
+        wrapper = MagicMock()
+        wrapper.state_manager = old_mgr
+        wrapper.set_climate_mode.side_effect = lambda _mode: setattr(
+            wrapper, "state_manager", new_mgr
+        )
+
+        with patch("src.pre_dispatch.os.makedirs"), patch(
+            "builtins.open", side_effect=OSError("no write")
+        ), patch("src.pre_dispatch.sys.exit") as mock_exit:
+            check_and_resolve_climate_mode(MagicMock(), {}, wrapper)
+        mock_exit.assert_not_called()
+
+    @patch("src.pre_dispatch.os.path.exists", return_value=True)
+    @patch("src.pre_dispatch.HeatingSystemStateChecker")
+    @patch("src.pre_dispatch.load_state")
+    def test_warm_restart_read_failure_skips_exit(
+        self, mock_load, mock_checker_cls, mock_exists
+    ):
+        mock_checker = MagicMock()
+        mock_checker.check_heating_active.return_value = True
+        mock_checker.get_climate_mode.return_value = "cooling"
+        mock_checker_cls.return_value = mock_checker
+        mock_load.return_value = {"last_climate_mode": "heating"}
+
+        old_mgr = MagicMock()
+        new_mgr = MagicMock()
+        wrapper = MagicMock()
+        wrapper.state_manager = old_mgr
+        wrapper.set_climate_mode.side_effect = lambda _mode: setattr(
+            wrapper, "state_manager", new_mgr
+        )
+
+        with patch("builtins.open", side_effect=OSError("read fail")), patch(
+            "src.pre_dispatch.sys.exit"
+        ) as mock_exit:
+            check_and_resolve_climate_mode(MagicMock(), {}, wrapper)
+        mock_exit.assert_not_called()
+
 
 class TestHandleGracePeriod:
     """handle_grace_period returns correct flags."""

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Warm Restart on Climate Mode Change**: When the HVAC climate entity switches modes (e.g. `heat` → `cool` or `cool` → `heat`), the addon performs a clean `sys.exit(0)` so supervisord restarts the process with the correct mode profile applied from the first cycle. A sentinel file (`/data/config/warm_restart_mode_sentinel`) prevents restart loops.
+- **Mode Profiles (`src/mode_profiles.py`)**: New module providing `apply_profile(climate_mode)` which reads `heating_profile` / `cooling_profile` blocks from `options.json` and overlays them onto config module globals at process startup. Eligible settings include all price-optimization, PV-trajectory, solar-correction, overshoot-detection, and pre-cool feature flags plus their numeric tuning knobs.
+- **Addon config profile blocks**: `heating_profile` and `cooling_profile` nested option groups in `ml_heating_underfloor/config.yaml` allow users to configure independent feature sets for each HVAC mode via the HA addon UI.
+
+### Changed
+- Mode profile application now runs inside `initialize_loop_state()` before mode-dependent runtime component initialization, so profile values (including `PRE_COOL_ENABLED`) are effective from process startup.
+
+### Fixed
+- Warm-restart sentinel read errors now disable restart for that cycle to prevent repeated `sys.exit(0)` loops when sentinel access fails.
+- Updated `mode_profiles` documentation to match behavior: unknown/non-profileable profile keys are logged at DEBUG level and skipped.
+- Added regression coverage for warm-restart transition/sentinel edge cases and `mode_profiles` key coercion/path precedence behavior.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

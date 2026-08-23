@@ -643,6 +643,49 @@ options:
   # "ml"      = LightGBM regressor (future feature, falls back to physics).
   heating_correction_mode: "legacy"  # Default: legacy (preserves existing behaviour)
 
+  # === Mode Profiles ===
+  # Per-mode overrides for feature flags and tuning settings.
+  # These settings are applied automatically when the HVAC climate entity
+  # switches between heating and cooling modes (a warm restart is triggered
+  # to ensure the correct profile is active from the first cycle).
+  #
+  # Only the keys listed here are eligible for profile override; all other
+  # settings continue to use their individual top-level values.
+  # Omit a key entirely to leave it at its top-level default.
+  #
+  # heating_profile — settings active while the HVAC is in heating mode.
+  heating_profile:
+    electricity_price_enabled: false
+    pv_surplus_cheap_enabled: false
+    pv_traj_forecast_mode_enabled: false
+    pv_traj_disable_price_in_forecast_mode: true
+    pv_traj_forecast_rescue_enabled: true
+    pv_traj_disable_overshoot_correction: false
+    solar_correction_enabled: true
+    cloud_cover_correction_enabled: false
+    overshoot_detection_enabled: true
+    pre_cool_enabled: false
+    price_target_offset: 0.2
+    price_expensive_overshoot: 0.2
+    price_cheap_percentile: 33
+    price_expensive_percentile: 67
+  # cooling_profile — settings active while the HVAC is in cooling mode.
+  cooling_profile:
+    electricity_price_enabled: false
+    pv_surplus_cheap_enabled: false
+    pv_traj_forecast_mode_enabled: false
+    pv_traj_disable_price_in_forecast_mode: true
+    pv_traj_forecast_rescue_enabled: false
+    pv_traj_disable_overshoot_correction: true
+    solar_correction_enabled: false
+    cloud_cover_correction_enabled: false
+    overshoot_detection_enabled: false
+    pre_cool_enabled: true
+    price_target_offset: 0.0
+    price_expensive_overshoot: 0.0
+    price_cheap_percentile: 33
+    price_expensive_percentile: 67
+
 schema:
   # Core Entity Configuration
   target_indoor_temp_entity: "str"
@@ -912,3 +955,34 @@ schema:
   outlet_smoothing_bypass: "float(0.5,5.0)"
   # Heating Correction Mode
   heating_correction_mode: "list(legacy|physics|ml)"
+  # Mode Profiles
+  heating_profile:
+    electricity_price_enabled: "bool?"
+    pv_surplus_cheap_enabled: "bool?"
+    pv_traj_forecast_mode_enabled: "bool?"
+    pv_traj_disable_price_in_forecast_mode: "bool?"
+    pv_traj_forecast_rescue_enabled: "bool?"
+    pv_traj_disable_overshoot_correction: "bool?"
+    solar_correction_enabled: "bool?"
+    cloud_cover_correction_enabled: "bool?"
+    overshoot_detection_enabled: "bool?"
+    pre_cool_enabled: "bool?"
+    price_target_offset: "float(0.0,1.0)?"
+    price_expensive_overshoot: "float(0.0,1.0)?"
+    price_cheap_percentile: "int(10,50)?"
+    price_expensive_percentile: "int(50,90)?"
+  cooling_profile:
+    electricity_price_enabled: "bool?"
+    pv_surplus_cheap_enabled: "bool?"
+    pv_traj_forecast_mode_enabled: "bool?"
+    pv_traj_disable_price_in_forecast_mode: "bool?"
+    pv_traj_forecast_rescue_enabled: "bool?"
+    pv_traj_disable_overshoot_correction: "bool?"
+    solar_correction_enabled: "bool?"
+    cloud_cover_correction_enabled: "bool?"
+    overshoot_detection_enabled: "bool?"
+    pre_cool_enabled: "bool?"
+    price_target_offset: "float(0.0,1.0)?"
+    price_expensive_overshoot: "float(0.0,1.0)?"
+    price_cheap_percentile: "int(10,50)?"
+    price_expensive_percentile: "int(50,90)?"

@@ -1,5 +1,54 @@
 # Active Context - Current Work & Decision State
 
+### PR #79 Review Fixes — Warm-Restart Safety + Profile Init Order — 2026-08-23
+
+#### **What changed**
+1. **Warm-restart safety hardening** (`src/pre_dispatch.py`):
+   - Added sentinel read-error handling that skips warm restart for the cycle when `/data/config/warm_restart_mode_sentinel` cannot be read.
+   - Preserves loop-prevention behavior and avoids repeated `sys.exit(0)` attempts under sentinel I/O failures.
+
+2. **Profile timing correction** (`src/pre_dispatch.py`, `src/main.py`):
+   - Moved `apply_profile(climate_mode)` into `initialize_loop_state()` so profile overrides are applied before mode-dependent runtime initialization (e.g., pre-cool ML init branching on config flags).
+   - Removed the redundant later call in `main.py`.
+
+3. **Documentation + tests**:
+   - Updated `src/mode_profiles.py` module docstring to match implemented behavior for unknown keys (DEBUG log + skip).
+   - Added targeted unit tests for warm-restart edge cases and mode profile loading/coercion behavior.
+
+#### **Why**
+- Review feedback identified an edge case where sentinel read failures could bypass loop protection intent and retrigger restart attempts.
+- Review feedback also identified that applying mode profiles after loop-state initialization made some profileable startup flags ineffective for the first process lifecycle.
+- Additional tests were required to protect the new warm-restart and profile-overlay logic from regressions.
+
+#### **Files changed**
+- `src/pre_dispatch.py`
+- `src/main.py`
+- `src/mode_profiles.py`
+- `tests/unit/test_pre_dispatch.py`
+- `tests/unit/test_mode_profiles.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+### Mode Profiles + Warm Restart on Climate Mode Change — 2026-08-23
+
+#### **What changed**
+Two new features implemented to automate HVAC-mode-specific configuration:
+
+1. **Warm Restart on mode transition** (`src/pre_dispatch.py`): `check_and_resolve_climate_mode()` now compares `last_climate_mode` from the reloaded state to the detected `climate_mode`. On a genuine transition (e.g. `heating` → `cooling`) it writes a sentinel file to `/data/config/warm_restart_mode_sentinel` and calls `sys.exit(0)`. Supervisord restarts the process, which loads the correct profile. On the first cycle after restart the sentinel is detected and cleared — preventing loops.
+
+2. **Mode Profiles** (`src/mode_profiles.py`): New module. `apply_profile(climate_mode)` reads the `heating_profile` or `cooling_profile` block from `options.json` (or the fallback `/data/config/mode_profiles.json`) and uses `setattr(config, KEY, value)` to override module-level globals for the lifetime of the process. Called once in `main.py` after `initialize_loop_state()`.
+
+#### **Why**
+- Previously, users had to manually change feature flags (price optimization, PV trajectory, etc.) whenever the HVAC mode changed — error-prone and often forgotten.
+- Without a warm restart, config globals loaded at module import time would not reflect the new mode's profile even if the user updated options.json.
+
+#### **Files modified**
+- `src/mode_profiles.py` (new)
+- `src/pre_dispatch.py` — imports, warm restart logic in `check_and_resolve_climate_mode()`
+- `src/main.py` — `apply_profile()` call after `initialize_loop_state()`
+- `ml_heating_underfloor/config.yaml` — `heating_profile` / `cooling_profile` option and schema blocks
+
 ### Pre-Cool Max Offset Clamp Review Fix — 2026-08-18
 
 #### **What changed**

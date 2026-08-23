@@ -1,5 +1,62 @@
 # ML Heating System - Current Progress
 
+## PR #79 Review Fixes — Warm-Restart Safety + Mode Profile Init Order (2026-08-23)
+
+**Status:** COMPLETED — addressed all review feedback for warm-restart edge cases, mode profile startup timing, docs alignment, and test coverage
+
+### Changes
+- Fixed `src/pre_dispatch.py`:
+  - Warm-restart sentinel read failures now skip restart for that cycle to avoid restart loops.
+  - Mode profiles are now applied during `initialize_loop_state()` before mode-dependent initialization.
+- Fixed `src/main.py`:
+  - Removed redundant profile application call after `initialize_loop_state()`.
+- Fixed `src/mode_profiles.py`:
+  - Updated module docstring text to match actual unknown-key handling (DEBUG log + skip).
+- Added tests:
+  - `tests/unit/test_pre_dispatch.py`: warm-restart transition, sentinel repeat-prevention, write-failure, and read-failure behaviors.
+  - `tests/unit/test_mode_profiles.py`: profile coercion/unknown-key skip and options file precedence.
+- Validation:
+  - `python -m pytest tests/unit/test_pre_dispatch.py tests/unit/test_mode_profiles.py -q --tb=short` (20 passed)
+
+### Files
+- `src/pre_dispatch.py`
+- `src/main.py`
+- `src/mode_profiles.py`
+- `tests/unit/test_pre_dispatch.py`
+- `tests/unit/test_mode_profiles.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+## Mode Profiles + Warm Restart on Climate Mode Change (2026-08-23)
+
+**Status:** COMPLETED — per-mode feature profiles and automatic warm restart on HVAC mode transition
+
+### Changes
+- Created `src/mode_profiles.py`:
+  - `apply_profile(climate_mode)` overlays `heating_profile` / `cooling_profile` blocks from `options.json` onto config module globals
+  - `_load_raw_profiles()` searches `/data/options.json` then `/data/config/mode_profiles.json`
+  - `PROFILEABLE_BOOLS` / `PROFILEABLE_FLOATS` whitelist prevents arbitrary config mutation
+  - Lower-case option keys (as stored in options.json) are auto-upper-cased before matching
+- Modified `src/pre_dispatch.py`:
+  - Added `import os, sys` at module level
+  - `check_and_resolve_climate_mode()` now detects genuine mode transitions and triggers `sys.exit(0)` for a warm restart
+  - Sentinel file `/data/config/warm_restart_mode_sentinel` prevents restart loops
+- Modified `src/main.py`:
+  - `apply_profile(loop.wrapper.climate_mode)` called once after `initialize_loop_state()`, before the main loop
+- Modified `ml_heating_underfloor/config.yaml`:
+  - Added `heating_profile` and `cooling_profile` option blocks with sensible defaults
+  - Added corresponding schema type declarations with `?` (optional) suffixes
+
+### Files
+- `src/mode_profiles.py` (new)
+- `src/pre_dispatch.py`
+- `src/main.py`
+- `ml_heating_underfloor/config.yaml`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ## Pre-Cool Max Offset Clamp Review Fix (2026-08-18)
 
 **Status:** COMPLETED — fallback pre-cool minimum target logic now correctly enforces `PRE_COOL_MAX_OFFSET_K` as an upper bound when fixed offsets are larger, with regression coverage
