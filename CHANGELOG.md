@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Dashboard sidebar directory status no longer crashes when a `/data/*` path exists but cannot be listed; unreadable paths now render as warnings.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
