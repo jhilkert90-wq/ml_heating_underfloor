@@ -9,6 +9,7 @@ import streamlit as st
 import os
 import sys
 from streamlit_option_menu import option_menu
+from app_utils import safe_directory_file_count
 
 # Add app directory to Python path
 sys.path.append('/app')
@@ -92,8 +93,11 @@ def main():
         data_dirs = ['/data/models', '/data/backups', '/data/logs']
         for directory in data_dirs:
             if os.path.exists(directory):
-                file_count = len(os.listdir(directory))
-                st.success(f"📁 {directory.split('/')[-1]}: {file_count}")
+                file_count = safe_directory_file_count(directory)
+                if file_count is None:
+                    st.warning(f"📁 {directory.split('/')[-1]}: Unreadable")
+                else:
+                    st.success(f"📁 {directory.split('/')[-1]}: {file_count}")
             else:
                 st.warning(f"📁 {directory.split('/')[-1]}: Missing")
     
