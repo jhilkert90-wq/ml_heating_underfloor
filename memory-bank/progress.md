@@ -1,5 +1,33 @@
 # ML Heating System - Current Progress
 
+## PR #79 Review Fixes — Warm-Restart Safety + Mode Profile Init Order (2026-08-23)
+
+**Status:** COMPLETED — addressed all review feedback for warm-restart edge cases, mode profile startup timing, docs alignment, and test coverage
+
+### Changes
+- Fixed `src/pre_dispatch.py`:
+  - Warm-restart sentinel read failures now skip restart for that cycle to avoid restart loops.
+  - Mode profiles are now applied during `initialize_loop_state()` before mode-dependent initialization.
+- Fixed `src/main.py`:
+  - Removed redundant profile application call after `initialize_loop_state()`.
+- Fixed `src/mode_profiles.py`:
+  - Updated module docstring text to match actual unknown-key handling (DEBUG log + skip).
+- Added tests:
+  - `tests/unit/test_pre_dispatch.py`: warm-restart transition, sentinel repeat-prevention, write-failure, and read-failure behaviors.
+  - `tests/unit/test_mode_profiles.py`: profile coercion/unknown-key skip and options file precedence.
+- Validation:
+  - `python -m pytest tests/unit/test_pre_dispatch.py tests/unit/test_mode_profiles.py -q --tb=short` (20 passed)
+
+### Files
+- `src/pre_dispatch.py`
+- `src/main.py`
+- `src/mode_profiles.py`
+- `tests/unit/test_pre_dispatch.py`
+- `tests/unit/test_mode_profiles.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ## Mode Profiles + Warm Restart on Climate Mode Change (2026-08-23)
 
 **Status:** COMPLETED — per-mode feature profiles and automatic warm restart on HVAC mode transition

@@ -10,8 +10,8 @@ automatically picks up the profile settings for the active mode without any
 further changes to those modules.
 
 Only keys listed in :data:`PROFILEABLE_KEYS` are eligible for override; unknown
-keys are silently skipped so that a mis-typed profile entry cannot corrupt
-unrelated settings.
+keys are logged at DEBUG level and skipped so that a mis-typed profile entry
+cannot corrupt unrelated settings.
 
 Profile blocks in ``options.json`` use lower-case option names (as written in
 ``config.yaml``), which are **automatically upper-cased** before being matched

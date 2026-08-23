@@ -681,12 +681,6 @@ def main():
         influx_service=influx_service,
     )
 
-    # Apply the mode-specific feature profile for this process lifetime.
-    # This overlays heating_profile / cooling_profile settings from options.json
-    # onto the config module globals before the first cycle begins.
-    from .mode_profiles import apply_profile as _apply_mode_profile
-    _apply_mode_profile(loop.wrapper.climate_mode)
-
     while True:
         try:
             # --- Cycle start ---
@@ -972,4 +966,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

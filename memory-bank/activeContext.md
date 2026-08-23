@@ -1,5 +1,35 @@
 # Active Context - Current Work & Decision State
 
+### PR #79 Review Fixes — Warm-Restart Safety + Profile Init Order — 2026-08-23
+
+#### **What changed**
+1. **Warm-restart safety hardening** (`src/pre_dispatch.py`):
+   - Added sentinel read-error handling that skips warm restart for the cycle when `/data/config/warm_restart_mode_sentinel` cannot be read.
+   - Preserves loop-prevention behavior and avoids repeated `sys.exit(0)` attempts under sentinel I/O failures.
+
+2. **Profile timing correction** (`src/pre_dispatch.py`, `src/main.py`):
+   - Moved `apply_profile(climate_mode)` into `initialize_loop_state()` so profile overrides are applied before mode-dependent runtime initialization (e.g., pre-cool ML init branching on config flags).
+   - Removed the redundant later call in `main.py`.
+
+3. **Documentation + tests**:
+   - Updated `src/mode_profiles.py` module docstring to match implemented behavior for unknown keys (DEBUG log + skip).
+   - Added targeted unit tests for warm-restart edge cases and mode profile loading/coercion behavior.
+
+#### **Why**
+- Review feedback identified an edge case where sentinel read failures could bypass loop protection intent and retrigger restart attempts.
+- Review feedback also identified that applying mode profiles after loop-state initialization made some profileable startup flags ineffective for the first process lifecycle.
+- Additional tests were required to protect the new warm-restart and profile-overlay logic from regressions.
+
+#### **Files changed**
+- `src/pre_dispatch.py`
+- `src/main.py`
+- `src/mode_profiles.py`
+- `tests/unit/test_pre_dispatch.py`
+- `tests/unit/test_mode_profiles.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
 ### Mode Profiles + Warm Restart on Climate Mode Change — 2026-08-23
 
 #### **What changed**
