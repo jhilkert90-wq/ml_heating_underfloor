@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -598,6 +600,55 @@ def check_and_resolve_climate_mode(
             "♻️ Climate mode transition → reloaded operational state from %s",
             _active_state_manager.state_file,
         )
+
+        # --- Warm restart on genuine mode change ---
+        # Trigger sys.exit(0) so supervisord restarts the process with a fresh
+        # module environment and the correct mode profile applied at startup.
+        # A sentinel file prevents an infinite restart loop: if the sentinel
+        # already records the target mode, we already restarted for this
+        # transition and should proceed normally.
+        _prev_mode = (reloaded_state or {}).get("last_climate_mode")
+        _sentinel = "/data/config/warm_restart_mode_sentinel"
+        _sentinel_content: str | None = None
+        try:
+            if os.path.exists(_sentinel):
+                with open(_sentinel, encoding="utf-8") as _sf:
+                    _sentinel_content = _sf.read().strip()
+        except OSError as _se:
+            logging.debug("mode sentinel read error: %s", _se)
+
+        if _sentinel_content == climate_mode:
+            # We already warm-restarted for this transition — clear the
+            # sentinel so the next cycle proceeds without triggering again.
+            try:
+                os.remove(_sentinel)
+            except OSError:
+                pass
+            logging.debug(
+                "🔄 Warm-restart sentinel cleared for mode '%s'", climate_mode
+            )
+        elif _prev_mode and _prev_mode != climate_mode:
+            # Genuine transition: write sentinel then exit so supervisord
+            # restarts the process in the new mode.
+            _sentinel_written = False
+            try:
+                os.makedirs(os.path.dirname(_sentinel), exist_ok=True)
+                with open(_sentinel, "w", encoding="utf-8") as _sf:
+                    _sf.write(climate_mode)
+                _sentinel_written = True
+            except OSError as _we:
+                logging.warning(
+                    "⚠️ Could not write warm-restart sentinel %s: %s — skipping restart",
+                    _sentinel,
+                    _we,
+                )
+            if _sentinel_written:
+                logging.info(
+                    "🔄 Climate mode changed %s → %s — warm restart to apply new profile settings",
+                    _prev_mode,
+                    climate_mode,
+                )
+                sys.exit(0)
 
     if climate_mode == "cooling":
         logging.info(

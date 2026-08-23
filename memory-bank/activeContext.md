@@ -1,5 +1,24 @@
 # Active Context - Current Work & Decision State
 
+### Mode Profiles + Warm Restart on Climate Mode Change — 2026-08-23
+
+#### **What changed**
+Two new features implemented to automate HVAC-mode-specific configuration:
+
+1. **Warm Restart on mode transition** (`src/pre_dispatch.py`): `check_and_resolve_climate_mode()` now compares `last_climate_mode` from the reloaded state to the detected `climate_mode`. On a genuine transition (e.g. `heating` → `cooling`) it writes a sentinel file to `/data/config/warm_restart_mode_sentinel` and calls `sys.exit(0)`. Supervisord restarts the process, which loads the correct profile. On the first cycle after restart the sentinel is detected and cleared — preventing loops.
+
+2. **Mode Profiles** (`src/mode_profiles.py`): New module. `apply_profile(climate_mode)` reads the `heating_profile` or `cooling_profile` block from `options.json` (or the fallback `/data/config/mode_profiles.json`) and uses `setattr(config, KEY, value)` to override module-level globals for the lifetime of the process. Called once in `main.py` after `initialize_loop_state()`.
+
+#### **Why**
+- Previously, users had to manually change feature flags (price optimization, PV trajectory, etc.) whenever the HVAC mode changed — error-prone and often forgotten.
+- Without a warm restart, config globals loaded at module import time would not reflect the new mode's profile even if the user updated options.json.
+
+#### **Files modified**
+- `src/mode_profiles.py` (new)
+- `src/pre_dispatch.py` — imports, warm restart logic in `check_and_resolve_climate_mode()`
+- `src/main.py` — `apply_profile()` call after `initialize_loop_state()`
+- `ml_heating_underfloor/config.yaml` — `heating_profile` / `cooling_profile` option and schema blocks
+
 ### Pre-Cool Max Offset Clamp Review Fix — 2026-08-18
 
 #### **What changed**
