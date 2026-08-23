@@ -6,7 +6,7 @@
 
 **Files changed:** `dashboard/config_schema.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
-**Summary:** `config.yaml` schema contains two keys (`heating_profile`, `cooling_profile`) whose values are dicts (nested sub-schemas). `_parse_schema` assumed all schema values were strings and evaluated `raw_schema in {"str", "str?"}` which raises `TypeError` for unhashable dicts. Fix: added `isinstance(raw_schema, str)` guard at the top of `_parse_schema` returning `{"widget_type": "skip"}` for non-string schemas, and `load_settings_metadata` now skips those fields.
+**Summary:** `config.yaml` schema contains two keys (`heating_profile`, `cooling_profile`) whose values are dicts (nested sub-schemas). `_parse_schema` assumed all schema values were strings and evaluated `raw_schema in {"str", "str?"}` which raises `TypeError` for unhashable dicts. Fix: added `isinstance(raw_schema, str)` guard at the top of `_parse_schema` returning `{"widget_type": "__skip__"}` for non-string schemas (via `_WIDGET_TYPE_SKIP = "__skip__"` constant), and `load_settings_metadata` now skips those fields.
 
 ---
 

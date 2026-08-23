@@ -40,9 +40,11 @@ class TestSettingsMetadata:
     def test_metadata_covers_all_addon_options(self):
         metadata = load_settings_metadata()
 
-        assert len(metadata.fields) == 207
-        assert len(metadata.defaults) == 207
-        assert len(metadata.field_order) == 207
+        _SKIPPED_KEYS = {"heating_profile", "cooling_profile"}
+        assert len(metadata.defaults) == 232
+        assert len(metadata.fields) == len(metadata.defaults) - len(_SKIPPED_KEYS)
+        assert len(metadata.field_order) == len(metadata.fields)
+        assert set(metadata.defaults.keys()) - set(metadata.fields.keys()) == _SKIPPED_KEYS
 
     def test_expected_groups_and_translations_are_loaded(self):
         metadata = load_settings_metadata()
