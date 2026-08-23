@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.78] - 2026-08-23
+
+### Fixed
+- `config_schema._parse_schema` crashes with `TypeError: unhashable type: 'dict'` when a `config.yaml` schema entry is a nested dict (e.g. `heating_profile`, `cooling_profile`); those fields are now silently skipped so the Settings page loads without error.
+
 ## [0.2.77] - 2026-08-23
 
 ### Fixed
