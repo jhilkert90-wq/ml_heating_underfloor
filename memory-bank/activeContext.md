@@ -1,5 +1,25 @@
 # Active Context - Current Work & Decision State
 
+### Dashboard Directory Status Crash Guard — 2026-08-23
+
+#### **What changed**
+- Added `dashboard/app_utils.py` with `safe_directory_file_count(directory)` that returns `None` instead of raising when a directory cannot be listed.
+- Updated `dashboard/app.py` sidebar status rendering to use the helper and show `Unreadable` warnings for problematic existing directories.
+- Added focused regression tests in `tests/unit/test_dashboard_app_utils.py`.
+
+#### **Why**
+The dashboard sidebar used `len(os.listdir(directory))` without exception handling. If a `/data/*` path existed but was unreadable or transiently inaccessible, the exception bubbled up to `main()` and appeared as the recurring `app.py` line 123 crash.
+
+#### **Files modified**
+- `dashboard/app.py`
+- `dashboard/app_utils.py`
+- `tests/unit/test_dashboard_app_utils.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Dashboard Startup Bug Fix — set_page_config Order — 2026-08-23
 
 #### **What changed**

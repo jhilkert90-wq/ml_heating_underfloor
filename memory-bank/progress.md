@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Dashboard Crash Guard for Unreadable `/data/*` Paths (2026-08-23)
+
+**Status:** COMPLETED — prevented dashboard startup/runtime crash path in `dashboard/app.py` when existing directories cannot be listed.
+
+**Files changed:** `dashboard/app.py`, `dashboard/app_utils.py`, `tests/unit/test_dashboard_app_utils.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Added `safe_directory_file_count()` helper and replaced direct `os.listdir()` sidebar calls with guarded logic so unreadable directories show `Unreadable` warnings instead of raising an exception through `main()` (line 123 call site).
+
+---
+
 ## Dashboard Startup Bug Fix — set_page_config Order (2026-08-23)
 
 **Status:** COMPLETED — fixed `StreamlitAPIException` crash caused by `st.error()`/`st.stop()` being called before `st.set_page_config()` at module level.
