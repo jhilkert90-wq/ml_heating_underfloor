@@ -1,6 +1,31 @@
 # Active Context - Current Work & Decision State
 
-### Dashboard Settings `TypeError: unhashable type: 'dict'` Fix — 2026-08-23
+### Mode Profiles Dashboard Page — 2026-08-23
+
+#### **What changed**
+- `dashboard/settings_service.py`: added `PROFILE_KEYS` constant, `get_profile_defaults()` (reads raw yaml), `_get_all_config_option_keys()` (raw yaml key set for sanitize); updated `_sanitize_options`, `load_local_options`, `fetch_addon_options` to include profile dicts.
+- `dashboard/components/profiles.py` (new): `render_profiles()` with `st.tabs` for heating/cooling; per-field "Override" checkbox + widget; save via `update_addon_options`; fallback to local options on Supervisor API error.
+- `dashboard/app.py`: added "Profiles" to `option_menu` and import/dispatch.
+- `tests/unit/test_profiles_component.py` (new): 18 tests for service helpers and component.
+
+#### **Why**
+`heating_profile`/`cooling_profile` were always skipped by `config_schema._parse_schema` (intentional crash fix). As a result, the Settings page never showed them and `_sanitize_options` would silently drop them. The new Profiles page provides the missing UI.
+
+#### **Decisions**
+- Per-field "Override" checkbox is the cleanest representation of the nullable dict — absent key = fall back to top-level default.
+- Labels and bounds embedded in component (not translations yaml) since profiles are not general settings.
+- Profile save is immediate (no two-step review) to keep the UI simple.
+
+#### **Files modified**
+- `dashboard/settings_service.py`
+- `dashboard/components/profiles.py` (new)
+- `dashboard/app.py`
+- `tests/unit/test_profiles_component.py` (new)
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+
 
 #### **What changed**
 - `dashboard/config_schema.py` `_parse_schema`: added `isinstance` guard at top to return `{"widget_type": "__skip__"}` for non-string schema values.
