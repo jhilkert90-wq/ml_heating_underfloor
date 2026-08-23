@@ -40,6 +40,7 @@ try:
     from components.control import render_control
     from components.performance import render_performance
     from components.backup import render_backup
+    from components.profiles import render_profiles
     from components.settings import render_settings
 except ImportError:
     st.error("Dashboard components not available. Ensure all component files are present.")
@@ -64,8 +65,8 @@ def main():
         # Navigation menu
         selected = option_menu(
             menu_title=None,
-            options=["Overview", "Control", "Performance", "Backup", "Settings"],
-            icons=["speedometer2", "sliders", "bar-chart-line", "archive", "gear"],
+            options=["Overview", "Control", "Performance", "Backup", "Profiles", "Settings"],
+            icons=["speedometer2", "sliders", "bar-chart-line", "archive", "sliders2-vertical", "gear"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -110,6 +111,8 @@ def main():
         render_performance()
     elif selected == "Backup":
         render_backup()
+    elif selected == "Profiles":
+        render_profiles()
     elif selected == "Settings":
         render_settings()
     

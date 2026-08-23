@@ -1,6 +1,19 @@
 # ML Heating System - Current Progress
 
-## Dashboard Settings Crash Fix — Dict Schema Values (2026-08-23)
+## Mode Profiles Dashboard Page — 2026-08-23
+
+**Status:** COMPLETED — added full Profiles UI to dashboard with heating/cooling profile tabs and per-field override controls.
+
+**Files changed:**
+- `dashboard/settings_service.py` — added `get_profile_defaults()`, `_get_all_config_option_keys()`, `PROFILE_KEYS`; fixed `_sanitize_options`, `load_local_options`, `fetch_addon_options` to preserve profile dict keys.
+- `dashboard/components/profiles.py` — new component; `render_profiles()` with heating/cooling tabs, nullable per-field override UI.
+- `dashboard/app.py` — added "Profiles" nav entry and `render_profiles()` dispatch.
+- `tests/unit/test_profiles_component.py` — 18 new tests covering service helpers and component logic.
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** `heating_profile` and `cooling_profile` were completely invisible in the dashboard because `config_schema._parse_schema` skips nested dict schemas (the previous crash fix). A new "Profiles" page in the sidebar now renders all 14 profileable settings per mode. Each key is optional — an "Override" checkbox controls inclusion. `settings_service` was fixed so profile dicts survive `_sanitize_options` and `update_addon_options`.
+
+
 
 **Status:** COMPLETED — fixed persistent `TypeError: unhashable type: 'dict'` crash in `config_schema._parse_schema` that propagated to `app.py:127 main()`.
 
