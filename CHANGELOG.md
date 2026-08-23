@@ -7,9 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Dashboard startup crash**: Moved `st.set_page_config()` to module level in `dashboard/app.py` so it always runs before any other Streamlit command, preventing `StreamlitAPIException` when component imports fail (`st.error()`/`st.stop()` were being called before `set_page_config()`).
-
 ## [0.2.0] - 2026-02-10
 
 ### Added

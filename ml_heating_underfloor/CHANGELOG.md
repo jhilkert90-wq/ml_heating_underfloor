@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.76] - 2026-08-23
+
+### Fixed
+- **Dashboard startup crash**: Moved `st.set_page_config()` to module level in `dashboard/app.py` so it always runs before any other Streamlit command, preventing `StreamlitAPIException` when component imports fail (`st.error()`/`st.stop()` were being called before `set_page_config()`).
+
 ## [0.2.75] - 2026-08-23
 
 ### Added
