@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### Dashboard Settings `TypeError: unhashable type: 'dict'` Fix — 2026-08-23
+
+#### **What changed**
+- `dashboard/config_schema.py` `_parse_schema`: added `isinstance` guard at top to return `{"widget_type": "__skip__"}` for non-string schema values.
+- `load_settings_metadata`: skips fields where `schema_meta["widget_type"] == "__skip__"` (via `_WIDGET_TYPE_SKIP` constant).
+
+#### **Why**
+`config.yaml` schema for `heating_profile` and `cooling_profile` are dicts (nested sub-schemas). The existing code hit `raw_schema in {"str", "str?"}` which raises `TypeError: unhashable type: 'dict'` — this is the root cause of the recurring `app.py:127 main()` crash reported across 4 sessions.
+
+#### **Files modified**
+- `dashboard/config_schema.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Dashboard Directory Status Crash Guard — 2026-08-23
 
 #### **What changed**
