@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Mode Profiles Dashboard Page**: New "Profiles" section in the dashboard sidebar gives full visibility and editing of `heating_profile` and `cooling_profile` option blocks. Each of the 14 profileable settings (10 bool flags + 2 float + 2 int) can be individually enabled or suppressed via an "Override" checkbox — un-ticking a key removes it from the profile so the add-on falls back to the flat top-level value.
-
-### Fixed
-- `settings_service._sanitize_options` now uses all config.yaml option keys (including profile keys) as the allowed set, so `heating_profile` / `cooling_profile` dicts are correctly preserved when saving options via `update_addon_options`.
-- `load_local_options` and `fetch_addon_options` now seed profile defaults from `config.yaml` so profile values returned from the Supervisor API are merged correctly.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
