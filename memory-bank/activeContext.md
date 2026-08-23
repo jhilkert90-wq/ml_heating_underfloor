@@ -1,5 +1,18 @@
 # Active Context - Current Work & Decision State
 
+### Dashboard Startup Bug Fix — set_page_config Order — 2026-08-23
+
+#### **What changed**
+`st.set_page_config()` moved from inside `main()` to module level in `dashboard/app.py`, immediately after imports.
+
+#### **Why**
+Streamlit requires `set_page_config()` to be the very first Streamlit command. The existing `except ImportError` block called `st.error()` and `st.stop()` at module level before `main()` was ever invoked, triggering a `StreamlitAPIException` (reported as line 126 crash).
+
+#### **Files modified**
+- `dashboard/app.py`
+
+---
+
 ### PR #79 Review Fixes — Warm-Restart Safety + Profile Init Order — 2026-08-23
 
 #### **What changed**

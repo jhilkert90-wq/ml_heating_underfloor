@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Dashboard Startup Bug Fix — set_page_config Order (2026-08-23)
+
+**Status:** COMPLETED — fixed `StreamlitAPIException` crash caused by `st.error()`/`st.stop()` being called before `st.set_page_config()` at module level.
+
+**Files changed:** `dashboard/app.py`
+
+**Summary:** Moved `st.set_page_config()` from inside `main()` to module level (immediately after imports), ensuring it is always the first Streamlit command executed even when component imports raise `ImportError`.
+
+---
+
 ## PR #79 Review Fixes — Warm-Restart Safety + Mode Profile Init Order (2026-08-23)
 
 **Status:** COMPLETED — addressed all review feedback for warm-restart edge cases, mode profile startup timing, docs alignment, and test coverage
