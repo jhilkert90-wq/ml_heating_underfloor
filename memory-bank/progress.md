@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Dashboard Settings Crash Fix — Dict Schema Values (2026-08-23)
+
+**Status:** COMPLETED — fixed persistent `TypeError: unhashable type: 'dict'` crash in `config_schema._parse_schema` that propagated to `app.py:127 main()`.
+
+**Files changed:** `dashboard/config_schema.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** `config.yaml` schema contains two keys (`heating_profile`, `cooling_profile`) whose values are dicts (nested sub-schemas). `_parse_schema` assumed all schema values were strings and evaluated `raw_schema in {"str", "str?"}` which raises `TypeError` for unhashable dicts. Fix: added `isinstance(raw_schema, str)` guard at the top of `_parse_schema` returning `{"widget_type": "skip"}` for non-string schemas, and `load_settings_metadata` now skips those fields.
+
+---
+
 ## Dashboard Crash Guard for Unreadable `/data/*` Paths (2026-08-23)
 
 **Status:** COMPLETED — prevented dashboard startup/runtime crash path in `dashboard/app.py` when existing directories cannot be listed.

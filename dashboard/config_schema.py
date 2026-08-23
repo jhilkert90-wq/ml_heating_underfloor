@@ -125,6 +125,9 @@ class SettingsMetadata:
     groups: OrderedDict[str, GroupDefinition]
 
 
+_WIDGET_TYPE_SKIP = "__skip__"
+
+
 def _extract_option_groups() -> dict[str, str]:
     groups: dict[str, str] = {}
     current_group = "advanced"
@@ -150,7 +153,11 @@ def _extract_option_groups() -> dict[str, str]:
     return groups
 
 
-def _parse_schema(key: str, raw_schema: str) -> dict[str, Any]:
+def _parse_schema(key: str, raw_schema: Any) -> dict[str, Any]:
+    if not isinstance(raw_schema, str):
+        # Nested dict schemas (e.g. heating_profile, cooling_profile) are not
+        # rendered as individual widgets; skip them gracefully.
+        return {"widget_type": _WIDGET_TYPE_SKIP}
     if raw_schema == "bool":
         return {"widget_type": "bool"}
     if raw_schema in {"str", "str?"}:
@@ -199,6 +206,8 @@ def load_settings_metadata() -> SettingsMetadata:
 
     for key, default in options.items():
         schema_meta = _parse_schema(key, schema[key])
+        if schema_meta["widget_type"] == _WIDGET_TYPE_SKIP:
+            continue
         group_slug = option_groups.get(key, "advanced")
         group = GROUP_DEFINITIONS[group_slug]
         en_entry = en_config.get(key, {})
