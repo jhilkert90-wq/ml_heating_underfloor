@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.77] - 2026-08-23
+
+### Fixed
+- Dashboard sidebar directory status no longer crashes when a `/data/*` path exists but cannot be listed; unreadable paths now render as warnings.
+
 ## [0.2.76] - 2026-08-23
 
 ### Fixed
