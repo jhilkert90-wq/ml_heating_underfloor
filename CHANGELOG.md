@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Review-thread follow-ups**: `check_and_resolve_climate_mode()` now derives `heating_active` from the raw climate mode to avoid redundant Home Assistant reads and only invokes the HA state-check side effect in the explicit `off` case; the warm-restart sentinel is also cleared when a fresh wrapper starts in the same mode as a stale sentinel left from a prior restart.
+- **Warm restart on climate mode change**: `check_and_resolve_climate_mode()` now detects every genuine mode transition (heat↔idle, cool↔idle, heat↔cool) using an in-memory previous-raw-mode comparison instead of relying on the newly-selected state manager's own persisted `last_climate_mode` (which self-matched the current mode and silently defeated the restart after the first transition) and instead of only checking transitions that swapped the heating/cooling state-manager object (which structurally skipped idle transitions).
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
