@@ -604,22 +604,41 @@ def check_and_resolve_climate_mode(
     _prev_raw_mode = wrapper.last_raw_climate_mode
     wrapper.last_raw_climate_mode = raw_climate_mode
 
-    if _prev_raw_mode is not None and _prev_raw_mode != raw_climate_mode:
-        _sentinel = "/data/config/warm_restart_mode_sentinel"
-        _sentinel_content: str | None = None
-        _sentinel_read_error = False
-        try:
-            if os.path.exists(_sentinel):
-                with open(_sentinel, encoding="utf-8") as _sf:
-                    _sentinel_content = _sf.read().strip()
-        except OSError as _se:
-            logging.warning(
-                "⚠️ Warm-restart sentinel read error %s: %s — skipping restart this cycle",
-                _sentinel,
-                _se,
-            )
-            _sentinel_read_error = True
+    _sentinel = "/data/config/warm_restart_mode_sentinel"
+    _sentinel_content: str | None = None
+    _sentinel_read_error = False
+    try:
+        if os.path.exists(_sentinel):
+            with open(_sentinel, encoding="utf-8") as _sf:
+                _sentinel_content = _sf.read().strip()
+    except OSError as _se:
+        logging.warning(
+            "⚠️ Warm-restart sentinel read error %s: %s — skipping restart this cycle",
+            _sentinel,
+            _se,
+        )
+        _sentinel_read_error = True
 
+    if (
+        not _sentinel_read_error
+        and _sentinel_content == raw_climate_mode
+        and (_prev_raw_mode is None or _prev_raw_mode == raw_climate_mode)
+    ):
+        # The sentinel is stale as soon as the process is already in the same
+        # raw mode again (including the first cycle after a warm restart, when
+        # the wrapper is rebuilt with last_raw_climate_mode=None). Clear it so
+        # a later genuine transition is not falsely suppressed.
+        try:
+            os.remove(_sentinel)
+        except OSError:
+            pass
+        logging.debug(
+            "🔄 Warm-restart sentinel cleared for mode '%s'",
+            raw_climate_mode,
+        )
+        _sentinel_content = None
+
+    if _prev_raw_mode is not None and _prev_raw_mode != raw_climate_mode:
         if not _sentinel_read_error:
             if _sentinel_content == raw_climate_mode:
                 # We already warm-restarted for this transition — clear the
@@ -655,9 +674,10 @@ def check_and_resolve_climate_mode(
                     )
                     sys.exit(0)
 
-    heating_active = heating_checker.check_heating_active(ha_client, all_states)
-
+    heating_active = raw_climate_mode != "off"
     if not heating_active:
+        # Preserve the side effects in the HA state checker for the off case.
+        heating_checker.check_heating_active(ha_client, all_states)
         # For IDLE state, use heating state manager
         # (per requirement: idle saves in heating unified thermal state)
         wrapper.set_climate_mode("heating")

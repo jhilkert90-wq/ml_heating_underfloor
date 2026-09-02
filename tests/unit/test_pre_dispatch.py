@@ -269,6 +269,33 @@ class TestCheckAndResolveClimateMode:
         mock_remove.assert_called_once_with("/data/config/warm_restart_mode_sentinel")
         mock_exit.assert_not_called()
 
+    @patch("src.pre_dispatch.os.remove")
+    @patch("src.pre_dispatch.os.path.exists", return_value=True)
+    @patch("src.pre_dispatch.HeatingSystemStateChecker")
+    @patch("src.pre_dispatch.load_state")
+    def test_warm_restart_clears_stale_sentinel_on_startup(
+        self, mock_load, mock_checker_cls, mock_exists, mock_remove
+    ):
+        mock_checker = MagicMock()
+        mock_checker.check_heating_active.return_value = False
+        mock_checker.get_climate_mode.return_value = "off"
+        mock_checker_cls.return_value = mock_checker
+        mock_load.return_value = {}
+
+        wrapper = MagicMock()
+        wrapper.state_manager = MagicMock()
+        wrapper.last_raw_climate_mode = None
+
+        with patch("builtins.open") as mock_open, patch(
+            "src.pre_dispatch.sys.exit"
+        ) as mock_exit:
+            mock_open.return_value.__enter__.return_value.read.return_value = "off"
+            check_and_resolve_climate_mode(MagicMock(), {}, wrapper)
+
+        mock_remove.assert_called_once_with("/data/config/warm_restart_mode_sentinel")
+        mock_exit.assert_not_called()
+        assert wrapper.last_raw_climate_mode == "off"
+
     @patch("src.pre_dispatch.os.path.exists", return_value=False)
     @patch("src.pre_dispatch.HeatingSystemStateChecker")
     @patch("src.pre_dispatch.load_state")

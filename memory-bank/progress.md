@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Review-Thread Fixes — 2026-09-02
+
+**Status:** COMPLETED — addressed the remaining PR review feedback for `_prev_raw_mode` sentinel cleanup and redundant HA reads in `check_and_resolve_climate_mode()`.
+
+**Files changed:** `src/pre_dispatch.py`, `tests/unit/test_pre_dispatch.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** The warm-restart logic now clears a stale sentinel on startup when the wrapper is recreated in the same mode as a prior restart, and the code derives `heating_active` directly from `raw_climate_mode` while preserving the side-effecting `check_heating_active()` call only for the explicit `off` case. Added regression coverage to guard both conditions.
+
+---
+
 ## Warm-Restart-on-Mode-Change Bug Fix — 2026-09-02
 
 **Status:** COMPLETED — fixed bug preventing warm restart when climate mode changes (heat→idle, cool→idle, heat↔cool, etc.).

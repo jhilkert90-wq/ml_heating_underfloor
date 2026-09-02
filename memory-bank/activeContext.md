@@ -1,5 +1,24 @@
 # Active Context - Current Work & Decision State
 
+### Review-Thread Fixes — 2026-09-02
+
+#### **What changed**
+- `src/pre_dispatch.py`: `check_and_resolve_climate_mode()` now derives `heating_active` directly from the raw climate mode (`raw_climate_mode != "off"`) and only calls `check_heating_active()` for the explicit OFF case to preserve its HA side effects, preventing duplicate state reads each cycle.
+- `src/pre_dispatch.py`: warm-restart sentinel cleanup now clears stale matches when the wrapper is rebuilt after a warm restart and the current mode already matches the sentinel, so a future genuine transition into the same mode is not incorrectly suppressed.
+- `tests/unit/test_pre_dispatch.py`: added regression coverage for stale-sentinel cleanup after startup and preserved the existing transition/sentinel validation matrix.
+
+#### **Why**
+- Review feedback called out two correctness issues in the previous warm-restart patch: an unnecessary second Home Assistant read of `HEATING_STATUS_ENTITY_ID`, and a stale sentinel left behind after a warm restart that could mask a later real transition into the same mode.
+
+#### **Files modified**
+- `src/pre_dispatch.py`
+- `tests/unit/test_pre_dispatch.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Warm-Restart-on-Mode-Change Bug Fix — 2026-09-02
 
 #### **What changed**
