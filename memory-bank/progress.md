@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Warm-Restart-on-Mode-Change Bug Fix — 2026-09-02
+
+**Status:** COMPLETED — fixed bug preventing warm restart when climate mode changes (heat→idle, cool→idle, heat↔cool, etc.).
+
+**Files changed:** `src/pre_dispatch.py`, `src/model_wrapper.py`, `tests/unit/test_pre_dispatch.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** `check_and_resolve_climate_mode()` previously only checked for a mode transition/restart *inside* the `heating_active` branch, so idle ("off") transitions never reached the restart logic at all (the idle branch returned early). It also derived the "previous mode" by reading `last_climate_mode` back out of the *newly selected* state manager's own persisted file — which, after the first transition, already contained the current mode and thus self-matched, silently defeating detection on every subsequent heat↔cool transition. Fixed by computing the raw 3-state mode (`heating`/`cooling`/`off`) once up front via `HeatingSystemStateChecker.get_climate_mode()`, comparing it unconditionally (before the idle/active branch split) against a new in-memory `wrapper.last_raw_climate_mode` attribute (initialized to `None` to avoid a spurious restart on cold start), and driving the existing sentinel-file (`/data/config/warm_restart_mode_sentinel`) + `sys.exit(0)` restart mechanism from that comparison. Storage-bucket behavior (idle uses the heating state manager) is unchanged.
+
+---
+
 ## Mode Profiles Dashboard Page — 2026-08-23
 
 **Status:** COMPLETED — added full Profiles UI to dashboard with heating/cooling profile tabs and per-field override controls.

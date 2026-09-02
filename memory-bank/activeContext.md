@@ -1,5 +1,30 @@
 # Active Context - Current Work & Decision State
 
+### Warm-Restart-on-Mode-Change Bug Fix — 2026-09-02
+
+#### **What changed**
+- `src/pre_dispatch.py`: `check_and_resolve_climate_mode()` now computes the raw 3-state climate mode (`heating`/`cooling`/`off`) once, up front, via `HeatingSystemStateChecker.get_climate_mode()`, and compares it unconditionally — before the `heating_active` branch decides idle vs. active dispatch — against a remembered previous raw mode. Genuine transitions (including into/out of idle) write the warm-restart sentinel and `sys.exit(0)`, same mechanism as before.
+- `src/model_wrapper.py`: added `self.last_raw_climate_mode: str | None = None` to `EnhancedModelWrapper.__init__`, an in-memory (not file-persisted) tracker of the last raw mode observed by `check_and_resolve_climate_mode()`.
+- `tests/unit/test_pre_dispatch.py`: reworked `TestCheckAndResolveClimateMode` to drive detection via `wrapper.last_raw_climate_mode` instead of a `load_state`-returned `last_climate_mode`; added parametrized coverage for all six transition kinds (heat↔idle, cool↔idle, heat↔cool) plus no-restart-on-repeat and no-restart-on-cold-start cases.
+
+#### **Why**
+Two bugs prevented the warm restart from firing for real mode changes: (1) the idle ("off") branch returned early, before the mode-transition/restart-check block, so heat→idle/cool→idle/idle→heat/idle→cool transitions never triggered a restart; (2) the "previous mode" was read from the *newly selected* state manager's own persisted `last_climate_mode` field, which after the first transition already held the current mode and thus self-matched, silently defeating detection on essentially every real heat↔cool transition thereafter.
+
+#### **Decisions**
+- Previous-mode tracking moved to an in-memory attribute on the model wrapper (reset to `None` on process start) rather than any file, so it can't self-match a persisted value and correctly treats the first cycle after a cold start as "no known previous mode" (no spurious restart).
+- Storage-bucket behavior (idle uses the heating state manager/file) is unchanged — only the *detection* of a transition was decoupled from *which storage bucket* is active.
+- The sentinel-file (`/data/config/warm_restart_mode_sentinel`) loop-guard mechanism is unchanged; only the signal driving it was corrected.
+
+#### **Files modified**
+- `src/pre_dispatch.py`
+- `src/model_wrapper.py`
+- `tests/unit/test_pre_dispatch.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+
+
 ### Mode Profiles Dashboard Page — 2026-08-23
 
 #### **What changed**

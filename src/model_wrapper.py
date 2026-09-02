@@ -75,6 +75,13 @@ class EnhancedModelWrapper:
         # Set each cycle by main.py via set_climate_mode().
         self._climate_mode = "heating"
 
+        # Raw 3-state climate mode ("heating"/"cooling"/"off") last observed
+        # by check_and_resolve_climate_mode(), used to detect genuine mode
+        # transitions (including idle) for the warm-restart mechanism.
+        # None until the first cycle has run (avoids a spurious restart on
+        # cold start).
+        self.last_raw_climate_mode: str | None = None
+
         # Cooling cycle gate: prevents HP short-cycling by tracking
         # whether the HP is in RUNNING or RECOVERY state.
         # "running"  — HP is actively cooling (or allowed to start)

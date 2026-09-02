@@ -577,37 +577,34 @@ def check_and_resolve_climate_mode(
         (heating_active, climate_mode, active_state_manager, state_or_None)
         If state_or_None is not None, it means the state file changed and
         state was reloaded.
+
+    Warm restart on genuine mode change:
+        The raw 3-state mode ("heating"/"cooling"/"off") is computed once,
+        up front, and compared against the raw mode last observed by this
+        running process (`wrapper.last_raw_climate_mode`, kept in memory —
+        *not* re-derived from a state file, since the newly-selected state
+        manager's own persisted file will already contain the current mode
+        after the first transition and would self-match, defeating
+        detection). This comparison runs unconditionally, before the
+        heating_active branch below decides how to route state/dispatch, so
+        every genuine transition — including into/out of idle ("off") — is
+        caught, not just transitions that happen to swap the heating/cooling
+        state-manager object.
+
+        On a genuine transition, `sys.exit(0)` is triggered so supervisord
+        restarts the process with a fresh module environment and the correct
+        mode profile applied at startup. A sentinel file prevents an
+        infinite restart loop: if the sentinel already records the target
+        mode, we already restarted for this transition and should proceed
+        normally.
     """
     heating_checker = HeatingSystemStateChecker()
-    heating_active = heating_checker.check_heating_active(ha_client, all_states)
+    raw_climate_mode = heating_checker.get_climate_mode(ha_client, all_states)
 
-    if not heating_active:
-        # For IDLE state, use heating state manager
-        # (per requirement: idle saves in heating unified thermal state)
-        wrapper.set_climate_mode("heating")
-        return False, "heating", wrapper.state_manager, None
+    _prev_raw_mode = wrapper.last_raw_climate_mode
+    wrapper.last_raw_climate_mode = raw_climate_mode
 
-    climate_mode = heating_checker.get_climate_mode(ha_client, all_states)
-    _prev_state_manager = wrapper.state_manager
-    wrapper.set_climate_mode(climate_mode)
-    _active_state_manager = wrapper.state_manager
-
-    # Reload state if state file changed (mode transition)
-    reloaded_state = None
-    if _active_state_manager is not _prev_state_manager:
-        reloaded_state = load_state(state_manager=_active_state_manager)
-        logging.info(
-            "♻️ Climate mode transition → reloaded operational state from %s",
-            _active_state_manager.state_file,
-        )
-
-        # --- Warm restart on genuine mode change ---
-        # Trigger sys.exit(0) so supervisord restarts the process with a fresh
-        # module environment and the correct mode profile applied at startup.
-        # A sentinel file prevents an infinite restart loop: if the sentinel
-        # already records the target mode, we already restarted for this
-        # transition and should proceed normally.
-        _prev_mode = (reloaded_state or {}).get("last_climate_mode")
+    if _prev_raw_mode is not None and _prev_raw_mode != raw_climate_mode:
         _sentinel = "/data/config/warm_restart_mode_sentinel"
         _sentinel_content: str | None = None
         _sentinel_read_error = False
@@ -624,7 +621,7 @@ def check_and_resolve_climate_mode(
             _sentinel_read_error = True
 
         if not _sentinel_read_error:
-            if _sentinel_content == climate_mode:
+            if _sentinel_content == raw_climate_mode:
                 # We already warm-restarted for this transition — clear the
                 # sentinel so the next cycle proceeds without triggering again.
                 try:
@@ -632,16 +629,17 @@ def check_and_resolve_climate_mode(
                 except OSError:
                     pass
                 logging.debug(
-                    "🔄 Warm-restart sentinel cleared for mode '%s'", climate_mode
+                    "🔄 Warm-restart sentinel cleared for mode '%s'",
+                    raw_climate_mode,
                 )
-            elif _prev_mode and _prev_mode != climate_mode:
+            else:
                 # Genuine transition: write sentinel then exit so supervisord
                 # restarts the process in the new mode.
                 _sentinel_written = False
                 try:
                     os.makedirs(os.path.dirname(_sentinel), exist_ok=True)
                     with open(_sentinel, "w", encoding="utf-8") as _sf:
-                        _sf.write(climate_mode)
+                        _sf.write(raw_climate_mode)
                     _sentinel_written = True
                 except OSError as _we:
                     logging.warning(
@@ -652,10 +650,32 @@ def check_and_resolve_climate_mode(
                 if _sentinel_written:
                     logging.info(
                         "🔄 Climate mode changed %s → %s — warm restart to apply new profile settings",
-                        _prev_mode,
-                        climate_mode,
+                        _prev_raw_mode,
+                        raw_climate_mode,
                     )
                     sys.exit(0)
+
+    heating_active = heating_checker.check_heating_active(ha_client, all_states)
+
+    if not heating_active:
+        # For IDLE state, use heating state manager
+        # (per requirement: idle saves in heating unified thermal state)
+        wrapper.set_climate_mode("heating")
+        return False, "heating", wrapper.state_manager, None
+
+    climate_mode = raw_climate_mode
+    _prev_state_manager = wrapper.state_manager
+    wrapper.set_climate_mode(climate_mode)
+    _active_state_manager = wrapper.state_manager
+
+    # Reload state if state file changed (mode transition)
+    reloaded_state = None
+    if _active_state_manager is not _prev_state_manager:
+        reloaded_state = load_state(state_manager=_active_state_manager)
+        logging.info(
+            "♻️ Climate mode transition → reloaded operational state from %s",
+            _active_state_manager.state_file,
+        )
 
     if climate_mode == "cooling":
         logging.info(
