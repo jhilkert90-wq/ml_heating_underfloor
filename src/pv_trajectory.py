@@ -66,6 +66,7 @@ class ForecastTrajectoryState:
 def get_forecast_trajectory_state(
     pv_power_w: float,
     pv_forecast: list[float] | None,
+    respect_mode_flag: bool = True,
 ) -> ForecastTrajectoryState:
     """Return the resolved forecast-driven trajectory state."""
     static_steps = int(getattr(config, "TRAJECTORY_STEPS", 4))
@@ -74,7 +75,11 @@ def get_forecast_trajectory_state(
     if max_steps < min_steps:
         max_steps = min_steps
 
-    if not getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False):
+    if respect_mode_flag and not getattr(
+        config,
+        "PV_TRAJ_FORECAST_MODE_ENABLED",
+        False,
+    ):
         return ForecastTrajectoryState(
             mode_enabled=False,
             active=False,
@@ -161,7 +166,7 @@ def is_forecast_trajectory_active(
     If ``pv_power_w >= PV_TRAJ_THRESHOLD_W`` the check passes unconditionally.
     If ``pv_power_w < PV_TRAJ_THRESHOLD_W`` (e.g. passing rain cloud) the check
     still passes when ``PV_TRAJ_FORECAST_RESCUE_ENABLED=true`` and at least
-    ``PV_TRAJ_MIN_STEPS`` forecast hours exceed ``PV_TRAJ_THRESHOLD_W``.
+    ``PV_TRAJ_RESCUE_MIN_HOURS`` forecast hours exceed ``PV_TRAJ_THRESHOLD_W``.
 
     Night mode (``pv_power_w < PV_TRAJ_ZERO_W``) is *not* considered activated
     because step count is already at the minimum.
@@ -196,7 +201,7 @@ def compute_forecast_driven_trajectory_steps(
     * ``pv_power_w < PV_TRAJ_THRESHOLD_W`` (insufficient current PV):
 
       - If ``PV_TRAJ_FORECAST_RESCUE_ENABLED=true`` (default) **and** at least
-        ``PV_TRAJ_MIN_STEPS`` forecast hours exceed ``PV_TRAJ_THRESHOLD_W``,
+        ``PV_TRAJ_RESCUE_MIN_HOURS`` forecast hours exceed ``PV_TRAJ_THRESHOLD_W``,
         normal step counting continues (passing rain cloud is ignored).
       - Otherwise → ``PV_TRAJ_MIN_STEPS``
 
@@ -209,7 +214,11 @@ def compute_forecast_driven_trajectory_steps(
     Returns:
         Integer step count in ``[PV_TRAJ_MIN_STEPS, PV_TRAJ_MAX_STEPS]``.
     """
-    state = get_forecast_trajectory_state(pv_power_w, pv_forecast)
+    state = get_forecast_trajectory_state(
+        pv_power_w,
+        pv_forecast,
+        respect_mode_flag=False,
+    )
     min_steps = state.min_steps
     max_steps = state.max_steps
     zero_w = float(getattr(config, "PV_TRAJ_ZERO_W", 50.0))

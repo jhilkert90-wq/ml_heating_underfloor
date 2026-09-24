@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## PR #85 Review Thread Fixes — 2026-09-24
+
+**Status:** COMPLETED — addressed all open comments from review `pullrequestreview-5306495321` in `src/pv_trajectory.py`.
+
+**Files changed:** `src/pv_trajectory.py`, `tests/unit/test_pv_trajectory.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Restored direct forecast-helper behavior so `compute_forecast_driven_trajectory_steps()` computes forecast-driven values even when `PV_TRAJ_FORECAST_MODE_ENABLED` is disabled (while `compute_dynamic_trajectory_steps()` remains flag-gated). Updated both rescue-threshold docstrings to reference `PV_TRAJ_RESCUE_MIN_HOURS` and added a focused regression test for the direct-helper path.
+
+---
+
 ## Forecast-Trajectory Heating Offset Alignment — 2026-09-24
 
 **Status:** COMPLETED — added a dedicated forecast-trajectory heating target offset, applied it to rescue-driven activation too, and made it replace the standard PV surplus heating offset while forecast mode is active.

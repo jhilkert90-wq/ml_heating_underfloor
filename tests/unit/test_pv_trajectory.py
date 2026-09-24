@@ -161,6 +161,22 @@ class TestForecastDrivenTrajectorySteps:
             steps = compute_dynamic_trajectory_steps(5000.0, pv_forecast=fc)
         assert steps == 5  # 3 + MIN_STEPS(2) = 5
 
+    def test_forecast_helper_ignores_mode_flag(self):
+        """Direct forecast helper still computes forecast-driven steps when mode is off."""
+        with _apply_patches(
+            _fc_patches(
+                {
+                    "PV_TRAJ_FORECAST_MODE_ENABLED": False,
+                    "TRAJECTORY_STEPS": 4,
+                }
+            )
+        ):
+            steps = compute_forecast_driven_trajectory_steps(
+                5000.0,
+                self._FC_9_THEN_NIGHT,
+            )
+        assert steps == 11
+
     def test_is_forecast_trajectory_active_true(self):
         """is_forecast_trajectory_active returns True when conditions met."""
         fc = self._FC_9_THEN_NIGHT

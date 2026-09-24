@@ -1,5 +1,24 @@
 # Active Context - Current Work & Decision State
 
+### PR #85 Review Thread Fixes — 2026-09-24
+
+#### **What changed**
+- `src/pv_trajectory.py`: added `respect_mode_flag` to `get_forecast_trajectory_state()` and set `compute_forecast_driven_trajectory_steps()` to call it with `respect_mode_flag=False`, preserving direct forecast-helper behavior independent of the global mode flag.
+- `src/pv_trajectory.py`: updated docstrings in `is_forecast_trajectory_active()` and `compute_forecast_driven_trajectory_steps()` so rescue activation references `PV_TRAJ_RESCUE_MIN_HOURS` (not `PV_TRAJ_MIN_STEPS`).
+- `tests/unit/test_pv_trajectory.py`: added regression coverage proving direct calls to `compute_forecast_driven_trajectory_steps()` still compute forecast-driven values when `PV_TRAJ_FORECAST_MODE_ENABLED` is disabled.
+
+#### **Why**
+- Review `pullrequestreview-5306495321` identified a behavior regression: centralizing state resolution unintentionally made direct callers of the forecast helper return static `TRAJECTORY_STEPS` when the mode flag was off. The same review also identified stale rescue-threshold docs.
+
+#### **Files modified**
+- `src/pv_trajectory.py`
+- `tests/unit/test_pv_trajectory.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Forecast-Trajectory Heating Offset Alignment — 2026-09-24
 
 #### **What changed**

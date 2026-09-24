@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Forecast-trajectory price suppression, target-offset activation, and overshoot-correction skip logic now share the same resolved forecast-trajectory state instead of separate proxy checks.
+- `compute_forecast_driven_trajectory_steps()` now preserves its forecast-specific behavior when `PV_TRAJ_FORECAST_MODE_ENABLED` is false, and forecast-rescue docstrings now correctly reference `PV_TRAJ_RESCUE_MIN_HOURS`.
 
 ## [0.2.0] - 2026-02-10
 
