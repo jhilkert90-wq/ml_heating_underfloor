@@ -294,7 +294,7 @@ PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE: bool = (
 # When true (default), a temporary drop of pv_now below PV_TRAJ_THRESHOLD_W
 # (e.g. passing rain cloud) does not immediately collapse the trajectory to
 # PV_TRAJ_MIN_STEPS.  Instead, the forecast is consulted: if at least
-# PV_TRAJ_MIN_STEPS forecast hours remain above PV_TRAJ_THRESHOLD_W the
+# PV_TRAJ_RESCUE_MIN_HOURS forecast hours remain above PV_TRAJ_THRESHOLD_W the
 # algorithm continues with normal step counting.  Set to false to require
 # current PV above the threshold at all times.
 PV_TRAJ_FORECAST_RESCUE_ENABLED: bool = (
@@ -306,6 +306,12 @@ PV_TRAJ_FORECAST_RESCUE_ENABLED: bool = (
 # single future hour above threshold keeps the trajectory active.
 PV_TRAJ_RESCUE_MIN_HOURS: int = int(
     os.getenv("PV_TRAJ_RESCUE_MIN_HOURS", "1")
+)
+# Heating-only target-temperature offset [°C] applied while forecast-driven
+# trajectory mode is active, including rescue-driven activation. This replaces
+# the standard PV surplus cheap offset while forecast mode is active in heating.
+PV_TRAJ_HEATING_TARGET_OFFSET: float = float(
+    os.getenv("PV_TRAJ_HEATING_TARGET_OFFSET", "0.2")
 )
 # When true, skip the overshoot/undershoot outlet-temperature correction only
 # while forecast mode is active AND dynamic trajectory steps are above the

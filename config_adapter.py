@@ -583,6 +583,9 @@ def convert_addon_to_env(config):
         'PV_TRAJ_RESCUE_MIN_HOURS': str(
             config.get('pv_traj_rescue_min_hours', 1)
         ),
+        'PV_TRAJ_HEATING_TARGET_OFFSET': str(
+            config.get('pv_traj_heating_target_offset', 0.2)
+        ),
         'PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION': str(
             config.get('pv_traj_disable_overshoot_correction', False)
         ).lower(),

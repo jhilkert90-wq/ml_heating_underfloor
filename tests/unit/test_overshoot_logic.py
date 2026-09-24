@@ -172,6 +172,15 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
         self.wrapper.thermal_model = MagicMock()
         config.CYCLE_INTERVAL_MINUTES = 30
         config.TRAJECTORY_STEPS = 4
+        config.PV_TRAJ_MIN_STEPS = 2
+        config.PV_TRAJ_THRESHOLD_W = 3000.0
+        config.PV_TRAJ_ZERO_W = 50.0
+        config.PV_TRAJ_MAX_STEPS = 12
+        self.wrapper._current_features = {
+            "pv_now_electrical": 4000.0,
+            "pv_forecast_electrical_1h": 4000.0,
+            "pv_forecast_electrical_2h": 0.0,
+        }
         self.wrapper._get_forecast_conditions = MagicMock(
             return_value=(8.6, 0, [], [])
         )
@@ -231,6 +240,53 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
             config.PV_TRAJ_FORECAST_MODE_ENABLED = False
         self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
 
+    def test_flag_true_but_inactive_forecast_state_does_not_skip(self):
+        """Skip requires the shared forecast state to be active, not just the flag."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        config.PV_TRAJ_FORECAST_RESCUE_ENABLED = False
+        self.wrapper._current_features["pv_now_electrical"] = 800.0
+        mock_traj = {
+            "trajectory": [22.0, 22.1, 22.2, 22.3],
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = mock_traj
+        try:
+            self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+            config.PV_TRAJ_FORECAST_RESCUE_ENABLED = True
+            self.wrapper._current_features["pv_now_electrical"] = 4000.0
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
+
+    def test_flag_true_and_rescue_active_still_skips(self):
+        """Rescue-active forecast state still counts as active for skip logic."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        config.PV_TRAJ_FORECAST_RESCUE_ENABLED = True
+        config.PV_TRAJ_RESCUE_MIN_HOURS = 1
+        self.wrapper._current_features["pv_now_electrical"] = 800.0
+        self.wrapper._current_features["pv_forecast_electrical_1h"] = 4000.0
+        mock_traj = {
+            "trajectory": [22.0, 22.1, 22.2, 22.3],
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = mock_traj
+        try:
+            result = self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+            config.PV_TRAJ_FORECAST_RESCUE_ENABLED = True
+            config.PV_TRAJ_RESCUE_MIN_HOURS = 1
+            self.wrapper._current_features["pv_now_electrical"] = 4000.0
+        self.assertEqual(result, 35.0)
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_not_called()
+        self.wrapper._calculate_physics_based_correction.assert_not_called()
+
     def test_default_flag_value_is_false(self):
         """Default value of PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION is False."""
         import importlib
@@ -267,6 +323,7 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
         config.PV_TRAJ_FORECAST_MODE_ENABLED = True
         config.PV_TRAJ_MIN_STEPS = 2
         config.TRAJECTORY_STEPS = 2
+        self.wrapper._current_features["pv_forecast_electrical_1h"] = 0.0
         mock_traj = {
             "trajectory": [21.0, 21.1],
             "times": [0.5, 1.0],
@@ -280,6 +337,7 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
             config.PV_TRAJ_FORECAST_MODE_ENABLED = False
             config.PV_TRAJ_MIN_STEPS = 2
             config.TRAJECTORY_STEPS = 4
+            self.wrapper._current_features["pv_forecast_electrical_1h"] = 4000.0
         self.assertEqual(
             result,
             self.wrapper._calculate_physics_based_correction.return_value

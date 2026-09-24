@@ -6,6 +6,7 @@ from src import config
 from src.pv_trajectory import (
     compute_dynamic_trajectory_steps,
     compute_forecast_driven_trajectory_steps,
+    get_forecast_trajectory_state,
     is_forecast_trajectory_active,
 )
 
@@ -160,12 +161,39 @@ class TestForecastDrivenTrajectorySteps:
             steps = compute_dynamic_trajectory_steps(5000.0, pv_forecast=fc)
         assert steps == 5  # 3 + MIN_STEPS(2) = 5
 
+    def test_forecast_helper_ignores_mode_flag(self):
+        """Direct forecast helper still computes forecast-driven steps when mode is off."""
+        with _apply_patches(
+            _fc_patches(
+                {
+                    "PV_TRAJ_FORECAST_MODE_ENABLED": False,
+                    "TRAJECTORY_STEPS": 4,
+                }
+            )
+        ):
+            steps = compute_forecast_driven_trajectory_steps(
+                5000.0,
+                self._FC_9_THEN_NIGHT,
+            )
+        assert steps == 11
+
     def test_is_forecast_trajectory_active_true(self):
         """is_forecast_trajectory_active returns True when conditions met."""
         fc = self._FC_9_THEN_NIGHT
         with _apply_patches(_fc_patches()):
             result = is_forecast_trajectory_active(5000.0, fc)
         assert result is True
+
+    def test_get_forecast_trajectory_state_marks_threshold_active(self):
+        """Shared state exposes active/threshold/steps for direct-PV activation."""
+        fc = self._FC_9_THEN_NIGHT
+        with _apply_patches(_fc_patches()):
+            state = get_forecast_trajectory_state(5000.0, fc)
+        assert state.active is True
+        assert state.current_pv_above_threshold is True
+        assert state.rescue_active is False
+        assert state.dynamic_steps == 11
+        assert state.dynamic_steps_above_min is True
 
     def test_is_forecast_trajectory_active_pv_below_threshold(self):
         """is_forecast_trajectory_active returns False when PV below threshold and rescue disabled."""
@@ -258,6 +286,15 @@ class TestForecastRescue:
         with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
             result = is_forecast_trajectory_active(800.0, self._FC_RAIN_THEN_SUN)
         assert result is True
+
+    def test_get_forecast_trajectory_state_marks_rescue_active(self):
+        """Shared state distinguishes rescue activation from threshold activation."""
+        with _apply_patches(_fc_patches({"PV_TRAJ_FORECAST_RESCUE_ENABLED": True})):
+            state = get_forecast_trajectory_state(800.0, self._FC_RAIN_THEN_SUN)
+        assert state.active is True
+        assert state.current_pv_above_threshold is False
+        assert state.rescue_active is True
+        assert state.dynamic_steps == 11
 
     def test_is_forecast_trajectory_active_rescue_disabled(self):
         """is_forecast_trajectory_active returns False when rescue disabled and PV below threshold."""

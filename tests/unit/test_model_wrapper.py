@@ -2,7 +2,7 @@
 import pytest
 import pandas as pd
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 # Ensure the app's config is loaded before other imports
 from src import config, model_wrapper, unified_thermal_state
@@ -1016,6 +1016,127 @@ class TestPvSurplusCheapRamp:
         assert meta.get("price_target_offset", 0.0) == pytest.approx(0.0,
                                                                       abs=0.001)
         assert meta.get("target_temp_adjusted") == pytest.approx(20.0, abs=0.001)
+
+
+# ---------------------------------------------------------------------------
+# Forecast-trajectory heating target offset
+# ---------------------------------------------------------------------------
+
+class TestForecastTrajectoryHeatingOffset:
+    @pytest.fixture
+    def wrapper(self, clean_state):
+        w = get_enhanced_model_wrapper()
+        w._calculate_required_outlet_temp = MagicMock(return_value=30.0)
+        w.predict_indoor_temp = MagicMock(return_value=20.5)
+        return w
+
+    def _features(self, pv_now_elec, target=20.0):
+        features = {
+            "indoor_temp_lag_30m": 20.0,
+            "target_temp": target,
+            "outdoor_temp": 10.0,
+            "pv_now_electrical": float(pv_now_elec),
+            "pv_now": 0.0,
+            "pv_power_history": [0.0] * 5,
+            "pv_forecast_electrical_1h": 2000.0,
+            "pv_forecast_electrical_2h": 0.0,
+            "pv_forecast_electrical_3h": 0.0,
+            "pv_forecast_electrical_4h": 0.0,
+        }
+        return features
+
+    def test_applies_heating_offset_when_forecast_mode_active_above_threshold(
+        self, wrapper, monkeypatch
+    ):
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_THRESHOLD_W", 1000.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MIN_STEPS", 2, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MAX_STEPS", 4, raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False, raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", False, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.5, raising=False)
+
+        _, meta = wrapper.calculate_optimal_outlet_temp(self._features(1500.0))
+
+        wrapper._calculate_required_outlet_temp.assert_called_once_with(
+            20.0,
+            20.5,
+            10.0,
+            ANY,
+        )
+        assert meta["target_temp_adjusted"] == pytest.approx(20.5)
+        assert meta["forecast_trajectory_active"] is True
+        assert meta["forecast_trajectory_target_offset"] == pytest.approx(0.5)
+
+    def test_rescue_active_below_threshold_applies_heating_offset(
+        self, wrapper, monkeypatch
+    ):
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_RESCUE_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_RESCUE_MIN_HOURS", 1, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_THRESHOLD_W", 1000.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MIN_STEPS", 2, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MAX_STEPS", 4, raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False, raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", False, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.5, raising=False)
+
+        features = self._features(800.0)
+        features["pv_forecast_electrical_1h"] = 2000.0
+        _, meta = wrapper.calculate_optimal_outlet_temp(features)
+
+        wrapper._calculate_required_outlet_temp.assert_called_once_with(
+            20.0,
+            20.5,
+            10.0,
+            ANY,
+        )
+        assert meta["target_temp_adjusted"] == pytest.approx(20.5)
+        assert meta["forecast_trajectory_target_offset"] == pytest.approx(0.5)
+
+    def test_forecast_heating_offset_does_not_stack_with_pv_surplus(
+        self, wrapper, monkeypatch
+    ):
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_THRESHOLD_W", 1000.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MIN_STEPS", 2, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MAX_STEPS", 4, raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 1000.0, raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_RAMP_W", 1000.0, raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", False, raising=False)
+        monkeypatch.setattr(config, "PRICE_TARGET_OFFSET", 0.5, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.3, raising=False)
+
+        _, meta = wrapper.calculate_optimal_outlet_temp(self._features(1500.0))
+
+        assert meta["target_temp_adjusted"] == pytest.approx(20.3)
+        assert meta.get("price_target_offset") is None
+        assert meta["forecast_trajectory_target_offset"] == pytest.approx(0.3)
+
+    def test_target_rt_still_drives_outlet_when_overshoot_correction_disabled(
+        self, wrapper, monkeypatch
+    ):
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_THRESHOLD_W", 1000.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MIN_STEPS", 2, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MAX_STEPS", 4, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", True, raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False, raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", False, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.5, raising=False)
+        wrapper._calculate_required_outlet_temp.side_effect = (
+            lambda current, target, outdoor, thermal: 10.0 + target
+        )
+
+        outlet, meta = wrapper.calculate_optimal_outlet_temp(self._features(1500.0))
+
+        assert outlet == pytest.approx(30.5)
+        assert meta["target_temp_adjusted"] == pytest.approx(20.5)
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,60 @@
 # Active Context - Current Work & Decision State
 
+### PR #85 Review Thread Fixes — 2026-09-24
+
+#### **What changed**
+- `src/pv_trajectory.py`: added `respect_mode_flag` to `get_forecast_trajectory_state()` and set `compute_forecast_driven_trajectory_steps()` to call it with `respect_mode_flag=False`, preserving direct forecast-helper behavior independent of the global mode flag.
+- `src/pv_trajectory.py`: updated docstrings in `is_forecast_trajectory_active()` and `compute_forecast_driven_trajectory_steps()` so rescue activation references `PV_TRAJ_RESCUE_MIN_HOURS` (not `PV_TRAJ_MIN_STEPS`).
+- `tests/unit/test_pv_trajectory.py`: added regression coverage proving direct calls to `compute_forecast_driven_trajectory_steps()` still compute forecast-driven values when `PV_TRAJ_FORECAST_MODE_ENABLED` is disabled.
+
+#### **Why**
+- Review `pullrequestreview-5306495321` identified a behavior regression: centralizing state resolution unintentionally made direct callers of the forecast helper return static `TRAJECTORY_STEPS` when the mode flag was off. The same review also identified stale rescue-threshold docs.
+
+#### **Files modified**
+- `src/pv_trajectory.py`
+- `tests/unit/test_pv_trajectory.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
+### Forecast-Trajectory Heating Offset Alignment — 2026-09-24
+
+#### **What changed**
+- `src/pv_trajectory.py`: added `ForecastTrajectoryState` plus `get_forecast_trajectory_state()` so forecast activation, rescue activation, sunset detection, and dynamic-step calculation are resolved once and reused consistently.
+- `src/cycle_routes.py`: dynamic trajectory scaling and forecast-mode price suppression now consume the shared forecast state instead of recomputing separate activation checks.
+- `src/model_wrapper.py`: heating mode now applies a dedicated `PV_TRAJ_HEATING_TARGET_OFFSET` whenever forecast-driven trajectory scaling is active (including rescue-driven activation), and the legacy PV surplus cheap heating offset is skipped while that forecast mode is active. The overshoot/undershoot skip guard also now keys off the shared forecast state.
+- `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `docs/PARAMETER_REFERENCE.md`: added and documented the new `pv_traj_heating_target_offset` setting.
+- `tests/unit/test_pv_trajectory.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_overshoot_logic.py`, `tests/unit/test_dashboard_settings.py`: added regression coverage for shared-state semantics, rescue-driven offset application, PV-surplus replacement, target influence while correction is disabled, and updated dashboard metadata expectations for the new config key.
+
+#### **Why**
+- The prior behavior suppressed Tibber price offsets during forecast-driven trajectory mode but had no dedicated heating-mode target offset tied directly to that forecast state, and it relied on separate proxy checks in different modules. The clarified requirement was to introduce a dedicated offset, let rescue-driven forecast activation use it too, and replace the old PV surplus cheap heating offset while forecast mode is active.
+
+#### **Decisions**
+- The new behavior uses a dedicated config key (`PV_TRAJ_HEATING_TARGET_OFFSET`) instead of reusing `PRICE_TARGET_OFFSET`.
+- Rescue-driven forecast activation is treated the same as direct above-threshold activation for the heating target offset.
+- While forecast-driven trajectory mode is active in heating, the dedicated forecast offset replaces the legacy PV surplus cheap heating offset rather than stacking with it.
+
+#### **Files modified**
+- `src/pv_trajectory.py`
+- `src/cycle_routes.py`
+- `src/model_wrapper.py`
+- `src/config.py`
+- `config_adapter.py`
+- `ml_heating_underfloor/config.yaml`
+- `ml_heating_underfloor/translations/en.yaml`
+- `docs/PARAMETER_REFERENCE.md`
+- `tests/unit/test_pv_trajectory.py`
+- `tests/unit/test_model_wrapper.py`
+- `tests/unit/test_overshoot_logic.py`
+- `tests/unit/test_dashboard_settings.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Review-Thread Fixes — 2026-09-02
 
 #### **What changed**

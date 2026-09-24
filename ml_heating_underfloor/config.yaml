@@ -620,6 +620,10 @@ options:
   # trajectory active during gradual PV decline (e.g. late afternoon).
   # Set higher (e.g. 2–4) for stricter rescue that only fires during brief dips.
   pv_traj_rescue_min_hours: 1
+  # Heating-only target offset (°C) applied while forecast-driven trajectory
+  # scaling is active, including rescue-driven activation. This replaces the
+  # standard PV surplus cheap offset while forecast mode is active.
+  pv_traj_heating_target_offset: 0.2
   # When true, disable overshoot/undershoot outlet correction only while
   # forecast-driven trajectory scaling is active and trajectory_steps is above
   # pv_traj_min_steps. At trajectory_steps == pv_traj_min_steps, correction is
@@ -949,6 +953,7 @@ schema:
   pv_traj_disable_price_in_forecast_mode: "bool"
   pv_traj_forecast_rescue_enabled: "bool"
   pv_traj_rescue_min_hours: "int(1,12)"
+  pv_traj_heating_target_offset: "float(0.0,2.0)"
   pv_traj_disable_overshoot_correction: "bool"
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
