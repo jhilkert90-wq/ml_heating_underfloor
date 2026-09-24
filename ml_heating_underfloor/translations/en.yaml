@@ -1034,6 +1034,11 @@ configuration:
       rescue to fire.  Default: 1 — even a single future hour above threshold keeps
       the trajectory active during gradual PV decline (e.g. late afternoon). Set higher
       (e.g. 2–4) for stricter rescue that only fires during brief dips.'
+  pv_traj_heating_target_offset:
+    name: '[Advanced] Forecast-Trajectory Heating Target Offset (°C)'
+    description: 'Heating-only target-temperature offset applied while forecast-driven
+      trajectory scaling is active, including rescue-driven activation. This replaces
+      the standard PV surplus cheap offset while forecast mode is active. Default: 0.2°C.'
   pv_traj_disable_overshoot_correction:
     name: '[Advanced] Disable Overshoot/Undershoot Correction in Forecast Mode'
     description: 'When enabled, the overshoot and undershoot outlet-temperature correction

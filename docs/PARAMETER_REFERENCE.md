@@ -403,6 +403,7 @@ This gives a long horizon in the morning (many forecast hours above `pv_traj_zer
 | `pv_traj_threshold_w` | `PV_TRAJ_THRESHOLD_W` | float (0–20000) | `3000.0` | 🧪 Minimum current PV power (W) required to activate forecast mode. Below this `pv_traj_min_steps` is used. |
 | `pv_traj_zero_w` | `PV_TRAJ_ZERO_W` | float (0–500) | `50.0` | 🧪 PV power level (W) at or below which a forecast slot is treated as night/PV≈0. Also triggers immediate night mode when current PV is at or below this value. |
 | `pv_traj_disable_price_in_forecast_mode` | `PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE` | bool | `true` | 🧪 When true, suppresses the electricity price target-temperature offset while forecast trajectory is active, preventing Tibber adjustments from interfering with the pre-heat plan. |
+| `pv_traj_heating_target_offset` | `PV_TRAJ_HEATING_TARGET_OFFSET` | float (0–2) | `0.2` | 🧪 Heating-only target-temperature offset applied while forecast trajectory is active, including rescue-driven activation. Replaces the standard PV surplus cheap offset while forecast mode is active. |
 
 ---
 

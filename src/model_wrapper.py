@@ -32,6 +32,7 @@ from src.adaptive_fireplace_learning import AdaptiveFireplaceLearning
 from src.prediction_context import prediction_context_manager
 from src.shadow_mode import resolve_shadow_mode
 from src.heat_source_channels import _is_heat_pump_active
+from src.pv_trajectory import get_forecast_trajectory_state
 
 
 # Singleton pattern to prevent multiple model instantiation
@@ -452,6 +453,37 @@ class EnhancedModelWrapper:
             # Safe fallback - assume minimal heating effect
             return outdoor_temp + 10.0 if outdoor_temp is not None else 21.0
 
+    def _get_pv_forecast_electrical(
+        self,
+        features: Dict,
+    ) -> list[float]:
+        """Return the raw-W forecast horizon used by PV trajectory logic."""
+        return [
+            float(
+                features.get(
+                    f"pv_forecast_electrical_{hour}h",
+                    features.get(f"pv_forecast_{hour}h", 0.0),
+                )
+            )
+            for hour in range(
+                1,
+                int(getattr(config, "PV_TRAJ_MAX_STEPS", 12)) + 1,
+            )
+        ]
+
+    def _get_forecast_trajectory_state_from_features(
+        self,
+        features: Dict,
+    ):
+        """Resolve shared forecast-trajectory state from feature inputs."""
+        pv_now = float(
+            features.get("pv_now_electrical", features.get("pv_now", 0.0))
+        )
+        return get_forecast_trajectory_state(
+            pv_now,
+            self._get_pv_forecast_electrical(features),
+        )
+
     def calculate_optimal_outlet_temp(
         self, features: Dict
     ) -> Tuple[float, Dict]:
@@ -473,6 +505,7 @@ class EnhancedModelWrapper:
             target_adjusted = target_indoor
             price_info = {}
             _price_sign = -1.0 if self._climate_mode == "cooling" else 1.0
+            forecast_traj_state = None
             if getattr(config, "ELECTRICITY_PRICE_ENABLED", False):
                 from .price_optimizer import PriceLevel, get_price_optimizer
 
@@ -492,73 +525,105 @@ class EnhancedModelWrapper:
                             level.value, target_indoor, target_adjusted, offset,
                         )
 
+            if self._climate_mode == "heating":
+                forecast_traj_state = (
+                    self._get_forecast_trajectory_state_from_features(features)
+                )
+                if forecast_traj_state.active:
+                    forecast_offset = float(
+                        getattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.0)
+                    )
+                    forecast_adjusted = target_indoor + forecast_offset
+                    if forecast_adjusted > target_adjusted:
+                        target_adjusted = forecast_adjusted
+                        price_info["forecast_trajectory_active"] = True
+                        price_info["forecast_trajectory_target_offset"] = (
+                            forecast_offset
+                        )
+                        logging.info(
+                            "☀️ Forecast trajectory heating: target %.1f → %.1f°C "
+                            "(offset +%.2f)",
+                            target_indoor,
+                            target_adjusted,
+                            forecast_offset,
+                        )
+
             # --- PV Surplus CHEAP Override ---
             # When current PV production exceeds the configured threshold the
             # target is shifted.  In heating mode: raise target (store heat).
             # In cooling mode: lower target (cool more with free energy).
             if getattr(config, "PV_SURPLUS_CHEAP_ENABLED", False):
-                pv_threshold = getattr(
-                    config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000
-                )
-                # Use raw electrical output (not thermally-corrected) to
-                # decide whether there is surplus solar electricity available.
-                pv_now = float(
-                    features.get(
-                        "pv_now_electrical", features.get("pv_now", 0.0)
+                if (
+                    self._climate_mode == "heating"
+                    and forecast_traj_state is not None
+                    and forecast_traj_state.active
+                ):
+                    logging.info(
+                        "☀️ Forecast trajectory heating active: replacing PV surplus cheap offset"
                     )
-                )
-                if pv_threshold > 0 and pv_now > 0:
-                    cheap_offset = getattr(config, "PRICE_TARGET_OFFSET", 0.2)
-                    # Soft-ramp blend zone below the threshold to avoid an
-                    # abrupt step change in target temperature.
-                    ramp_w = float(getattr(
-                        config, "PV_SURPLUS_CHEAP_RAMP_W", pv_threshold
-                    ))
-                    # Clamp to [1, threshold] so ramp_floor is always >= 0.
-                    ramp_w = max(1.0, min(ramp_w, float(pv_threshold)))
-                    ramp_floor = pv_threshold - ramp_w
-                    if pv_now >= pv_threshold:
-                        partial_offset = cheap_offset
-                    elif pv_now > ramp_floor:
-                        partial_offset = (
-                            cheap_offset
-                            * (pv_now - ramp_floor)
-                            / ramp_w
+                else:
+                    pv_threshold = getattr(
+                        config, "PV_SURPLUS_CHEAP_THRESHOLD_W", 3000
+                    )
+                    # Use raw electrical output (not thermally-corrected) to
+                    # decide whether there is surplus solar electricity available.
+                    pv_now = float(
+                        features.get(
+                            "pv_now_electrical", features.get("pv_now", 0.0)
                         )
-                    else:
-                        partial_offset = 0.0
-                    if partial_offset > 0.0:
-                        # Apply sign inversion for cooling mode
-                        signed_offset = partial_offset * _price_sign
-                        new_adjusted = target_indoor + signed_offset
-                        if self._climate_mode == "cooling":
-                            # In cooling: lower target = more cooling
-                            if new_adjusted < target_adjusted:
-                                target_adjusted = new_adjusted
-                                price_info["price_level"] = "cheap"
-                                price_info["price_target_offset"] = signed_offset
-                                logging.info(
-                                    "☀️ PV surplus %.0fW (threshold %.0fW): "
-                                    "target %.1f → %.1f°C "
-                                    "(COOLING offset %.2f)",
-                                    pv_now, pv_threshold,
-                                    target_indoor, target_adjusted,
-                                    signed_offset,
-                                )
+                    )
+                    if pv_threshold > 0 and pv_now > 0:
+                        cheap_offset = getattr(config, "PRICE_TARGET_OFFSET", 0.2)
+                        # Soft-ramp blend zone below the threshold to avoid an
+                        # abrupt step change in target temperature.
+                        ramp_w = float(getattr(
+                            config, "PV_SURPLUS_CHEAP_RAMP_W", pv_threshold
+                        ))
+                        # Clamp to [1, threshold] so ramp_floor is always >= 0.
+                        ramp_w = max(1.0, min(ramp_w, float(pv_threshold)))
+                        ramp_floor = pv_threshold - ramp_w
+                        if pv_now >= pv_threshold:
+                            partial_offset = cheap_offset
+                        elif pv_now > ramp_floor:
+                            partial_offset = (
+                                cheap_offset
+                                * (pv_now - ramp_floor)
+                                / ramp_w
+                            )
                         else:
-                            # In heating: raise target = store more heat
-                            if new_adjusted > target_adjusted:
-                                target_adjusted = new_adjusted
-                                price_info["price_level"] = "cheap"
-                                price_info["price_target_offset"] = signed_offset
-                                logging.info(
-                                    "☀️ PV surplus %.0fW (threshold %.0fW): "
-                                    "target %.1f → %.1f°C "
-                                    "(CHEAP ramp offset +%.2f)",
-                                    pv_now, pv_threshold,
-                                    target_indoor, target_adjusted,
-                                    signed_offset,
-                                )
+                            partial_offset = 0.0
+                        if partial_offset > 0.0:
+                            # Apply sign inversion for cooling mode
+                            signed_offset = partial_offset * _price_sign
+                            new_adjusted = target_indoor + signed_offset
+                            if self._climate_mode == "cooling":
+                                # In cooling: lower target = more cooling
+                                if new_adjusted < target_adjusted:
+                                    target_adjusted = new_adjusted
+                                    price_info["price_level"] = "cheap"
+                                    price_info["price_target_offset"] = signed_offset
+                                    logging.info(
+                                        "☀️ PV surplus %.0fW (threshold %.0fW): "
+                                        "target %.1f → %.1f°C "
+                                        "(COOLING offset %.2f)",
+                                        pv_now, pv_threshold,
+                                        target_indoor, target_adjusted,
+                                        signed_offset,
+                                    )
+                            else:
+                                # In heating: raise target = store more heat
+                                if new_adjusted > target_adjusted:
+                                    target_adjusted = new_adjusted
+                                    price_info["price_level"] = "cheap"
+                                    price_info["price_target_offset"] = signed_offset
+                                    logging.info(
+                                        "☀️ PV surplus %.0fW (threshold %.0fW): "
+                                        "target %.1f → %.1f°C "
+                                        "(CHEAP ramp offset +%.2f)",
+                                        pv_now, pv_threshold,
+                                        target_indoor, target_adjusted,
+                                        signed_offset,
+                                    )
 
             # Store current indoor for trajectory correction
             self._current_indoor = current_indoor
@@ -1699,17 +1764,23 @@ class EnhancedModelWrapper:
             # is still above the minimum floor, return outlet temperature
             # unchanged. At the minimum horizon floor, correction is re-enabled
             # to preserve comfort protection near/after sunset.
+            _forecast_features = features or getattr(
+                self,
+                "_current_features",
+                {},
+            ) or {}
+            _forecast_state = self._get_forecast_trajectory_state_from_features(
+                _forecast_features
+            )
             if (
                 getattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", False)
-                and getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
-                and int(getattr(config, "TRAJECTORY_STEPS", 4))
-                > int(getattr(config, "PV_TRAJ_MIN_STEPS", 2))
+                and _forecast_state.active
+                and _forecast_state.dynamic_steps_above_min
             ):
                 logging.debug(
                     "⏭️ Skipping overshoot/undershoot correction: "
                     "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION=true and "
-                    "PV_TRAJ_FORECAST_MODE_ENABLED=true and "
-                    "TRAJECTORY_STEPS > PV_TRAJ_MIN_STEPS"
+                    "forecast trajectory active and dynamic steps > minimum"
                 )
                 return outlet_temp
 

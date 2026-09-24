@@ -139,9 +139,10 @@ def step_build_features(ctx: CycleContext) -> bool:
 def step_dynamic_trajectory(ctx: CycleContext) -> None:
     """Dynamic trajectory scaling (PV-aware). Heating-specific but shared infra."""
     _pv_forecast_traj: list[float] | None = None
+    _forecast_state = None
     if getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False):
         try:
-            from .pv_trajectory import compute_dynamic_trajectory_steps
+            from .pv_trajectory import get_forecast_trajectory_state
 
             _pv_now_traj = float(
                 ctx.features_dict.get("pv_now_electrical", 0.0)
@@ -157,12 +158,12 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
                     1, int(getattr(config, "PV_TRAJ_MAX_STEPS", 12)) + 1
                 )
             ]
-            _dyn_steps = compute_dynamic_trajectory_steps(
+            _forecast_state = get_forecast_trajectory_state(
                 _pv_now_traj,
                 pv_forecast=_pv_forecast_traj,
             )
-            config.TRAJECTORY_STEPS = _dyn_steps
-            config.MIN_SETPOINT_HOLD_CYCLES = _dyn_steps
+            config.TRAJECTORY_STEPS = _forecast_state.dynamic_steps
+            config.MIN_SETPOINT_HOLD_CYCLES = _forecast_state.dynamic_steps
         except Exception as _exc:
             logging.warning("Dynamic trajectory scaling failed: %s", _exc)
 
@@ -185,28 +186,33 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
         and getattr(config, "PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE", True)
     ):
         try:
-            from .pv_trajectory import is_forecast_trajectory_active
+            if _forecast_state is None:
+                from .pv_trajectory import get_forecast_trajectory_state
 
-            _fc_pv_now = float(
-                ctx.features_dict.get("pv_now_electrical", 0.0)
-            )
-            _fc_forecast = (
-                _pv_forecast_traj
-                if _pv_forecast_traj is not None
-                else [
-                    float(
-                        ctx.features_dict.get(
-                            f"pv_forecast_electrical_{h}h",
-                            ctx.features_dict.get(f"pv_forecast_{h}h", 0.0),
+                _fc_pv_now = float(
+                    ctx.features_dict.get("pv_now_electrical", 0.0)
+                )
+                _fc_forecast = (
+                    _pv_forecast_traj
+                    if _pv_forecast_traj is not None
+                    else [
+                        float(
+                            ctx.features_dict.get(
+                                f"pv_forecast_electrical_{h}h",
+                                ctx.features_dict.get(f"pv_forecast_{h}h", 0.0),
+                            )
                         )
-                    )
-                    for h in range(
-                        1,
-                        int(getattr(config, "PV_TRAJ_MAX_STEPS", 12)) + 1,
-                    )
-                ]
-            )
-            if is_forecast_trajectory_active(_fc_pv_now, _fc_forecast):
+                        for h in range(
+                            1,
+                            int(getattr(config, "PV_TRAJ_MAX_STEPS", 12)) + 1,
+                        )
+                    ]
+                )
+                _forecast_state = get_forecast_trajectory_state(
+                    _fc_pv_now,
+                    _fc_forecast,
+                )
+            if _forecast_state.active:
                 ctx.price_data = None
                 logging.info(
                     "☀️ Forecast trajectory active: price offset suppressed"

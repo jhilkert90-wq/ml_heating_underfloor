@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Forecast-Trajectory Heating Offset Alignment — 2026-09-24
+
+**Status:** COMPLETED — added a dedicated forecast-trajectory heating target offset, applied it to rescue-driven activation too, and made it replace the standard PV surplus heating offset while forecast mode is active.
+
+**Files changed:** `src/pv_trajectory.py`, `src/cycle_routes.py`, `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_pv_trajectory.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_overshoot_logic.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Introduced a shared `ForecastTrajectoryState` so dynamic trajectory scaling, forecast-mode price suppression, heating target offsets, and overshoot-correction skip decisions all use the same activation logic. Added the new `pv_traj_heating_target_offset` setting, applied it in heating mode for both direct-threshold and rescue activation, and suppressed the legacy PV surplus cheap heating path whenever forecast trajectory mode is active. Added regression coverage for shared state semantics, forecast-mode target adjustment, replacement of the PV surplus offset, and overshoot-correction guard behavior.
+
+---
+
 ## Review-Thread Fixes — 2026-09-02
 
 **Status:** COMPLETED — addressed the remaining PR review feedback for `_prev_raw_mode` sentinel cleanup and redundant HA reads in `check_and_resolve_climate_mode()`.

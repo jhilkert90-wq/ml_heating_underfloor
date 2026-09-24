@@ -41,7 +41,7 @@ class TestSettingsMetadata:
         metadata = load_settings_metadata()
 
         _SKIPPED_KEYS = {"heating_profile", "cooling_profile"}
-        assert len(metadata.defaults) == 232
+        assert len(metadata.defaults) == 233
         assert len(metadata.fields) == len(metadata.defaults) - len(_SKIPPED_KEYS)
         assert len(metadata.field_order) == len(metadata.fields)
         assert set(metadata.defaults.keys()) - set(metadata.fields.keys()) == _SKIPPED_KEYS
@@ -51,7 +51,7 @@ class TestSettingsMetadata:
 
         assert metadata.fields["target_indoor_temp_entity"].group.slug == "core"
         assert metadata.fields["pv_power_entity"].group.slug == "heat_sources"
-        assert metadata.fields["heating_ml_blend_min_r2"].group.slug == "ml_heating"
+        assert metadata.fields["heating_ml_cv_enabled"].group.slug == "ml_heating"
         assert metadata.fields["trajectory_steps"].group.slug == "trajectory"
         assert metadata.fields["grace_period_max_minutes"].group.slug == "blocking"
 
@@ -74,6 +74,7 @@ class TestSettingsMetadata:
             "pre_cooling",
             "ml_pre_cooling",
             "ml_heating",
+            "ml_cooling_correction",
             "hlc",
             "price_pv",
             "shadow",
