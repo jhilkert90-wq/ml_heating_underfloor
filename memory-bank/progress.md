@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## PR #86 Review Thread Fixes — 2026-09-25
+
+**Status:** COMPLETED — addressed review comments from `pullrequestreview-5314932101`.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Fixed `_calculate_required_outlet_temp()` so a failed midpoint trajectory evaluation during binary search now `break`s out of the bisection loop instead of immediately returning `fallback_temp`, letting the existing best-candidate/refinement fallback handle the result. Also fixed three `TestBinarySearchRobustObjectiveSelection` tests that assumed a 20°C heating outlet minimum (actual default is `CLAMP_MIN_ABS=25.0°C`) by patching `config.CLAMP_MIN_ABS` to 20.0°C so the intended non-monotonic/refinement branches are actually exercised.
+
+---
+
 ## PR Merge Conflict Resolution — 2026-09-25
 
 **Status:** COMPLETED — merged `origin/main` into the PR branch and resolved merge conflicts.

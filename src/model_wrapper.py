@@ -1357,7 +1357,13 @@ class EnhancedModelWrapper:
                 outlet_mid, f"Iteration {iteration + 1}"
             )
             if candidate is None:
-                return fallback_temp
+                logging.warning(
+                    "⚠️ Binary search midpoint evaluation failed at "
+                    "iteration %d; stopping bisection and using "
+                    "best-so-far candidate",
+                    iteration + 1,
+                )
+                break
             _consider_best(candidate)
 
             if iteration == 0:

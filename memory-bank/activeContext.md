@@ -1,5 +1,24 @@
 # Active Context - Current Work & Decision State
 
+### PR #86 Review Thread Fixes — 2026-09-25
+
+#### **What changed**
+- `src/model_wrapper.py`: in `_calculate_required_outlet_temp()`, when a binary-search midpoint trajectory evaluation returns `None`, the loop now logs a warning and `break`s instead of returning `fallback_temp` immediately, so the endpoint-derived `best_candidate` (already evaluated before the loop) is preserved and used by the existing post-loop fallback/refinement logic.
+- `tests/unit/test_model_wrapper.py`: `test_non_monotonic_search_returns_best_sampled_candidate`, `test_objective_mode_switch_changes_selected_outlet`, and `test_refinement_path_finds_better_local_candidate` now patch `config.CLAMP_MIN_ABS` to `20.0` since the real heating default (`25.0`) made the tests' low-outlet branches unreachable.
+
+#### **Why**
+- A single failed midpoint sample previously discarded a valid robust-search result computed from the endpoints, defeating the non-monotonic fallback added earlier in this PR.
+- The affected tests silently didn't exercise the code paths their comments claimed to test because the default heating outlet minimum (25°C) is above the outlet values used to trigger the "low outlet" trajectory branches in the test doubles.
+
+#### **Files modified**
+- `src/model_wrapper.py`
+- `tests/unit/test_model_wrapper.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### PR Merge Conflict Resolution — 2026-09-25
 
 #### **What changed**

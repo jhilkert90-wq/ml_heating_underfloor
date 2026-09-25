@@ -1239,6 +1239,7 @@ class TestBinarySearchRobustObjectiveSelection:
         monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
         monkeypatch.setattr(config, "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end")
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "CLAMP_MIN_ABS", 20.0)
 
         wrapper_instance._current_features = {
             "inlet_temp": 23.4,
@@ -1279,6 +1280,7 @@ class TestBinarySearchRobustObjectiveSelection:
         monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
         monkeypatch.setattr(config, "TRAJECTORY_SEARCH_EARLY_STEPS", 3)
+        monkeypatch.setattr(config, "CLAMP_MIN_ABS", 20.0)
 
         wrapper_instance._current_features = {
             "inlet_temp": 24.0,
@@ -1335,6 +1337,7 @@ class TestBinarySearchRobustObjectiveSelection:
         monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
         monkeypatch.setattr(config, "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end")
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "CLAMP_MIN_ABS", 20.0)
 
         wrapper_instance._current_features = {
             "inlet_temp": 23.4,
