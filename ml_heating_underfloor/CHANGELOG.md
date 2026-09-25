@@ -1,5 +1,16 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.82] - 2026-09-25
+
+### Added
+- Outlet-search objective settings: `trajectory_search_error_mode` and `trajectory_search_early_steps` (dashboard configurable).
+
+### Changed
+- Outlet optimisation now supports both legacy horizon-end error and combined early-step comfort + horizon-end objective modes.
+
+### Fixed
+- Binary search now keeps the best sampled candidate and performs local refinement for non-monotonic/discontinuous trajectory responses instead of collapsing to a poor midpoint.
+
 ## [0.2.81] - 2026-09-24
 
 ### Added

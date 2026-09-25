@@ -1,5 +1,5 @@
 name: "ML Heating Underfloor"
-version: "0.2.81"
+version: "0.2.82"
 slug: "ml_heating_underfloor"
 image: "ghcr.io/jhilkert90-wq/ml_heating_underfloor-{arch}"
 description: "Physics-based machine learning heating control optimized for underfloor heating systems with slow thermal response"
@@ -351,6 +351,13 @@ options:
   confidence_threshold: 2.0
   # Number of hours to predict in the thermal trajectory (2-12 hours)
   trajectory_steps: 4
+  # Objective function for outlet binary-search optimisation:
+  # - horizon_end: optimize end-of-horizon temperature error only.
+  # - early_comfort_plus_horizon: optimize combined early-step comfort + horizon end.
+  trajectory_search_error_mode: "horizon_end"
+  # Number of early trajectory steps used for the comfort component in
+  # trajectory_search_error_mode=early_comfort_plus_horizon.
+  trajectory_search_early_steps: 4
   # Exponential decay time constant for indoor temperature trend momentum bias (hours).
   # Higher values = longer trend persistence across trajectory steps. Min 0.1h.
   trend_decay_tau_hours: 1.5
@@ -830,6 +837,8 @@ schema:
   # Trajectory Tuning
   confidence_threshold: "float(0.1,10.0)"
   trajectory_steps: "int(2,12)"
+  trajectory_search_error_mode: "list(horizon_end|early_comfort_plus_horizon)"
+  trajectory_search_early_steps: "list(1|2|3|4|6|8|10|12|16|24)"
   trend_decay_tau_hours: "float(0.1,24.0)"
   # Shadow Mode
   shadow_mode: "bool"

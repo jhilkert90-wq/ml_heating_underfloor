@@ -1,5 +1,35 @@
 # ML Heating System - Current Progress
 
+## PR #86 Review Thread Fixes — 2026-09-25
+
+**Status:** COMPLETED — addressed review comments from `pullrequestreview-5314932101`.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Fixed `_calculate_required_outlet_temp()` so a failed midpoint trajectory evaluation during binary search now `break`s out of the bisection loop instead of immediately returning `fallback_temp`, letting the existing best-candidate/refinement fallback handle the result. Also fixed three `TestBinarySearchRobustObjectiveSelection` tests that assumed a 20°C heating outlet minimum (actual default is `CLAMP_MIN_ABS=25.0°C`) by patching `config.CLAMP_MIN_ABS` to 20.0°C so the intended non-monotonic/refinement branches are actually exercised.
+
+---
+
+## PR Merge Conflict Resolution — 2026-09-25
+
+**Status:** COMPLETED — merged `origin/main` into the PR branch and resolved merge conflicts.
+
+**Files changed:** `CHANGELOG.md`, `ml_heating_underfloor/CHANGELOG.md`, `ml_heating_underfloor/config.yaml`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Resolved all conflicts in changelog/version files after merging main. Kept unreleased outlet-search objective notes in the repository changelog, preserved add-on changelog release entries (`0.2.81` and `0.2.82`), and retained add-on version `0.2.82` in `config.yaml`.
+
+---
+
+## Binary Search Objective Mode + Robust Non-Monotonic Fallback — 2026-09-25
+
+**Status:** COMPLETED — implemented selectable outlet-search objective modes and robust fallback/refinement for non-monotonic trajectory responses.
+
+**Files changed:** `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/CHANGELOG.md`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_heating_correction.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Added new configuration options to select the outlet-search objective (`horizon_end` vs `early_comfort_plus_horizon`) and set the early-step comfort window through dashboard dropdowns. Refactored `_calculate_required_outlet_temp()` to keep the best sampled candidate, evaluate endpoint candidates, and run coarse/fine local refinement when the binary-search assumptions break (non-monotonic/discontinuous response or range collapse), preventing regressions where error first improves and then worsens as outlet decreases.
+
+---
+
 ## PR #85 Review Thread Fixes — 2026-09-24
 
 **Status:** COMPLETED — addressed all open comments from review `pullrequestreview-5306495321` in `src/pv_trajectory.py`.

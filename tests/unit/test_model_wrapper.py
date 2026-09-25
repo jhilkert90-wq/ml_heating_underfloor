@@ -1218,3 +1218,167 @@ class TestOvershootDampening:
             f"Result {result:.2f}°C is too close to old 0.4-dampening "
             f"value {expected_old:.2f}°C — constant may not have changed"
         )
+
+
+class TestBinarySearchRobustObjectiveSelection:
+    def _base_features(self):
+        return {
+            "pv_power": 0.0,
+            "fireplace_on": 0.0,
+            "tv_on": 0.0,
+            "thermal_power": 0.0,
+            "indoor_temp_gradient": 0.0,
+            "temp_diff_indoor_outdoor": 17.0,
+            "outlet_indoor_diff": 2.0,
+            "pv_power_history": [0.0] * 18,
+        }
+
+    def test_non_monotonic_search_returns_best_sampled_candidate(
+        self, wrapper_instance, monkeypatch
+    ):
+        monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
+        monkeypatch.setattr(config, "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end")
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "CLAMP_MIN_ABS", 20.0)
+
+        wrapper_instance._current_features = {
+            "inlet_temp": 23.4,
+            "delta_t": 2.6,
+            "indoor_temp_delta_60m": -0.07,
+        }
+
+        def fake_predict_trajectory(**kwargs):
+            outlet = kwargs["outlet_temp"]
+            if outlet >= 27.0:
+                end_temp = 26.2
+            elif outlet >= 23.0:
+                end_temp = 23.45
+            else:
+                end_temp = 24.3
+            return {"trajectory": [22.7, 22.9, end_temp], "times": [0.2, 0.4, 0.6]}
+
+        monkeypatch.setattr(
+            wrapper_instance.thermal_model,
+            "predict_thermal_trajectory",
+            fake_predict_trajectory,
+        )
+
+        result = wrapper_instance._calculate_required_outlet_temp(
+            current_indoor=22.6,
+            target_indoor=23.0,
+            outdoor_temp=2.7,
+            thermal_features=self._base_features(),
+        )
+
+        # Non-monotonic trajectory map above has best end-error around outlet >= 23.0
+        # and much worse error near outlet_min=20.0. Ensure we do not collapse to 20.0.
+        assert result >= 23.0
+
+    def test_objective_mode_switch_changes_selected_outlet(
+        self, wrapper_instance, monkeypatch
+    ):
+        monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "TRAJECTORY_SEARCH_EARLY_STEPS", 3)
+        monkeypatch.setattr(config, "CLAMP_MIN_ABS", 20.0)
+
+        wrapper_instance._current_features = {
+            "inlet_temp": 24.0,
+            "delta_t": 2.5,
+            "indoor_temp_delta_60m": 0.0,
+        }
+
+        def objective_sensitive_trajectory(**kwargs):
+            outlet = kwargs["outlet_temp"]
+            if outlet < 24.0:
+                # Better early comfort, worse horizon end
+                return {
+                    "trajectory": [23.0, 23.0, 23.0, 22.0],
+                    "times": [0.25, 0.5, 0.75, 1.0],
+                }
+            # Worse early comfort, perfect horizon end
+            return {
+                "trajectory": [24.5, 24.5, 24.5, 23.0],
+                "times": [0.25, 0.5, 0.75, 1.0],
+            }
+
+        monkeypatch.setattr(
+            wrapper_instance.thermal_model,
+            "predict_thermal_trajectory",
+            objective_sensitive_trajectory,
+        )
+
+        monkeypatch.setattr(config, "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end")
+        horizon_end_result = wrapper_instance._calculate_required_outlet_temp(
+            current_indoor=23.0,
+            target_indoor=23.0,
+            outdoor_temp=5.0,
+            thermal_features=self._base_features(),
+        )
+
+        monkeypatch.setattr(
+            config,
+            "TRAJECTORY_SEARCH_ERROR_MODE",
+            "early_comfort_plus_horizon",
+        )
+        early_plus_horizon_result = wrapper_instance._calculate_required_outlet_temp(
+            current_indoor=23.0,
+            target_indoor=23.0,
+            outdoor_temp=5.0,
+            thermal_features=self._base_features(),
+        )
+
+        assert horizon_end_result >= 24.0
+        assert early_plus_horizon_result < 24.0
+
+    def test_refinement_path_finds_better_local_candidate(
+        self, wrapper_instance, monkeypatch
+    ):
+        monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
+        monkeypatch.setattr(config, "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end")
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "CLAMP_MIN_ABS", 20.0)
+
+        wrapper_instance._current_features = {
+            "inlet_temp": 23.4,
+            "delta_t": 2.6,
+            "indoor_temp_delta_60m": -0.07,
+        }
+
+        sampled_outlets = []
+
+        def refine_sensitive_trajectory(**kwargs):
+            outlet = float(kwargs["outlet_temp"])
+            sampled_outlets.append(outlet)
+            # Local best around ~23.3, but binary-search path only sees a
+            # mediocre basin around ~22.25 before collapsing.
+            if abs(outlet - 23.3) <= 0.08:
+                end_temp = 23.0
+            elif abs(outlet - 22.25) <= 0.06:
+                end_temp = 23.8
+            elif 23.0 <= outlet < 24.0:
+                end_temp = 23.3
+            else:
+                end_temp = 24.0
+            return {
+                "trajectory": [22.7, 22.9, end_temp],
+                "times": [0.2, 0.4, 0.6],
+            }
+
+        monkeypatch.setattr(
+            wrapper_instance.thermal_model,
+            "predict_thermal_trajectory",
+            refine_sensitive_trajectory,
+        )
+
+        result = wrapper_instance._calculate_required_outlet_temp(
+            current_indoor=22.6,
+            target_indoor=23.0,
+            outdoor_temp=2.7,
+            thermal_features=self._base_features(),
+        )
+
+        # Refinement should explore 0.5/0.1 local grids and find the narrow
+        # optimum near 23.3 instead of sticking to the bisection-collapse side.
+        assert any(abs(x - 23.3) <= 0.06 for x in sampled_outlets)
+        assert abs(result - 23.3) <= 0.2

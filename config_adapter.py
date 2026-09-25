@@ -557,6 +557,12 @@ def convert_addon_to_env(config):
         'MIN_SETPOINT_HOLD_CYCLES': str(
             config.get('min_setpoint_hold_cycles', 4)
         ),
+        'TRAJECTORY_SEARCH_ERROR_MODE': config.get(
+            'trajectory_search_error_mode', 'horizon_end'
+        ),
+        'TRAJECTORY_SEARCH_EARLY_STEPS': str(
+            config.get('trajectory_search_early_steps', 4)
+        ),
 
         # --- Forecast-Driven Trajectory Mode ---
         'PV_TRAJ_MIN_STEPS': str(

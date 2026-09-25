@@ -41,7 +41,7 @@ class TestSettingsMetadata:
         metadata = load_settings_metadata()
 
         _SKIPPED_KEYS = {"heating_profile", "cooling_profile"}
-        assert len(metadata.defaults) == 233
+        assert len(metadata.defaults) == 235
         assert len(metadata.fields) == len(metadata.defaults) - len(_SKIPPED_KEYS)
         assert len(metadata.field_order) == len(metadata.fields)
         assert set(metadata.defaults.keys()) - set(metadata.fields.keys()) == _SKIPPED_KEYS

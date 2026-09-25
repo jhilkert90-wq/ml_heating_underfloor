@@ -617,3 +617,18 @@ class TestConfigAdapterHeatingCorrectionMode:
         from config_adapter import convert_addon_to_env
         env = convert_addon_to_env({})
         assert env['HEATING_CORRECTION_MODE'] == 'legacy'
+
+
+class TestConfigAdapterTrajectorySearchObjective:
+    def test_maps_search_objective_and_early_steps(self):
+        from config_adapter import convert_addon_to_env
+
+        env = convert_addon_to_env(
+            {
+                "trajectory_search_error_mode": "early_comfort_plus_horizon",
+                "trajectory_search_early_steps": "8",
+            }
+        )
+
+        assert env["TRAJECTORY_SEARCH_ERROR_MODE"] == "early_comfort_plus_horizon"
+        assert env["TRAJECTORY_SEARCH_EARLY_STEPS"] == "8"
