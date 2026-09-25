@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Binary search no longer returns collapsed-range midpoints in non-monotonic/discontinuous cases; it now keeps best sampled candidate and runs local refinement around the minimum sampled error.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
