@@ -1,5 +1,27 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.82] - 2026-09-25
+
+### Added
+- Outlet-search objective settings: `trajectory_search_error_mode` and `trajectory_search_early_steps` (dashboard configurable).
+
+### Changed
+- Outlet optimisation now supports both legacy horizon-end error and combined early-step comfort + horizon-end objective modes.
+
+### Fixed
+- Binary search now keeps the best sampled candidate and performs local refinement for non-monotonic/discontinuous trajectory responses instead of collapsing to a poor midpoint.
+
+## [0.2.81] - 2026-09-24
+
+### Added
+- Forecast-trajectory heating target offset setting (`pv_traj_heating_target_offset`) for heating-mode target lifting while forecast-driven trajectory scaling is active.
+
+### Changed
+- Forecast-trajectory control now applies its dedicated heating target offset for both direct-PV and rescue-driven activation and replaces the standard PV surplus cheap offset while forecast mode is active.
+
+### Fixed
+- Forecast-trajectory state usage was unified for dynamic-step scaling, price suppression, and correction-skip behavior.
+
 ## [0.2.80] - 2026-09-02
 
 ### Fixed

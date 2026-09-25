@@ -1,5 +1,47 @@
 # Active Context - Current Work & Decision State
 
+### Binary Search Objective Mode + Robust Non-Monotonic Fallback — 2026-09-25
+
+#### **What changed**
+- `src/model_wrapper.py`: rewrote `_calculate_required_outlet_temp()` search flow to track best sampled candidate by objective score, evaluate endpoint candidates, and run coarse/fine local refinement around the best outlet when classic bisection assumptions fail (range collapse or non-monotonic response).
+- `src/model_wrapper.py`: added objective-mode scoring support inside outlet search:
+  - `horizon_end` (legacy, optimize end-of-horizon error),
+  - `early_comfort_plus_horizon` (optimize weighted early-step comfort + horizon-end error).
+- `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`: added and wired:
+  - `trajectory_search_error_mode` / `TRAJECTORY_SEARCH_ERROR_MODE`
+  - `trajectory_search_early_steps` / `TRAJECTORY_SEARCH_EARLY_STEPS`
+- `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`: added dashboard labels/descriptions for the two new settings.
+- `ml_heating_underfloor/CHANGELOG.md`: added 0.2.81 and 0.2.82 release entries and aligned add-on release history with the new version bump in `config.yaml`.
+- `tests/unit/test_model_wrapper.py`: added regression tests for non-monotonic search behavior and objective-mode-dependent outlet selection.
+- `tests/unit/test_heating_correction.py`: added config-adapter mapping test for new trajectory-search env vars.
+- `tests/unit/test_dashboard_settings.py`: updated expected option count for metadata coverage.
+
+#### **Why**
+- Cycle logs showed non-monotonic/discontinuous outlet→prediction behavior (error getting smaller, then larger again; lower outlet yielding higher predicted indoor), which violates binary-search monotonic assumptions. The previous implementation could collapse to a poor midpoint instead of returning the minimum-error candidate.
+- User requested runtime-selectable optimisation objective in the dashboard, including support for both horizon-end-only and early-comfort-inclusive optimisation, with acceptable higher compute cost.
+
+#### **Decisions**
+- Keep horizon-end error sign for search direction updates, but use configurable objective score for candidate ranking and final outlet selection.
+- Always keep and return the best sampled outlet candidate; add local coarse/fine refinement around that candidate for robustness.
+- Expose both objective mode and early-step window in add-on options so dashboard users can tune behaviour without code changes.
+
+#### **Files modified**
+- `src/model_wrapper.py`
+- `src/config.py`
+- `config_adapter.py`
+- `ml_heating_underfloor/config.yaml`
+- `ml_heating_underfloor/CHANGELOG.md`
+- `ml_heating_underfloor/translations/en.yaml`
+- `ml_heating_underfloor/translations/de.yaml`
+- `tests/unit/test_model_wrapper.py`
+- `tests/unit/test_heating_correction.py`
+- `tests/unit/test_dashboard_settings.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### PR #85 Review Thread Fixes — 2026-09-24
 
 #### **What changed**

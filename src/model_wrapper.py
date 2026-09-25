@@ -1200,297 +1200,346 @@ class EnhancedModelWrapper:
             f"range={outlet_min:.1f}-{outlet_max:.1f}°C"
         )
 
-        for iteration in range(20):  # Max 20 iterations for efficiency
-            # Check if range has collapsed (early exit)
-            range_size = outlet_max - outlet_min
-            if range_size < 0.05:  # °C - range too small to matter
-                final_outlet = (outlet_min + outlet_max) / 2.0
-                logging.info(
-                    f"🔄 Binary search early exit after {iteration+1} "
-                    f"iterations: range collapsed to {range_size:.3f}°C, "
-                    f"using {final_outlet:.1f}°C"
+        optimization_horizon = float(config.TRAJECTORY_STEPS)
+        search_mode = getattr(config, "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end")
+        early_steps_cfg = max(
+            1, int(getattr(config, "TRAJECTORY_SEARCH_EARLY_STEPS", 4))
+        )
+        _trend_60m = (
+            self._current_features.get("indoor_temp_delta_60m", 0.0)
+            if hasattr(self, "_current_features")
+            else 0.0
+        )
+        search_lower_bound = outlet_min
+        search_upper_bound = outlet_max
+        best_candidate: Dict[str, Any] | None = None
+        collapsed_search = False
+        converged_iteration: int | None = None
+        evaluated_candidates: Dict[float, Dict[str, Any]] = {}
+        invalid_candidates: set[float] = set()
+
+        def _objective_score(
+            trajectory_result: Dict[str, Any], end_error: float
+        ) -> tuple[float, float]:
+            abs_end_error = abs(end_error)
+            if search_mode != "early_comfort_plus_horizon":
+                return abs_end_error, 0.0
+            trajectory_vals = trajectory_result.get("trajectory", [])
+            if not trajectory_vals:
+                return abs_end_error, 0.0
+            n_steps = min(len(trajectory_vals), early_steps_cfg)
+            if n_steps <= 0:
+                return abs_end_error, 0.0
+            early_abs_mae = (
+                sum(
+                    abs(float(temp) - target_indoor)
+                    for temp in trajectory_vals[:n_steps]
                 )
-                # Apply trajectory verification so the correction layer
-                # runs even when the search range collapses (e.g. binary
-                # search saturates at 21 °C min outlet).
-                if config.TRAJECTORY_PREDICTION_ENABLED:
-                    final_outlet = self._verify_trajectory_and_correct(
-                        outlet_temp=final_outlet,
-                        current_indoor=current_indoor,
-                        target_indoor=target_indoor,
-                        outdoor_temp=outdoor_temp,
-                        thermal_features=thermal_features,
-                        features=getattr(
-                            self, "_current_features", {}
-                        ),
-                        outdoor_forecast=outdoor_forecast,
-                        pv_forecast=pv_forecast,
-                        pv_history_for_buffer=pv_input,
-                    )
-                return final_outlet
-
-            outlet_mid = (outlet_min + outlet_max) / 2.0
-
-            # Predict indoor temperature with this outlet temperature using
-            # cycle-aligned conditions
-            try:
-                # Use TRAJECTORY_STEPS as the optimization horizon for binary
-                # search. This makes the binary search predictive over the
-                # same horizon as the trajectory verification:
-                # - TRAJECTORY_STEPS=2: optimizes for 2h ahead (moderate
-                #   PV/weather anticipation, less oscillation risk)
-                # - TRAJECTORY_STEPS=4: optimizes for 4h ahead (stronger
-                #   PV/weather anticipation, e.g. reduces outlet temp when
-                #   3000W PV is forecast in 4h; conversely raises outlet when
-                #   outdoor temp will drop sharply tonight)
-                # NOTE: longer horizons increase sensitivity to forecast
-                # errors. Values >4h are not recommended.
-                optimization_horizon = float(config.TRAJECTORY_STEPS)
-
-                # Pass full forecast arrays to thermal model for accurate
-                # trajectory. outdoor_forecast contains [1h, 2h, 3h, 4h]
-                # NOTE: pass pv_power as scalar (current PV) so the buffer
-                # is seeded with the actual present value, not the far-future
-                # forecast. The full schedule is provided via pv_forecasts so
-                # predict_thermal_trajectory can interpolate it correctly over
-                # the hourly source grid (0h, 1h, 2h, ...).
-
-                _trend_60m = (
-                    self._current_features.get(
-                        "indoor_temp_delta_60m", 0.0
-                    )
-                    if hasattr(self, "_current_features")
-                    else 0.0
-                )
-
-                # Log resolved slab/trend features on first iteration
-                if iteration == 0:
-                    logging.debug(
-                        "🔍 Binary search features: "
-                        "inlet_temp=%s, delta_t_floor=%.2f, "
-                        "indoor_temp_delta_60m=%.4f, "
-                        "horizon=%.1fh, outlet_mid=%.1f°C",
-                        _inlet, _dtf, _trend_60m,
-                        optimization_horizon, outlet_mid,
-                    )
-
-                trajectory_result = (
-                    self.thermal_model.predict_thermal_trajectory(
-                        current_indoor=current_indoor,
-                        target_indoor=target_indoor,
-                        outlet_temp=outlet_mid,
-                        outdoor_temp=outdoor_forecast,  # Pass array directly
-                        time_horizon_hours=optimization_horizon,
-                        time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
-                        pv_power=pv_input,  # Pass history for initialization
-                        pv_forecasts=pv_forecast,  # Schedule: [t=0h, t=1h, ..., t=TRAJECTORY_STEPS h]
-                        fireplace_on=fireplace_on,
-                        tv_on=tv_on,
-                        fireplace_power_kw=fireplace_power_kw,
-                        fireplace_decay_kw=fp_decay_kw,
-                        cloud_cover_pct=self._avg_cloud_cover,
-                        inlet_temp=_inlet,
-                        delta_t_floor=_dtf,
-                        indoor_temp_delta_60m=_trend_60m,
-                        climate_mode=self._climate_mode,
-                    )
-                )
-
-                if (
-                    not trajectory_result
-                    or "trajectory" not in trajectory_result
-                    or not trajectory_result["trajectory"]
-                ):
-                    logging.warning(
-                        f"   Iteration {iteration+1}: "
-                        f"predict_thermal_trajectory returned invalid result "
-                        f"for outlet={outlet_mid:.1f}°C - using fallback"
-                    )
-                    return fallback_temp
-
-                # Use the temperature at the END of the horizon for
-                # optimization
-                predicted_indoor = trajectory_result["trajectory"][-1]
-
-                # Log trajectory success on first iteration to confirm fix
-                if iteration == 0:
-                    traj = trajectory_result["trajectory"]
-                    logging.debug(
-                        "✅ Binary search trajectory OK (iter 1): "
-                        "outlet=%.1f°C → predicted=%.2f°C "
-                        "(steps=%d, start=%.2f→end=%.2f)",
-                        outlet_mid, predicted_indoor,
-                        len(traj), traj[0], traj[-1],
-                    )
-
-            except Exception as e:
-                logging.error(
-                    f"   Iteration {iteration+1}: "
-                    f"predict_thermal_trajectory failed: {e}"
-                )
-                return fallback_temp  # Safe fallback
-
-            # Calculate error from target
-            error = predicted_indoor - target_indoor
-
-            # Detailed logging at each iteration
-            logging.debug(
-                f"   Iteration {iteration+1}: outlet={outlet_mid:.1f}°C → "
-                f"predicted={predicted_indoor:.2f}°C, error={error:.3f}°C "
-                f"(range: {outlet_min:.1f}-{outlet_max:.1f}°C)"
+                / float(n_steps)
             )
+            combined_score = 0.5 * early_abs_mae + 0.5 * abs_end_error
+            return combined_score, early_abs_mae
 
-            # Check if we're close enough
-            if abs(error) < tolerance:
-                logging.info(
-                    f"✅ Binary search converged after {iteration+1} "
-                    f"iterations: {outlet_mid:.1f}°C → "
-                    f"{predicted_indoor:.2f}°C (target: "
-                    f"{target_indoor:.1f}°C, error: {error:.3f}°C)"
-                )
+        def _evaluate_outlet(
+            outlet_candidate: float, iteration_label: str
+        ) -> Dict[str, Any] | None:
+            outlet_key = round(float(outlet_candidate), 4)
+            if outlet_key in evaluated_candidates:
+                return evaluated_candidates[outlet_key]
+            if outlet_key in invalid_candidates:
+                return None
 
-                # Show final equilibrium physics for the converged result
-                self.thermal_model.predict_equilibrium_temperature(
-                    outlet_temp=outlet_mid,
-                    outdoor_temp=avg_outdoor,
-                    current_indoor=current_indoor,
-                    pv_power=avg_pv,
-                    fireplace_on=fireplace_on,
-                    tv_on=tv_on,
-                    _suppress_logging=False,  # Show equilibrium physics
-                    fireplace_power_kw=fireplace_power_kw,
-                    fireplace_decay_kw=fp_decay_kw,
-                    cloud_cover_pct=self._avg_cloud_cover,
-                )
-
-                # MULTI-HORIZON FORECAST LOGGING: Show predictions with
-                # different forecast horizons
-                self._log_multi_horizon_predictions(
+            try:
+                trajectory_result = self.thermal_model.predict_thermal_trajectory(
                     current_indoor=current_indoor,
                     target_indoor=target_indoor,
-                    outdoor_temp=outdoor_temp,
-                    thermal_features=thermal_features,
-                )
-
-                # NEW: Trajectory verification and course correction.
-                # Pass the SAME forecast arrays used by binary search so
-                # verify sees identical conditions.
-                if config.TRAJECTORY_PREDICTION_ENABLED:
-                    outlet_mid = self._verify_trajectory_and_correct(
-                        outlet_temp=outlet_mid,
-                        current_indoor=current_indoor,
-                        target_indoor=target_indoor,
-                        outdoor_temp=outdoor_temp,
-                        thermal_features=thermal_features,
-                        features=getattr(
-                            self, "_current_features", {}
-                        ),
-                        outdoor_forecast=outdoor_forecast,
-                        pv_forecast=pv_forecast,
-                        pv_history_for_buffer=pv_input,
-                    )
-
-                return outlet_mid
-
-            # Adjust search range based on error
-            # COOLING FIX: Consider whether we're heating or cooling the house
-            temp_diff = target_indoor - current_indoor
-            is_heating_scenario = temp_diff > 0.1  # Need to heat house
-            is_cooling_scenario = temp_diff < -0.1  # Need to cool house
-
-            if is_heating_scenario:
-                # HEATING: Normal logic
-                if predicted_indoor < target_indoor:
-                    # Need higher outlet temperature
-                    outlet_min = outlet_mid
-                    logging.debug(
-                        f"     → Heating: Predicted too low, raising minimum "
-                        f"to {outlet_min:.1f}°C"
-                    )
-                else:
-                    # Need lower outlet temperature
-                    outlet_max = outlet_mid
-                    logging.debug(
-                        f"     → Heating: Predicted too high, lowering "
-                        f"maximum to {outlet_max:.1f}°C"
-                    )
-            elif is_cooling_scenario:
-                # COOLING: For cooling, we want to get as close as possible to
-                # target. Standard binary search logic works, just need to be
-                # close to target
-                if predicted_indoor < target_indoor:
-                    # Predicted is below target - need slightly higher outlet
-                    # to reach target
-                    outlet_min = outlet_mid
-                    logging.debug(
-                        f"     → Cooling: Predicted below target, raising "
-                        f"minimum to {outlet_min:.1f}°C"
-                    )
-                else:
-                    # Predicted is above target - need lower outlet to reach
-                    # target
-                    outlet_max = outlet_mid
-                    logging.debug(
-                        f"     → Cooling: Predicted above target, lowering "
-                        f"maximum to {outlet_max:.1f}°C"
-                    )
-            else:
-                # MAINTENANCE: At target (normal logic)
-                if predicted_indoor < target_indoor:
-                    # Need higher outlet temperature
-                    outlet_min = outlet_mid
-                    logging.debug(
-                        f"     → Maintenance: Predicted too low, raising "
-                        f"minimum to {outlet_min:.1f}°C"
-                    )
-                else:
-                    # Need lower outlet temperature
-                    outlet_max = outlet_mid
-                    logging.debug(
-                        f"     → Maintenance: Predicted too high, lowering "
-                        f"maximum to {outlet_max:.1f}°C"
-                    )
-
-        # Return best guess if didn't converge
-        final_outlet = (outlet_min + outlet_max) / 2.0
-        try:
-            final_predicted = (
-                self.thermal_model.predict_equilibrium_temperature(
-                    outlet_temp=final_outlet,
-                    outdoor_temp=avg_outdoor,  # Use forecast average
-                    current_indoor=current_indoor,
-                    pv_power=avg_pv,  # Use forecast average for consistency
+                    outlet_temp=outlet_candidate,
+                    outdoor_temp=outdoor_forecast,
+                    time_horizon_hours=optimization_horizon,
+                    time_step_minutes=config.CYCLE_INTERVAL_MINUTES,
+                    pv_power=pv_input,
+                    pv_forecasts=pv_forecast,
                     fireplace_on=fireplace_on,
                     tv_on=tv_on,
-                    _suppress_logging=True,
                     fireplace_power_kw=fireplace_power_kw,
                     fireplace_decay_kw=fp_decay_kw,
                     cloud_cover_pct=self._avg_cloud_cover,
+                    inlet_temp=_inlet,
+                    delta_t_floor=_dtf,
+                    indoor_temp_delta_60m=_trend_60m,
+                    climate_mode=self._climate_mode,
                 )
-            )
+            except Exception as e:
+                logging.error(
+                    "%s: predict_thermal_trajectory failed for outlet=%.2f°C: %s",
+                    iteration_label,
+                    outlet_candidate,
+                    e,
+                )
+                invalid_candidates.add(outlet_key)
+                return None
 
-            # Handle None return for final prediction
-            if final_predicted is None:
+            if (
+                not trajectory_result
+                or "trajectory" not in trajectory_result
+                or not trajectory_result["trajectory"]
+            ):
                 logging.warning(
-                    "⚠️ Final prediction returned None, using fallback %.1f°C",
-                    fallback_temp,
+                    "%s: predict_thermal_trajectory returned invalid result "
+                    "for outlet=%.2f°C",
+                    iteration_label,
+                    outlet_candidate,
                 )
-                return fallback_temp
+                invalid_candidates.add(outlet_key)
+                return None
 
-        except Exception as e:
-            logging.error(f"Final prediction failed: {e}")
-            return fallback_temp
+            predicted_indoor = float(trajectory_result["trajectory"][-1])
+            end_error = predicted_indoor - target_indoor
+            score, early_abs_mae = _objective_score(trajectory_result, end_error)
+            candidate = {
+                "outlet": float(outlet_candidate),
+                "predicted_indoor": predicted_indoor,
+                "end_error": end_error,
+                "score": float(score),
+                "early_abs_mae": float(early_abs_mae),
+                "trajectory": trajectory_result,
+            }
+            evaluated_candidates[outlet_key] = candidate
+            return candidate
 
-        final_error = final_predicted - target_indoor
-        logging.warning(
-            f"⚠️ Binary search didn't converge after 20 iterations: "
-            f"{final_outlet:.1f}°C → {final_predicted:.2f}°C "
-            f"(target: {target_indoor:.1f}°C, error: {final_error:.3f}°C)"
+        def _consider_best(candidate: Dict[str, Any]) -> None:
+            nonlocal best_candidate
+            if (
+                best_candidate is None
+                or candidate["score"] < best_candidate["score"]
+            ):
+                best_candidate = candidate
+
+        # Log resolved slab/trend features on first iteration
+        logging.debug(
+            "🔍 Binary search features: "
+            "inlet_temp=%s, delta_t_floor=%.2f, "
+            "indoor_temp_delta_60m=%.4f, "
+            "horizon=%.1fh, objective=%s, early_steps=%d",
+            _inlet, _dtf, _trend_60m,
+            optimization_horizon, search_mode, early_steps_cfg,
         )
 
-        # SATURATION SAFETY CAP: When binary search saturates near outlet_max
-        # the model couldn't find a sensible temperature. Cap at inlet + 5°C
-        # to prevent runaway outlet temperatures (self-adjusting as slab warms).
+        # Evaluate endpoints once so non-monotonic/non-bracketed cases still
+        # retain a meaningful best candidate.
+        endpoint_left = _evaluate_outlet(outlet_min, "Endpoint(min)")
+        endpoint_right = _evaluate_outlet(outlet_max, "Endpoint(max)")
+        if endpoint_left:
+            _consider_best(endpoint_left)
+        if endpoint_right:
+            _consider_best(endpoint_right)
+
+        for iteration in range(20):  # Max 20 iterations for efficiency
+            range_size = outlet_max - outlet_min
+            if range_size < 0.05:
+                outlet_mid = (outlet_min + outlet_max) / 2.0
+                collapsed_candidate = _evaluate_outlet(
+                    outlet_mid, f"Iteration {iteration + 1} (collapsed)"
+                )
+                if collapsed_candidate:
+                    _consider_best(collapsed_candidate)
+                collapsed_search = True
+                logging.info(
+                    "🔄 Binary search early exit after %d iterations: "
+                    "range collapsed to %.3f°C",
+                    iteration + 1,
+                    range_size,
+                )
+                break
+
+            outlet_mid = (outlet_min + outlet_max) / 2.0
+            candidate = _evaluate_outlet(
+                outlet_mid, f"Iteration {iteration + 1}"
+            )
+            if candidate is None:
+                return fallback_temp
+            _consider_best(candidate)
+
+            if iteration == 0:
+                traj = candidate["trajectory"]["trajectory"]
+                logging.debug(
+                    "✅ Binary search trajectory OK (iter 1): "
+                    "outlet=%.1f°C → predicted=%.2f°C "
+                    "(steps=%d, start=%.2f→end=%.2f)",
+                    outlet_mid,
+                    candidate["predicted_indoor"],
+                    len(traj),
+                    traj[0],
+                    traj[-1],
+                )
+
+            logging.debug(
+                "   Iteration %d: outlet=%.1f°C → predicted=%.2f°C, "
+                "end_error=%+.3f°C, score=%.3f (range: %.1f-%.1f°C)",
+                iteration + 1,
+                outlet_mid,
+                candidate["predicted_indoor"],
+                candidate["end_error"],
+                candidate["score"],
+                outlet_min,
+                outlet_max,
+            )
+
+            if search_mode == "early_comfort_plus_horizon":
+                logging.debug(
+                    "     Objective detail: early_mae=%.3f (first %d steps), "
+                    "|end_error|=%.3f",
+                    candidate["early_abs_mae"],
+                    min(
+                        early_steps_cfg,
+                        len(candidate["trajectory"].get("trajectory", [])),
+                    ),
+                    abs(candidate["end_error"]),
+                )
+
+            # Keep convergence tied to horizon-end bracketing error so the
+            # binary-search direction logic remains physically consistent.
+            # Alternative objectives influence candidate ranking only.
+            converged = abs(candidate["end_error"]) < tolerance
+            if converged:
+                converged_iteration = iteration + 1
+                break
+
+            # Adjust search range using horizon-end error sign.
+            temp_diff = target_indoor - current_indoor
+            is_heating_scenario = temp_diff > 0.1
+            is_cooling_scenario = temp_diff < -0.1
+            predicted_indoor = candidate["predicted_indoor"]
+
+            if is_heating_scenario:
+                if predicted_indoor < target_indoor:
+                    outlet_min = outlet_mid
+                    logging.debug(
+                        "     → Heating: Predicted too low, raising minimum "
+                        "to %.1f°C",
+                        outlet_min,
+                    )
+                else:
+                    outlet_max = outlet_mid
+                    logging.debug(
+                        "     → Heating: Predicted too high, lowering maximum "
+                        "to %.1f°C",
+                        outlet_max,
+                    )
+            elif is_cooling_scenario:
+                if predicted_indoor < target_indoor:
+                    outlet_min = outlet_mid
+                    logging.debug(
+                        "     → Cooling: Predicted below target, raising minimum "
+                        "to %.1f°C",
+                        outlet_min,
+                    )
+                else:
+                    outlet_max = outlet_mid
+                    logging.debug(
+                        "     → Cooling: Predicted above target, lowering maximum "
+                        "to %.1f°C",
+                        outlet_max,
+                    )
+            else:
+                if predicted_indoor < target_indoor:
+                    outlet_min = outlet_mid
+                    logging.debug(
+                        "     → Maintenance: Predicted too low, raising minimum "
+                        "to %.1f°C",
+                        outlet_min,
+                    )
+                else:
+                    outlet_max = outlet_mid
+                    logging.debug(
+                        "     → Maintenance: Predicted too high, lowering maximum "
+                        "to %.1f°C",
+                        outlet_max,
+                    )
+
+        # Robust fallback: refine around best-so-far candidate with extra
+        # local sampling to handle non-monotonic/discontinuous response.
+        if best_candidate is None:
+            logging.warning("⚠️ Binary search found no valid candidate, using fallback")
+            return fallback_temp
+
+        if converged_iteration is None or collapsed_search:
+            base_outlet = float(best_candidate["outlet"])
+            coarse_span = max(1.0, (search_upper_bound - search_lower_bound) * 0.2)
+            coarse_low = max(search_lower_bound, base_outlet - coarse_span)
+            coarse_high = min(search_upper_bound, base_outlet + coarse_span)
+
+            coarse_grid = np.arange(coarse_low, coarse_high + 1e-9, 0.5)
+            for candidate_outlet in coarse_grid.tolist():
+                candidate = _evaluate_outlet(candidate_outlet, "Refine(coarse)")
+                if candidate:
+                    _consider_best(candidate)
+
+            base_outlet = float(best_candidate["outlet"])
+            fine_low = max(search_lower_bound, base_outlet - 0.5)
+            fine_high = min(search_upper_bound, base_outlet + 0.5)
+            fine_grid = np.arange(fine_low, fine_high + 1e-9, 0.1)
+            for candidate_outlet in fine_grid.tolist():
+                candidate = _evaluate_outlet(candidate_outlet, "Refine(fine)")
+                if candidate:
+                    _consider_best(candidate)
+
+        final_outlet = float(best_candidate["outlet"])
+        final_predicted = float(best_candidate["predicted_indoor"])
+        final_error = float(best_candidate["end_error"])
+        final_score = float(best_candidate["score"])
+        final_is_converged = abs(final_error) < tolerance
+
+        if final_is_converged:
+            logging.info(
+                "✅ Binary search converged%s: %.1f°C → %.2f°C "
+                "(target %.1f°C, end_error=%+.3f°C, score=%.3f, mode=%s)",
+                f" after {converged_iteration} iterations"
+                if converged_iteration is not None
+                else "",
+                final_outlet,
+                final_predicted,
+                target_indoor,
+                final_error,
+                final_score,
+                search_mode,
+            )
+
+            self.thermal_model.predict_equilibrium_temperature(
+                outlet_temp=final_outlet,
+                outdoor_temp=avg_outdoor,
+                current_indoor=current_indoor,
+                pv_power=avg_pv,
+                fireplace_on=fireplace_on,
+                tv_on=tv_on,
+                _suppress_logging=False,
+                fireplace_power_kw=fireplace_power_kw,
+                fireplace_decay_kw=fp_decay_kw,
+                cloud_cover_pct=self._avg_cloud_cover,
+            )
+
+            self._log_multi_horizon_predictions(
+                current_indoor=current_indoor,
+                target_indoor=target_indoor,
+                outdoor_temp=outdoor_temp,
+                thermal_features=thermal_features,
+            )
+        else:
+            logging.warning(
+                "⚠️ Binary search used best sampled candidate: "
+                "%.1f°C → %.2f°C (target %.1f°C, end_error=%+.3f°C, "
+                "score=%.3f, mode=%s)",
+                final_outlet,
+                final_predicted,
+                target_indoor,
+                final_error,
+                final_score,
+                search_mode,
+            )
+
+        # SATURATION SAFETY CAP: When search saturates near outlet_max the model
+        # couldn't find a sensible temperature. Cap at inlet + 5°C to prevent
+        # runaway outlet temperatures (self-adjusting as slab warms).
         _inlet_now = (
             self._current_features.get("inlet_temp")
             if hasattr(self, "_current_features")
@@ -1504,8 +1553,7 @@ class EnhancedModelWrapper:
             )
             final_outlet = capped
 
-        # NEW: Trajectory verification and course correction.
-        # Pass same forecast arrays as the binary search used.
+        # Trajectory verification and course correction.
         if config.TRAJECTORY_PREDICTION_ENABLED:
             final_outlet = self._verify_trajectory_and_correct(
                 outlet_temp=final_outlet,

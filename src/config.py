@@ -345,6 +345,26 @@ FEATURES_ENTITY_ID: str = os.getenv(
 DEBUG: bool = os.getenv("DEBUG", "0") == "1"
 CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.2"))
 TRAJECTORY_STEPS: int = int(os.getenv("TRAJECTORY_STEPS", "4"))
+# Binary-search objective used for outlet optimization:
+# - "horizon_end": optimize final horizon temperature error only (legacy behavior)
+# - "early_comfort_plus_horizon": optimize combined early-step comfort error and
+#   horizon-end error.
+TRAJECTORY_SEARCH_ERROR_MODE: str = os.getenv(
+    "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end"
+).strip().lower()
+if TRAJECTORY_SEARCH_ERROR_MODE not in {
+    "horizon_end",
+    "early_comfort_plus_horizon",
+}:
+    TRAJECTORY_SEARCH_ERROR_MODE = "horizon_end"
+# Number of early trajectory steps included in comfort error aggregation when
+# TRAJECTORY_SEARCH_ERROR_MODE="early_comfort_plus_horizon".
+try:
+    TRAJECTORY_SEARCH_EARLY_STEPS: int = max(
+        1, int(os.getenv("TRAJECTORY_SEARCH_EARLY_STEPS", "4"))
+    )
+except ValueError:
+    TRAJECTORY_SEARCH_EARLY_STEPS = 4
 CYCLE_INTERVAL_MINUTES: int = int(os.getenv("CYCLE_INTERVAL_MINUTES", "10"))
 MAX_TEMP_CHANGE_PER_CYCLE: int = int(
     os.getenv("MAX_TEMP_CHANGE_PER_CYCLE", "2")

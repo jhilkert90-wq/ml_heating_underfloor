@@ -8,14 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Forecast-trajectory heating target offset setting (`pv_traj_heating_target_offset` / `PV_TRAJ_HEATING_TARGET_OFFSET`) for heating-mode target lifting while forecast-driven trajectory scaling is active.
+- Binary-search objective settings for outlet optimisation: `trajectory_search_error_mode` / `TRAJECTORY_SEARCH_ERROR_MODE` and `trajectory_search_early_steps` / `TRAJECTORY_SEARCH_EARLY_STEPS`, exposed in add-on options and dashboard settings.
 
 ### Changed
-- Heating forecast-trajectory control now applies its own dedicated target offset during both direct-PV and rescue-driven activation, and replaces the standard PV surplus cheap offset while forecast mode is active.
+- Outlet optimisation now supports objective-mode selection between legacy horizon-end error and combined early-step comfort + horizon-end error, including configurable early-step window size.
 
 ### Fixed
-- Forecast-trajectory price suppression, target-offset activation, and overshoot-correction skip logic now share the same resolved forecast-trajectory state instead of separate proxy checks.
-- `compute_forecast_driven_trajectory_steps()` now preserves its forecast-specific behavior when `PV_TRAJ_FORECAST_MODE_ENABLED` is false, and forecast-rescue docstrings now correctly reference `PV_TRAJ_RESCUE_MIN_HOURS`.
+- Binary search no longer returns collapsed-range midpoints in non-monotonic/discontinuous cases; it now keeps best sampled candidate and runs local refinement around the minimum sampled error.
 
 ## [0.2.0] - 2026-02-10
 
