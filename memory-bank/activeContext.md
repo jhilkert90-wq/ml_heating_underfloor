@@ -1,5 +1,28 @@
 # Active Context - Current Work & Decision State
 
+### PR Merge Conflict Resolution — 2026-09-25
+
+#### **What changed**
+- Merged `origin/main` into the feature branch and resolved merge conflicts in:
+  - `CHANGELOG.md`
+  - `ml_heating_underfloor/CHANGELOG.md`
+  - `ml_heating_underfloor/config.yaml`
+- Preserved the branch’s unreleased binary-search objective/fallback changelog entry in root `CHANGELOG.md`.
+- Kept add-on changelog release chronology by retaining `0.2.81` and `0.2.82` sections in `ml_heating_underfloor/CHANGELOG.md`.
+- Kept add-on version at `0.2.82` in `ml_heating_underfloor/config.yaml`.
+
+#### **Why**
+- The PR had merge conflicts after upstream changes on `main`. This merge was required to make the PR mergeable and to preserve both upstream release-history updates and the PR’s new outlet-search work.
+
+#### **Files modified**
+- `CHANGELOG.md`
+- `ml_heating_underfloor/CHANGELOG.md`
+- `ml_heating_underfloor/config.yaml`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Binary Search Objective Mode + Robust Non-Monotonic Fallback — 2026-09-25
 
 #### **What changed**

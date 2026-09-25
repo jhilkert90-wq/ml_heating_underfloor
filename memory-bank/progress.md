@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## PR Merge Conflict Resolution — 2026-09-25
+
+**Status:** COMPLETED — merged `origin/main` into the PR branch and resolved merge conflicts.
+
+**Files changed:** `CHANGELOG.md`, `ml_heating_underfloor/CHANGELOG.md`, `ml_heating_underfloor/config.yaml`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Resolved all conflicts in changelog/version files after merging main. Kept unreleased outlet-search objective notes in the repository changelog, preserved add-on changelog release entries (`0.2.81` and `0.2.82`), and retained add-on version `0.2.82` in `config.yaml`.
+
+---
+
 ## Binary Search Objective Mode + Robust Non-Monotonic Fallback — 2026-09-25
 
 **Status:** COMPLETED — implemented selectable outlet-search objective modes and robust fallback/refinement for non-monotonic trajectory responses.
