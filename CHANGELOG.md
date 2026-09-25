@@ -7,16 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Binary-search objective settings for outlet optimisation: `trajectory_search_error_mode` / `TRAJECTORY_SEARCH_ERROR_MODE` and `trajectory_search_early_steps` / `TRAJECTORY_SEARCH_EARLY_STEPS`, exposed in add-on options and dashboard settings.
-
-### Changed
-- Outlet optimisation now supports objective-mode selection between legacy horizon-end error and combined early-step comfort + horizon-end error, including configurable early-step window size.
-
-### Fixed
-- Binary search no longer returns collapsed-range midpoints in non-monotonic/discontinuous cases; it now keeps best sampled candidate and runs local refinement around the minimum sampled error.
-- Binary search midpoint evaluation failures now stop the bisection loop and fall back to the best-so-far sampled candidate instead of immediately discarding a valid endpoint-derived result.
-- Resolved PR merge conflicts against `main` in changelog/version files while preserving unreleased outlet-search objective changes and add-on release history continuity.
 ## [0.2.0] - 2026-02-10
 
 ### Added
