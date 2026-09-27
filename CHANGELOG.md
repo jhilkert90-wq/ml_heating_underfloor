@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Cooling pre-cool now applies the configured target offset whenever pre-cool is active, including reactive triggers where room temperature is already above the cooling target.
-- Added regression coverage to ensure active pre-cooling reduces the cooling target in room-above-target scenarios.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added

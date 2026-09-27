@@ -1,5 +1,11 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.84] - 2026-09-27
+
+### Fixed
+- Cooling pre-cool now applies the configured target offset whenever pre-cool is active, including reactive triggers where room temperature is already above the cooling target.
+- Added regression coverage to ensure active pre-cooling reduces the cooling target in room-above-target scenarios.
+
 ## [0.2.83] - 2026-09-25
 
 ### Added
