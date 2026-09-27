@@ -859,10 +859,7 @@ def step_pre_cooling(ctx: CycleContext) -> None:
 
         # Apply pre-cool target shift
         _offset = 0.0  # initialise; set below if should_cool_now
-        if (
-            ctx.pre_cool_result.get("should_cool_now")
-            and ctx.prediction_indoor_temp <= ctx.target_indoor_temp
-        ):
+        if ctx.pre_cool_result.get("should_cool_now"):
             # Proportional offset from regression (if available), else fixed
             _use_proportional = (
                 getattr(config, "PRE_COOL_PROPORTIONAL", True)
