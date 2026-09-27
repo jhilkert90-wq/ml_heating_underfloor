@@ -91,14 +91,24 @@ class TestTargetShiftMechanics:
         assert ctx.pre_cool_active is True
         assert ctx.target_indoor_temp == pytest.approx(22.5)
 
-    def test_no_shift_when_room_above_target(self):
-        """When room > target, no shift needed — normal cooling handles it."""
-        current_indoor = 24.0
-        target = 23.0
+    def test_shift_applies_when_precool_active_and_room_above_target(self):
+        """Active pre-cool should apply offset even when room is already above target."""
+        ctx = self._make_ctx(room_temp=24.0, target_temp=23.0)
 
-        # main.py: only shift when prediction_indoor_temp <= target
-        should_shift = current_indoor <= target
-        assert should_shift is False
+        with patch(
+            "src.overheating_predictor.OverheatingPredictor.predict_overheating_risk",
+            return_value={
+                "risk": True,
+                "peak_temp": 26.3,
+                "peak_hour": 1.0,
+                "should_cool_now": True,
+                "reason": "room 24.0°C > target 23.0°C",
+            },
+        ):
+            cycle_routes.step_pre_cooling(ctx)
+
+        assert ctx.pre_cool_active is True
+        assert ctx.target_indoor_temp == pytest.approx(22.5)
 
     def test_proportional_shift_is_clamped_by_target_entity_minimum(self):
         """Proportional pre-cool must respect the configured target minimum."""
