@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### Pre-Cool Offset Applied for Reactive Activation — 2026-09-27
+
+#### **What changed**
+- `src/cycle_routes.py`: in `step_pre_cooling()`, removed the extra `prediction_indoor_temp <= target_indoor_temp` condition from the target-shift gate so active pre-cooling (`should_cool_now=True`) always applies the configured pre-cool target offset.
+- `tests/unit/test_pre_cooling_integration.py`: replaced the old "no shift when room above target" expectation with a regression test that asserts target reduction still occurs when pre-cool activates reactively because room temperature is already above target.
+
+#### **Why**
+- In reactive pre-cool activation, the predictor can correctly flag `should_cool_now=True` while room temperature is above the cooling target, but the extra gate prevented target shifting entirely. This created an inconsistent state where pre-cool was active but the cooling target was not reduced.
+
+#### **Files modified**
+- `src/cycle_routes.py`
+- `tests/unit/test_pre_cooling_integration.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### PR #86 Review Thread Fixes — 2026-09-25
 
 #### **What changed**

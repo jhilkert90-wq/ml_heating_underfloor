@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Pre-Cool Offset Applied for Reactive Activation — 2026-09-27
+
+**Status:** COMPLETED — fixed a cooling bug where active pre-cool could leave the cooling target unchanged.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_pre_cooling_integration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Removed the room-vs-target gate from `step_pre_cooling()` so whenever `should_cool_now` is true, the configured pre-cool target offset is applied. Added a regression test covering the room-above-target activation path and verified related cooling/pre-cool tests pass.
+
+---
+
 ## PR #86 Review Thread Fixes — 2026-09-25
 
 **Status:** COMPLETED — addressed review comments from `pullrequestreview-5314932101`.
