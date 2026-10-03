@@ -825,6 +825,12 @@ configuration:
       calibration. When indoor temp is high, automated blinds often close and block
       solar gain, making PV data unreliable. Set just below your blind trigger threshold.
       Default: 23.0°C.'
+  building_curve_enabled:
+    name: '[Advanced] Building Curve Sensors'
+    description: 'Publish sensor.ml_heating_base_outlet_curve and sensor.ml_heating_building_curve_kw. Default: true.'
+  building_curve_poly_degree:
+    name: '[Advanced] Building Curve Polynomial Degree'
+    description: 'Polynomial degree (1-4) for the curve coefficients exported as attributes. Default: 4.'
   heating_min_thermal_power_kw:
     name: '[Advanced] Heating Minimum Thermal Power (kW)'
     description: 'Minimum water-side thermal power (kW) required to accept a period

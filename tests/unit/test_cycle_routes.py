@@ -315,6 +315,15 @@ class TestRunIdleRoute:
         run_idle_route(ctx)
         # Should return early, no further steps
 
+    @patch("src.cycle_routes.step_publish_building_curves")
+    @patch("src.cycle_routes.step_get_sensor_data")
+    def test_publishes_building_curves_after_sensor_retrieval(
+        self, mock_sensors, mock_publish
+    ):
+        mock_sensors.return_value = True
+        run_idle_route(_make_ctx())
+        mock_publish.assert_called_once()
+
 
 class TestRunHeatingRoute:
     """Test heating route handler calls steps in correct order."""
