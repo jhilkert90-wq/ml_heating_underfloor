@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Building curve sensors**: `sensor.ml_heating_base_outlet_curve` (base outlet temperature without external heat sources) and `sensor.ml_heating_building_curve_kw` (HLC × ΔT building load) with heating (-20..20 °C) and cooling (10..40 °C) curves, raw unclamped values, polynomial coefficients (degree 1-4) and all learned parameters as attributes. New options `building_curve_enabled` and `building_curve_poly_degree`.
-
-### Fixed
-- Building curve publication now retries failed Home Assistant writes, uses heating and cooling model parameters independently, and runs while the system is idle.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
