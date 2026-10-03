@@ -560,6 +560,16 @@ PV_CALIBRATION_INDOOR_CEILING: float = float(
 # Standardised thresholds applied consistently across calibration, session
 # learning, and runtime HP-active detection.
 #
+# BUILDING_CURVE_ENABLED / BUILDING_CURVE_POLY_DEGREE
+#   Publish sensor.ml_heating_base_outlet_curve and
+#   sensor.ml_heating_building_curve_kw (model-based, no external heat
+#   sources) with polynomial coefficients (degree 1-4) as attributes.
+BUILDING_CURVE_ENABLED: bool = os.getenv(
+    "BUILDING_CURVE_ENABLED", "true"
+).lower() in ("1", "true", "yes")
+BUILDING_CURVE_POLY_DEGREE: int = int(
+    os.getenv("BUILDING_CURVE_POLY_DEGREE", "4")
+)
 # HEATING_MIN_THERMAL_POWER_KW
 #   Minimum water-side thermal power [kW] accepted as genuine *heating*.
 #   Used as a quality gate in HLC calibration (both historical and session-

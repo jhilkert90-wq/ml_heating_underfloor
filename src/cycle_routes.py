@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
+from .building_curve import BuildingCurvePublisher
 from .cycle_context import CycleContext
 from .ha_client import get_sensor_attributes
 from .heating_controller import SensorDataManager
@@ -695,12 +696,62 @@ def step_save_state(ctx: CycleContext) -> None:
     ctx.state.update(state_to_save)
 
 
+_BUILDING_CURVE_PUBLISHER = BuildingCurvePublisher()
+
+
+def _read_target(ctx: CycleContext, entity_id: str) -> float | None:
+    if not entity_id:
+        return None
+    try:
+        value = ctx.ha_client.get_state(entity_id, ctx.all_states)
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def step_publish_building_curves(ctx: CycleContext) -> None:
+    """Publish the base-outlet and building-kW curve sensors."""
+    if not getattr(config, "BUILDING_CURVE_ENABLED", True):
+        return
+    try:
+        if ctx.target_indoor_temp is None or ctx.wrapper is None:
+            return
+        mode = ctx.climate_mode if ctx.climate_mode == "cooling" else "heating"
+        targets = {mode: float(ctx.target_indoor_temp)}
+        if mode == "cooling":
+            heat = _read_target(ctx, config.TARGET_INDOOR_TEMP_ENTITY_ID)
+            if heat is not None:
+                targets["heating"] = heat
+        else:
+            cool = _read_target(
+                ctx, getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
+            )
+            targets["cooling"] = (
+                cool if cool is not None else targets["heating"]
+            )
+        _BUILDING_CURVE_PUBLISHER.publish(
+            ctx.ha_client,
+            {
+                "heating": ctx.wrapper._heating_thermal_model,
+                "cooling": ctx.wrapper._cooling_thermal_model,
+            },
+            targets,
+            mode,
+            ctx.outdoor_temp,
+            degree=getattr(config, "BUILDING_CURVE_POLY_DEGREE", 4),
+        )
+    except Exception:
+        logging.debug("Failed to publish building curves.", exc_info=True)
+
+
 def step_publish_auxiliary_sensors(ctx: CycleContext) -> None:
     """Publish feature and price sensors."""
     try:
         ctx.ha_client.publish_last_run_features(ctx.features_dict)
     except Exception:
         logging.debug("Failed to publish features sensor.", exc_info=True)
+
+    step_publish_building_curves(ctx)
 
     if ctx.price_data is not None:
         try:
@@ -1132,6 +1183,8 @@ def run_idle_route(ctx: CycleContext) -> None:
     """
     if not step_get_sensor_data(ctx):
         return
+
+    step_publish_building_curves(ctx)
 
     step_determine_prediction_indoor(ctx)
 
