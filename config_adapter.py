@@ -335,6 +335,13 @@ def convert_addon_to_env(config):
             config.get('solar_decay_tau_hours', 1.0)
         ),
 
+        'BUILDING_CURVE_ENABLED': str(
+            config.get('building_curve_enabled', True)
+        ),
+        'BUILDING_CURVE_POLY_DEGREE': str(
+            config.get('building_curve_poly_degree', 4)
+        ),
+
         # --- Thermal Power Gate Thresholds ---
         'HEATING_MIN_THERMAL_POWER_KW': str(
             config.get('heating_min_thermal_power_kw', 0.5)

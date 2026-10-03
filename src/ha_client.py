@@ -882,6 +882,20 @@ def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
             "icon": "mdi:flash",
             "device_class": "power",
         },
+        "sensor.ml_heating_base_outlet_curve": {
+            "unique_id": "ml_heating_base_outlet_curve",
+            "friendly_name": "ML Heating Base Outlet Curve",
+            "unit_of_measurement": "°C",
+            "device_class": "temperature",
+            "icon": "mdi:chart-bell-curve-cumulative",
+        },
+        "sensor.ml_heating_building_curve_kw": {
+            "unique_id": "ml_heating_building_curve_kw",
+            "friendly_name": "ML Heating Building Curve",
+            "unit_of_measurement": "kW",
+            "device_class": "power",
+            "icon": "mdi:home-thermometer",
+        },
         "sensor.ml_heating_features": {
             "unique_id": "ml_heating_features",
             "friendly_name": "ML Heating Features",
