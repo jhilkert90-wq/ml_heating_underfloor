@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Building Curve Sensors — 2026-10-03
+
+**Status:** COMPLETED — two HA sensors export model-based base outlet temperature and building kW curves.
+
+**Files changed:** `src/building_curve.py`, `src/cycle_routes.py`, `src/ha_client.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, translations, `tests/unit/test_building_curve.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, memory-bank
+
+**Summary:** Curves use only HLC and outlet effectiveness (no PV/fireplace/TV), raw/unclamped, heating -20..20 °C and cooling 10..40 °C at the active targets. Attributes carry polynomial coefficients, fit errors, curve points (dropped if >14 kB) and all learned parameters. Published when parameters/targets change, outdoor moves ≥0.5 K, or hourly.
+
+---
+
 ## Pre-Cool Offset Applied for Reactive Activation — 2026-09-27
 
 **Status:** COMPLETED — fixed a cooling bug where active pre-cool could leave the cooling target unchanged.

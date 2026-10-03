@@ -1,5 +1,18 @@
 # Active Context - Current Work & Decision State
 
+### Building Curve Sensors — 2026-10-03
+
+#### **What changed**
+- New `src/building_curve.py` computes base outlet and building kW (HLC × ΔT) curves plus polynomial fits; `step_publish_building_curves()` in `src/cycle_routes.py` publishes `sensor.ml_heating_base_outlet_curve` and `sensor.ml_heating_building_curve_kw`.
+- Options `building_curve_enabled` / `building_curve_poly_degree` added (config.py, config_adapter.py, config.yaml, translations).
+
+#### **Why**
+- User requested model-only curves (no external heat sources) with all coefficients and learned parameters exported as HA attributes.
+
+#### **Files modified**
+- See progress.md entry of the same date.
+
+
 ### Pre-Cool Offset Applied for Reactive Activation — 2026-09-27
 
 #### **What changed**
