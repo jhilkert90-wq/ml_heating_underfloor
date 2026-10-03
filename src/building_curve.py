@@ -109,7 +109,7 @@ def _curve_attributes(
 
 
 def compute_curves(
-    parameters: Dict[str, Any],
+    parameters_by_mode: Dict[str, Dict[str, Any]],
     targets: Dict[str, float],
     degree: int = 4,
 ) -> Dict[str, Dict[str, Any]]:
@@ -118,11 +118,12 @@ def compute_curves(
     ``targets`` maps climate mode -> active target indoor temperature.
     Returns ``{"outlet": {...}, "kw": {...}}``.
     """
-    hlc = float(parameters["heat_loss_coefficient"])
-    eff = float(parameters["outlet_effectiveness"])
     outlet_attrs: Dict[str, Any] = {}
     kw_attrs: Dict[str, Any] = {}
     for mode, target in targets.items():
+        parameters = parameters_by_mode[mode]
+        hlc = float(parameters["heat_loss_coefficient"])
+        eff = float(parameters["outlet_effectiveness"])
         grid = outdoor_grid(mode)
         outlets = [base_outlet_temp(t, target, hlc, eff) for t in grid]
         if any(v is None for v in outlets):
@@ -158,10 +159,32 @@ def _shrink_to_limit(attrs: Dict[str, Any]) -> Dict[str, Any]:
     return slim
 
 
-def _parameter_signature(parameters: Dict[str, Any], targets: Dict[str, float]):
+def _parameter_signature(
+    parameters_by_mode: Dict[str, Dict[str, Any]], targets: Dict[str, float]
+):
     return (
-        tuple(sorted((k, round(float(v), 6)) for k, v in parameters.items()
-                     if isinstance(v, (int, float)))),
+        tuple(
+            (
+                mode,
+                tuple(
+                    sorted(
+                        (k, round(float(v), 6))
+                        for k, v in parameters.items()
+                        if isinstance(v, (int, float))
+                    )
+                ),
+                tuple(
+                    sorted(
+                        (str(k), round(float(v), 6))
+                        for k, v in parameters.get(
+                            "external_source_weights", {}
+                        ).items()
+                        if isinstance(v, (int, float))
+                    )
+                ),
+            )
+            for mode, parameters in sorted(parameters_by_mode.items())
+        ),
         tuple(sorted((k, round(float(v), 2)) for k, v in targets.items())),
     )
 
@@ -193,7 +216,7 @@ class BuildingCurvePublisher:
     def publish(
         self,
         ha_client,
-        thermal_model,
+        thermal_models: Dict[str, Any],
         targets: Dict[str, float],
         climate_mode: str,
         outdoor_temp: Optional[float],
@@ -206,26 +229,49 @@ class BuildingCurvePublisher:
         from . import config
 
         now = time.time() if now is None else now
-        parameters = dict(thermal_model._get_current_export_parameters())
-        parameters["external_source_weights"] = dict(
-            getattr(thermal_model, "external_source_weights", {}) or {}
-        )
-        num_params = {
-            k: v for k, v in parameters.items()
-            if isinstance(v, (int, float))
-        }
         if not targets or climate_mode not in targets:
             return False
-        signature = _parameter_signature(num_params, targets)
+        parameters_by_mode = {}
+        for mode in ("heating", "cooling"):
+            thermal_model = thermal_models.get(mode)
+            if thermal_model is None:
+                return False
+            parameters = dict(thermal_model._get_current_export_parameters())
+            parameters["external_source_weights"] = dict(
+                getattr(thermal_model, "external_source_weights", {}) or {}
+            )
+            parameters_by_mode[mode] = parameters
+
+        signature = _parameter_signature(parameters_by_mode, targets)
         if not self.should_publish(signature, outdoor_temp, now):
             return False
 
-        curves = compute_curves(num_params, targets, degree)
-        learned = {f"param_{k}": _r(v, 6) for k, v in num_params.items()}
-        for src, weight in parameters["external_source_weights"].items():
+        curves = compute_curves(parameters_by_mode, targets, degree)
+        learned = {}
+        for mode, parameters in parameters_by_mode.items():
+            mode_params = {
+                k: v for k, v in parameters.items()
+                if isinstance(v, (int, float))
+            }
+            learned.update(
+                {f"param_{mode}_{k}": _r(v, 6)
+                 for k, v in mode_params.items()}
+            )
+            for src, weight in parameters["external_source_weights"].items():
+                learned[f"param_{mode}_weight_{src}"] = _r(weight, 6)
+        active_parameters = parameters_by_mode[climate_mode]
+        active_params = {
+            k: v for k, v in active_parameters.items()
+            if isinstance(v, (int, float))
+        }
+        learned.update(
+            {f"param_{k}": _r(v, 6) for k, v in active_params.items()}
+        )
+        for src, weight in active_parameters["external_source_weights"].items():
             learned[f"param_weight_{src}"] = _r(weight, 6)
         updated = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
 
+        num_params = active_params
         hlc = float(num_params["heat_loss_coefficient"])
         eff = float(num_params["outlet_effectiveness"])
         target = targets[climate_mode]
@@ -234,11 +280,13 @@ class BuildingCurvePublisher:
         kw_state = building_load_kw(t_out, target, hlc, climate_mode)
 
         shadow = getattr(config, "SHADOW_MODE", False)
+        all_succeeded = True
         for entity, state, key, digits in (
             (BASE_OUTLET_ENTITY_ID, outlet_state, "outlet", 1),
             (BUILDING_KW_ENTITY_ID, kw_state, "kw", 3),
         ):
             if state is None:
+                all_succeeded = False
                 continue
             entity_id = get_shadow_output_entity_id(
                 entity, shadow_deployment=shadow
@@ -252,9 +300,13 @@ class BuildingCurvePublisher:
                 "current_target_indoor": _r(target, 2),
                 "last_updated": updated,
             })
-            ha_client.set_state(
+            if ha_client.set_state(
                 entity_id, state, _shrink_to_limit(attrs), round_digits=digits
-            )
+            ) is not True:
+                all_succeeded = False
+
+        if not all_succeeded:
+            return False
 
         self._last_signature = signature
         self._last_time = now

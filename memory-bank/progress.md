@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Building Curve Review Fixes — 2026-10-03
+
+**Status:** COMPLETED — corrected mode-specific curve publication, failed-write retries, and idle updates.
+
+**Files changed:** `src/building_curve.py`, `src/cycle_routes.py`, `src/ha_client.py`, `tests/unit/test_building_curve.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_ha_client.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Home Assistant state writes now confirm HTTP success before publication caching advances; both mode-specific models supply their own curves and are represented in the cache signature; idle cycles publish curves after required sensor retrieval succeeds.
+
+---
+
 ## Building Curve Sensors — 2026-10-03
 
 **Status:** COMPLETED — two HA sensors export model-based base outlet temperature and building kW curves.

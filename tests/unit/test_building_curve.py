@@ -47,7 +47,9 @@ def test_polynomial_fit_exact_for_linear_curve():
 
 def test_compute_curves_contains_all_coefficients():
     out = bc.compute_curves(
-        PARAMS, {"heating": 21.0, "cooling": 24.0}, degree=4
+        {"heating": PARAMS, "cooling": PARAMS},
+        {"heating": 21.0, "cooling": 24.0},
+        degree=4,
     )
     for key in ("outlet", "kw"):
         for mode in ("heating", "cooling"):
@@ -80,9 +82,11 @@ def _model():
 
 def test_publisher_publishes_two_sensors_then_throttles():
     ha = MagicMock()
+    ha.set_state.return_value = True
     pub = bc.BuildingCurvePublisher()
     targets = {"heating": 21.0, "cooling": 24.0}
-    assert pub.publish(ha, _model(), targets, "heating", 5.0, now=1000.0)
+    models = {"heating": _model(), "cooling": _model()}
+    assert pub.publish(ha, models, targets, "heating", 5.0, now=1000.0)
     assert ha.set_state.call_count == 2
     ids = [c.args[0] for c in ha.set_state.call_args_list]
     assert bc.BASE_OUTLET_ENTITY_ID in ids
@@ -91,8 +95,52 @@ def test_publisher_publishes_two_sensors_then_throttles():
     assert attrs["param_heat_loss_coefficient"] == 0.2
     assert attrs["param_weight_pv"] == 0.002
     ha.reset_mock()
-    assert not pub.publish(ha, _model(), targets, "heating", 5.1, now=1100.0)
+    assert not pub.publish(ha, models, targets, "heating", 5.1, now=1100.0)
     assert ha.set_state.call_count == 0
     # outdoor change, then hourly refresh
-    assert pub.publish(ha, _model(), targets, "heating", 8.0, now=1200.0)
-    assert pub.publish(ha, _model(), targets, "heating", 8.0, now=5000.0)
+    assert pub.publish(ha, models, targets, "heating", 8.0, now=1200.0)
+    assert pub.publish(ha, models, targets, "heating", 8.0, now=5000.0)
+
+
+def test_publisher_retries_after_a_sensor_write_fails():
+    ha = MagicMock()
+    ha.set_state.side_effect = [True, False]
+    pub = bc.BuildingCurvePublisher()
+    models = {"heating": _model(), "cooling": _model()}
+    targets = {"heating": 21.0, "cooling": 24.0}
+
+    assert not pub.publish(ha, models, targets, "heating", 5.0, now=1000.0)
+    ha.set_state.side_effect = None
+    ha.set_state.return_value = True
+    assert pub.publish(ha, models, targets, "heating", 5.0, now=1001.0)
+
+
+def test_publisher_uses_both_mode_parameters_and_signs_both():
+    ha = MagicMock()
+    ha.set_state.return_value = True
+    pub = bc.BuildingCurvePublisher()
+    models = {"heating": _model(), "cooling": _model()}
+    targets = {"heating": 21.0, "cooling": 24.0}
+
+    assert pub.publish(ha, models, targets, "heating", 5.0, now=1000.0)
+    attributes = ha.set_state.call_args_list[0].args[2]
+    assert attributes["param_heating_heat_loss_coefficient"] == 0.2
+    assert attributes["param_cooling_heat_loss_coefficient"] == 0.2
+    ha.reset_mock()
+    assert not pub.publish(ha, models, targets, "heating", 5.0, now=1001.0)
+
+    models["cooling"]._get_current_export_parameters.return_value[
+        "heat_loss_coefficient"
+    ] = 0.4
+    assert pub.publish(ha, models, targets, "heating", 5.0, now=1002.0)
+
+
+def test_compute_curves_uses_matching_mode_parameters():
+    cooling_params = {**PARAMS, "heat_loss_coefficient": 0.4}
+    curves = bc.compute_curves(
+        {"heating": PARAMS, "cooling": cooling_params},
+        {"heating": 21.0, "cooling": 24.0},
+    )
+
+    assert curves["kw"]["heating_values"][0] == pytest.approx(8.2)
+    assert curves["kw"]["cooling_values"][0] == pytest.approx(-5.6)

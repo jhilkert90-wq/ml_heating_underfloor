@@ -731,7 +731,10 @@ def step_publish_building_curves(ctx: CycleContext) -> None:
             )
         _BUILDING_CURVE_PUBLISHER.publish(
             ctx.ha_client,
-            ctx.wrapper.thermal_model,
+            {
+                "heating": ctx.wrapper._heating_thermal_model,
+                "cooling": ctx.wrapper._cooling_thermal_model,
+            },
             targets,
             mode,
             ctx.outdoor_temp,
@@ -1180,6 +1183,8 @@ def run_idle_route(ctx: CycleContext) -> None:
     """
     if not step_get_sensor_data(ctx):
         return
+
+    step_publish_building_curves(ctx)
 
     step_determine_prediction_indoor(ctx)
 

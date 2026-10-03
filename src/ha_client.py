@@ -202,7 +202,7 @@ class HAClient:
         value: float,
         attributes: Optional[Dict[str, Any]] = None,
         round_digits: Optional[int] = 1,
-    ) -> None:
+    ) -> bool:
         """
         Creates or updates the state of a sensor entity in Home Assistant.
 
@@ -217,6 +217,9 @@ class HAClient:
             attributes: A dictionary of additional attributes for the sensor.
             round_digits: The number of decimal places to round the state
             value to.
+
+        Returns:
+            True if Home Assistant confirms the state update, otherwise False.
         """
         effective_entity_id = get_shadow_output_entity_id(
             entity_id,
@@ -249,11 +252,16 @@ class HAClient:
                 effective_entity_id,
                 payload,
             )
-            requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=10
+            )
+            response.raise_for_status()
         except requests.RequestException as exc:
             warnings.warn(
                 f"HA state set failed for {effective_entity_id}: {exc}"
             )
+            return False
+        return True
 
     def get_hourly_forecast(self, n: int | None = None) -> List[float]:
         """

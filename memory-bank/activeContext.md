@@ -1,5 +1,28 @@
 # Active Context - Current Work & Decision State
 
+### Building Curve Review Fixes — 2026-10-03
+
+#### **What changed**
+- `src/ha_client.py` returns confirmed HTTP success from `set_state()`.
+- `src/building_curve.py` only advances its publication cache after both writes succeed and computes/signs curves using separate heating and cooling model parameter snapshots.
+- `src/cycle_routes.py` publishes curves from the idle route after successful sensor retrieval.
+
+#### **Why**
+- Prevent failed Home Assistant writes from suppressing retries, ensure each mode's curve matches its own learned model, and keep curve sensors current while the climate system is off.
+
+#### **Files modified**
+- `src/building_curve.py`
+- `src/cycle_routes.py`
+- `src/ha_client.py`
+- `tests/unit/test_building_curve.py`
+- `tests/unit/test_cycle_routes.py`
+- `tests/unit/test_ha_client.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Building Curve Sensors — 2026-10-03
 
 #### **What changed**

@@ -1,5 +1,6 @@
 
 import pytest
+import requests
 from unittest.mock import patch, MagicMock
 from src.ha_client import get_sensor_attributes, create_ha_client
 
@@ -50,8 +51,18 @@ def test_get_state_from_cache(mock_requests, ha_client):
 @patch('src.ha_client.requests')
 def test_set_state_success(mock_requests, ha_client):
     """Test successfully setting a state."""
-    ha_client.set_state("sensor.test", 22.5)
+    assert ha_client.set_state("sensor.test", 22.5) is True
     mock_requests.post.assert_called_once()
+
+
+@patch('src.ha_client.requests.post')
+def test_set_state_reports_http_failure(mock_post, ha_client):
+    mock_post.return_value.raise_for_status.side_effect = requests.HTTPError(
+        "server error"
+    )
+
+    with pytest.warns(UserWarning, match="HA state set failed"):
+        assert ha_client.set_state("sensor.test", 22.5) is False
 
 
 @patch('src.ha_client.requests')
