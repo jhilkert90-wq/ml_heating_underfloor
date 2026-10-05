@@ -1,5 +1,26 @@
 # Active Context - Current Work & Decision State
 
+### PR #90 Review Fixes — 2026-10-05
+
+#### **What changed**
+- Limited dashboard energy aggregation to the half-open interval from selected start through, but not including, the effective history end.
+- Added `auto` as a heating alias in historical replay and enforced the shared minimum and maximum fallback COP bounds for direct callers.
+- Added regressions for next-midnight exclusion, `auto` replay, and both valid COP boundaries.
+
+#### **Why**
+- Avoid counting energy beyond the requested/current history end, replay supported Home Assistant climate states consistently, and prevent unsupported fallback COP values from biasing estimates.
+
+#### **Files modified**
+- `src/counterfactual_replay.py`
+- `dashboard/components/counterfactual.py`
+- `tests/unit/test_counterfactual_replay.py`
+- `tests/unit/test_dashboard_counterfactual.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Historical Target-Hold Replay — 2026-10-05
 
 #### **What changed**

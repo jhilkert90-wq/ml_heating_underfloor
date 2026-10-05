@@ -350,13 +350,14 @@ def _compute_external_gains(
 
 
 def _trim_and_resum(
-    result: dict[str, Any], selected_start: datetime
+    result: dict[str, Any], selected_start: datetime, end: datetime
 ) -> dict[str, Any]:
     if not result.get("complete"):
         return result
     intervals = result["intervals"]
     intervals = intervals.loc[
-        intervals["_time"] >= pd.Timestamp(selected_start)
+        (intervals["_time"] >= pd.Timestamp(selected_start))
+        & (intervals["_time"] < pd.Timestamp(end))
     ].reset_index(drop=True)
     if intervals.empty:
         return {
@@ -423,7 +424,7 @@ def _run_counterfactual(
         specific_heat_capacity=float(config.SPECIFIC_HEAT_CAPACITY),
         fallback_cop=fallback_cop,
     )
-    return _trim_and_resum(result, selected_start)
+    return _trim_and_resum(result, selected_start, end)
 
 
 def render_counterfactual() -> None:

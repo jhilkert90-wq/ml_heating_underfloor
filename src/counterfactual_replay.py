@@ -23,6 +23,7 @@ MIN_COP_ELECTRICAL_POWER_KW = 0.1
 MIN_VALID_COP = 1.0
 MAX_VALID_COP = 10.0
 CLIMATE_MODE_ALIASES = {
+    "auto": "heating",
     "heat": "heating",
     "heating": "heating",
     "cool": "cooling",
@@ -75,7 +76,7 @@ def replay_target_hold(
     if (
         not all(np.isfinite(value) for value in (specific_heat, estimated_cop))
         or specific_heat <= 0
-        or estimated_cop <= 0
+        or not MIN_VALID_COP <= estimated_cop <= MAX_VALID_COP
     ):
         return _incomplete("Model parameters or fallback COP are outside valid bounds.")
 
@@ -125,7 +126,7 @@ def replay_target_hold(
         missing_mask |= ~np.isfinite(frame[column])
     frame["mode"] = frame["mode"].astype(str).str.strip().str.lower()
     missing_mask |= ~frame["mode"].isin(
-        {"heating", "heat", "cooling", "cool", "off", "idle"}
+        {"heating", "heat", "auto", "cooling", "cool", "off", "idle"}
     )
     if missing_mask.any():
         return _incomplete(

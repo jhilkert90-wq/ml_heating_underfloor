@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## PR #90 Review Fixes — 2026-10-05
+
+**Status:** COMPLETED — fixed all three counterfactual replay findings from review.
+
+**Files changed:** `src/counterfactual_replay.py`, `dashboard/components/counterfactual.py`, `tests/unit/test_counterfactual_replay.py`, `tests/unit/test_dashboard_counterfactual.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Dashboard aggregation now keeps only timestamps in the effective half-open selected range, supported `auto` mode history replays as heating, and direct replay callers must provide a fallback COP within the declared 1–10 range. Added regression coverage for end-bound exclusion, mode mapping, and inclusive COP limits.
+
+---
+
 ## Historical Target-Hold Replay — 2026-10-05
 
 **Status:** COMPLETED — added an experimental, read-only counterfactual replay for historical target tracking and addressed validation feedback.

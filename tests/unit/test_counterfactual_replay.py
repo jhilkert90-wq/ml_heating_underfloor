@@ -103,6 +103,29 @@ def test_cooling_mode_replay_estimates_cooling_energy():
     assert result["intervals"]["counterfactual_thermal_power_kw"].gt(0).all()
 
 
+def test_auto_mode_replays_as_heating():
+    result = _replay(_history(mode="auto"))
+
+    assert result["complete"]
+    assert result["intervals"]["climate_mode"].eq("heating").all()
+
+
+@pytest.mark.parametrize(
+    ("fallback_cop", "complete"),
+    [(0.9, False), (1.0, True), (10.0, True), (10.1, False)],
+)
+def test_fallback_cop_must_be_within_supported_bounds(fallback_cop, complete):
+    result = replay_target_hold(
+        _history(thermal_power=0.0),
+        heat_loss_coefficient=0.1,
+        thermal_time_constant_hours=4.0,
+        specific_heat_capacity=4.186,
+        fallback_cop=fallback_cop,
+    )
+
+    assert result["complete"] is complete
+
+
 def test_missing_required_sensor_column_marks_result_incomplete():
     frame = _history().drop(columns=["electrical_power_w"])
 

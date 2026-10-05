@@ -224,6 +224,40 @@ def test_run_counterfactual_trims_warmup_and_resums_selected_period(monkeypatch)
     ].sum()
 
 
+def test_trim_and_resum_excludes_effective_end_timestamp():
+    result = {
+        "complete": True,
+        "intervals": pd.DataFrame(
+            {
+                "_time": pd.to_datetime(
+                    [
+                        "2026-01-01T23:55:00Z",
+                        "2026-01-02T23:55:00Z",
+                        "2026-01-03T00:00:00Z",
+                    ]
+                ),
+                "actual_thermal_energy_kwh": [1.0, 2.0, 3.0],
+                "counterfactual_thermal_energy_kwh": [0.5, 1.0, 1.5],
+                "actual_electrical_energy_kwh": [0.2, 0.4, 0.6],
+                "counterfactual_electrical_energy_kwh": [0.1, 0.2, 0.3],
+                "cop_source": ["measured", "estimated fallback", "measured"],
+            }
+        ),
+    }
+
+    trimmed = counterfactual._trim_and_resum(
+        result,
+        pd.Timestamp("2026-01-02T00:00:00Z").to_pydatetime(),
+        pd.Timestamp("2026-01-03T00:00:00Z").to_pydatetime(),
+    )
+
+    assert trimmed["intervals"]["_time"].tolist() == [
+        pd.Timestamp("2026-01-02T23:55:00Z")
+    ]
+    assert trimmed["actual_thermal_kwh"] == 2.0
+    assert trimmed["sample_count"] == 1
+
+
 def test_run_counterfactual_reports_empty_history(monkeypatch):
     _mock_counterfactual_dependencies(monkeypatch, pd.DataFrame())
 

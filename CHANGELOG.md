@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Idle cycles publish the complete calculated feature set without running active setpoint controls or disturbing HVAC-off balance sampling.
 
 ### Fixed
+- Target-hold replay now excludes samples at the effective range end, accepts `auto` climate history as heating, and validates fallback COP against the supported range.
 - Target-hold replay now selects each climate mode's thermal time constant before calculating interval decay, uses valid model heat-source defaults when weights are absent, and keeps its COP input bounds consistent with measured-COP validation.
 - Dashboard history replay now uses shared timestamp parsing, reports state-file read failures, and resums only selected-period energy after excluding the warm-up tail.
 - Replay and dashboard now share a single history sampling interval, reject numerically unresolved intervals before simulation, and report missing heating parameters accurately.
