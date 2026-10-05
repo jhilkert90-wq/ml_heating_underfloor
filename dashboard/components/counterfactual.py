@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import math
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -13,12 +15,17 @@ import streamlit as st
 
 from dashboard.data_service import _find_cooling_state_file, _find_state_file
 from src import config
-from src.counterfactual_replay import replay_target_hold
+from src.counterfactual_replay import (
+    MAX_VALID_COP,
+    MIN_VALID_COP,
+    replay_target_hold,
+)
 from src.ha_client import create_ha_client
 from src.thermal_equilibrium_model import ThermalEquilibriumModel
 
 
 _HISTORY_TAIL_HOURS = 24
+_LOG = logging.getLogger(__name__)
 _STATE_ALIASES = {
     "heat": "heating",
     "heating": "heating",
@@ -57,6 +64,21 @@ def _parse_number(state: Any) -> float:
         return float("nan")
 
 
+def _parse_history_timestamp(record: dict[str, Any]) -> pd.Timestamp | None:
+    timestamp = record.get("last_changed") or record.get("last_updated")
+    if not timestamp:
+        return None
+    try:
+        stamp = pd.Timestamp(timestamp)
+        return (
+            stamp.tz_localize("UTC")
+            if stamp.tzinfo is None
+            else stamp.tz_convert("UTC")
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _build_history_frame(
     raw: list[list[dict[str, Any]]],
     entity_ids: list[str],
@@ -80,13 +102,8 @@ def _build_history_frame(
     for entity_id, names in by_entity.items():
         events: dict[pd.Timestamp, Any] = {}
         for record in histories.get(entity_id, []):
-            timestamp = record.get("last_changed") or record.get("last_updated")
-            if not timestamp:
-                continue
-            try:
-                stamp = pd.Timestamp(timestamp)
-                stamp = stamp.tz_localize("UTC") if stamp.tzinfo is None else stamp.tz_convert("UTC")
-            except (TypeError, ValueError):
+            stamp = _parse_history_timestamp(record)
+            if stamp is None:
                 continue
             value = _parse_number(record.get("state"))
             events[stamp] = value if np.isfinite(value) else "__invalid__"
@@ -98,13 +115,8 @@ def _build_history_frame(
 
     mode_events: dict[pd.Timestamp, str] = {}
     for record in histories.get(mode_entity, []):
-        timestamp = record.get("last_changed") or record.get("last_updated")
-        if not timestamp:
-            continue
-        try:
-            stamp = pd.Timestamp(timestamp)
-            stamp = stamp.tz_localize("UTC") if stamp.tzinfo is None else stamp.tz_convert("UTC")
-        except (TypeError, ValueError):
+        stamp = _parse_history_timestamp(record)
+        if stamp is None:
             continue
         mode_events[stamp] = _STATE_ALIASES.get(
             str(record.get("state", "")).strip().lower(), ""
@@ -132,8 +144,6 @@ def _read_state(path: str | None) -> dict[str, Any]:
     if not path:
         return {}
     try:
-        import json
-
         with open(path, "r", encoding="utf-8") as state_file:
             state = json.load(state_file)
         baseline = state.get("baseline_parameters", {})
@@ -157,7 +167,10 @@ def _read_state(path: str | None) -> dict[str, Any]:
                 if isinstance(return_value, (int, float)):
                     effective[parameter] = return_value
         return effective
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError) as exc:
+        _LOG.warning(
+            "Unable to read counterfactual thermal state from %s: %s", path, exc
+        )
         return {}
 
 
@@ -174,11 +187,17 @@ def _make_model(parameters: dict[str, Any]) -> ThermalEquilibriumModel:
         if attribute in parameters:
             setattr(model, attribute, float(parameters[attribute]))
     model.external_source_weights = {
-        "pv": float(parameters.get("pv_heat_weight", model.pv_heat_weight)),
-        "fireplace": float(
-            parameters.get("fireplace_heat_weight", model.fireplace_heat_weight)
+        "pv": float(
+            parameters.get("pv_heat_weight", model.external_source_weights["pv"])
         ),
-        "tv": float(parameters.get("tv_heat_weight", model.tv_heat_weight)),
+        "fireplace": float(
+            parameters.get(
+                "fireplace_heat_weight", model.external_source_weights["fireplace"]
+            )
+        ),
+        "tv": float(
+            parameters.get("tv_heat_weight", model.external_source_weights["tv"])
+        ),
     }
     return model
 
@@ -201,25 +220,30 @@ def _fetch_history(start: datetime, end: datetime) -> pd.DataFrame:
 
 
 def _external_gain_kw(
-    row: pd.Series,
+    *,
     model: ThermalEquilibriumModel,
     pv_values: list[float],
     position: int,
+    outlet_temp: float,
+    outdoor_temp: float,
+    indoor_temp: float,
+    fireplace_on: float,
+    tv_on: float,
 ) -> float:
     interval_minutes = 5
     history_step = max(1, int(round(config.HISTORY_STEP_MINUTES / interval_minutes)))
     pv_history = list(reversed(pv_values[position::-history_step]))
     equilibrium = model.predict_equilibrium_temperature(
-        outlet_temp=float(row["outlet_temp"]),
-        outdoor_temp=float(row["outdoor_temp"]),
-        current_indoor=float(row["indoor_temp"]),
+        outlet_temp=float(outlet_temp),
+        outdoor_temp=float(outdoor_temp),
+        current_indoor=float(indoor_temp),
         pv_power=pv_history,
-        fireplace_on=float(row["fireplace_on"]),
-        tv_on=float(row["tv_on"]),
+        fireplace_on=float(fireplace_on),
+        tv_on=float(tv_on),
         thermal_power=0.0,
         _suppress_logging=True,
     )
-    return (float(equilibrium) - float(row["outdoor_temp"])) * float(
+    return (float(equilibrium) - float(outdoor_temp)) * float(
         model.heat_loss_coefficient
     )
 
@@ -282,8 +306,6 @@ def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -
         "cooling": cooling_parameters,
     }
     for mode, parameters in mode_parameters.items():
-        if mode == "cooling" and not has_cooling_history and not parameters:
-            continue
         for key in ("heat_loss_coefficient", "thermal_time_constant"):
             if key not in parameters or not np.isfinite(float(parameters[key])):
                 return {
@@ -295,15 +317,42 @@ def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -
     pv_values = history["pv_power"].astype(float).tolist()
     external_gains = []
     last_mode = "heating"
-    for position, row in history.iterrows():
-        mode = str(row["mode"]).strip().lower()
+    external_gain_columns = (
+        "mode",
+        "outlet_temp",
+        "outdoor_temp",
+        "indoor_temp",
+        "fireplace_on",
+        "tv_on",
+    )
+    for position, values in enumerate(
+        history.loc[:, external_gain_columns].itertuples(index=False, name=None)
+    ):
+        (
+            raw_mode,
+            outlet_temp,
+            outdoor_temp,
+            indoor_temp,
+            fireplace_on,
+            tv_on,
+        ) = values
+        mode = str(raw_mode).strip().lower()
         if mode in {"heat", "heating"}:
             last_mode = "heating"
         elif mode in {"cool", "cooling"}:
             last_mode = "cooling"
         model = models.get(last_mode, models["heating"])
         external_gains.append(
-            _external_gain_kw(row, model, pv_values, position)
+            _external_gain_kw(
+                model=model,
+                pv_values=pv_values,
+                position=position,
+                outlet_temp=outlet_temp,
+                outdoor_temp=outdoor_temp,
+                indoor_temp=indoor_temp,
+                fireplace_on=fireplace_on,
+                tv_on=tv_on,
+            )
         )
     history["external_gain_kw"] = external_gains
 
@@ -374,8 +423,8 @@ def render_counterfactual() -> None:
     )
     fallback_cop = st.number_input(
         "Fallback COP when a valid measured COP is unavailable",
-        min_value=1.0,
-        max_value=10.0,
+        min_value=MIN_VALID_COP,
+        max_value=MAX_VALID_COP,
         value=3.0,
         step=0.1,
         key="counterfactual_fallback_cop",
@@ -484,5 +533,5 @@ def render_counterfactual() -> None:
                 "cop_source",
             ]
         ],
-        use_container_width=True,
+        width="stretch",
     )

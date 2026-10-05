@@ -7,7 +7,8 @@
 - Added an experimental dashboard page that fetches aligned Home Assistant history, plots actual/target/replay temperatures, and reports counterfactual energy and actual-minus-counterfactual differences.
 - Effective storage is approximated with a one-node RC model (`heat_loss_coefficient × thermal_time_constant`); fallback COP is explicit; missing/invalid history withholds totals.
 - The tool does not mutate state, teach model parameters, or control the heat pump.
-- Fixed interval decay to use the selected heating/cooling model's time constant; all six replay regression tests pass.
+- Fixed interval decay to use the selected heating/cooling model's time constant, aligned fallback heat-source weights with the model's defaults, named replay thresholds, and avoided row-Series iteration.
+- Dashboard regression coverage now checks history alignment and invalid sensor states, selected target by HVAC mode, model-based PV-lag gains, model-state parameter merging, and warm-up exclusion/re-summing.
 
 #### **Why**
 - Quantify how solar gains, preheating, and stored thermal energy affect the heat-pump energy that would have been required to follow the actual target without rewriting observed indoor temperatures.
@@ -17,6 +18,7 @@
 - `dashboard/components/counterfactual.py`
 - `dashboard/app.py`
 - `tests/unit/test_counterfactual_replay.py`
+- `tests/unit/test_dashboard_counterfactual.py`
 - `CHANGELOG.md`
 - `memory-bank/progress.md`
 - `memory-bank/activeContext.md`

@@ -2,11 +2,11 @@
 
 ## Historical Target-Hold Replay — 2026-10-05
 
-**Status:** COMPLETED — added and validated an experimental, read-only counterfactual replay for historical target tracking.
+**Status:** COMPLETED — added an experimental, read-only counterfactual replay for historical target tracking and addressed validation feedback.
 
-**Files changed:** `src/counterfactual_replay.py`, `dashboard/components/counterfactual.py`, `dashboard/app.py`, `tests/unit/test_counterfactual_replay.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+**Files changed:** `src/counterfactual_replay.py`, `dashboard/components/counterfactual.py`, `dashboard/app.py`, `tests/unit/test_counterfactual_replay.py`, `tests/unit/test_dashboard_counterfactual.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
-**Summary:** Replay uses interval-specific targets, heating/cooling/off mode history, mode-specific model parameters and decay constants, model-derived external heat gains, measured thermal/electrical data, an explicitly disclosed fallback COP, and a one-node effective thermal-storage approximation. Incomplete history is rejected, and results remain informational only. Six replay tests pass; the full suite could not collect because Streamlit and Hypothesis are not installed in the environment.
+**Summary:** Replay uses interval-specific targets, heating/cooling/off mode history, mode-specific model parameters and decay constants, model-derived external heat gains, measured thermal/electrical data, an explicitly disclosed fallback COP, and a one-node effective thermal-storage approximation. Incomplete history is rejected, and results remain informational only. Focused replay/dashboard tests pass (58); the full suite reports 1,693 passed and 7 unrelated existing failures in main-loop behavior and model calibration.
 
 ---
 

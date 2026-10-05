@@ -18,6 +18,10 @@ REQUIRED_COLUMNS = (
     "thermal_power_kw",
     "electrical_power_w",
 )
+MAX_HISTORY_GAP_HOURS = 0.25
+MIN_COP_ELECTRICAL_POWER_KW = 0.1
+MIN_VALID_COP = 1.0
+MAX_VALID_COP = 10.0
 
 
 def _incomplete(reason: str, missing_count: int = 0) -> Dict[str, Any]:
@@ -130,7 +134,7 @@ def replay_target_hold(
     if (
         not np.isfinite(interval_hours)
         or interval_hours <= 0
-        or (elapsed_hours.dropna() > 0.25).any()
+        or (elapsed_hours.dropna() > MAX_HISTORY_GAP_HOURS).any()
     ):
         return _incomplete(
             "History must have at least two ordered samples with no gap over 15 minutes."
@@ -149,13 +153,25 @@ def replay_target_hold(
     measured_cop_count = 0
     estimated_cop_count = 0
 
-    for index, row in frame.iterrows():
+    replay_rows = frame.loc[:, REQUIRED_COLUMNS].itertuples(
+        index=False, name=None
+    )
+    for index, (
+        timestamp,
+        indoor_temp,
+        target_temp,
+        outdoor_temp,
+        external_gain,
+        mode,
+        thermal_power,
+        electrical_power,
+    ) in enumerate(replay_rows):
         dt_hours = (
             interval_hours
             if index == 0
             else float(elapsed_hours.iloc[index])
         )
-        mode = row["mode"]
+        mode = str(mode)
         if mode == "heat":
             mode = "heating"
         elif mode == "cool":
@@ -168,9 +184,9 @@ def replay_target_hold(
         if mode in mode_parameters:
             last_active_mode = mode
         decay = float(np.exp(-dt_hours / tau))
-        target = float(row["target_temp"])
-        outdoor = float(row["outdoor_temp"])
-        external_gain = float(row["external_gain_kw"])
+        target = float(target_temp)
+        outdoor = float(outdoor_temp)
+        external_gain = float(external_gain)
         if decay >= 1.0:
             return _incomplete("Thermal replay interval is too short to resolve.")
 
@@ -194,14 +210,17 @@ def replay_target_hold(
             simulated_indoor - passive_equilibrium
         ) * decay
 
-        measured_thermal_power = abs(float(row["thermal_power_kw"]))
-        electrical_power_kw = max(0.0, float(row["electrical_power_w"])) / 1000.0
+        measured_thermal_power = abs(float(thermal_power))
+        electrical_power_kw = max(0.0, float(electrical_power)) / 1000.0
         measured_cop = (
             measured_thermal_power / electrical_power_kw
-            if electrical_power_kw > 0.1
+            if electrical_power_kw > MIN_COP_ELECTRICAL_POWER_KW
             else 0.0
         )
-        if np.isfinite(measured_cop) and 1.0 <= measured_cop <= 10.0:
+        if (
+            np.isfinite(measured_cop)
+            and MIN_VALID_COP <= measured_cop <= MAX_VALID_COP
+        ):
             cop = measured_cop
             cop_source = "measured"
             measured_cop_count += 1
@@ -223,8 +242,8 @@ def replay_target_hold(
 
         interval_rows.append(
             {
-                "_time": row["_time"],
-                "actual_indoor_temp": float(row["indoor_temp"]),
+                "_time": timestamp,
+                "actual_indoor_temp": float(indoor_temp),
                 "target_temp": target,
                 "counterfactual_indoor_temp": simulated_indoor,
                 "climate_mode": mode,
