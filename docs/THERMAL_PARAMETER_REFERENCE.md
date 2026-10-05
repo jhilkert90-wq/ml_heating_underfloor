@@ -238,9 +238,15 @@ balance outdoor temperature = indoor target - average estimated gains / heat_los
 
 The estimate is mode-specific, uses up to 24 hours of qualifying observations,
 and is withheld until at least three samples span two hours and their inferred
-balance temperatures have no more than 2°C standard deviation. Solar, occupant,
-appliance, and fireplace effects are represented only insofar as they appear
-in these measurements; learned source weights are not treated as measured kW.
+indoor-outdoor temperature deltas have no more than 2°C standard deviation.
+Solar, occupant, appliance, and fireplace effects are represented only insofar
+as they appear in these measurements; learned source weights are not treated as
+measured kW.
+Published attributes show the acceptance gates: ≤0.25°C indoor drift per hour,
+≤0.1 kW HVAC power, ≤0.1 flow, 0–5 kW inferred gains, and ≤2°C standard
+deviation. The estimate assumes stored slab heat is not materially changing
+during the observation window; room-temperature stability alone cannot verify
+that assumption.
 When no sufficiently stable estimate is available, `*_balance_outdoor_temp`
 is `null`; `*_no_gains_zero_load_outdoor_temp` is the simpler target-based
 crossing and does not include internal or solar gains.

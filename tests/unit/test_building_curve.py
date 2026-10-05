@@ -167,8 +167,15 @@ def test_publisher_exports_balance_estimate_after_stable_idle_samples():
     assert attributes["heating_balance_outdoor_temp"] == pytest.approx(9.0)
     assert attributes["heating_balance_gain_kw"] == pytest.approx(2.4)
     assert attributes["heating_balance_estimate_method"] == (
-        "stable_hvac_off_observations"
+        "stable_hvac_off_observations; assumes negligible stored-heat drift"
     )
+    assert attributes["heating_balance_min_sample_count"] == 3
+    assert attributes["heating_balance_min_window_minutes"] == 120
+    assert attributes["heating_balance_max_indoor_drift_60m"] == 0.25
+    assert attributes["heating_balance_max_hvac_power_kw"] == 0.1
+    assert attributes["heating_balance_max_flow_rate"] == 0.1
+    assert attributes["heating_balance_max_inferred_gains_kw"] == 5.0
+    assert attributes["heating_balance_max_uncertainty_k"] == 2.0
     assert attributes["cooling_balance_outdoor_temp"] is None
 
 

@@ -319,9 +319,30 @@ def compute_curves(
             int(estimate.get("window_minutes", 0)) if estimate_available else 0
         )
         kw_attrs[f"{mode}_balance_estimate_method"] = (
-            "stable_hvac_off_observations"
+            "stable_hvac_off_observations; assumes negligible stored-heat drift"
             if estimate_available
             else "unavailable"
+        )
+        kw_attrs[f"{mode}_balance_min_sample_count"] = (
+            BALANCE_ESTIMATE_MIN_SAMPLES
+        )
+        kw_attrs[f"{mode}_balance_min_window_minutes"] = int(
+            BALANCE_ESTIMATE_MIN_WINDOW_SECONDS / 60
+        )
+        kw_attrs[f"{mode}_balance_max_indoor_drift_60m"] = (
+            BALANCE_ESTIMATE_MAX_INDOOR_DRIFT
+        )
+        kw_attrs[f"{mode}_balance_max_hvac_power_kw"] = (
+            BALANCE_ESTIMATE_MAX_HVAC_POWER_KW
+        )
+        kw_attrs[f"{mode}_balance_max_flow_rate"] = (
+            BALANCE_ESTIMATE_MAX_FLOW_RATE
+        )
+        kw_attrs[f"{mode}_balance_max_inferred_gains_kw"] = (
+            BALANCE_ESTIMATE_MAX_GAIN_KW
+        )
+        kw_attrs[f"{mode}_balance_max_uncertainty_k"] = (
+            BALANCE_ESTIMATE_MAX_SPREAD_K
         )
         kw_attrs[f"{mode}_design_load_kw"] = _r(
             building_load_kw(float(grid[0] if mode == "heating" else grid[-1]),

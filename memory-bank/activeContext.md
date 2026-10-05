@@ -4,7 +4,7 @@
 
 #### **What changed**
 - `src/building_curve.py` estimates each mode's average non-HVAC gains from stable observations collected while idle, with near-zero thermal power and flow, indoor drift ≤0.25°C per hour, at least three samples over two hours, and ≤2°C sample spread. Verified the outlet curve is the inverse of the temperature-based equilibrium formula; missing outdoor readings no longer produce a fabricated 0°C state.
-- The `*_balance_outdoor_temp` attributes now contain an empirical estimate or `null`; `*_no_gains_zero_load_outdoor_temp` preserves the target-based no-gains crossing. Estimate attributes include gains, method, sample count, window, and spread uncertainty.
+- The `*_balance_outdoor_temp` attributes now contain an empirical estimate or `null`; `*_no_gains_zero_load_outdoor_temp` preserves the target-based no-gains crossing. Estimate attributes include gains, method, sample count, window, spread uncertainty, and all observation-acceptance thresholds. The estimate assumes stored slab heat does not materially change; stable room temperature cannot verify slab stability.
 - `src/cycle_routes.py` collects eligible idle observations only after features are built and reads the separate cooling target when publishing in idle cooling mode.
 - Corrected exported parameter unit documentation to match current thermal-power equations. Restored fireplace heat output is clamped to its canonical kW bounds; slab and fireplace decay updates now use their configured limits.
 

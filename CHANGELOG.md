@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Building-curve sensors now report a per-mode outdoor balance temperature estimated from stable HVAC-off observations. The no-gains zero-load temperature remains available under an explicitly named attribute; the empirical estimate stays unavailable until enough low-variance samples are collected.
+- Building-curve sensors now report a per-mode outdoor balance temperature estimated from stable HVAC-off observations, including the sampling assumptions and acceptance thresholds. The no-gains zero-load temperature remains available under an explicitly named attribute; the empirical estimate stays unavailable until enough low-variance samples are collected.
 - Correct thermal-parameter unit descriptions and align channel clamps with configured fireplace-output, fireplace-decay, and slab-time-constant bounds. Missing outdoor temperature now suppresses curve-state publication instead of substituting 0°C.
 
 ## [0.2.0] - 2026-02-10
