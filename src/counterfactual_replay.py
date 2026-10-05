@@ -22,6 +22,14 @@ MAX_HISTORY_GAP_HOURS = 0.25
 MIN_COP_ELECTRICAL_POWER_KW = 0.1
 MIN_VALID_COP = 1.0
 MAX_VALID_COP = 10.0
+CLIMATE_MODE_ALIASES = {
+    "heat": "heating",
+    "heating": "heating",
+    "cool": "cooling",
+    "cooling": "cooling",
+    "off": "off",
+    "idle": "off",
+}
 
 
 def _incomplete(reason: str, missing_count: int = 0) -> Dict[str, Any]:
@@ -142,9 +150,7 @@ def replay_target_hold(
             f"{max_gap_minutes:g} minutes."
         )
 
-    frame["mode"] = frame["mode"].replace(
-        {"heat": "heating", "cool": "cooling", "idle": "off"}
-    )
+    frame["mode"] = frame["mode"].map(CLIMATE_MODE_ALIASES)
     parameter_modes = []
     last_active_mode = "heating"
     for mode in frame["mode"]:

@@ -16,6 +16,7 @@ import streamlit as st
 from dashboard.data_service import _find_cooling_state_file, _find_state_file
 from src import config
 from src.counterfactual_replay import (
+    CLIMATE_MODE_ALIASES,
     MAX_VALID_COP,
     MIN_VALID_COP,
     replay_target_hold,
@@ -28,14 +29,7 @@ _HISTORY_TAIL_HOURS = 24
 _HISTORY_INTERVAL_MINUTES = 5
 _MAX_PERIOD_DAYS = 14
 _LOG = logging.getLogger(__name__)
-_STATE_ALIASES = {
-    "heat": "heating",
-    "heating": "heating",
-    "cool": "cooling",
-    "cooling": "cooling",
-    "off": "off",
-    "idle": "off",
-}
+_STATE_ALIASES = CLIMATE_MODE_ALIASES
 _NUMERIC_ENTITIES = {
     "indoor_temp": config.INDOOR_TEMP_ENTITY_ID,
     "outdoor_temp": config.OUTDOOR_TEMP_ENTITY_ID,
@@ -252,37 +246,15 @@ def _external_gain_kw(
     )
 
 
-def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -> dict[str, Any]:
-    if start_date > end_date:
-        return {"complete": False, "reason": "Start date must not be after end date."}
-    if (end_date - start_date).days > _MAX_PERIOD_DAYS:
-        return {
-            "complete": False,
-            "reason": f"Select a period of {_MAX_PERIOD_DAYS} days or less.",
-        }
-    selected_start = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
-    selected_end = datetime.combine(
-        end_date + timedelta(days=1), time.min, tzinfo=timezone.utc
-    )
-    end = min(selected_end, datetime.now(timezone.utc))
-    if end <= selected_start:
-        return {
-            "complete": False,
-            "reason": "The selected period is in the future; no history can be fetched.",
-        }
-    fetch_start = selected_start - timedelta(hours=_HISTORY_TAIL_HOURS)
-    history = _fetch_history(fetch_start, end)
+def _validate_history(history: pd.DataFrame) -> str | None:
     if history.empty:
-        return {"complete": False, "reason": "Home Assistant returned no usable history."}
+        return "Home Assistant returned no usable history."
     required_history = tuple(_NUMERIC_ENTITIES) + ("mode",)
     missing_inputs = [
         column for column in required_history if column not in history
     ]
     if missing_inputs:
-        return {
-            "complete": False,
-            "reason": "Required history is missing: " + ", ".join(missing_inputs),
-        }
+        return "Required history is missing: " + ", ".join(missing_inputs)
     invalid_rows = history.loc[:, required_history].isna().any(axis=1)
     for column in required_history:
         if column != "mode":
@@ -290,31 +262,33 @@ def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -
                 pd.to_numeric(history[column], errors="coerce")
             )
     if invalid_rows.any():
-        return {
-            "complete": False,
-            "reason": (
-                "Synchronized sensor history is incomplete or invalid "
-                f"({int(invalid_rows.sum())} intervals)."
-            ),
-        }
+        return (
+            "Synchronized sensor history is incomplete or invalid "
+            f"({int(invalid_rows.sum())} intervals)."
+        )
+    return None
 
-    history.reset_index(drop=True, inplace=True)
+
+def _has_valid_model_parameters(parameters: dict[str, Any]) -> bool:
+    for key in ("heat_loss_coefficient", "thermal_time_constant"):
+        try:
+            if key not in parameters or not np.isfinite(float(parameters[key])):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _resolve_mode_parameters(
+    history: pd.DataFrame,
+) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
     heating_parameters = _read_state(_find_state_file())
     cooling_parameters = _read_state(_find_cooling_state_file())
     has_cooling_history = history["mode"].isin(["cooling", "cool"]).any()
-    required_model_keys = ("heat_loss_coefficient", "thermal_time_constant")
-    for key in required_model_keys:
-        if key not in heating_parameters or not np.isfinite(
-            float(heating_parameters[key])
-        ):
-            return {
-                "complete": False,
-                "reason": f"Heating model parameter {key} is unavailable.",
-            }
-    if not has_cooling_history and any(
-        key not in cooling_parameters
-        or not np.isfinite(float(cooling_parameters[key]))
-        for key in required_model_keys
+    if not _has_valid_model_parameters(heating_parameters):
+        return None, "Heating model parameters are unavailable."
+    if not has_cooling_history and not _has_valid_model_parameters(
+        cooling_parameters
     ):
         cooling_parameters = heating_parameters
     mode_parameters = {
@@ -322,13 +296,15 @@ def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -
         "cooling": cooling_parameters,
     }
     for mode, parameters in mode_parameters.items():
-        for key in required_model_keys:
-            if key not in parameters or not np.isfinite(float(parameters[key])):
-                return {
-                    "complete": False,
-                    "reason": f"{mode.title()} model parameter {key} is unavailable.",
-                }
+        if not _has_valid_model_parameters(parameters):
+            return None, f"{mode.title()} model parameters are unavailable."
+    return mode_parameters, None
 
+
+def _compute_external_gains(
+    history: pd.DataFrame,
+    mode_parameters: dict[str, dict[str, Any]],
+) -> list[float]:
     models = {mode: _make_model(parameters) for mode, parameters in mode_parameters.items()}
     pv_values = history["pv_power"].astype(float).tolist()
     external_gains = []
@@ -352,10 +328,10 @@ def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -
             fireplace_on,
             tv_on,
         ) = values
-        mode = str(raw_mode).strip().lower()
-        if mode in {"heat", "heating"}:
+        mode = CLIMATE_MODE_ALIASES.get(str(raw_mode).strip().lower(), "")
+        if mode == "heating":
             last_mode = "heating"
-        elif mode in {"cool", "cooling"}:
+        elif mode == "cooling":
             last_mode = "cooling"
         model = models.get(last_mode, models["heating"])
         external_gains.append(
@@ -370,7 +346,76 @@ def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -
                 tv_on=tv_on,
             )
         )
-    history["external_gain_kw"] = external_gains
+    return external_gains
+
+
+def _trim_and_resum(
+    result: dict[str, Any], selected_start: datetime
+) -> dict[str, Any]:
+    if not result.get("complete"):
+        return result
+    intervals = result["intervals"]
+    intervals = intervals.loc[
+        intervals["_time"] >= pd.Timestamp(selected_start)
+    ].reset_index(drop=True)
+    if intervals.empty:
+        return {
+            "complete": False,
+            "reason": "No history was available in the selected date range.",
+        }
+    result["intervals"] = intervals
+    for result_key, interval_key in (
+        ("actual_thermal_kwh", "actual_thermal_energy_kwh"),
+        ("counterfactual_thermal_kwh", "counterfactual_thermal_energy_kwh"),
+        ("actual_electrical_kwh", "actual_electrical_energy_kwh"),
+        ("counterfactual_electrical_kwh", "counterfactual_electrical_energy_kwh"),
+    ):
+        result[result_key] = float(intervals[interval_key].sum())
+    result["thermal_energy_difference_kwh"] = (
+        result["actual_thermal_kwh"] - result["counterfactual_thermal_kwh"]
+    )
+    result["electrical_energy_difference_kwh"] = (
+        result["actual_electrical_kwh"] - result["counterfactual_electrical_kwh"]
+    )
+    result["sample_count"] = len(intervals)
+    result["measured_cop_count"] = int(intervals["cop_source"].eq("measured").sum())
+    result["estimated_cop_count"] = int(
+        intervals["cop_source"].eq("estimated fallback").sum()
+    )
+    return result
+
+
+def _run_counterfactual(
+    start_date: date, end_date: date, fallback_cop: float
+) -> dict[str, Any]:
+    if start_date > end_date:
+        return {"complete": False, "reason": "Start date must not be after end date."}
+    if (end_date - start_date).days > _MAX_PERIOD_DAYS:
+        return {
+            "complete": False,
+            "reason": f"Select a period of {_MAX_PERIOD_DAYS} days or less.",
+        }
+    selected_start = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+    selected_end = datetime.combine(
+        end_date + timedelta(days=1), time.min, tzinfo=timezone.utc
+    )
+    end = min(selected_end, datetime.now(timezone.utc))
+    if end <= selected_start:
+        return {
+            "complete": False,
+            "reason": "The selected period is in the future; no history can be fetched.",
+        }
+    fetch_start = selected_start - timedelta(hours=_HISTORY_TAIL_HOURS)
+    history = _fetch_history(fetch_start, end)
+    validation_error = _validate_history(history)
+    if validation_error:
+        return {"complete": False, "reason": validation_error}
+
+    history.reset_index(drop=True, inplace=True)
+    mode_parameters, parameter_error = _resolve_mode_parameters(history)
+    if parameter_error:
+        return {"complete": False, "reason": parameter_error}
+    history["external_gain_kw"] = _compute_external_gains(history, mode_parameters)
 
     result = replay_target_hold(
         history,
@@ -378,42 +423,7 @@ def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -
         specific_heat_capacity=float(config.SPECIFIC_HEAT_CAPACITY),
         fallback_cop=fallback_cop,
     )
-    if result.get("complete"):
-        intervals = result["intervals"]
-        intervals = intervals.loc[
-            intervals["_time"] >= pd.Timestamp(selected_start)
-        ].reset_index(drop=True)
-        if intervals.empty:
-            return {
-                "complete": False,
-                "reason": "No history was available in the selected date range.",
-            }
-        result["intervals"] = intervals
-        for result_key, interval_key in (
-            ("actual_thermal_kwh", "actual_thermal_energy_kwh"),
-            ("counterfactual_thermal_kwh", "counterfactual_thermal_energy_kwh"),
-            ("actual_electrical_kwh", "actual_electrical_energy_kwh"),
-            (
-                "counterfactual_electrical_kwh",
-                "counterfactual_electrical_energy_kwh",
-            ),
-        ):
-            result[result_key] = float(intervals[interval_key].sum())
-        result["thermal_energy_difference_kwh"] = (
-            result["actual_thermal_kwh"] - result["counterfactual_thermal_kwh"]
-        )
-        result["electrical_energy_difference_kwh"] = (
-            result["actual_electrical_kwh"]
-            - result["counterfactual_electrical_kwh"]
-        )
-        result["sample_count"] = len(intervals)
-        result["measured_cop_count"] = int(
-            intervals["cop_source"].eq("measured").sum()
-        )
-        result["estimated_cop_count"] = int(
-            intervals["cop_source"].eq("estimated fallback").sum()
-        )
-    return result
+    return _trim_and_resum(result, selected_start)
 
 
 def render_counterfactual() -> None:
@@ -461,8 +471,9 @@ def render_counterfactual() -> None:
     with st.spinner("Fetching synchronized Home Assistant history and replaying..."):
         try:
             result = _run_counterfactual(start_date, end_date, fallback_cop)
-        except Exception as exc:
-            st.error(f"Replay could not be calculated: {exc}")
+        except Exception:
+            _LOG.exception("Target-hold replay failed unexpectedly.")
+            st.error("Replay could not be calculated due to an unexpected error.")
             return
 
     if not result.get("complete"):

@@ -155,6 +155,18 @@ def test_external_gain_uses_model_physics_and_pv_lag_history(monkeypatch):
     assert model.inputs["thermal_power"] == 0.0
     assert model.inputs["_suppress_logging"]
 
+    counterfactual._external_gain_kw(
+        model=model,
+        pv_values=[0.0, 1.0, 2.0, 3.0, 4.0],
+        position=0,
+        outlet_temp=35.0,
+        outdoor_temp=5.0,
+        indoor_temp=22.0,
+        fireplace_on=0.0,
+        tv_on=1.0,
+    )
+    assert model.inputs["pv_power"] == [0.0]
+
 
 def _run_history(start="2026-01-01T23:50:00Z", periods=5):
     return pd.DataFrame(

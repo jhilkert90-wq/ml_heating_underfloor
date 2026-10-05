@@ -6,7 +6,7 @@
 
 **Files changed:** `src/counterfactual_replay.py`, `dashboard/components/counterfactual.py`, `dashboard/app.py`, `tests/unit/test_counterfactual_replay.py`, `tests/unit/test_dashboard_counterfactual.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
-**Summary:** Replay uses interval-specific targets, heating/cooling/off mode history, mode-specific model parameters and decay constants, model-derived external heat gains, measured thermal/electrical data, an explicitly disclosed fallback COP, and a one-node effective thermal-storage approximation. Incomplete history is rejected, and results remain informational only. Focused replay/dashboard tests pass (65); the full suite reports 1,700 passed and 7 unrelated existing failures in main-loop behavior and model calibration.
+**Summary:** Replay uses interval-specific targets, heating/cooling/off mode history, mode-specific model parameters and decay constants, model-derived external heat gains, measured thermal/electrical data, an explicitly disclosed fallback COP, and a one-node effective thermal-storage approximation. Incomplete history is rejected, and results remain informational only. Validation tests pass (65 focused); the full suite reports 1,700 passed and 7 unrelated existing failures in main-loop behavior and model calibration. Replay and dashboard now share mode aliases, use focused calculation helpers, cover the beginning of the PV-lag window, and log unexpected errors without displaying internals.
 
 ---
 

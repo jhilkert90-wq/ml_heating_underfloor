@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard history replay now uses shared timestamp parsing, reports state-file read failures, and resums only selected-period energy after excluding the warm-up tail.
 - Replay and dashboard now share a single history sampling interval, reject numerically unresolved intervals before simulation, and report missing heating parameters accurately.
 - Dashboard requires a complete date range and rejects future or overlong replay requests before fetching history.
+- Shared climate-mode aliases and extracted history validation, mode-parameter resolution, gain calculation, and selected-range aggregation into focused helpers; unexpected UI failures are logged without exposing raw exception details.
 
 ## [0.2.0] - 2026-02-10
 
