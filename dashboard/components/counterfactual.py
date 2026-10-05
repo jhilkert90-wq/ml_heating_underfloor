@@ -25,6 +25,7 @@ from src.thermal_equilibrium_model import ThermalEquilibriumModel
 
 
 _HISTORY_TAIL_HOURS = 24
+_HISTORY_INTERVAL_MINUTES = 5
 _LOG = logging.getLogger(__name__)
 _STATE_ALIASES = {
     "heat": "heating",
@@ -88,9 +89,10 @@ def _build_history_frame(
     if len(raw) != len(entity_ids):
         return pd.DataFrame()
 
-    start_utc = pd.Timestamp(start).tz_convert("UTC").floor("5min")
-    end_utc = pd.Timestamp(end).tz_convert("UTC").ceil("5min")
-    index = pd.date_range(start_utc, end_utc, freq="5min", tz="UTC")
+    interval = f"{_HISTORY_INTERVAL_MINUTES}min"
+    start_utc = pd.Timestamp(start).tz_convert("UTC").floor(interval)
+    end_utc = pd.Timestamp(end).tz_convert("UTC").ceil(interval)
+    index = pd.date_range(start_utc, end_utc, freq=interval, tz="UTC")
     by_entity: dict[str, list[str]] = {}
     for name, entity_id in _NUMERIC_ENTITIES.items():
         if entity_id:
@@ -230,8 +232,9 @@ def _external_gain_kw(
     fireplace_on: float,
     tv_on: float,
 ) -> float:
-    interval_minutes = 5
-    history_step = max(1, int(round(config.HISTORY_STEP_MINUTES / interval_minutes)))
+    history_step = max(
+        1, int(round(config.HISTORY_STEP_MINUTES / _HISTORY_INTERVAL_MINUTES))
+    )
     pv_history = list(reversed(pv_values[position::-history_step]))
     equilibrium = model.predict_equilibrium_temperature(
         outlet_temp=float(outlet_temp),
@@ -299,14 +302,27 @@ def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -
     heating_parameters = _read_state(_find_state_file())
     cooling_parameters = _read_state(_find_cooling_state_file())
     has_cooling_history = history["mode"].isin(["cooling", "cool"]).any()
-    if not cooling_parameters and not has_cooling_history:
+    required_model_keys = ("heat_loss_coefficient", "thermal_time_constant")
+    for key in required_model_keys:
+        if key not in heating_parameters or not np.isfinite(
+            float(heating_parameters[key])
+        ):
+            return {
+                "complete": False,
+                "reason": f"Heating model parameter {key} is unavailable.",
+            }
+    if not has_cooling_history and any(
+        key not in cooling_parameters
+        or not np.isfinite(float(cooling_parameters[key]))
+        for key in required_model_keys
+    ):
         cooling_parameters = heating_parameters
     mode_parameters = {
         "heating": heating_parameters,
         "cooling": cooling_parameters,
     }
     for mode, parameters in mode_parameters.items():
-        for key in ("heat_loss_coefficient", "thermal_time_constant"):
+        for key in required_model_keys:
             if key not in parameters or not np.isfinite(float(parameters[key])):
                 return {
                     "complete": False,

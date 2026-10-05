@@ -156,34 +156,50 @@ def test_external_gain_uses_model_physics_and_pv_lag_history(monkeypatch):
     assert model.inputs["_suppress_logging"]
 
 
-def test_run_counterfactual_trims_warmup_and_resums_selected_period(monkeypatch):
-    timestamps = pd.date_range("2026-01-01T23:50:00Z", periods=5, freq="5min")
-    history = pd.DataFrame(
+def _run_history(start="2026-01-01T23:50:00Z", periods=5):
+    return pd.DataFrame(
         {
-            "_time": timestamps,
-            "indoor_temp": [22.6] * 5,
-            "target_temp": [22.6] * 5,
-            "target_heating": [22.6] * 5,
-            "target_cooling": [25.0] * 5,
-            "outdoor_temp": [5.0] * 5,
-            "outlet_temp": [35.0] * 5,
-            "inlet_temp": [30.0] * 5,
-            "flow_rate": [60.0] * 5,
-            "electrical_power_w": [600.0] * 5,
-            "pv_power": [0.0] * 5,
-            "fireplace_on": [0.0] * 5,
-            "tv_on": [0.0] * 5,
-            "thermal_power_kw": [1.8] * 5,
-            "mode": ["heating"] * 5,
+            "_time": pd.date_range(start, periods=periods, freq="5min"),
+            "indoor_temp": [22.6] * periods,
+            "target_temp": [22.6] * periods,
+            "target_heating": [22.6] * periods,
+            "target_cooling": [25.0] * periods,
+            "outdoor_temp": [5.0] * periods,
+            "outlet_temp": [35.0] * periods,
+            "inlet_temp": [30.0] * periods,
+            "flow_rate": [60.0] * periods,
+            "electrical_power_w": [600.0] * periods,
+            "pv_power": [0.0] * periods,
+            "fireplace_on": [0.0] * periods,
+            "tv_on": [0.0] * periods,
+            "thermal_power_kw": [1.8] * periods,
+            "mode": ["heating"] * periods,
         }
     )
-    parameters = {"heat_loss_coefficient": 0.1, "thermal_time_constant": 4.0}
-    monkeypatch.setattr(counterfactual, "_fetch_history", lambda *_args: history.copy())
+
+
+def _mock_counterfactual_dependencies(monkeypatch, history, parameters=None):
+    if parameters is None:
+        parameters = {
+            "heat_loss_coefficient": 0.1,
+            "thermal_time_constant": 4.0,
+        }
+    monkeypatch.setattr(
+        counterfactual, "_fetch_history", lambda *_args: history.copy()
+    )
     monkeypatch.setattr(counterfactual, "_find_state_file", lambda: "heating.json")
-    monkeypatch.setattr(counterfactual, "_find_cooling_state_file", lambda: None)
-    monkeypatch.setattr(counterfactual, "_read_state", lambda _path: parameters.copy())
+    monkeypatch.setattr(
+        counterfactual, "_find_cooling_state_file", lambda: None
+    )
+    monkeypatch.setattr(
+        counterfactual, "_read_state", lambda _path: parameters.copy()
+    )
     monkeypatch.setattr(counterfactual, "_make_model", lambda _parameters: object())
     monkeypatch.setattr(counterfactual, "_external_gain_kw", lambda **_kwargs: 0.0)
+
+
+def test_run_counterfactual_trims_warmup_and_resums_selected_period(monkeypatch):
+    _mock_counterfactual_dependencies(monkeypatch, _run_history())
 
     result = counterfactual._run_counterfactual(date(2026, 1, 2), date(2026, 1, 2), 3.0)
 
@@ -194,3 +210,56 @@ def test_run_counterfactual_trims_warmup_and_resums_selected_period(monkeypatch)
     assert result["actual_thermal_kwh"] == result["intervals"][
         "actual_thermal_energy_kwh"
     ].sum()
+
+
+def test_run_counterfactual_reports_empty_history(monkeypatch):
+    _mock_counterfactual_dependencies(monkeypatch, pd.DataFrame())
+
+    result = counterfactual._run_counterfactual(
+        date(2026, 1, 2), date(2026, 1, 2), 3.0
+    )
+
+    assert not result["complete"]
+    assert "no usable history" in result["reason"]
+
+
+@pytest.mark.parametrize("invalid_history", ["missing_column", "missing_value"])
+def test_run_counterfactual_rejects_incomplete_synchronized_history(
+    monkeypatch, invalid_history
+):
+    history = _run_history()
+    if invalid_history == "missing_column":
+        history.drop(columns=["pv_power"], inplace=True)
+    else:
+        history.loc[2, "outdoor_temp"] = float("nan")
+    _mock_counterfactual_dependencies(monkeypatch, history)
+
+    result = counterfactual._run_counterfactual(
+        date(2026, 1, 2), date(2026, 1, 2), 3.0
+    )
+
+    assert not result["complete"]
+    assert "missing" in result["reason"].lower() or "incomplete" in result["reason"].lower()
+
+
+def test_run_counterfactual_reports_heating_parameter_when_unavailable(monkeypatch):
+    _mock_counterfactual_dependencies(monkeypatch, _run_history(), parameters={})
+
+    result = counterfactual._run_counterfactual(
+        date(2026, 1, 2), date(2026, 1, 2), 3.0
+    )
+
+    assert not result["complete"]
+    assert "Heating model parameter" in result["reason"]
+
+
+def test_run_counterfactual_reports_empty_selected_period(monkeypatch):
+    history = _run_history(start="2026-01-01T22:00:00Z", periods=5)
+    _mock_counterfactual_dependencies(monkeypatch, history)
+
+    result = counterfactual._run_counterfactual(
+        date(2026, 1, 2), date(2026, 1, 2), 3.0
+    )
+
+    assert not result["complete"]
+    assert "selected date range" in result["reason"]

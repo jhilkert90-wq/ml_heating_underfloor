@@ -140,11 +140,31 @@ def replay_target_hold(
             "History must have at least two ordered samples with no gap over 15 minutes."
         )
 
+    frame["mode"] = frame["mode"].replace(
+        {"heat": "heating", "cool": "cooling", "idle": "off"}
+    )
+    parameter_modes = []
+    last_active_mode = "heating"
+    for mode in frame["mode"]:
+        if mode in mode_parameters:
+            last_active_mode = mode
+        parameter_modes.append(
+            mode if mode in mode_parameters else last_active_mode
+        )
+
+    interval_durations = elapsed_hours.to_numpy(dtype=float, copy=True)
+    interval_durations[0] = interval_hours
+    mode_time_constants = np.array(
+        [mode_parameters[mode][1] for mode in parameter_modes], dtype=float
+    )
+    decay_values = np.exp(-interval_durations / mode_time_constants)
+    if not np.all(decay_values < 1.0):
+        return _incomplete("Thermal replay interval is too short to resolve.")
+
     effective_capacity_by_mode = {
         mode: hlc * tau for mode, (hlc, tau) in mode_parameters.items()
     }
     simulated_indoor = float(frame.loc[0, "indoor_temp"])
-    last_active_mode = "heating"
     interval_rows = []
     actual_thermal_kwh = 0.0
     counterfactual_thermal_kwh = 0.0
@@ -171,25 +191,11 @@ def replay_target_hold(
             if index == 0
             else float(elapsed_hours.iloc[index])
         )
-        mode = str(mode)
-        if mode == "heat":
-            mode = "heating"
-        elif mode == "cool":
-            mode = "cooling"
-        elif mode == "idle":
-            mode = "off"
-
-        parameter_mode = mode if mode in mode_parameters else last_active_mode
-        hlc, tau = mode_parameters[parameter_mode]
-        if mode in mode_parameters:
-            last_active_mode = mode
-        decay = float(np.exp(-dt_hours / tau))
+        hlc, tau = mode_parameters[parameter_modes[index]]
+        decay = float(decay_values[index])
         target = float(target_temp)
         outdoor = float(outdoor_temp)
         external_gain = float(external_gain)
-        if decay >= 1.0:
-            return _incomplete("Thermal replay interval is too short to resolve.")
-
         desired_equilibrium = (
             target - simulated_indoor * decay
         ) / (1.0 - decay)
