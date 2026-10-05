@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Experimental read-only dashboard replay estimates historical thermal and electrical energy needed to follow recorded indoor targets, including external gains and effective thermal storage.
+
 ### Changed
 - Heating physics calibration now honors the stability threshold and minimum duration configured in Home Assistant add-on options.
 - Idle cycles publish the complete calculated feature set without running active setpoint controls or disturbing HVAC-off balance sampling.

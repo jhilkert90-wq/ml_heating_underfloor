@@ -39,6 +39,7 @@ try:
     from components.overview import render_overview
     from components.control import render_control
     from components.performance import render_performance
+    from components.counterfactual import render_counterfactual
     from components.backup import render_backup
     from components.profiles import render_profiles
     from components.settings import render_settings
@@ -65,8 +66,8 @@ def main():
         # Navigation menu
         selected = option_menu(
             menu_title=None,
-            options=["Overview", "Control", "Performance", "Backup", "Profiles", "Settings"],
-            icons=["speedometer2", "sliders", "bar-chart-line", "archive", "sliders2-vertical", "gear"],
+            options=["Overview", "Control", "Performance", "Target-Hold Replay", "Backup", "Profiles", "Settings"],
+            icons=["speedometer2", "sliders", "bar-chart-line", "activity", "archive", "sliders2-vertical", "gear"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -109,6 +110,8 @@ def main():
         render_control()
     elif selected == "Performance":
         render_performance()
+    elif selected == "Target-Hold Replay":
+        render_counterfactual()
     elif selected == "Backup":
         render_backup()
     elif selected == "Profiles":

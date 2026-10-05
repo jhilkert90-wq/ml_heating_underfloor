@@ -1,5 +1,27 @@
 # Active Context - Current Work & Decision State
 
+### Historical Target-Hold Replay — 2026-10-05
+
+#### **What changed**
+- Added a standalone counterfactual replay that uses recorded targets, climate modes, indoor/outdoor temperatures, modeled PV/internal gains, and observed heat-pump power to estimate required target-hold thermal and electrical energy.
+- Added an experimental dashboard page that fetches aligned Home Assistant history, plots actual/target/replay temperatures, and reports counterfactual energy and actual-minus-counterfactual differences.
+- Effective storage is approximated with a one-node RC model (`heat_loss_coefficient × thermal_time_constant`); fallback COP is explicit; missing/invalid history withholds totals.
+- The tool does not mutate state, teach model parameters, or control the heat pump.
+
+#### **Why**
+- Quantify how solar gains, preheating, and stored thermal energy affect the heat-pump energy that would have been required to follow the actual target without rewriting observed indoor temperatures.
+
+#### **Files modified**
+- `src/counterfactual_replay.py`
+- `dashboard/components/counterfactual.py`
+- `dashboard/app.py`
+- `tests/unit/test_counterfactual_replay.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Calibration Settings and Idle Feature Publishing — 2026-10-05
 
 #### **What changed**

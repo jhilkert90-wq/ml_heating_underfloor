@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Historical Target-Hold Replay — 2026-10-05
+
+**Status:** IN PROGRESS — added an experimental, read-only counterfactual replay for historical target tracking.
+
+**Files changed:** `src/counterfactual_replay.py`, `dashboard/components/counterfactual.py`, `dashboard/app.py`, `tests/unit/test_counterfactual_replay.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Replay uses interval-specific targets, heating/cooling/off mode history, mode-specific model parameters, model-derived external heat gains, measured thermal/electrical data, an explicitly disclosed fallback COP, and a one-node effective thermal-storage approximation. Incomplete history is rejected, and results remain informational only.
+
+---
+
 ## Calibration Settings and Idle Feature Publishing — 2026-10-05
 
 **Status:** COMPLETED — heating calibration now uses the Home Assistant-configured stable-period settings, and idle cycles publish their complete feature telemetry.
