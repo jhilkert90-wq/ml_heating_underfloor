@@ -317,6 +317,24 @@ def test_balance_estimator_resets_after_unstable_observation_and_long_gap():
     assert estimator.observe(now=21601, **common) is not None
 
 
+def test_balance_estimator_clears_samples_when_sensor_or_history_unavailable():
+    estimator = bc.BalancePointEstimator()
+    common = {
+        "mode": "cooling",
+        "indoor_temp": 25.0,
+        "outdoor_temp": 15.0,
+        "heat_loss_coefficient": 0.4,
+        "indoor_temp_delta_60m": 0.0,
+        "thermal_power_kw": 0.0,
+        "flow_rate": 0.0,
+    }
+    estimator.observe(now=0, **common)
+    assert estimator.observe(
+        now=3600, **common, flow_rate_available=False
+    ) is None
+    assert estimator.get_estimate("cooling", now=7200) is None
+
+
 def test_balance_estimator_ignores_duplicate_and_out_of_order_timestamps():
     estimator = bc.BalancePointEstimator()
     common = {

@@ -69,10 +69,13 @@ def _get_parameter_default(param_name: str, fallback: float) -> float:
 
 
 def _clip_to_parameter_bounds(
-    param_name: str, value: float
+    param_name: str, value: float, climate_mode: str = "heating"
 ) -> float:
     """Clamp channel parameters to the canonical runtime bounds."""
-    lower, upper = ThermalParameterConfig.get_bounds(param_name)
+    if climate_mode == "cooling":
+        lower, upper = ThermalParameterConfig.get_cooling_bounds(param_name)
+    else:
+        lower, upper = ThermalParameterConfig.get_bounds(param_name)
     return max(lower, min(upper, value))
 
 
@@ -272,6 +275,14 @@ class HeatSourceChannel(ABC):
         """Return the full persisted/exported channel parameter snapshot."""
         return self.get_learnable_parameters()
 
+    def _clip_parameter(self, param_name: str, value: float) -> float:
+        climate_mode = (
+            self.history[-1].get("context", {}).get("climate_mode", "heating")
+            if self.history
+            else "heating"
+        )
+        return _clip_to_parameter_bounds(param_name, value, climate_mode)
+
     @abstractmethod
     def apply_gradient_update(
         self, gradients: Dict[str, float], learning_rate: float
@@ -392,31 +403,31 @@ class HeatPumpChannel(HeatSourceChannel):
     ) -> None:
         if "thermal_time_constant" in gradients:
             delta = gradients["thermal_time_constant"] * learning_rate
-            self.thermal_time_constant = _clip_to_parameter_bounds(
+            self.thermal_time_constant = self._clip_parameter(
                 "thermal_time_constant",
                 self.thermal_time_constant + max(-0.2, min(0.2, delta)),
             )
         if "heat_loss_coefficient" in gradients:
             delta = gradients["heat_loss_coefficient"] * learning_rate
-            self.heat_loss_coefficient = _clip_to_parameter_bounds(
+            self.heat_loss_coefficient = self._clip_parameter(
                 "heat_loss_coefficient",
                 self.heat_loss_coefficient + max(-0.01, min(0.01, delta)),
             )
         if "outlet_effectiveness" in gradients:
             delta = gradients["outlet_effectiveness"] * learning_rate
-            self.outlet_effectiveness = _clip_to_parameter_bounds(
+            self.outlet_effectiveness = self._clip_parameter(
                 "outlet_effectiveness",
                 self.outlet_effectiveness + max(-0.005, min(0.005, delta)),
             )
         if "slab_time_constant_hours" in gradients:
             delta = gradients["slab_time_constant_hours"] * learning_rate
-            self.slab_time_constant_hours = _clip_to_parameter_bounds(
+            self.slab_time_constant_hours = self._clip_parameter(
                 "slab_time_constant_hours",
                 self.slab_time_constant_hours + max(-0.05, min(0.05, delta)),
             )
         if "delta_t_floor" in gradients:
             delta = gradients["delta_t_floor"] * learning_rate
-            self.delta_t_floor = _clip_to_parameter_bounds(
+            self.delta_t_floor = self._clip_parameter(
                 "delta_t_floor",
                 self.delta_t_floor + max(-0.2, min(0.2, delta)),
             )
@@ -568,25 +579,25 @@ class SolarChannel(HeatSourceChannel):
     ) -> None:
         if "pv_heat_weight" in gradients:
             delta = gradients["pv_heat_weight"] * learning_rate
-            self.pv_heat_weight = _clip_to_parameter_bounds(
+            self.pv_heat_weight = self._clip_parameter(
                 "pv_heat_weight",
                 self.pv_heat_weight + max(-0.0002, min(0.0002, delta)),
             )
         if "solar_lag_minutes" in gradients:
             delta = gradients["solar_lag_minutes"] * learning_rate
-            self.solar_lag_minutes = _clip_to_parameter_bounds(
+            self.solar_lag_minutes = self._clip_parameter(
                 "solar_lag_minutes",
                 self.solar_lag_minutes + max(-5.0, min(5.0, delta)),
             )
         if "cloud_factor_exponent" in gradients:
             delta = gradients["cloud_factor_exponent"] * learning_rate
-            self.cloud_factor_exponent = _clip_to_parameter_bounds(
+            self.cloud_factor_exponent = self._clip_parameter(
                 "cloud_factor_exponent",
                 self.cloud_factor_exponent + max(-0.05, min(0.05, delta)),
             )
         if "solar_decay_tau_hours" in gradients:
             delta = gradients["solar_decay_tau_hours"] * learning_rate
-            self.solar_decay_tau_hours = _clip_to_parameter_bounds(
+            self.solar_decay_tau_hours = self._clip_parameter(
                 "solar_decay_tau_hours",
                 self.solar_decay_tau_hours + max(-0.05, min(0.05, delta)),
             )
@@ -756,13 +767,13 @@ class FireplaceChannel(HeatSourceChannel):
     ) -> None:
         if "fp_heat_output_kw" in gradients:
             delta = gradients["fp_heat_output_kw"] * learning_rate
-            self.fp_heat_output_kw = _clip_to_parameter_bounds(
+            self.fp_heat_output_kw = self._clip_parameter(
                 "fp_heat_output_kw",
                 self.fp_heat_output_kw + max(-0.5, min(0.5, delta)),
             )
         if "fp_decay_time_constant" in gradients:
             delta = gradients["fp_decay_time_constant"] * learning_rate
-            self.fp_decay_time_constant = _clip_to_parameter_bounds(
+            self.fp_decay_time_constant = self._clip_parameter(
                 "fp_decay_time_constant",
                 self.fp_decay_time_constant + max(-0.1, min(0.1, delta)),
             )

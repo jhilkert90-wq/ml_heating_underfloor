@@ -1,5 +1,35 @@
 # Active Context - Current Work & Decision State
 
+### PR #89 Review Fixes — 2026-10-05
+
+#### **What changed**
+- Preserved real indoor-history counts across Influx history padding/failures and added flow/inlet/history availability features. Balance-estimator sampling rejects and clears observations when any required signal is unavailable.
+- Persisted the last active heating/cooling mode through the heating state manager and used it for idle balance observations without changing the heating idle state-manager selection.
+- Made heat-source channel gradient clamps select mode-specific thermal parameter bounds.
+
+#### **Why**
+- Prevent false empirical balance estimates during telemetry/history outages, allow cooling idle observations to reach the cooling estimator, and preserve valid cooling parameters below heating-only minima.
+
+#### **Files modified**
+- `src/building_curve.py`
+- `src/cycle_routes.py`
+- `src/heat_source_channels.py`
+- `src/influx_service.py`
+- `src/model_wrapper.py`
+- `src/physics_features.py`
+- `src/pre_dispatch.py`
+- `src/state_manager.py`
+- `tests/unit/test_building_curve.py`
+- `tests/unit/test_cycle_routes.py`
+- `tests/unit/test_heat_source_channels.py`
+- `tests/unit/test_influx_service.py`
+- `tests/unit/test_pre_dispatch.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Empirical Building Balance Estimates — 2026-10-05
 
 #### **What changed**

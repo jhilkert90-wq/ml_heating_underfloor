@@ -99,6 +99,7 @@ class TestCheckAndResolveClimateMode:
         assert climate_mode == "heating"
         # Previous raw mode is now remembered for next cycle's comparison.
         assert wrapper.last_raw_climate_mode == "heating"
+        assert wrapper.last_active_climate_mode == "heating"
 
     @patch("src.pre_dispatch.os.path.exists", return_value=False)
     @patch("src.pre_dispatch.HeatingSystemStateChecker")
@@ -116,6 +117,7 @@ class TestCheckAndResolveClimateMode:
         wrapper = MagicMock()
         wrapper.state_manager = MagicMock()
         wrapper.last_raw_climate_mode = None
+        wrapper.last_active_climate_mode = "cooling"
 
         result = check_and_resolve_climate_mode(ha_client, all_states, wrapper)
         heating_active, climate_mode, state_mgr, state = result
@@ -125,6 +127,32 @@ class TestCheckAndResolveClimateMode:
         wrapper.set_climate_mode.assert_called_once_with("heating")
         # The raw "off" mode is remembered so a later transition is detected.
         assert wrapper.last_raw_climate_mode == "off"
+        assert wrapper.last_active_climate_mode == "cooling"
+
+    @patch("src.pre_dispatch.os.path.exists", return_value=False)
+    @patch("src.pre_dispatch.HeatingSystemStateChecker")
+    @patch("src.pre_dispatch.load_state")
+    def test_cooling_mode_is_persisted_for_idle_sampling(
+        self, mock_load, mock_checker_cls, mock_exists
+    ):
+        mock_checker = MagicMock()
+        mock_checker.check_heating_active.return_value = True
+        mock_checker.get_climate_mode.return_value = "cooling"
+        mock_checker_cls.return_value = mock_checker
+        mock_load.return_value = {}
+
+        wrapper = MagicMock()
+        wrapper.state_manager = MagicMock()
+        wrapper.last_raw_climate_mode = None
+        wrapper._heating_state_manager.get_operational_state.return_value = {}
+
+        check_and_resolve_climate_mode(MagicMock(), {}, wrapper)
+
+        assert wrapper.last_active_climate_mode == "cooling"
+        wrapper._heating_state_manager.update_operational_state.assert_called_once_with(
+            last_active_climate_mode="cooling"
+        )
+        wrapper._heating_state_manager.save_state.assert_called_once()
 
     @patch("src.pre_dispatch.os.path.exists", return_value=False)
     @patch("src.pre_dispatch.HeatingSystemStateChecker")

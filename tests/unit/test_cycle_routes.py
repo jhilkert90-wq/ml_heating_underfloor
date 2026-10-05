@@ -21,6 +21,7 @@ from src.cycle_routes import (
     step_ema_smoothing,
     step_setpoint_hold,
     step_publish_building_curves,
+    step_save_state,
 )
 
 
@@ -150,6 +151,9 @@ class TestStepPublishBuildingCurves:
                 "flow_rate": 0.0,
                 "thermal_power_kw": 0.0,
                 "indoor_temp_delta_60m": 0.1,
+                "flow_rate_available": True,
+                "inlet_temp_available": True,
+                "indoor_history_available": True,
             },
             actual_indoor=22.0,
             outdoor_temp=10.0,
@@ -164,6 +168,46 @@ class TestStepPublishBuildingCurves:
             call.args[0] != "sensor.flow_rate"
             for call in ctx.ha_client.get_state.call_args_list
         )
+
+    @patch("src.cycle_routes._BUILDING_CURVE_PUBLISHER.publish")
+    @patch("src.cycle_routes.config")
+    def test_idle_balance_observation_uses_last_active_cooling_mode(
+        self, mock_config, mock_publish
+    ):
+        mock_config.BUILDING_CURVE_ENABLED = True
+        mock_config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID = "sensor.cooling_target"
+        mock_config.TARGET_INDOOR_TEMP_ENTITY_ID = "sensor.heating_target"
+        mock_config.BUILDING_CURVE_POLY_DEGREE = 4
+        ctx = _make_ctx(
+            climate_mode="heating",
+            target_indoor_temp=21.0,
+            features_dict={
+                "flow_rate": 0.0,
+                "thermal_power_kw": 0.0,
+                "indoor_temp_delta_60m": 0.1,
+                "flow_rate_available": True,
+                "inlet_temp_available": True,
+                "indoor_history_available": True,
+            },
+            actual_indoor=25.0,
+            outdoor_temp=18.0,
+        )
+        ctx.wrapper.last_active_climate_mode = "cooling"
+        ctx.ha_client.get_state.return_value = "24.0"
+
+        step_publish_building_curves(ctx, allow_balance_observation=True)
+
+        observation = mock_publish.call_args.kwargs["balance_observation"]
+        assert observation["mode"] == "cooling"
+
+    @patch("src.cycle_routes.save_state")
+    def test_idle_state_saves_last_active_mode(self, mock_save):
+        ctx = _make_ctx(climate_mode="heating", features_dict={})
+        ctx.wrapper.last_active_climate_mode = "cooling"
+
+        step_save_state(ctx)
+
+        assert mock_save.call_args.kwargs["last_active_climate_mode"] == "cooling"
 
 
 def test_idle_route_publishes_curves_without_balance_observation_on_feature_failure(

@@ -116,9 +116,19 @@ class BalancePointEstimator:
         thermal_power_kw: float,
         flow_rate: float,
         now: float,
+        flow_rate_available: bool = True,
+        inlet_temp_available: bool = True,
+        indoor_history_available: bool = True,
     ) -> Optional[Dict[str, Any]]:
         """Add a conservative gain sample when conditions are suitable."""
         if mode not in self._samples:
+            return None
+        if not (
+            flow_rate_available
+            and inlet_temp_available
+            and indoor_history_available
+        ):
+            self.clear(mode)
             return None
         try:
             indoor, outdoor, hlc, drift, power, flow, timestamp = (
@@ -494,6 +504,15 @@ class BuildingCurvePublisher:
                     thermal_power_kw=observation.get("thermal_power_kw"),
                     flow_rate=observation.get("flow_rate"),
                     now=now,
+                    flow_rate_available=observation.get(
+                        "flow_rate_available", True
+                    ),
+                    inlet_temp_available=observation.get(
+                        "inlet_temp_available", True
+                    ),
+                    indoor_history_available=observation.get(
+                        "indoor_history_available", True
+                    ),
                 )
         balance_estimates = {}
         for mode in ("heating", "cooling"):

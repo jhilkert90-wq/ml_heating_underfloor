@@ -131,6 +131,16 @@ def test_total_heat_combines_all_active_sources():
     assert total == pytest.approx(expected)
 
 
+def test_heat_pump_channel_uses_cooling_outlet_effectiveness_bounds():
+    channel = HeatPumpChannel()
+    channel.outlet_effectiveness = 0.2
+    channel.history.append({"context": {"climate_mode": "cooling"}})
+
+    channel.apply_gradient_update({"outlet_effectiveness": 0.0}, 0.01)
+
+    assert channel.outlet_effectiveness == pytest.approx(0.2)
+
+
 def test_mixed_attribution_splits_error_proportionally_between_hp_and_pv(
     mixed_source_attribution_enabled,
 ):

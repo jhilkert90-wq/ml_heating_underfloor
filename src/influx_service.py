@@ -34,6 +34,7 @@ class InfluxService:
         self.client = InfluxDBClient(url=url, token=token, org=org)
         self.query_api: QueryApi = self.client.query_api()
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
+        self._history_sample_counts: Dict[str, int] = {}
 
     def _get_generated_metrics_bucket(self, bucket: Optional[str] = None) -> str:
         """Resolve the generated-metrics bucket with shadow deployment suffixing."""
@@ -197,6 +198,7 @@ class InfluxService:
         """
         minutes = steps * config.HISTORY_STEP_MINUTES
         entity_id_short = entity_id.split(".", 1)[-1]
+        self._history_sample_counts[entity_id] = 0
 
         # Sanitize aggregation function
         valid_aggs = ("mean", "max", "min", "last", "first", "sum")
@@ -226,9 +228,11 @@ class InfluxService:
                 if isinstance(df, list)
                 else df
             )
+            sample_count = int(df["value"].count())
             # Forward-fill and back-fill to handle any missing data points.
             df["value"] = df["value"].ffill().bfill()
             values = df["value"].tolist()
+            self._history_sample_counts[entity_id] = sample_count
 
             # Ensure the result has the desired number of steps.
             if len(values) < steps:
@@ -250,6 +254,10 @@ class InfluxService:
         except Exception:
             # Return a default list if the query fails.
             return [default_value] * steps
+
+    def get_history_sample_count(self, entity_id: str) -> int:
+        """Return the count of real history points from the last fetch."""
+        return self._history_sample_counts.get(entity_id, 0)
 
     def fetch_binary_history(self, entity_id: str, steps: int) -> list[float]:
         """

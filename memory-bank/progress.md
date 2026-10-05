@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## PR #89 Review Fixes — 2026-10-05
+
+**Status:** COMPLETED — addressed the balance-estimate availability and mode issues and cooling channel clamps.
+
+**Files changed:** `src/building_curve.py`, `src/cycle_routes.py`, `src/heat_source_channels.py`, `src/influx_service.py`, `src/model_wrapper.py`, `src/physics_features.py`, `src/pre_dispatch.py`, `src/state_manager.py`, `tests/unit/test_building_curve.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_influx_service.py`, `tests/unit/test_pre_dispatch.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Balance samples now require available flow, inlet, and indoor-history signals; failed history fetches remain distinguishable from padded defaults. Idle observations use a persisted last active heating/cooling mode while idle dispatch keeps the heating state manager, and channel updates clamp against the selected mode's bounds.
+
+---
+
 ## Empirical Building Balance Estimates — 2026-10-05
 
 **Status:** COMPLETED — balance outdoor temperature now uses measured stable idle observations rather than equaling the indoor target.

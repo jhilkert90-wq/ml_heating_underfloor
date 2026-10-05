@@ -132,6 +132,9 @@ def step_build_features(ctx: CycleContext) -> bool:
         ctx.features_dict = (
             features.iloc[0].to_dict() if not features.empty else {}
         )
+        ctx.features_dict.update(
+            features.attrs.get("balance_observation_availability", {})
+        )
     else:
         ctx.features_dict = features if isinstance(features, dict) else {}
     return True
@@ -680,6 +683,9 @@ def step_save_state(ctx: CycleContext) -> None:
         "last_fireplace_on": ctx.fireplace_on,
         "last_final_temp": ctx.final_temp,
         "last_climate_mode": ctx.climate_mode,
+        "last_active_climate_mode": getattr(
+            ctx.wrapper, "last_active_climate_mode", ctx.climate_mode
+        ),
         "last_target_indoor_temp": (
             float(ctx.target_indoor_temp)
             if ctx.target_indoor_temp is not None
@@ -749,13 +755,27 @@ def step_publish_building_curves(
             flow_rate = ctx.features_dict.get("flow_rate")
             indoor_drift = ctx.features_dict.get("indoor_temp_delta_60m")
             thermal_power = ctx.features_dict.get("thermal_power_kw")
+            observation_mode = getattr(
+                ctx.wrapper, "last_active_climate_mode", mode
+            )
+            if observation_mode not in ("heating", "cooling"):
+                observation_mode = mode
             balance_observation = {
-                "mode": mode,
+                "mode": observation_mode,
                 "indoor_temp": ctx.actual_indoor,
                 "outdoor_temp": ctx.outdoor_temp,
                 "indoor_temp_delta_60m": indoor_drift,
                 "thermal_power_kw": thermal_power,
                 "flow_rate": flow_rate,
+                "flow_rate_available": ctx.features_dict.get(
+                    "flow_rate_available", False
+                ),
+                "inlet_temp_available": ctx.features_dict.get(
+                    "inlet_temp_available", False
+                ),
+                "indoor_history_available": ctx.features_dict.get(
+                    "indoor_history_available", False
+                ),
             }
         _BUILDING_CURVE_PUBLISHER.publish(
             ctx.ha_client,

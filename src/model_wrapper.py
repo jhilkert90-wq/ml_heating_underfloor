@@ -82,6 +82,14 @@ class EnhancedModelWrapper:
         # None until the first cycle has run (avoids a spurious restart on
         # cold start).
         self.last_raw_climate_mode: str | None = None
+        _last_active_mode = self._heating_state_manager.get_operational_state().get(
+            "last_active_climate_mode"
+        )
+        self.last_active_climate_mode = (
+            _last_active_mode
+            if _last_active_mode in ("heating", "cooling")
+            else "heating"
+        )
 
         # Cooling cycle gate: prevents HP short-cycling by tracking
         # whether the HP is in RUNNING or RECOVERY state.
