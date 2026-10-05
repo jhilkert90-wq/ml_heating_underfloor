@@ -7,21 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Experimental read-only dashboard replay estimates historical thermal and electrical energy needed to follow recorded indoor targets, including external gains and effective thermal storage.
-
-### Changed
-- Heating physics calibration now honors the stability threshold and minimum duration configured in Home Assistant add-on options.
-- Idle cycles publish the complete calculated feature set without running active setpoint controls or disturbing HVAC-off balance sampling.
-
-### Fixed
-- Target-hold replay now excludes samples at the effective range end, accepts `auto` climate history as heating, and validates fallback COP against the supported range.
-- Target-hold replay now selects each climate mode's thermal time constant before calculating interval decay, uses valid model heat-source defaults when weights are absent, and keeps its COP input bounds consistent with measured-COP validation.
-- Dashboard history replay now uses shared timestamp parsing, reports state-file read failures, and resums only selected-period energy after excluding the warm-up tail.
-- Replay and dashboard now share a single history sampling interval, reject numerically unresolved intervals before simulation, and report missing heating parameters accurately.
-- Dashboard requires a complete date range and rejects future or overlong replay requests before fetching history.
-- Shared climate-mode aliases and extracted history validation, mode-parameter resolution, gain calculation, and selected-range aggregation into focused helpers; unexpected UI failures are logged without exposing raw exception details.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
