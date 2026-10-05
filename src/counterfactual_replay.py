@@ -155,7 +155,6 @@ def replay_target_hold(
             if index == 0
             else float(elapsed_hours.iloc[index])
         )
-        decay = float(np.exp(-dt_hours / tau))
         mode = row["mode"]
         if mode == "heat":
             mode = "heating"
@@ -168,6 +167,7 @@ def replay_target_hold(
         hlc, tau = mode_parameters[parameter_mode]
         if mode in mode_parameters:
             last_active_mode = mode
+        decay = float(np.exp(-dt_hours / tau))
         target = float(row["target_temp"])
         outdoor = float(row["outdoor_temp"])
         external_gain = float(row["external_gain_kw"])
