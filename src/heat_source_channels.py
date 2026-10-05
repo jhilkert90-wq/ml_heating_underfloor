@@ -411,7 +411,7 @@ class HeatPumpChannel(HeatSourceChannel):
             self.slab_time_constant_hours = _clip_to_parameter_bounds(
                 "slab_time_constant_hours",
                 self.slab_time_constant_hours + max(-0.05, min(0.05, delta)),
-                (0.5, 3.0),
+                (0.5, 6.0),
             )
         if "delta_t_floor" in gradients:
             delta = gradients["delta_t_floor"] * learning_rate
@@ -766,9 +766,10 @@ class FireplaceChannel(HeatSourceChannel):
             )
         if "fp_decay_time_constant" in gradients:
             delta = gradients["fp_decay_time_constant"] * learning_rate
-            self.fp_decay_time_constant += max(-0.1, min(0.1, delta))
-            self.fp_decay_time_constant = max(
-                0.1, min(2.0, self.fp_decay_time_constant)
+            self.fp_decay_time_constant = _clip_to_parameter_bounds(
+                "fp_decay_time_constant",
+                self.fp_decay_time_constant + max(-0.1, min(0.1, delta)),
+                (0.1, 5.0),
             )
 
     def _learn_from_recent(self) -> None:
@@ -912,8 +913,18 @@ class HeatSourceChannelOrchestrator:
 
         fireplace = self.channels["fireplace"]
         assert isinstance(fireplace, FireplaceChannel)
-        fireplace.fp_heat_output_kw = parameters.get(
-            "fireplace_heat_weight", fireplace.fp_heat_output_kw
+        fireplace.fp_heat_output_kw = _clip_to_parameter_bounds(
+            "fp_heat_output_kw",
+            float(
+                parameters.get(
+                    "fp_heat_output_kw",
+                    parameters.get(
+                        "fireplace_heat_weight",
+                        fireplace.fp_heat_output_kw,
+                    ),
+                )
+            ),
+            (0.5, 15.0),
         )
         fireplace.fp_decay_time_constant = parameters.get(
             "fp_decay_time_constant", fireplace.fp_decay_time_constant
@@ -1510,6 +1521,10 @@ class HeatSourceChannelOrchestrator:
                 if skip_managed and key in self._BASELINE_MANAGED_PARAMS:
                     continue
                 if hasattr(ch, key):
+                    if key == "fp_heat_output_kw":
+                        value = _clip_to_parameter_bounds(
+                            key, float(value), (0.5, 15.0)
+                        )
                     setattr(ch, key, value)
 
             restored_history = ch_state.get("history")

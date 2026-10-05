@@ -7,11 +7,10 @@ Implementation Quality Fixes.
 
 Physical Constants and Units:
 - Temperature: °C (Celsius)
-- Heat Input: Dimensionless thermal units  
-- Heat Loss Coefficient: °C per thermal unit
-- PV Power: W (Watts)
-- PV Heat Weight: °C/W (temperature rise per watt)
-- Fireplace/TV Heat: °C (direct temperature contribution)
+- Thermal power and source contributions: kW
+- Heat loss/outlet effectiveness: kW/K
+- PV power input: W (Watts)
+- PV heat weight: kW/W (thermal kW per electrical PV watt)
 - Time: hours
 """
 
@@ -50,7 +49,7 @@ class PhysicsConstants:
     MAX_TIME_CONSTANT = 100.0   # Maximum thermal time constant (100 hours)
     
     # Heat loss bounds
-    MIN_HEAT_LOSS_COEFF = 0.1  # Minimum heat loss coefficient
+    MIN_HEAT_LOSS_COEFF = 0.01  # Minimum heat loss coefficient
     MAX_HEAT_LOSS_COEFF = 10.0  # Maximum heat loss coefficient
 
     # Specific heat capacity of water (kJ/kg·K)
@@ -61,8 +60,8 @@ class PhysicsConstants:
     MAX_FLOW_RATE = 5000.0
     
     # Effectiveness bounds
-    MIN_EFFECTIVENESS = 0.01   # Minimum outlet effectiveness (1%)
-    MAX_EFFECTIVENESS = 1.0    # Maximum outlet effectiveness (100%)
+    MIN_EFFECTIVENESS = 0.05   # Covers the cooling-mode lower bound
+    MAX_EFFECTIVENESS = 2.0    # Covers the heating-mode upper bound
     
     # Gradient calculation epsilon values
     # Calibrated via scripts/epsilon_sensitivity_analysis.py so that each
@@ -237,13 +236,13 @@ class ThermalUnits:
     UNITS = {
         # Core thermal parameters
         'thermal_time_constant': 'hours',
-        'heat_loss_coefficient': '°C/thermal_unit',
-        'outlet_effectiveness': 'dimensionless',
+        'heat_loss_coefficient': 'kW/K',
+        'outlet_effectiveness': 'kW/K',
         
         # External heat source weights
-        'pv_heat_weight': '°C/W',
-        'fireplace_heat_weight': '°C',
-        'tv_heat_weight': '°C',
+        'pv_heat_weight': 'kW/W',
+        'fireplace_heat_weight': 'kW',
+        'tv_heat_weight': 'kW',
         
         # Temperature measurements
         'indoor_temperature': '°C',
@@ -294,9 +293,9 @@ class ThermalUnits:
             PhysicsConstants.MAX_OUTLET_TEMP
         ),
         'pv_power': (0.0, 20000.0),  # 0 to 20kW
-        'pv_heat_weight': (0.0, 0.01),  # 0 to 0.01 °C/W
-        'fireplace_heat_weight': (0.0, 10.0),  # 0 to 10°C
-        'tv_heat_weight': (0.0, 2.0),  # 0 to 2°C
+        'pv_heat_weight': (0.0, 0.01),  # kW per PV watt
+        'fireplace_heat_weight': (0.0, 10.0),  # kW
+        'tv_heat_weight': (0.0, 2.0),  # kW
         'learning_rate': (0.001, 1.0),  # 0.1% to 100%
         'learning_confidence': (0.1, 10.0),  # 10% to 1000%
         'safety_margin': (0.1, 5.0),  # 0.1°C to 5°C

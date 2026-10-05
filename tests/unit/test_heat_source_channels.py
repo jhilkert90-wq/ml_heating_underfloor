@@ -480,6 +480,37 @@ def test_load_channel_state_restores_history_and_ignores_legacy_missing_history(
     assert orch.channels["pv"].history == []
 
 
+def test_sync_from_model_clamps_legacy_fireplace_heat_to_kw_bounds():
+    orch = HeatSourceChannelOrchestrator()
+
+    orch.sync_from_model_parameters({"fireplace_heat_weight": 0.171567})
+
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(0.5)
+
+
+def test_load_channel_state_clamps_out_of_range_fireplace_heat():
+    orch = HeatSourceChannelOrchestrator()
+
+    orch.load_channel_state(
+        {"fireplace": {"parameters": {"fp_heat_output_kw": 0.171567}}}
+    )
+
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(0.5)
+
+
+def test_channel_updates_preserve_configured_slab_and_fireplace_decay_ranges():
+    heat_pump = HeatPumpChannel()
+    heat_pump.slab_time_constant_hours = 4.0
+    heat_pump.apply_gradient_update({"slab_time_constant_hours": 0.0}, 1.0)
+
+    fireplace = FireplaceChannel()
+    fireplace.fp_decay_time_constant = 4.0
+    fireplace.apply_gradient_update({"fp_decay_time_constant": 0.0}, 1.0)
+
+    assert heat_pump.slab_time_constant_hours == pytest.approx(4.0)
+    assert fireplace.fp_decay_time_constant == pytest.approx(4.0)
+
+
 def test_load_channel_state_restores_managed_params_on_normal_restart():
     """On normal restart channel-learned managed params should be restored."""
     orch = HeatSourceChannelOrchestrator()

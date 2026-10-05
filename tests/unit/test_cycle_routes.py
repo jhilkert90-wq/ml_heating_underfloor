@@ -19,6 +19,7 @@ from src.cycle_routes import (
     step_gradual_control,
     step_ema_smoothing,
     step_setpoint_hold,
+    step_publish_building_curves,
 )
 
 
@@ -98,6 +99,38 @@ class TestStepApplyCoolingTarget:
         ctx = _make_ctx(climate_mode="heating", target_indoor_temp=22.0)
         step_apply_cooling_target(ctx)
         assert ctx.target_indoor_temp == 22.0  # unchanged
+
+
+class TestStepPublishBuildingCurves:
+    @patch("src.cycle_routes._BUILDING_CURVE_PUBLISHER.publish")
+    @patch("src.cycle_routes.config")
+    def test_idle_cooling_uses_distinct_heating_and_cooling_targets(
+        self, mock_config, mock_publish
+    ):
+        mock_config.BUILDING_CURVE_ENABLED = True
+        mock_config.TARGET_INDOOR_TEMP_ENTITY_ID = "sensor.heating_target"
+        mock_config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID = (
+        "sensor.cooling_target"
+        )
+        mock_config.BUILDING_CURVE_POLY_DEGREE = 4
+        ctx = _make_ctx(
+        climate_mode="cooling",
+        target_indoor_temp=22.0,
+        features_dict={},
+        actual_indoor=25.0,
+        outdoor_temp=18.0,
+        )
+        ctx.ha_client.get_state.side_effect = lambda entity, *_args, **_kwargs: {
+        "sensor.heating_target": "21.5",
+        "sensor.cooling_target": "24.0",
+        }.get(entity)
+
+        step_publish_building_curves(ctx)
+
+        assert mock_publish.call_args.args[2] == {
+            "heating": 21.5,
+            "cooling": 24.0,
+        }
 
 
 class TestResolvePreCoolMinTarget:
@@ -316,13 +349,16 @@ class TestRunIdleRoute:
         # Should return early, no further steps
 
     @patch("src.cycle_routes.step_publish_building_curves")
+    @patch("src.cycle_routes.step_build_features")
     @patch("src.cycle_routes.step_get_sensor_data")
     def test_publishes_building_curves_after_sensor_retrieval(
-        self, mock_sensors, mock_publish
+        self, mock_sensors, mock_features, mock_publish
     ):
         mock_sensors.return_value = True
+        mock_features.return_value = True
         run_idle_route(_make_ctx())
         mock_publish.assert_called_once()
+        assert mock_publish.call_args.kwargs["allow_balance_observation"] is True
 
 
 class TestRunHeatingRoute:

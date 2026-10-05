@@ -190,6 +190,16 @@ class TestThermalParameterValidatorHeatBalance:
         assert result is True
         assert self.validator.validation_errors == []
 
+    def test_logged_cooling_parameters_are_accepted(self):
+        result = self.validator.validate_heat_balance_parameters(
+            heat_loss_coeff=0.079428,
+            outlet_effectiveness=0.321974,
+            external_weights={"pv": 0.000146, "fireplace": 1.0, "tv": 0.35},
+        )
+
+        assert result is True
+        assert self.validator.validation_errors == []
+
     def test_out_of_range_hlc_adds_error(self):
         result = self.validator.validate_heat_balance_parameters(
             heat_loss_coeff=0.0,  # 0 is below min → invalid

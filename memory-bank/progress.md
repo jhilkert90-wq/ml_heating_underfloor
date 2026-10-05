@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Empirical Building Balance Estimates — 2026-10-05
+
+**Status:** COMPLETED — balance outdoor temperature now uses measured stable idle observations rather than equaling the indoor target.
+
+**Files changed:** `src/building_curve.py`, `src/cycle_routes.py`, `src/heat_source_channels.py`, `src/thermal_config.py`, `src/thermal_constants.py`, `tests/unit/test_building_curve.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_thermal_constants.py`, `docs/THERMAL_PARAMETER_REFERENCE.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Verified the base-outlet equation against the temperature-based equilibrium equation and the supplied sensor values. Estimated per-mode non-HVAC gains from idle observations with near-zero hydronic flow/thermal power and low indoor drift; estimates use up to 24 hours of samples and require at least three samples spanning two hours with low spread. Insufficient data leaves the real balance estimate unavailable while exposing the labeled no-gains zero-load value. Corrected mode target selection, missing-outdoor handling, active parameter units, and persisted fireplace/slab/decay bounds.
+
+---
+
 ## Building Curve Review Fixes — 2026-10-03
 
 **Status:** COMPLETED — corrected mode-specific curve publication, failed-write retries, and idle updates.
