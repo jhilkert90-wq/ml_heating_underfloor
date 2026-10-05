@@ -452,22 +452,39 @@ class BuildingCurvePublisher:
             )
             parameters_by_mode[mode] = parameters
 
+        observed_mode = None
+        observed_estimate = None
         if balance_observation:
             observation = dict(balance_observation)
-            mode = observation.get("mode")
-            if mode in parameters_by_mode:
+            observed_mode = observation.get("mode")
+            if observed_mode in parameters_by_mode:
                 observation["heat_loss_coefficient"] = parameters_by_mode[
-                    mode
+                    observed_mode
                 ]["heat_loss_coefficient"]
-                self.balance_estimator.observe(now=now, **observation)
-        balance_estimates = {
-            mode: self.balance_estimator.get_estimate(
-                mode,
-                now,
-                float(parameters_by_mode[mode]["heat_loss_coefficient"]),
+                observed_estimate = self.balance_estimator.observe(
+                    mode=observed_mode,
+                    indoor_temp=observation.get("indoor_temp"),
+                    outdoor_temp=observation.get("outdoor_temp"),
+                    heat_loss_coefficient=observation.get(
+                        "heat_loss_coefficient"
+                    ),
+                    indoor_temp_delta_60m=observation.get(
+                        "indoor_temp_delta_60m"
+                    ),
+                    thermal_power_kw=observation.get("thermal_power_kw"),
+                    flow_rate=observation.get("flow_rate"),
+                    now=now,
+                )
+        balance_estimates = {}
+        for mode in ("heating", "cooling"):
+            if mode == observed_mode and observed_estimate is not None:
+                balance_estimates[mode] = observed_estimate
+            else:
+                balance_estimates[mode] = self.balance_estimator.get_estimate(
+                    mode,
+                    now,
+                    float(parameters_by_mode[mode]["heat_loss_coefficient"]),
             )
-            for mode in ("heating", "cooling")
-        }
         balance_signature = []
         for mode in ("heating", "cooling"):
             estimate = balance_estimates[mode]

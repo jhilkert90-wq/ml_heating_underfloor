@@ -480,12 +480,23 @@ def test_load_channel_state_restores_history_and_ignores_legacy_missing_history(
     assert orch.channels["pv"].history == []
 
 
-def test_sync_from_model_clamps_legacy_fireplace_heat_to_kw_bounds():
+def test_sync_from_model_ignores_out_of_range_legacy_fireplace_weight():
     orch = HeatSourceChannelOrchestrator()
+    default_output = orch.channels["fireplace"].fp_heat_output_kw
 
     orch.sync_from_model_parameters({"fireplace_heat_weight": 0.171567})
 
-    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(0.5)
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(
+        default_output
+    )
+
+
+def test_sync_from_model_uses_legacy_fireplace_weight_when_in_output_range():
+    orch = HeatSourceChannelOrchestrator()
+
+    orch.sync_from_model_parameters({"fireplace_heat_weight": 1.5})
+
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(1.5)
 
 
 def test_load_channel_state_clamps_out_of_range_fireplace_heat():

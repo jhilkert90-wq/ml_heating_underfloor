@@ -740,7 +740,7 @@ def step_publish_building_curves(
 
         balance_observation = None
         if allow_balance_observation and isinstance(ctx.features_dict, dict):
-            flow_rate = _read_entity_float(ctx, config.FLOW_RATE_ENTITY_ID)
+            flow_rate = ctx.features_dict.get("flow_rate")
             indoor_drift = ctx.features_dict.get("indoor_temp_delta_60m")
             thermal_power = ctx.features_dict.get("thermal_power_kw")
             if (

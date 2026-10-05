@@ -69,13 +69,10 @@ def _get_parameter_default(param_name: str, fallback: float) -> float:
 
 
 def _clip_to_parameter_bounds(
-    param_name: str, value: float, fallback_bounds
+    param_name: str, value: float
 ) -> float:
     """Clamp channel parameters to the canonical runtime bounds."""
-    try:
-        lower, upper = ThermalParameterConfig.get_bounds(param_name)
-    except KeyError:
-        lower, upper = fallback_bounds
+    lower, upper = ThermalParameterConfig.get_bounds(param_name)
     return max(lower, min(upper, value))
 
 
@@ -390,35 +387,30 @@ class HeatPumpChannel(HeatSourceChannel):
             self.thermal_time_constant = _clip_to_parameter_bounds(
                 "thermal_time_constant",
                 self.thermal_time_constant + max(-0.2, min(0.2, delta)),
-                (3.0, 100.0),
             )
         if "heat_loss_coefficient" in gradients:
             delta = gradients["heat_loss_coefficient"] * learning_rate
             self.heat_loss_coefficient = _clip_to_parameter_bounds(
                 "heat_loss_coefficient",
                 self.heat_loss_coefficient + max(-0.01, min(0.01, delta)),
-                (0.01, 1.2),
             )
         if "outlet_effectiveness" in gradients:
             delta = gradients["outlet_effectiveness"] * learning_rate
             self.outlet_effectiveness = _clip_to_parameter_bounds(
                 "outlet_effectiveness",
                 self.outlet_effectiveness + max(-0.005, min(0.005, delta)),
-                (0.3, 2.0),
             )
         if "slab_time_constant_hours" in gradients:
             delta = gradients["slab_time_constant_hours"] * learning_rate
             self.slab_time_constant_hours = _clip_to_parameter_bounds(
                 "slab_time_constant_hours",
                 self.slab_time_constant_hours + max(-0.05, min(0.05, delta)),
-                (0.5, 6.0),
             )
         if "delta_t_floor" in gradients:
             delta = gradients["delta_t_floor"] * learning_rate
             self.delta_t_floor = _clip_to_parameter_bounds(
                 "delta_t_floor",
                 self.delta_t_floor + max(-0.2, min(0.2, delta)),
-                (0.0, 10.0),
             )
 
     def _learn_from_recent(self) -> None:
@@ -571,28 +563,24 @@ class SolarChannel(HeatSourceChannel):
             self.pv_heat_weight = _clip_to_parameter_bounds(
                 "pv_heat_weight",
                 self.pv_heat_weight + max(-0.0002, min(0.0002, delta)),
-                (0.00001, 0.005),
             )
         if "solar_lag_minutes" in gradients:
             delta = gradients["solar_lag_minutes"] * learning_rate
             self.solar_lag_minutes = _clip_to_parameter_bounds(
                 "solar_lag_minutes",
                 self.solar_lag_minutes + max(-5.0, min(5.0, delta)),
-                (0.0, 180.0),
             )
         if "cloud_factor_exponent" in gradients:
             delta = gradients["cloud_factor_exponent"] * learning_rate
             self.cloud_factor_exponent = _clip_to_parameter_bounds(
                 "cloud_factor_exponent",
                 self.cloud_factor_exponent + max(-0.05, min(0.05, delta)),
-                (0.1, 3.0),
             )
         if "solar_decay_tau_hours" in gradients:
             delta = gradients["solar_decay_tau_hours"] * learning_rate
             self.solar_decay_tau_hours = _clip_to_parameter_bounds(
                 "solar_decay_tau_hours",
                 self.solar_decay_tau_hours + max(-0.05, min(0.05, delta)),
-                (0.0, 3.0),
             )
 
     def predict_future_contribution(
@@ -760,16 +748,15 @@ class FireplaceChannel(HeatSourceChannel):
     ) -> None:
         if "fp_heat_output_kw" in gradients:
             delta = gradients["fp_heat_output_kw"] * learning_rate
-            self.fp_heat_output_kw += max(-0.5, min(0.5, delta))
-            self.fp_heat_output_kw = max(
-                0.5, min(15.0, self.fp_heat_output_kw)
+            self.fp_heat_output_kw = _clip_to_parameter_bounds(
+                "fp_heat_output_kw",
+                self.fp_heat_output_kw + max(-0.5, min(0.5, delta)),
             )
         if "fp_decay_time_constant" in gradients:
             delta = gradients["fp_decay_time_constant"] * learning_rate
             self.fp_decay_time_constant = _clip_to_parameter_bounds(
                 "fp_decay_time_constant",
                 self.fp_decay_time_constant + max(-0.1, min(0.1, delta)),
-                (0.1, 5.0),
             )
 
     def _learn_from_recent(self) -> None:
@@ -913,18 +900,24 @@ class HeatSourceChannelOrchestrator:
 
         fireplace = self.channels["fireplace"]
         assert isinstance(fireplace, FireplaceChannel)
+        fp_output = parameters.get("fp_heat_output_kw")
+        if fp_output is None:
+            legacy_weight = _to_float(
+                parameters.get("fireplace_heat_weight"),
+                fireplace.fp_heat_output_kw,
+            )
+            lower, upper = ThermalParameterConfig.get_bounds(
+                "fp_heat_output_kw"
+            )
+            fp_output = (
+                legacy_weight
+                if math.isfinite(legacy_weight)
+                and lower <= legacy_weight <= upper
+                else fireplace.fp_heat_output_kw
+            )
         fireplace.fp_heat_output_kw = _clip_to_parameter_bounds(
             "fp_heat_output_kw",
-            float(
-                parameters.get(
-                    "fp_heat_output_kw",
-                    parameters.get(
-                        "fireplace_heat_weight",
-                        fireplace.fp_heat_output_kw,
-                    ),
-                )
-            ),
-            (0.5, 15.0),
+            float(fp_output),
         )
         fireplace.fp_decay_time_constant = parameters.get(
             "fp_decay_time_constant", fireplace.fp_decay_time_constant
@@ -1523,7 +1516,7 @@ class HeatSourceChannelOrchestrator:
                 if hasattr(ch, key):
                     if key == "fp_heat_output_kw":
                         value = _clip_to_parameter_bounds(
-                            key, float(value), (0.5, 15.0)
+                            key, float(value)
                         )
                     setattr(ch, key, value)
 

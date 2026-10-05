@@ -110,19 +110,19 @@ class TestStepPublishBuildingCurves:
         mock_config.BUILDING_CURVE_ENABLED = True
         mock_config.TARGET_INDOOR_TEMP_ENTITY_ID = "sensor.heating_target"
         mock_config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID = (
-        "sensor.cooling_target"
+            "sensor.cooling_target"
         )
         mock_config.BUILDING_CURVE_POLY_DEGREE = 4
         ctx = _make_ctx(
-        climate_mode="cooling",
-        target_indoor_temp=22.0,
-        features_dict={},
-        actual_indoor=25.0,
-        outdoor_temp=18.0,
+            climate_mode="cooling",
+            target_indoor_temp=22.0,
+            features_dict={},
+            actual_indoor=25.0,
+            outdoor_temp=18.0,
         )
         ctx.ha_client.get_state.side_effect = lambda entity, *_args, **_kwargs: {
-        "sensor.heating_target": "21.5",
-        "sensor.cooling_target": "24.0",
+            "sensor.heating_target": "21.5",
+            "sensor.cooling_target": "24.0",
         }.get(entity)
 
         step_publish_building_curves(ctx)
@@ -131,6 +131,38 @@ class TestStepPublishBuildingCurves:
             "heating": 21.5,
             "cooling": 24.0,
         }
+
+    @patch("src.cycle_routes._BUILDING_CURVE_PUBLISHER.publish")
+    @patch("src.cycle_routes.config")
+    def test_balance_observation_uses_existing_feature_flow_rate(
+        self, mock_config, mock_publish
+    ):
+        mock_config.BUILDING_CURVE_ENABLED = True
+        mock_config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID = "sensor.cooling_target"
+        mock_config.TARGET_INDOOR_TEMP_ENTITY_ID = "sensor.heating_target"
+        mock_config.FLOW_RATE_ENTITY_ID = "sensor.flow_rate"
+        mock_config.BUILDING_CURVE_POLY_DEGREE = 4
+        ctx = _make_ctx(
+            climate_mode="heating",
+            target_indoor_temp=21.0,
+            features_dict={
+                "flow_rate": 0.0,
+                "thermal_power_kw": 0.0,
+                "indoor_temp_delta_60m": 0.1,
+            },
+            actual_indoor=22.0,
+            outdoor_temp=10.0,
+        )
+        ctx.ha_client.get_state.return_value = "24.0"
+
+        step_publish_building_curves(ctx, allow_balance_observation=True)
+
+        observation = mock_publish.call_args.kwargs["balance_observation"]
+        assert observation["flow_rate"] == 0.0
+        assert all(
+            call.args[0] != "sensor.flow_rate"
+            for call in ctx.ha_client.get_state.call_args_list
+        )
 
 
 class TestResolvePreCoolMinTarget:

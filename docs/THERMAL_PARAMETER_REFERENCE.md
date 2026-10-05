@@ -514,7 +514,8 @@ direct measurement of heat entering through windows.
 
 A value of `0.002 kW/W` maps 1,000 W of PV output to 2 kW of estimated heat
 before cloud correction and saturation. The resulting equilibrium-temperature
-effect also depends on total conductance.
+effect also depends on the derived temperature-equilibrium denominator
+(`heat_loss_coefficient + outlet_effectiveness`).
 
 #### Physical Interpretation
 
@@ -590,7 +591,9 @@ thermal power contribution while the fireplace is on. The heat-source channel
 uses the separately bounded `fp_heat_output_kw` parameter for its output.
 
 A value of `0.387 kW` means the model adds 0.387 kW while the fireplace is on;
-the resulting indoor-temperature effect depends on total conductance.
+the resulting indoor-temperature effect depends on the derived
+temperature-equilibrium denominator
+(`heat_loss_coefficient + outlet_effectiveness`).
 
 #### Physical Interpretation
 
