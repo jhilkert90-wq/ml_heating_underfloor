@@ -796,10 +796,7 @@ def step_publish_building_curves(
 
 def step_publish_auxiliary_sensors(ctx: CycleContext) -> None:
     """Publish feature and price sensors."""
-    try:
-        ctx.ha_client.publish_last_run_features(ctx.features_dict)
-    except Exception:
-        logging.debug("Failed to publish features sensor.", exc_info=True)
+    step_publish_features(ctx)
 
     step_publish_building_curves(ctx)
 
@@ -822,6 +819,14 @@ def step_publish_auxiliary_sensors(ctx: CycleContext) -> None:
             logging.debug(
                 "Failed to publish price level sensor.", exc_info=True
             )
+
+
+def step_publish_features(ctx: CycleContext) -> None:
+    """Publish the latest calculated feature set."""
+    try:
+        ctx.ha_client.publish_last_run_features(ctx.features_dict)
+    except Exception:
+        logging.debug("Failed to publish features sensor.", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1241,6 +1246,7 @@ def run_idle_route(ctx: CycleContext) -> None:
         return
 
     step_publish_building_curves(ctx, allow_balance_observation=True)
+    step_publish_features(ctx)
 
     # Dynamic trajectory / price still calculated for feature completeness.
     # NOTE: step_dynamic_trajectory mutates config.TRAJECTORY_STEPS and

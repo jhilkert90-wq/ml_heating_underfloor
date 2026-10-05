@@ -1383,8 +1383,17 @@ def calibrate_transient_parameters(thermal_model, transient_sequences):
         return None
 
 
-def filter_stable_periods(df, temp_change_threshold=0.2, min_duration=20):
+def filter_stable_periods(
+    df, temp_change_threshold=None, min_duration=None
+):
     """Filter for stable periods with blocking state detection."""
+    if temp_change_threshold is None:
+        temp_change_threshold = getattr(
+            config, "STABILITY_TEMP_CHANGE_THRESHOLD", 0.2
+        )
+    if min_duration is None:
+        min_duration = getattr(config, "MIN_STABLE_PERIOD_MINUTES", 20)
+
     logging.info(
         "=== FILTERING FOR STABLE PERIODS WITH BLOCKING STATE DETECTION ==="
     )

@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Calibration Settings and Idle Feature Publishing — 2026-10-05
+
+**Status:** COMPLETED — heating calibration now uses the Home Assistant-configured stable-period settings, and idle cycles publish their complete feature telemetry.
+
+**Files changed:** `src/physics_calibration.py`, `src/cycle_routes.py`, `tests/unit/test_physics_calibration.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Preserved the zero-HVAC and indoor-stability requirements for empirical balance estimates, while confirming heating/cooling feature calculations and mode calibration remain available during active operation. Idle dispatch computes and publishes features without issuing control outputs.
+
+---
+
 ## PR #89 Review Fixes — 2026-10-05
 
 **Status:** COMPLETED — addressed the balance-estimate availability and mode issues and cooling channel clamps.

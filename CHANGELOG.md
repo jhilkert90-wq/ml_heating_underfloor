@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Heating physics calibration now honors the stability threshold and minimum duration configured in Home Assistant add-on options.
+- Idle cycles publish the complete calculated feature set without running active setpoint controls or disturbing HVAC-off balance sampling.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

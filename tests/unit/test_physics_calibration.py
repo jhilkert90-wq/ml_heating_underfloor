@@ -28,6 +28,8 @@ def mock_config():
         mock_config.TRAINING_LOOKBACK_HOURS = 24
         mock_config.PHYSICS_CALIBRATION_START_DATE = ""
         mock_config.PV_CALIBRATION_INDOOR_CEILING = 23.0
+        mock_config.STABILITY_TEMP_CHANGE_THRESHOLD = 0.1
+        mock_config.MIN_STABLE_PERIOD_MINUTES = 30
         mock_config.CLOUD_COVER_CORRECTION_ENABLED = False
         mock_config.LIVING_ROOM_TEMP_ENTITY_ID = "sensor.living_room_temp"
         mock_config.HEATING_MIN_THERMAL_POWER_KW = 0.5
@@ -123,6 +125,28 @@ def test_filter_stable_periods_low_flow(sample_df):
         stable_periods = physics_calibration.filter_stable_periods(sample_df)
         # Should be filtered out because flow rate is too low
         assert len(stable_periods) == 0
+
+
+def test_filter_stable_periods_uses_configured_threshold_and_duration(
+    sample_df, mock_config
+):
+    sample_df['indoor_temp'] = 21.0 + np.tile([0.0, 0.1, 0.2, 0.3], 25)
+    mock_config.STABILITY_TEMP_CHANGE_THRESHOLD = 0.5
+    mock_config.MIN_STABLE_PERIOD_MINUTES = 30
+
+    with patch('src.physics_calibration.log_filtering_stats'), \
+         patch('src.physics_calibration.json'), \
+         patch('builtins.open'):
+        configured_periods = physics_calibration.filter_stable_periods(sample_df)
+        assert configured_periods
+
+        mock_config.STABILITY_TEMP_CHANGE_THRESHOLD = 0.1
+        assert physics_calibration.filter_stable_periods(sample_df) == []
+
+        mock_config.STABILITY_TEMP_CHANGE_THRESHOLD = 0.5
+        mock_config.MIN_STABLE_PERIOD_MINUTES = 60
+        longer_periods = physics_calibration.filter_stable_periods(sample_df)
+        assert len(longer_periods) < len(configured_periods)
 
 
 @pytest.fixture
@@ -778,4 +802,3 @@ def test_delta_t_floor_rejects_low_dt():
         periods.append({"outlet_temp": 30.0, "inlet_temp": 29.2, "thermal_power_kw": 2.0})
     result = physics_calibration.calibrate_delta_t_floor(periods)
     assert result is None  # All excluded by dt > 1.0 filter
-

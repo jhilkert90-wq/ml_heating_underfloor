@@ -1,5 +1,25 @@
 # Active Context - Current Work & Decision State
 
+### Calibration Settings and Idle Feature Publishing — 2026-10-05
+
+#### **What changed**
+- Heating historical calibration now reads the configured stability temperature threshold and stable-period duration when callers do not explicitly override them.
+- Idle cycles publish the complete feature payload after building it; they continue to avoid active prediction/setpoint control and retain the dedicated idle balance-estimate sampling path.
+
+#### **Why**
+- The stability settings already exposed as Home Assistant add-on options were not reaching the heating calibration filter. Feature data should also remain observable while climate mode is idle, without weakening the zero-HVAC conditions required for a real balance estimate.
+
+#### **Files modified**
+- `src/physics_calibration.py`
+- `src/cycle_routes.py`
+- `tests/unit/test_physics_calibration.py`
+- `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### PR #89 Review Fixes — 2026-10-05
 
 #### **What changed**
