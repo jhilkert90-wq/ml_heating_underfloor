@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- Building-curve sensors now report a per-mode outdoor balance temperature estimated from stable HVAC-off observations, including sampling assumptions and acceptance thresholds. An HVAC-active/unstable observation or gap over 60 minutes clears that mode's sample window. The no-gains zero-load temperature remains available under an explicitly named attribute; the empirical estimate stays unavailable until enough low-variance samples are collected.
-- Correct thermal-parameter unit descriptions and align channel clamps with configured fireplace-output, fireplace-decay, and slab-time-constant bounds. A low legacy fireplace heat weight is no longer promoted to the minimum channel startup output. Missing outdoor temperature now suppresses curve-state publication instead of substituting 0°C.
-
-### Fixed
-- Reject balance-estimate samples when hydronic sensor or indoor-history data is unavailable, persist the last active mode for idle sampling, and apply cooling-specific thermal-channel bounds.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
