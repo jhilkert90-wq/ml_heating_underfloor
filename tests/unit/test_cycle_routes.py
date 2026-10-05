@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 from datetime import datetime
 
+from src import cycle_routes
 from src.cycle_context import CycleContext
 from src.cycle_state import CycleState
 from src.cycle_routes import (
@@ -163,6 +164,22 @@ class TestStepPublishBuildingCurves:
             call.args[0] != "sensor.flow_rate"
             for call in ctx.ha_client.get_state.call_args_list
         )
+
+
+def test_idle_route_publishes_curves_without_balance_observation_on_feature_failure(
+    monkeypatch,
+):
+    ctx = _make_ctx()
+    publish = MagicMock()
+    monkeypatch.setattr(cycle_routes, "step_get_sensor_data", lambda _ctx: True)
+    monkeypatch.setattr(cycle_routes, "step_determine_prediction_indoor", lambda _ctx: None)
+    monkeypatch.setattr(cycle_routes, "step_build_features", lambda _ctx: False)
+    monkeypatch.setattr(cycle_routes, "step_publish_building_curves", publish)
+
+    run_idle_route(ctx)
+
+    publish.assert_called_once_with(ctx)
+    assert not publish.call_args.kwargs.get("allow_balance_observation", False)
 
 
 class TestResolvePreCoolMinTarget:

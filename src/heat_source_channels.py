@@ -1515,6 +1515,11 @@ class HeatSourceChannelOrchestrator:
                     continue
                 if hasattr(ch, key):
                     if key == "fp_heat_output_kw":
+                        value = _to_float(
+                            value, getattr(ch, key)
+                        )
+                        if not math.isfinite(value):
+                            value = getattr(ch, key)
                         value = _clip_to_parameter_bounds(
                             key, float(value)
                         )

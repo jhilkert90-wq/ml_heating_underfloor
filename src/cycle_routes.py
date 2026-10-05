@@ -739,23 +739,24 @@ def step_publish_building_curves(
             }
 
         balance_observation = None
+        invalidate_balance_mode = (
+            mode
+            if not allow_balance_observation
+            or not isinstance(ctx.features_dict, dict)
+            else None
+        )
         if allow_balance_observation and isinstance(ctx.features_dict, dict):
             flow_rate = ctx.features_dict.get("flow_rate")
             indoor_drift = ctx.features_dict.get("indoor_temp_delta_60m")
             thermal_power = ctx.features_dict.get("thermal_power_kw")
-            if (
-                flow_rate is not None
-                and indoor_drift is not None
-                and thermal_power is not None
-            ):
-                balance_observation = {
-                    "mode": mode,
-                    "indoor_temp": ctx.actual_indoor,
-                    "outdoor_temp": ctx.outdoor_temp,
-                    "indoor_temp_delta_60m": indoor_drift,
-                    "thermal_power_kw": thermal_power,
-                    "flow_rate": flow_rate,
-                }
+            balance_observation = {
+                "mode": mode,
+                "indoor_temp": ctx.actual_indoor,
+                "outdoor_temp": ctx.outdoor_temp,
+                "indoor_temp_delta_60m": indoor_drift,
+                "thermal_power_kw": thermal_power,
+                "flow_rate": flow_rate,
+            }
         _BUILDING_CURVE_PUBLISHER.publish(
             ctx.ha_client,
             {
@@ -767,6 +768,7 @@ def step_publish_building_curves(
             ctx.outdoor_temp,
             degree=getattr(config, "BUILDING_CURVE_POLY_DEGREE", 4),
             balance_observation=balance_observation,
+            invalidate_balance_mode=invalidate_balance_mode,
         )
     except Exception:
         logging.debug("Failed to publish building curves.", exc_info=True)

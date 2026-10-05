@@ -48,7 +48,8 @@ class PhysicsConstants:
     MIN_TIME_CONSTANT = 0.5    # Minimum thermal time constant (30 minutes)
     MAX_TIME_CONSTANT = 100.0   # Maximum thermal time constant (100 hours)
     
-    # Heat loss bounds
+    # Broad cross-mode sanity envelope (kW/K); per-mode limits are enforced
+    # by ThermalParameterConfig.
     MIN_HEAT_LOSS_COEFF = 0.01  # Minimum heat loss coefficient (kW/K)
     MAX_HEAT_LOSS_COEFF = 10.0  # Maximum heat loss coefficient (kW/K)
 
@@ -59,9 +60,10 @@ class PhysicsConstants:
     # Maximum valid flow rate (L/h) - sanity check
     MAX_FLOW_RATE = 5000.0
     
-    # Effectiveness bounds
-    MIN_EFFECTIVENESS = 0.05   # kW/K; covers the cooling-mode lower bound
-    MAX_EFFECTIVENESS = 2.0    # kW/K; covers the heating-mode upper bound
+    # Broad cross-mode sanity envelope (kW/K); per-mode limits are enforced
+    # by ThermalParameterConfig.
+    MIN_EFFECTIVENESS = 0.05
+    MAX_EFFECTIVENESS = 2.0
     
     # Gradient calculation epsilon values
     # Calibrated via scripts/epsilon_sensitivity_analysis.py so that each
@@ -266,7 +268,8 @@ class ThermalUnits:
         'prediction_horizon': 'hours'
     }
     
-    # Expected value ranges for validation
+    # Broad cross-mode sanity ranges; ThermalParameterConfig carries the
+    # stricter heating/cooling parameter bounds.
     RANGES = {
         'thermal_time_constant': (
             PhysicsConstants.MIN_TIME_CONSTANT,

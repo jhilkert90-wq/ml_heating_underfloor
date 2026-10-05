@@ -42,6 +42,7 @@ OUTDOOR_REPUBLISH_DELTA = 0.5
 BALANCE_ESTIMATE_WINDOW_SECONDS = 24 * 3600
 BALANCE_ESTIMATE_MIN_SAMPLES = 3
 BALANCE_ESTIMATE_MIN_WINDOW_SECONDS = 2 * 3600
+BALANCE_ESTIMATE_MAX_SAMPLE_GAP_SECONDS = 60 * 60
 BALANCE_ESTIMATE_MAX_INDOOR_DRIFT = 0.25
 BALANCE_ESTIMATE_MAX_HVAC_POWER_KW = 0.1
 BALANCE_ESTIMATE_MAX_FLOW_RATE = 0.1
@@ -133,11 +134,13 @@ class BalancePointEstimator:
                 )
             )
         except (TypeError, ValueError):
+            self.clear(mode)
             return None
         if not all(
             math.isfinite(value)
             for value in (indoor, outdoor, hlc, drift, power, flow, timestamp)
         ):
+            self.clear(mode)
             return None
         if (
             hlc <= 0
@@ -145,21 +148,34 @@ class BalancePointEstimator:
             or abs(power) > BALANCE_ESTIMATE_MAX_HVAC_POWER_KW
             or abs(flow) > BALANCE_ESTIMATE_MAX_FLOW_RATE
         ):
+            self.clear(mode)
             return None
 
         indoor_outdoor_delta = indoor - outdoor
         gains_kw = hlc * indoor_outdoor_delta
         if not 0 <= gains_kw <= BALANCE_ESTIMATE_MAX_GAIN_KW:
+            self.clear(mode)
             return None
 
         samples = self._samples[mode]
         cutoff = timestamp - BALANCE_ESTIMATE_WINDOW_SECONDS
         while samples and samples[0][0] < cutoff:
             samples.popleft()
+        if (
+            samples
+            and timestamp - samples[-1][0]
+            > BALANCE_ESTIMATE_MAX_SAMPLE_GAP_SECONDS
+        ):
+            samples.clear()
         if samples and timestamp <= samples[-1][0]:
             return self.get_estimate(mode, timestamp, hlc)
         samples.append((timestamp, indoor_outdoor_delta, hlc))
         return self.get_estimate(mode, timestamp, hlc)
+
+    def clear(self, mode: str) -> None:
+        """Discard a mode's history after an HVAC-active or invalid interval."""
+        if mode in self._samples:
+            self._samples[mode].clear()
 
     def get_estimate(
         self,
@@ -289,11 +305,9 @@ def compute_curves(
         kw_attrs[f"{mode}_no_gains_zero_load_outdoor_temp"] = _r(target, 2)
         estimate = (balance_estimates or {}).get(mode) or {}
         gain_kw = estimate.get("gain_kw")
-        balance_temp = (
-            balance_outdoor_temp(target, hlc, gain_kw)
-            if gain_kw is not None
-            else None
-        )
+        balance_temp = estimate.get("balance_outdoor_temp")
+        if balance_temp is None and gain_kw is not None:
+            balance_temp = balance_outdoor_temp(target, hlc, gain_kw)
         estimate_available = balance_temp is not None
         kw_attrs[f"{mode}_balance_outdoor_temp"] = (
             _r(balance_temp, 2) if estimate_available else None
@@ -326,6 +340,9 @@ def compute_curves(
         )
         kw_attrs[f"{mode}_balance_min_window_minutes"] = int(
             BALANCE_ESTIMATE_MIN_WINDOW_SECONDS / 60
+        )
+        kw_attrs[f"{mode}_balance_max_sample_gap_minutes"] = int(
+            BALANCE_ESTIMATE_MAX_SAMPLE_GAP_SECONDS / 60
         )
         kw_attrs[f"{mode}_balance_max_indoor_drift_60m"] = (
             BALANCE_ESTIMATE_MAX_INDOOR_DRIFT
@@ -426,12 +443,15 @@ class BuildingCurvePublisher:
         degree: int = 4,
         now: Optional[float] = None,
         balance_observation: Optional[Dict[str, Any]] = None,
+        invalidate_balance_mode: Optional[str] = None,
     ) -> bool:
         """Publish sensors; returns True when a publish happened."""
         from .ha_client import get_sensor_attributes
         from .shadow_mode import get_shadow_output_entity_id
         from . import config
 
+        if invalidate_balance_mode is not None:
+            self.balance_estimator.clear(invalidate_balance_mode)
         now = time.time() if now is None else now
         if not targets or climate_mode not in targets:
             return False
@@ -484,7 +504,7 @@ class BuildingCurvePublisher:
                     mode,
                     now,
                     float(parameters_by_mode[mode]["heat_loss_coefficient"]),
-            )
+                )
         balance_signature = []
         for mode in ("heating", "cooling"):
             estimate = balance_estimates[mode]
@@ -495,6 +515,7 @@ class BuildingCurvePublisher:
                     float(parameters_by_mode[mode]["heat_loss_coefficient"]),
                     estimate["gain_kw"],
                 )
+                estimate["balance_outdoor_temp"] = balance_temp
             balance_signature.append(
                 (mode, round(balance_temp, 1) if balance_temp is not None else None)
             )

@@ -189,6 +189,10 @@ local denominator with the same name is computed as
 has units kW/K and is distinct from this legacy stored parameter. The current
 energy-based balance path divides thermal power by `heat_loss_coefficient`.
 
+The generic ranges in `PhysicsConstants.RANGES` are broad cross-mode sanity
+envelopes. The stricter heating/cooling limits listed below are enforced by
+`ThermalParameterConfig` when validating a specific mode.
+
 ---
 
 ### 4. `heat_loss_coefficient`
@@ -243,7 +247,9 @@ as they appear in these measurements; learned source weights are not treated as
 measured kW.
 Published attributes show the acceptance gates: ≤0.25°C indoor drift per hour,
 ≤0.1 kW HVAC power, ≤0.1 flow, 0–5 kW inferred gains, and ≤2°C standard
-deviation. The estimate assumes stored slab heat is not materially changing
+deviation. Consecutive qualifying observations may be no more than 60 minutes
+apart. Any HVAC-active/unstable observation or longer gap clears that mode's
+sample window. The estimate assumes stored slab heat is not materially changing
 during the observation window; room-temperature stability alone cannot verify
 that assumption.
 When no sufficiently stable estimate is available, `*_balance_outdoor_temp`

@@ -278,10 +278,11 @@ def test_balance_estimator_requires_stable_hvac_off_observations():
         now=3600, **{**common, "indoor_temp_delta_60m": 0.5}
     ) is None
     assert estimator.observe(now=5400, **common) is None
-    estimate = estimator.observe(now=7200, **common)
+    assert estimator.observe(now=9000, **common) is None
+    estimate = estimator.observe(now=12600, **common)
 
     assert estimate is not None
-    estimate = estimator.get_estimate("heating", now=7200)
+    estimate = estimator.get_estimate("heating", now=12600)
     assert estimate["gain_kw"] == pytest.approx(2.4)
     assert bc.balance_outdoor_temp(
         22.0, 0.2, estimate["gain_kw"]
@@ -289,6 +290,31 @@ def test_balance_estimator_requires_stable_hvac_off_observations():
     assert estimate["sample_count"] == 3
     assert estimate["window_minutes"] == 120
     assert estimate["uncertainty_k"] == pytest.approx(0.0)
+
+
+def test_balance_estimator_resets_after_unstable_observation_and_long_gap():
+    estimator = bc.BalancePointEstimator()
+    common = {
+        "mode": "heating",
+        "indoor_temp": 22.0,
+        "outdoor_temp": 10.0,
+        "heat_loss_coefficient": 0.2,
+        "indoor_temp_delta_60m": 0.1,
+        "thermal_power_kw": 0.0,
+        "flow_rate": 0.0,
+    }
+
+    estimator.observe(now=0, **common)
+    assert estimator.observe(
+        now=1800, **{**common, "thermal_power_kw": 0.5}
+    ) is None
+    assert estimator.observe(now=3600, **common) is None
+    assert estimator.observe(now=7200, **common) is None
+    assert estimator.observe(now=10800, **common) is not None
+
+    assert estimator.observe(now=14401, **common) is None
+    assert estimator.observe(now=18001, **common) is None
+    assert estimator.observe(now=21601, **common) is not None
 
 
 def test_balance_estimator_uses_mode_specific_heat_loss_coefficient():
