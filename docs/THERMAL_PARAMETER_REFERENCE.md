@@ -31,15 +31,23 @@ The ML Heating system uses **13 core thermal parameters** that together describe
 The system models indoor temperature as an **energy balance** problem. At every moment, your house gains heat from the heat pump, solar radiation, the fireplace, and electronics — while simultaneously losing heat to the outdoor environment. The equilibrium temperature is the point where gains and losses balance:
 
 ```
-T_equilibrium = (U_outlet × T_outlet + U_loss × T_outdoor + Q_external) / (U_outlet + U_loss)
+T_equilibrium = (U_outlet × T_outlet + U_loss × T_outdoor + Q_external)
+                / (U_outlet + U_loss)
 ```
 
 Where:
-- `U_outlet` = `outlet_effectiveness` — how well the heat pump heats the house
-- `U_loss` = `heat_loss_coefficient` — how quickly heat escapes outdoors
-- `Q_external` = contribution from PV, fireplace, TV (each using their weight parameter)
+- `U_outlet` = `outlet_effectiveness` in kW/K
+- `U_loss` = `heat_loss_coefficient` in kW/K
+- `Q_external` = PV, fireplace, and TV heat contribution in kW
 
-The time constants (`thermal_time_constant`, `slab_time_constant_hours`) control how quickly the house approaches equilibrium, and the lag parameters (`solar_lag_minutes`, `room_spread_delay_minutes`) model transport delays.
+This is the model's temperature-based approximation; the trajectory also
+models slab dynamics. Where measured heat-pump thermal power is supplied, the
+energy-based equilibrium path uses `T_outdoor + (Q_thermal + Q_external) /
+U_loss` instead.
+
+The time constants (`thermal_time_constant`, `slab_time_constant_hours`)
+control how quickly the house approaches equilibrium, and the lag parameters
+(`solar_lag_minutes`, `room_spread_delay_minutes`) model transport delays.
 
 ### Calibration & Learning
 
@@ -172,53 +180,18 @@ Since the parameter is not used in current formulas, changing it has **no effect
 
 #### What It Means
 
-Total conductance is the **sum of all thermal conductances** acting on the house — it quantifies the total strength of thermal coupling between the indoor temperature and all heat sources/sinks.
+#### Current Status: Legacy Parameter
 
-#### How It's Calculated
+The persisted `total_conductance` value is not used by current prediction or
+curve calculations. In the temperature-based equilibrium calculation, a
+local denominator with the same name is computed as
+`heat_loss_coefficient + effective_outlet_effectiveness`; that derived value
+has units kW/K and is distinct from this legacy stored parameter. The current
+energy-based balance path divides thermal power by `heat_loss_coefficient`.
 
-This is a **derived parameter**, not directly calibrated:
-
-```
-U_total = heat_loss_coefficient + outlet_effectiveness
-```
-
-It appears in the equilibrium equation as the denominator that normalizes all heat contributions:
-
-```python
-# From thermal_equilibrium_model.py line 885-893
-total_conductance = heat_loss_coefficient + effective_outlet_effectiveness
-equilibrium_temp = (
-    effective_outlet_effectiveness * outlet_temp
-    + heat_loss_coefficient * outdoor_temp
-    + external_thermal_power
-) / total_conductance
-```
-
-#### Example
-
-With `heat_loss_coefficient = 0.125` and `outlet_effectiveness = 0.953`:
-
-```
-U_total = 0.125 + 0.953 = 1.078
-```
-
-The heat pump contributes 0.953/1.078 = **88.4%** of the thermal coupling, while outdoor losses account for 0.125/1.078 = **11.6%**. This means the heat pump has strong control authority — it dominates the equilibrium.
-
-#### What Happens If It's Bigger?
-
-**Larger U_total** (e.g., both components increase):
-- Stronger overall thermal coupling — indoor temperature converges to equilibrium faster
-- System is more responsive to both heating and outdoor temperature changes
-- Higher U_total from higher outlet_effectiveness = better heating performance
-- Higher U_total from higher heat_loss_coefficient = worse insulation
-
-#### What Happens If It's Smaller?
-
-**Smaller U_total** (e.g., 0.3):
-- Weaker coupling — temperature changes are sluggish
-- External heat sources (PV, fireplace) have proportionally more influence
-- System takes longer to recover from disturbances
-- May indicate a well-insulated house with a weak heat pump
+The generic ranges in `PhysicsConstants.RANGES` are broad cross-mode sanity
+envelopes. The stricter heating/cooling limits listed below are enforced by
+`ThermalParameterConfig` when validating a specific mode.
 
 ---
 
@@ -226,10 +199,10 @@ The heat pump contributes 0.953/1.078 = **88.4%** of the thermal coupling, while
 
 | Property | Value |
 |----------|-------|
-| **Default (heating)** | 0.1245 1/hour |
-| **Default (cooling)** | 0.12 1/hour |
-| **Bounds** | 0.01 – 1.2 1/hour |
-| **Unit** | 1/hour |
+| **Default (heating)** | 0.1245 kW/K |
+| **Default (cooling)** | 0.12 kW/K |
+| **Bounds** | 0.01 – 1.2 kW/K (heating); 0.01 – 1.0 kW/K (cooling) |
+| **Unit** | kW/K |
 | **Source files** | `thermal_config.py`, `thermal_equilibrium_model.py`, `physics_calibration.py`, `heat_source_channels.py` |
 
 #### What It Means
@@ -246,12 +219,42 @@ At steady state with no heat sources except the outdoor environment:
 Heat loss rate = U_loss × (T_indoor - T_outdoor)
 ```
 
-If `U_loss = 0.1245` and the indoor-outdoor difference is 20°C:
+If `U_loss = 0.1245 kW/K` and the indoor-outdoor difference is 20 K:
 ```
-Effective cooling rate = 0.1245 × 20 = 2.49°C/hour equivalent
+Heat loss rate = 0.1245 × 20 = 2.49 kW
 ```
 
-This means that without heating, the indoor temperature would drop by approximately 2.49°C in the first hour (the actual rate decreases as the temperature gap shrinks).
+The corresponding indoor temperature drop depends on the building's effective
+thermal mass; the heat-loss coefficient alone does not determine a °C/hour rate.
+
+#### Estimated Outdoor Balance Temperature
+
+The building-curve sensor estimates the outdoor temperature at which no heating
+or cooling is needed to hold the indoor target. It estimates average net
+non-HVAC gains from idle observations with near-zero hydronic flow and thermal
+power, and little indoor-temperature drift:
+
+```
+estimated gains (kW) = heat_loss_coefficient × (indoor temperature - outdoor temperature)
+balance outdoor temperature = indoor target - average estimated gains / heat_loss_coefficient
+```
+
+The estimate is mode-specific, uses up to 24 hours of qualifying observations,
+and is withheld until at least three samples span two hours and their inferred
+indoor-outdoor temperature deltas have no more than 2°C standard deviation.
+Solar, occupant, appliance, and fireplace effects are represented only insofar
+as they appear in these measurements; learned source weights are not treated as
+measured kW.
+Published attributes show the acceptance gates: ≤0.25°C indoor drift per hour,
+≤0.1 kW HVAC power, ≤0.1 flow, 0–5 kW inferred gains, and ≤2°C standard
+deviation. Consecutive qualifying observations may be no more than 60 minutes
+apart. Any HVAC-active/unstable observation or longer gap clears that mode's
+sample window. The estimate assumes stored slab heat is not materially changing
+during the observation window; room-temperature stability alone cannot verify
+that assumption.
+When no sufficiently stable estimate is available, `*_balance_outdoor_temp`
+is `null`; `*_no_gains_zero_load_outdoor_temp` is the simpler target-based
+crossing and does not include internal or solar gains.
 
 #### Example: Comparing Houses
 
@@ -300,22 +303,22 @@ The default value of **0.1245** suggests a well-insulated modern house.
 
 | Property | Value |
 |----------|-------|
-| **Default (heating)** | 0.9527 |
-| **Default (cooling)** | 0.90 |
-| **Bounds** | 0.3 – 2.0 |
-| **Unit** | dimensionless |
+| **Default (heating)** | 0.83 kW/K |
+| **Default (cooling)** | 0.20 kW/K |
+| **Bounds** | 0.3 – 2.0 kW/K (heating); 0.05 – 2.0 kW/K (cooling) |
+| **Unit** | kW/K |
 | **Source files** | `thermal_config.py`, `thermal_equilibrium_model.py`, `physics_calibration.py`, `heat_source_channels.py` |
 
 #### What It Means
 
-Outlet effectiveness (U_outlet) quantifies how efficiently heat transfers from the heat pump's water outlet through the underfloor heating loops into the indoor air. A value of 0.95 means the heat transfer system is highly effective — nearly all the temperature differential between the outlet water and room air is converted to useful heating.
+Outlet effectiveness (`U_outlet`) is the learned thermal conductance between the effective floor-loop temperature and the room. It converts a temperature difference into a heat rate; it is not a dimensionless percentage.
 
 #### Physical Interpretation
 
 The heat pump contributes heating proportional to the temperature difference between outlet water and indoor air:
 
 ```
-Q_heat_pump = U_outlet × (T_outlet - T_indoor)
+Q_heat_pump (kW) = U_outlet (kW/K) × (T_outlet - T_indoor) (K)
 ```
 
 This captures:
@@ -326,14 +329,15 @@ This captures:
 
 #### Example
 
-With outlet at 30°C, indoor at 22°C, and U_outlet = 0.953:
+With effective floor temperature at 30°C, indoor at 22°C, and
+`U_outlet = 0.953 kW/K`:
 ```
-Q = 0.953 × (30 - 22) = 7.62°C equivalent heating rate
+Q = 0.953 × (30 - 22) = 7.62 kW
 ```
 
 If U_outlet were only 0.5:
 ```
-Q = 0.5 × (30 - 22) = 4.0°C equivalent heating rate
+Q = 0.5 × (30 - 22) = 4.0 kW
 ```
 
 The lower effectiveness means you'd need a higher outlet temperature (or longer run time) to achieve the same heating.
@@ -456,7 +460,7 @@ The heat contribution from this cooling slab is:
 # From heat_source_channels.py
 alpha = 1 - exp(-time_since_off / slab_time_constant)
 T_slab = T_inlet + alpha * (T_indoor - T_inlet)
-Q_decay = outlet_effectiveness * max(0, T_slab - T_indoor)
+Q_decay (kW) = outlet_effectiveness (kW/K) * max(0, T_slab - T_indoor) (K)
 ```
 
 #### Example: Heat Pump Turns Off at 14:00
@@ -465,11 +469,11 @@ Initial slab temperature: 28°C, room temperature: 22°C, τ_slab = 3.19 hours:
 
 | Time | Hours since off | Slab temp | Residual heating |
 |------|----------------|-----------|-----------------|
-| 14:00 | 0 | 28.0°C | 5.72°C equivalent |
-| 15:00 | 1.0 | 26.2°C | 4.00°C equivalent |
-| 17:00 | 3.0 | 23.4°C | 1.33°C equivalent |
-| 17:12 | 3.19 (1τ) | 23.2°C | 1.14°C equivalent (37% remaining) |
-| 20:24 | 6.38 (2τ) | 22.4°C | 0.38°C equivalent (14% remaining) |
+| 14:00 | 0 | 28.0°C | 5.72 kW |
+| 15:00 | 1.0 | 26.2°C | 4.00 kW |
+| 17:00 | 3.0 | 23.4°C | 1.33 kW |
+| 17:12 | 3.19 (1τ) | 23.2°C | 1.14 kW (37% remaining) |
+| 20:24 | 6.38 (2τ) | 22.4°C | 0.38 kW (14% remaining) |
 
 #### What Happens If It's Bigger?
 
@@ -502,17 +506,22 @@ Initial slab temperature: 28°C, room temperature: 22°C, τ_slab = 3.19 hours:
 
 | Property | Value |
 |----------|-------|
-| **Default (heating)** | 0.00207 °C/W |
-| **Default (cooling)** | 0.0003 °C/W |
-| **Bounds** | 0.0001 – 0.005 °C/W |
-| **Unit** | °C per Watt |
+| **Default (heating)** | 0.002 kW/W |
+| **Default (cooling)** | 0.002 kW/W |
+| **Bounds** | 0.00001 – 0.005 kW/W |
+| **Unit** | kW per PV watt |
 | **Source files** | `thermal_config.py`, `thermal_equilibrium_model.py`, `heat_source_channels.py` |
 
 #### What It Means
 
-PV heat weight is the **solar-to-temperature coupling coefficient**. It translates PV panel output power (Watts) into an indoor temperature contribution (°C). The idea: PV power is a proxy for solar irradiance, and some of that solar energy enters the house as heat through windows.
+PV heat weight maps electrical PV output (W) to an estimated solar thermal
+contribution (kW). PV output is a proxy for solar irradiance; it is not a
+direct measurement of heat entering through windows.
 
-A value of 0.00207 means that every 1,000W of PV production adds approximately **2.07°C** to the indoor equilibrium temperature.
+A value of `0.002 kW/W` maps 1,000 W of PV output to 2 kW of estimated heat
+before cloud correction and saturation. The resulting equilibrium-temperature
+effect also depends on the derived temperature-equilibrium denominator
+(`heat_loss_coefficient + outlet_effectiveness`).
 
 #### Physical Interpretation
 
@@ -523,22 +532,24 @@ The heat contribution from solar is:
 Q_pv = PV_power × pv_heat_weight × cloud_factor
 ```
 
-This is added to the equilibrium calculation as external thermal power. The cloud factor (from 1-hour cloud forecast) dampens this on cloudy days.
+This is added to the equilibrium calculation as external thermal power in kW.
+The cloud factor damps the contribution on cloudy days.
 
 #### Example
 
 On a sunny afternoon with 6,000W PV production and cloud_factor = 0.9:
 
 ```
-Q_pv = 6000 × 0.00207 × 0.9 = 11.18°C equivalent
+Q_pv = 6000 × 0.002 × 0.9 = 10.8 kW (before saturation)
 ```
 
-This is a significant contribution! On a day where the heat pump equilibrium would be 20°C, solar gain pushes it to ~31°C — which is why the model reduces outlet temperature during sunny periods.
+This is the model's estimated solar heat input; its equilibrium effect is
+`Q_pv / (U_outlet + U_loss)`, not a direct 10.8°C temperature rise.
 
 On a cloudy day with only 1,000W PV and cloud_factor = 0.4:
 
 ```
-Q_pv = 1000 × 0.00207 × 0.4 = 0.83°C equivalent
+Q_pv = 1000 × 0.002 × 0.4 = 0.8 kW
 ```
 
 Much less significant — the heat pump carries most of the load.
@@ -557,13 +568,14 @@ Much less significant — the heat pump carries most of the load.
 - Appropriate for: north-facing rooms, small windows, shaded house
 - Risk if too small: model ignores real solar gains → overheating on sunny days
 
-**Cooling mode** uses 0.0003 because solar heat works *against* cooling — it's modeled as a load the cooling system must overcome.
+**Cooling mode** uses the mode's learned weight because solar heat works
+*against* cooling — it is modeled as a load the cooling system must overcome.
 
 #### How It's Learned
 
 - **Initial calibration**: Estimated from energy balance or default
 - **Online learning**: Solar channel gradient during daytime; **zero-PV guard** suppresses learning at night
-- **Constraints**: ±0.0002 °C/W per cycle
+- **Constraints**: ±0.0002 kW/W per cycle
 - **Special protection**: No learning when PV = 0W (no signal to learn from)
 
 ---
@@ -572,27 +584,33 @@ Much less significant — the heat pump carries most of the load.
 
 | Property | Value |
 |----------|-------|
-| **Default (heating)** | 0.387 °C |
-| **Default (cooling)** | 1.0 °C |
-| **Bounds** | 0.01 – 6.0 °C |
-| **Unit** | °C (temperature rise when fireplace is on) |
+| **Default (heating)** | 0.387 kW |
+| **Default (cooling)** | 1.0 kW |
+| **Bounds** | 0.01 – 6.0 kW |
+| **Unit** | kW |
 | **Source files** | `thermal_config.py`, `thermal_equilibrium_model.py`, `heat_source_channels.py` |
 
 #### What It Means
 
-Fireplace heat weight represents the **direct temperature contribution** when the fireplace is burning. The fireplace is modeled as a binary source (on/off), so this weight represents how many degrees Celsius the fireplace adds to the indoor equilibrium while it's active.
+In the temperature-based model, fireplace heat weight represents an estimated
+thermal power contribution while the fireplace is on. The heat-source channel
+uses the separately bounded `fp_heat_output_kw` parameter for its output.
 
-A value of 0.387 means: when the fireplace is on, it raises the indoor equilibrium by approximately **0.39°C** (in addition to the exponential decay contribution from the `fp_decay_time_constant`).
+A value of `0.387 kW` means the model adds 0.387 kW while the fireplace is on;
+the resulting indoor-temperature effect depends on the derived
+temperature-equilibrium denominator
+(`heat_loss_coefficient + outlet_effectiveness`).
 
 #### Physical Interpretation
 
 ```python
 # From thermal_equilibrium_model.py
-heat_from_fireplace = fireplace_on × fireplace_heat_weight + fireplace_decay_kw
+heat_from_fireplace (kW) = fireplace_on × fireplace_heat_weight (kW)
+                           + fireplace_decay_kw (kW)
 ```
 
 The total fireplace contribution has two components:
-1. **Active heating** (this parameter): Direct heat while burning
+1. **Active heating** (this parameter): Estimated heat while burning
 2. **Residual decay** (`fp_decay_time_constant`): Heat lingering after shutdown
 
 #### Example: Evening Fireplace Session
@@ -601,12 +619,12 @@ Fireplace lit at 18:00, burns until 22:00:
 
 | Time | Fireplace | Active contribution | Decay contribution | Total |
 |------|-----------|--------------------|--------------------|-------|
-| 18:00 | ON | +0.39°C | 0°C | +0.39°C |
-| 19:00 | ON | +0.39°C | 0°C | +0.39°C |
-| 22:00 | OFF | 0°C | +0.39°C (exp decay starts) | +0.39°C |
-| 23:00 | OFF | 0°C | +0.30°C | +0.30°C |
-| 01:00 | OFF | 0°C | +0.17°C | +0.17°C |
-| 04:00 | OFF | 0°C | +0.05°C | +0.05°C |
+| 18:00 | ON | +0.39 kW | 0 kW | +0.39 kW |
+| 19:00 | ON | +0.39 kW | 0 kW | +0.39 kW |
+| 22:00 | OFF | 0 kW | +0.39 kW (exp decay starts) | +0.39 kW |
+| 23:00 | OFF | 0 kW | +0.30 kW | +0.30 kW |
+| 01:00 | OFF | 0 kW | +0.17 kW | +0.17 kW |
+| 04:00 | OFF | 0 kW | +0.05 kW | +0.05 kW |
 
 #### What Happens If It's Bigger?
 
@@ -634,22 +652,25 @@ Fireplace lit at 18:00, burns until 22:00:
 
 | Property | Value |
 |----------|-------|
-| **Default** | 0.35 °C |
-| **Bounds** | 0.05 – 1.5 °C |
-| **Unit** | °C (temperature rise when TV/electronics are on) |
+| **Default** | 0.35 kW |
+| **Bounds** | 0.05 – 1.5 kW |
+| **Unit** | kW |
 | **Source files** | `thermal_config.py`, `thermal_equilibrium_model.py`, `heat_source_channels.py` |
 
 #### What It Means
 
-TV heat weight represents the **temperature contribution from electronics and appliances** when they are detected as active. Like the fireplace weight, this is a binary (on/off) coupling factor.
+TV heat weight represents the estimated thermal power from electronics and
+appliances when they are detected as active. It is a binary (on/off) source
+term, not a direct temperature rise.
 
-A value of 0.35 means: when the TV/electronics are on, they add approximately **0.35°C** to the indoor equilibrium temperature.
+A value of `0.35 kW` means the model adds 350 W of estimated heat while the
+tracked TV/electronics entity is active.
 
 #### Physical Interpretation
 
 ```python
 # From heat_source_channels.py
-Q_tv = tv_on × tv_heat_weight
+Q_tv (kW) = tv_on × tv_heat_weight (kW)
 ```
 
 This captures heat from:
@@ -661,9 +682,9 @@ This captures heat from:
 
 #### Example
 
-A 65" OLED TV consuming ~150W in a 30 m² room:
+A 65" OLED TV and associated electronics tracked as a source:
 ```
-150W × ~0.0023 °C/W ≈ 0.35°C temperature rise at steady state
+tv_on × 0.35 kW = 0.35 kW estimated thermal contribution
 ```
 
 This is a modest but measurable effect. In a well-insulated house where the heat pump maintains ±0.2°C accuracy, a 0.35°C un-modeled disturbance would be significant.

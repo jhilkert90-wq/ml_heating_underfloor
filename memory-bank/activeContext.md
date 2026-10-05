@@ -1,5 +1,63 @@
 # Active Context - Current Work & Decision State
 
+### PR #89 Review Fixes — 2026-10-05
+
+#### **What changed**
+- Preserved real indoor-history counts across Influx history padding/failures and added flow/inlet/history availability features. Balance-estimator sampling rejects and clears observations when any required signal is unavailable.
+- Persisted the last active heating/cooling mode through the heating state manager and used it for idle balance observations without changing the heating idle state-manager selection.
+- Made heat-source channel gradient clamps select mode-specific thermal parameter bounds.
+
+#### **Why**
+- Prevent false empirical balance estimates during telemetry/history outages, allow cooling idle observations to reach the cooling estimator, and preserve valid cooling parameters below heating-only minima.
+
+#### **Files modified**
+- `src/building_curve.py`
+- `src/cycle_routes.py`
+- `src/heat_source_channels.py`
+- `src/influx_service.py`
+- `src/model_wrapper.py`
+- `src/physics_features.py`
+- `src/pre_dispatch.py`
+- `src/state_manager.py`
+- `tests/unit/test_building_curve.py`
+- `tests/unit/test_cycle_routes.py`
+- `tests/unit/test_heat_source_channels.py`
+- `tests/unit/test_influx_service.py`
+- `tests/unit/test_pre_dispatch.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
+### Empirical Building Balance Estimates — 2026-10-05
+
+#### **What changed**
+- `src/building_curve.py` estimates each mode's average non-HVAC gains from stable observations collected while idle, with near-zero thermal power and flow, indoor drift ≤0.25°C per hour, at least three samples over two hours, ≤2°C sample spread, and no more than 60 minutes between samples. HVAC-active/unstable observations and longer gaps clear that mode's window. Verified the outlet curve is the inverse of the temperature-based equilibrium formula; missing outdoor readings no longer produce a fabricated 0°C state.
+- The `*_balance_outdoor_temp` attributes now contain an empirical estimate or `null`; `*_no_gains_zero_load_outdoor_temp` preserves the target-based no-gains crossing. Estimate attributes include gains, method, sample count, window, spread uncertainty, and all observation-acceptance thresholds. The estimate assumes stored slab heat does not materially change; stable room temperature cannot verify slab stability.
+- `src/cycle_routes.py` collects eligible idle observations only after features are built and reads the separate cooling target when publishing in idle cooling mode.
+- Corrected exported parameter unit documentation to match current thermal-power equations. Restored fireplace heat output is clamped to its canonical kW bounds, but an out-of-range legacy fireplace weight is no longer promoted to that minimum; slab and fireplace decay updates use their configured limits.
+
+#### **Why**
+- The former balance attribute was simply the indoor target and ignored the building's observed non-HVAC gains. Unavailable/unstable data must not be presented as a real balance estimate.
+
+#### **Files modified**
+- `src/building_curve.py`
+- `src/cycle_routes.py`
+- `src/heat_source_channels.py`
+- `src/thermal_config.py`
+- `src/thermal_constants.py`
+- `tests/unit/test_building_curve.py`
+- `tests/unit/test_cycle_routes.py`
+- `tests/unit/test_heat_source_channels.py`
+- `tests/unit/test_thermal_constants.py`
+- `docs/THERMAL_PARAMETER_REFERENCE.md`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### Building Curve Review Fixes — 2026-10-03
 
 #### **What changed**

@@ -131,6 +131,16 @@ def test_total_heat_combines_all_active_sources():
     assert total == pytest.approx(expected)
 
 
+def test_heat_pump_channel_uses_cooling_outlet_effectiveness_bounds():
+    channel = HeatPumpChannel()
+    channel.outlet_effectiveness = 0.2
+    channel.history.append({"context": {"climate_mode": "cooling"}})
+
+    channel.apply_gradient_update({"outlet_effectiveness": 0.0}, 0.01)
+
+    assert channel.outlet_effectiveness == pytest.approx(0.2)
+
+
 def test_mixed_attribution_splits_error_proportionally_between_hp_and_pv(
     mixed_source_attribution_enabled,
 ):
@@ -478,6 +488,65 @@ def test_load_channel_state_restores_history_and_ignores_legacy_missing_history(
     assert orch.channels["fireplace"].history == fireplace_history
     assert orch.channels["pv"].pv_heat_weight == pytest.approx(0.0042)
     assert orch.channels["pv"].history == []
+
+
+def test_sync_from_model_ignores_out_of_range_legacy_fireplace_weight():
+    orch = HeatSourceChannelOrchestrator()
+    default_output = orch.channels["fireplace"].fp_heat_output_kw
+
+    orch.sync_from_model_parameters({"fireplace_heat_weight": 0.171567})
+
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(
+        default_output
+    )
+
+
+def test_sync_from_model_uses_legacy_fireplace_weight_when_in_output_range():
+    orch = HeatSourceChannelOrchestrator()
+
+    orch.sync_from_model_parameters({"fireplace_heat_weight": 1.5})
+
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(1.5)
+
+
+def test_load_channel_state_clamps_out_of_range_fireplace_heat():
+    orch = HeatSourceChannelOrchestrator()
+
+    orch.load_channel_state(
+        {"fireplace": {"parameters": {"fp_heat_output_kw": 0.171567}}}
+    )
+
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(0.5)
+
+
+def test_load_channel_state_ignores_corrupt_fireplace_output_and_continues():
+    orch = HeatSourceChannelOrchestrator()
+    default_output = orch.channels["fireplace"].fp_heat_output_kw
+
+    orch.load_channel_state(
+        {
+            "fireplace": {"parameters": {"fp_heat_output_kw": "corrupt"}},
+            "pv": {"parameters": {"pv_heat_weight": 0.004}},
+        }
+    )
+
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(
+        default_output
+    )
+    assert orch.channels["pv"].pv_heat_weight == pytest.approx(0.004)
+
+
+def test_channel_updates_preserve_configured_slab_and_fireplace_decay_ranges():
+    heat_pump = HeatPumpChannel()
+    heat_pump.slab_time_constant_hours = 4.0
+    heat_pump.apply_gradient_update({"slab_time_constant_hours": 0.0}, 1.0)
+
+    fireplace = FireplaceChannel()
+    fireplace.fp_decay_time_constant = 4.0
+    fireplace.apply_gradient_update({"fp_decay_time_constant": 0.0}, 1.0)
+
+    assert heat_pump.slab_time_constant_hours == pytest.approx(4.0)
+    assert fireplace.fp_decay_time_constant == pytest.approx(4.0)
 
 
 def test_load_channel_state_restores_managed_params_on_normal_restart():

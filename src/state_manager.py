@@ -30,6 +30,7 @@ class SystemState:
     last_fireplace_on: bool = False
     last_final_temp: Optional[float] = None
     last_climate_mode: Optional[str] = None
+    last_active_climate_mode: Optional[str] = None
     last_target_indoor_temp: Optional[float] = None
     # Stores the raw indoor temperature predicted during the previous run.
     # This is populated when a prediction is generated and persisted so a

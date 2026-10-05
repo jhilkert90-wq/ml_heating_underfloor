@@ -63,6 +63,16 @@ def test_fetch_history_success(influx_service):
     result = influx_service.fetch_history("sensor.test", 5, 19.0)
     assert len(result) == 5
     assert result == [20.0, 21.0, 22.0, 22.0, 22.0]
+    assert influx_service.get_history_sample_count("sensor.test") == 3
+
+
+def test_fetch_history_marks_query_failure_unavailable(influx_service):
+    influx_service.query_api.query_data_frame = MagicMock(
+        side_effect=RuntimeError("history unavailable")
+    )
+
+    assert influx_service.fetch_history("sensor.test", 5, 19.0) == [19.0] * 5
+    assert influx_service.get_history_sample_count("sensor.test") == 0
 
 
 def test_write_metrics(influx_service):

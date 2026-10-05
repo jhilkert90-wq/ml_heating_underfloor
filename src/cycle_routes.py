@@ -132,6 +132,9 @@ def step_build_features(ctx: CycleContext) -> bool:
         ctx.features_dict = (
             features.iloc[0].to_dict() if not features.empty else {}
         )
+        ctx.features_dict.update(
+            features.attrs.get("balance_observation_availability", {})
+        )
     else:
         ctx.features_dict = features if isinstance(features, dict) else {}
     return True
@@ -680,6 +683,9 @@ def step_save_state(ctx: CycleContext) -> None:
         "last_fireplace_on": ctx.fireplace_on,
         "last_final_temp": ctx.final_temp,
         "last_climate_mode": ctx.climate_mode,
+        "last_active_climate_mode": getattr(
+            ctx.wrapper, "last_active_climate_mode", ctx.climate_mode
+        ),
         "last_target_indoor_temp": (
             float(ctx.target_indoor_temp)
             if ctx.target_indoor_temp is not None
@@ -699,7 +705,7 @@ def step_save_state(ctx: CycleContext) -> None:
 _BUILDING_CURVE_PUBLISHER = BuildingCurvePublisher()
 
 
-def _read_target(ctx: CycleContext, entity_id: str) -> float | None:
+def _read_entity_float(ctx: CycleContext, entity_id: str) -> float | None:
     if not entity_id:
         return None
     try:
@@ -709,7 +715,9 @@ def _read_target(ctx: CycleContext, entity_id: str) -> float | None:
         return None
 
 
-def step_publish_building_curves(ctx: CycleContext) -> None:
+def step_publish_building_curves(
+    ctx: CycleContext, allow_balance_observation: bool = False
+) -> None:
     """Publish the base-outlet and building-kW curve sensors."""
     if not getattr(config, "BUILDING_CURVE_ENABLED", True):
         return
@@ -717,18 +725,58 @@ def step_publish_building_curves(ctx: CycleContext) -> None:
         if ctx.target_indoor_temp is None or ctx.wrapper is None:
             return
         mode = ctx.climate_mode if ctx.climate_mode == "cooling" else "heating"
-        targets = {mode: float(ctx.target_indoor_temp)}
+        current_target = float(ctx.target_indoor_temp)
         if mode == "cooling":
-            heat = _read_target(ctx, config.TARGET_INDOOR_TEMP_ENTITY_ID)
-            if heat is not None:
-                targets["heating"] = heat
-        else:
-            cool = _read_target(
+            heat = _read_entity_float(ctx, config.TARGET_INDOOR_TEMP_ENTITY_ID)
+            cool = _read_entity_float(
                 ctx, getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
             )
-            targets["cooling"] = (
-                cool if cool is not None else targets["heating"]
+            targets = {
+                "heating": heat if heat is not None else current_target,
+                "cooling": cool if cool is not None else current_target,
+            }
+        else:
+            cool = _read_entity_float(
+                ctx, getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
             )
+            targets = {
+                "heating": current_target,
+                "cooling": cool if cool is not None else current_target,
+            }
+
+        balance_observation = None
+        invalidate_balance_mode = (
+            mode
+            if not allow_balance_observation
+            or not isinstance(ctx.features_dict, dict)
+            else None
+        )
+        if allow_balance_observation and isinstance(ctx.features_dict, dict):
+            flow_rate = ctx.features_dict.get("flow_rate")
+            indoor_drift = ctx.features_dict.get("indoor_temp_delta_60m")
+            thermal_power = ctx.features_dict.get("thermal_power_kw")
+            observation_mode = getattr(
+                ctx.wrapper, "last_active_climate_mode", mode
+            )
+            if observation_mode not in ("heating", "cooling"):
+                observation_mode = mode
+            balance_observation = {
+                "mode": observation_mode,
+                "indoor_temp": ctx.actual_indoor,
+                "outdoor_temp": ctx.outdoor_temp,
+                "indoor_temp_delta_60m": indoor_drift,
+                "thermal_power_kw": thermal_power,
+                "flow_rate": flow_rate,
+                "flow_rate_available": ctx.features_dict.get(
+                    "flow_rate_available", False
+                ),
+                "inlet_temp_available": ctx.features_dict.get(
+                    "inlet_temp_available", False
+                ),
+                "indoor_history_available": ctx.features_dict.get(
+                    "indoor_history_available", False
+                ),
+            }
         _BUILDING_CURVE_PUBLISHER.publish(
             ctx.ha_client,
             {
@@ -739,6 +787,8 @@ def step_publish_building_curves(ctx: CycleContext) -> None:
             mode,
             ctx.outdoor_temp,
             degree=getattr(config, "BUILDING_CURVE_POLY_DEGREE", 4),
+            balance_observation=balance_observation,
+            invalidate_balance_mode=invalidate_balance_mode,
         )
     except Exception:
         logging.debug("Failed to publish building curves.", exc_info=True)
@@ -1184,12 +1234,13 @@ def run_idle_route(ctx: CycleContext) -> None:
     if not step_get_sensor_data(ctx):
         return
 
-    step_publish_building_curves(ctx)
-
     step_determine_prediction_indoor(ctx)
 
     if not step_build_features(ctx):
+        step_publish_building_curves(ctx)
         return
+
+    step_publish_building_curves(ctx, allow_balance_observation=True)
 
     # Dynamic trajectory / price still calculated for feature completeness.
     # NOTE: step_dynamic_trajectory mutates config.TRAJECTORY_STEPS and

@@ -44,6 +44,7 @@ def mock_influx_service():
     service.fetch_indoor_history.return_value = [19.0, 19.2, 19.4, 19.6, 19.8, 20.0]
     service.fetch_pv_history.return_value = [100.0, 200.0, 300.0, 400.0, 500.0, 600.0]
     service.fetch_inlet_history.return_value = [34.0, 34.2, 34.4, 34.6, 34.8, 35.0, 35.0]
+    service.get_history_sample_count.return_value = 6
     return service
 
 
@@ -51,6 +52,11 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     """Test successful build of physics features."""
     features_df, _ = build_physics_features(mock_ha_client, mock_influx_service)
     assert isinstance(features_df, pd.DataFrame)
+    assert features_df.attrs["balance_observation_availability"] == {
+        "flow_rate_available": True,
+        "inlet_temp_available": True,
+        "indoor_history_available": True,
+    }
     
     # Verify column count: dynamic forecast keys scale with TRAJECTORY_STEPS (default 4).
     # Previously 58 columns assumed 6 forecast slots; with TRAJECTORY_STEPS=4 → 52 columns.

@@ -151,6 +151,17 @@ def build_physics_features(
         config.POWER_CONSUMPTION_ENTITY_ID, all_states
     )
 
+    flow_rate_available = flow_rate is not None
+    inlet_temp_available = inlet_temp is not None
+    try:
+        flow_rate_available = flow_rate_available and math.isfinite(float(flow_rate))
+    except (TypeError, ValueError):
+        flow_rate_available = False
+    try:
+        inlet_temp_available = inlet_temp_available and math.isfinite(float(inlet_temp))
+    except (TypeError, ValueError):
+        inlet_temp_available = False
+
     # Apply sensor smoothing if buffer is available
     if sensor_buffer:
         # Indoor Temp (15 min smoothing)
@@ -195,6 +206,17 @@ def build_physics_features(
     outlet_history = influx_service.fetch_outlet_history(extended_steps)
     indoor_history = influx_service.fetch_indoor_history(extended_steps)
     pv_history = influx_service.fetch_pv_history(extended_steps)
+    get_history_sample_count = getattr(
+        influx_service, "get_history_sample_count", None
+    )
+    history_sample_count = (
+        get_history_sample_count(config.INDOOR_TEMP_ENTITY_ID)
+        if callable(get_history_sample_count)
+        else 0
+    )
+    indoor_history_available = (
+        isinstance(history_sample_count, int) and history_sample_count >= 6
+    )
     # Need enough points to represent a 60-minute inlet lag at current history cadence.
     history_step_minutes = max(
         1,
@@ -644,4 +666,10 @@ def build_physics_features(
         # Binary flag: 1.0 when |ΔT_rl over 60 min| < 0.3 K → system in thermal steady state
         'is_equilibrium': is_equilibrium,
     }
-    return pd.DataFrame([features]), outlet_history
+    feature_frame = pd.DataFrame([features])
+    feature_frame.attrs["balance_observation_availability"] = {
+        "flow_rate_available": flow_rate_available,
+        "inlet_temp_available": inlet_temp_available,
+        "indoor_history_available": indoor_history_available,
+    }
+    return feature_frame, outlet_history

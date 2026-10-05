@@ -34,9 +34,9 @@ class ThermalParameterConfig:
         'thermal_time_constant': 4.39,  # hours
         'equilibrium_ratio': 0.17,                  # dimensionless
         'total_conductance': 0.8,                   # 1/hour
-        'pv_heat_weight': 0.002,    # °C/W
-        'fireplace_heat_weight': 0.387,             # °C
-        'tv_heat_weight': 0.35,                     # °C
+        'pv_heat_weight': 0.002,    # kW/W of PV power
+        'fireplace_heat_weight': 0.387,             # kW
+        'tv_heat_weight': 0.35,                     # kW
         'fp_heat_output_kw': 3.0,                   # kW
         'fp_decay_time_constant': 3.91,  # hours
         'room_spread_delay_minutes': 18.0,          # minutes
@@ -44,8 +44,8 @@ class ThermalParameterConfig:
         'learning_confidence': 3.0,
         'min_learning_rate': 0.001,
         'max_learning_rate': 0.1,
-        'heat_loss_coefficient': 0.124,  # 1/hour
-        'outlet_effectiveness': 0.83,   # dimensionless
+        'heat_loss_coefficient': 0.124,  # kW/K
+        'outlet_effectiveness': 0.83,   # kW/K
         'delta_t_floor': 2.3,                       # °C
         'cloud_factor_exponent': 1.0,               # dimensionless
         'solar_lag_minutes': 45.0,                  # minutes
@@ -62,9 +62,9 @@ class ThermalParameterConfig:
         'thermal_time_constant': (3.0, 100.0),     # Hours
         'equilibrium_ratio': (0.1, 0.9),         # dimensionless
         'total_conductance': (0.1, 0.8),         # 1/hour
-        'pv_heat_weight': (0.00001, 0.005),       # W/°C
-        'fireplace_heat_weight': (0.01, 6.0),    # 1/°C
-        'tv_heat_weight': (0.05, 1.5),           # W/°C
+        'pv_heat_weight': (0.00001, 0.005),       # kW/W
+        'fireplace_heat_weight': (0.01, 6.0),    # kW
+        'tv_heat_weight': (0.05, 1.5),           # kW
         'fp_heat_output_kw': (0.5, 15.0),        # kW
         'fp_decay_time_constant': (0.1, 5.0),    # hours
         'room_spread_delay_minutes': (0.0, 180.0),  # minutes
@@ -89,9 +89,9 @@ class ThermalParameterConfig:
             'Time constant for thermal equilibrium (hours)',
         'equilibrium_ratio': 'Equilibrium ratio (dimensionless)',
         'total_conductance': 'Total conductance (1/hour)',
-        'pv_heat_weight': 'PV power heating contribution (W/°C)',
-        'fireplace_heat_weight': 'Fireplace heating contribution (1/°C)',
-        'tv_heat_weight': 'TV/appliance heating contribution (W/°C)',
+        'pv_heat_weight': 'PV power contribution (kW per W of PV power)',
+        'fireplace_heat_weight': 'Fireplace heat output (kW)',
+        'tv_heat_weight': 'TV/appliance heat contribution (kW)',
         'fp_heat_output_kw': 'Fireplace channel startup heat output (kW)',
         'fp_decay_time_constant': 'Fireplace channel heat decay time constant (hours)',
         'room_spread_delay_minutes': 'Fireplace channel room-spread delay (minutes)',
@@ -116,9 +116,9 @@ class ThermalParameterConfig:
         'thermal_time_constant': 'hours',
         'equilibrium_ratio': 'dimensionless',
         'total_conductance': '1/hour',
-        'pv_heat_weight': 'W/°C',
-        'fireplace_heat_weight': '1/°C',
-        'tv_heat_weight': 'W/°C',
+        'pv_heat_weight': 'kW/W',
+        'fireplace_heat_weight': 'kW',
+        'tv_heat_weight': 'kW',
         'fp_heat_output_kw': 'kW',
         'fp_decay_time_constant': 'hours',
         'room_spread_delay_minutes': 'minutes',
@@ -147,9 +147,9 @@ class ThermalParameterConfig:
         'thermal_time_constant': 4.8,       # hours (same slab, locked from heating)
         'equilibrium_ratio': 0.20,          # dimensionless (higher: outdoor heat gain)
         'total_conductance': 0.6,           # 1/hour
-        'pv_heat_weight': 0.002,            # °C/W (building property — same as heating)
-        'fireplace_heat_weight': 1.0,       # °C (works against cooling)
-        'tv_heat_weight': 0.35,             # °C (works against cooling)
+        'pv_heat_weight': 0.002,            # kW/W of PV power (same as heating)
+        'fireplace_heat_weight': 1.0,       # kW (works against cooling)
+        'tv_heat_weight': 0.35,             # kW (works against cooling)
         'fp_heat_output_kw': 3.0,           # kW
         'fp_decay_time_constant': 2.0,      # hours
         'room_spread_delay_minutes': 30.0,  # minutes
@@ -157,8 +157,8 @@ class ThermalParameterConfig:
         'learning_confidence': 3.0,
         'min_learning_rate': 0.001,
         'max_learning_rate': 0.08,
-        'heat_loss_coefficient': 0.12,      # 1/hour (heat gain from outside)
-        'outlet_effectiveness': 0.20,       # dimensionless (calibrated from cooling data)
+        'heat_loss_coefficient': 0.12,      # kW/K (heat gain from outside)
+        'outlet_effectiveness': 0.20,       # kW/K (calibrated from cooling data)
         'delta_t_floor': 2.5,               # °C (cooling delta-T floor), changed to 2.5 by user
         'cloud_factor_exponent': 1.0,       # dimensionless
         'solar_lag_minutes': 45.0,          # minutes

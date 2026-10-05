@@ -600,6 +600,26 @@ def check_and_resolve_climate_mode(
     """
     heating_checker = HeatingSystemStateChecker()
     raw_climate_mode = heating_checker.get_climate_mode(ha_client, all_states)
+    if raw_climate_mode in ("heating", "cooling"):
+        wrapper.last_active_climate_mode = raw_climate_mode
+        heating_state_manager = getattr(
+            wrapper, "_heating_state_manager", None
+        )
+        if heating_state_manager is not None:
+            try:
+                saved_mode = heating_state_manager.get_operational_state().get(
+                    "last_active_climate_mode"
+                )
+                if saved_mode != raw_climate_mode:
+                    heating_state_manager.update_operational_state(
+                        last_active_climate_mode=raw_climate_mode
+                    )
+                    heating_state_manager.save_state()
+            except Exception:
+                logging.debug(
+                    "Could not persist last active climate mode.",
+                    exc_info=True,
+                )
 
     _prev_raw_mode = wrapper.last_raw_climate_mode
     wrapper.last_raw_climate_mode = raw_climate_mode

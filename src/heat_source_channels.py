@@ -69,13 +69,13 @@ def _get_parameter_default(param_name: str, fallback: float) -> float:
 
 
 def _clip_to_parameter_bounds(
-    param_name: str, value: float, fallback_bounds
+    param_name: str, value: float, climate_mode: str = "heating"
 ) -> float:
     """Clamp channel parameters to the canonical runtime bounds."""
-    try:
+    if climate_mode == "cooling":
+        lower, upper = ThermalParameterConfig.get_cooling_bounds(param_name)
+    else:
         lower, upper = ThermalParameterConfig.get_bounds(param_name)
-    except KeyError:
-        lower, upper = fallback_bounds
     return max(lower, min(upper, value))
 
 
@@ -89,6 +89,14 @@ def _to_float(value, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _sanitize_fp_output(value, default: float) -> float:
+    """Parse, validate, and clamp a fireplace channel output value."""
+    parsed = _to_float(value, default)
+    if not math.isfinite(parsed):
+        parsed = default
+    return _clip_to_parameter_bounds("fp_heat_output_kw", parsed)
 
 
 def _is_fireplace_active(context: Dict) -> bool:
@@ -267,6 +275,14 @@ class HeatSourceChannel(ABC):
         """Return the full persisted/exported channel parameter snapshot."""
         return self.get_learnable_parameters()
 
+    def _clip_parameter(self, param_name: str, value: float) -> float:
+        climate_mode = (
+            self.history[-1].get("context", {}).get("climate_mode", "heating")
+            if self.history
+            else "heating"
+        )
+        return _clip_to_parameter_bounds(param_name, value, climate_mode)
+
     @abstractmethod
     def apply_gradient_update(
         self, gradients: Dict[str, float], learning_rate: float
@@ -387,38 +403,33 @@ class HeatPumpChannel(HeatSourceChannel):
     ) -> None:
         if "thermal_time_constant" in gradients:
             delta = gradients["thermal_time_constant"] * learning_rate
-            self.thermal_time_constant = _clip_to_parameter_bounds(
+            self.thermal_time_constant = self._clip_parameter(
                 "thermal_time_constant",
                 self.thermal_time_constant + max(-0.2, min(0.2, delta)),
-                (3.0, 100.0),
             )
         if "heat_loss_coefficient" in gradients:
             delta = gradients["heat_loss_coefficient"] * learning_rate
-            self.heat_loss_coefficient = _clip_to_parameter_bounds(
+            self.heat_loss_coefficient = self._clip_parameter(
                 "heat_loss_coefficient",
                 self.heat_loss_coefficient + max(-0.01, min(0.01, delta)),
-                (0.01, 1.2),
             )
         if "outlet_effectiveness" in gradients:
             delta = gradients["outlet_effectiveness"] * learning_rate
-            self.outlet_effectiveness = _clip_to_parameter_bounds(
+            self.outlet_effectiveness = self._clip_parameter(
                 "outlet_effectiveness",
                 self.outlet_effectiveness + max(-0.005, min(0.005, delta)),
-                (0.3, 2.0),
             )
         if "slab_time_constant_hours" in gradients:
             delta = gradients["slab_time_constant_hours"] * learning_rate
-            self.slab_time_constant_hours = _clip_to_parameter_bounds(
+            self.slab_time_constant_hours = self._clip_parameter(
                 "slab_time_constant_hours",
                 self.slab_time_constant_hours + max(-0.05, min(0.05, delta)),
-                (0.5, 3.0),
             )
         if "delta_t_floor" in gradients:
             delta = gradients["delta_t_floor"] * learning_rate
-            self.delta_t_floor = _clip_to_parameter_bounds(
+            self.delta_t_floor = self._clip_parameter(
                 "delta_t_floor",
                 self.delta_t_floor + max(-0.2, min(0.2, delta)),
-                (0.0, 10.0),
             )
 
     def _learn_from_recent(self) -> None:
@@ -568,31 +579,27 @@ class SolarChannel(HeatSourceChannel):
     ) -> None:
         if "pv_heat_weight" in gradients:
             delta = gradients["pv_heat_weight"] * learning_rate
-            self.pv_heat_weight = _clip_to_parameter_bounds(
+            self.pv_heat_weight = self._clip_parameter(
                 "pv_heat_weight",
                 self.pv_heat_weight + max(-0.0002, min(0.0002, delta)),
-                (0.00001, 0.005),
             )
         if "solar_lag_minutes" in gradients:
             delta = gradients["solar_lag_minutes"] * learning_rate
-            self.solar_lag_minutes = _clip_to_parameter_bounds(
+            self.solar_lag_minutes = self._clip_parameter(
                 "solar_lag_minutes",
                 self.solar_lag_minutes + max(-5.0, min(5.0, delta)),
-                (0.0, 180.0),
             )
         if "cloud_factor_exponent" in gradients:
             delta = gradients["cloud_factor_exponent"] * learning_rate
-            self.cloud_factor_exponent = _clip_to_parameter_bounds(
+            self.cloud_factor_exponent = self._clip_parameter(
                 "cloud_factor_exponent",
                 self.cloud_factor_exponent + max(-0.05, min(0.05, delta)),
-                (0.1, 3.0),
             )
         if "solar_decay_tau_hours" in gradients:
             delta = gradients["solar_decay_tau_hours"] * learning_rate
-            self.solar_decay_tau_hours = _clip_to_parameter_bounds(
+            self.solar_decay_tau_hours = self._clip_parameter(
                 "solar_decay_tau_hours",
                 self.solar_decay_tau_hours + max(-0.05, min(0.05, delta)),
-                (0.0, 3.0),
             )
 
     def predict_future_contribution(
@@ -760,15 +767,15 @@ class FireplaceChannel(HeatSourceChannel):
     ) -> None:
         if "fp_heat_output_kw" in gradients:
             delta = gradients["fp_heat_output_kw"] * learning_rate
-            self.fp_heat_output_kw += max(-0.5, min(0.5, delta))
-            self.fp_heat_output_kw = max(
-                0.5, min(15.0, self.fp_heat_output_kw)
+            self.fp_heat_output_kw = self._clip_parameter(
+                "fp_heat_output_kw",
+                self.fp_heat_output_kw + max(-0.5, min(0.5, delta)),
             )
         if "fp_decay_time_constant" in gradients:
             delta = gradients["fp_decay_time_constant"] * learning_rate
-            self.fp_decay_time_constant += max(-0.1, min(0.1, delta))
-            self.fp_decay_time_constant = max(
-                0.1, min(2.0, self.fp_decay_time_constant)
+            self.fp_decay_time_constant = self._clip_parameter(
+                "fp_decay_time_constant",
+                self.fp_decay_time_constant + max(-0.1, min(0.1, delta)),
             )
 
     def _learn_from_recent(self) -> None:
@@ -912,8 +919,23 @@ class HeatSourceChannelOrchestrator:
 
         fireplace = self.channels["fireplace"]
         assert isinstance(fireplace, FireplaceChannel)
-        fireplace.fp_heat_output_kw = parameters.get(
-            "fireplace_heat_weight", fireplace.fp_heat_output_kw
+        fp_output = parameters.get("fp_heat_output_kw")
+        if fp_output is None:
+            legacy_weight = _to_float(
+                parameters.get("fireplace_heat_weight"),
+                fireplace.fp_heat_output_kw,
+            )
+            lower, upper = ThermalParameterConfig.get_bounds(
+                "fp_heat_output_kw"
+            )
+            fp_output = (
+                legacy_weight
+                if math.isfinite(legacy_weight)
+                and lower <= legacy_weight <= upper
+                else fireplace.fp_heat_output_kw
+            )
+        fireplace.fp_heat_output_kw = _sanitize_fp_output(
+            fp_output, fireplace.fp_heat_output_kw
         )
         fireplace.fp_decay_time_constant = parameters.get(
             "fp_decay_time_constant", fireplace.fp_decay_time_constant
@@ -1510,6 +1532,10 @@ class HeatSourceChannelOrchestrator:
                 if skip_managed and key in self._BASELINE_MANAGED_PARAMS:
                     continue
                 if hasattr(ch, key):
+                    if key == "fp_heat_output_kw":
+                        value = _sanitize_fp_output(
+                            value, getattr(ch, key)
+                        )
                     setattr(ch, key, value)
 
             restored_history = ch_state.get("history")
