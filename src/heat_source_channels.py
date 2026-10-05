@@ -88,6 +88,14 @@ def _to_float(value, default: float = 0.0) -> float:
         return default
 
 
+def _sanitize_fp_output(value, default: float) -> float:
+    """Parse, validate, and clamp a fireplace channel output value."""
+    parsed = _to_float(value, default)
+    if not math.isfinite(parsed):
+        parsed = default
+    return _clip_to_parameter_bounds("fp_heat_output_kw", parsed)
+
+
 def _is_fireplace_active(context: Dict) -> bool:
     return _to_float(context.get("fireplace_on", 0.0)) > 0.0
 
@@ -915,9 +923,8 @@ class HeatSourceChannelOrchestrator:
                 and lower <= legacy_weight <= upper
                 else fireplace.fp_heat_output_kw
             )
-        fireplace.fp_heat_output_kw = _clip_to_parameter_bounds(
-            "fp_heat_output_kw",
-            float(fp_output),
+        fireplace.fp_heat_output_kw = _sanitize_fp_output(
+            fp_output, fireplace.fp_heat_output_kw
         )
         fireplace.fp_decay_time_constant = parameters.get(
             "fp_decay_time_constant", fireplace.fp_decay_time_constant
@@ -1515,13 +1522,8 @@ class HeatSourceChannelOrchestrator:
                     continue
                 if hasattr(ch, key):
                     if key == "fp_heat_output_kw":
-                        value = _to_float(
+                        value = _sanitize_fp_output(
                             value, getattr(ch, key)
-                        )
-                        if not math.isfinite(value):
-                            value = getattr(ch, key)
-                        value = _clip_to_parameter_bounds(
-                            key, float(value)
                         )
                     setattr(ch, key, value)
 

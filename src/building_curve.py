@@ -510,6 +510,8 @@ class BuildingCurvePublisher:
             estimate = balance_estimates[mode]
             balance_temp = None
             if estimate is not None and mode in targets:
+                estimate = dict(estimate)
+                balance_estimates[mode] = estimate
                 balance_temp = balance_outdoor_temp(
                     targets[mode],
                     float(parameters_by_mode[mode]["heat_loss_coefficient"]),

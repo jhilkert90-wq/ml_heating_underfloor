@@ -317,6 +317,29 @@ def test_balance_estimator_resets_after_unstable_observation_and_long_gap():
     assert estimator.observe(now=21601, **common) is not None
 
 
+def test_balance_estimator_ignores_duplicate_and_out_of_order_timestamps():
+    estimator = bc.BalancePointEstimator()
+    common = {
+        "mode": "heating",
+        "indoor_temp": 22.0,
+        "outdoor_temp": 10.0,
+        "heat_loss_coefficient": 0.2,
+        "indoor_temp_delta_60m": 0.1,
+        "thermal_power_kw": 0.0,
+        "flow_rate": 0.0,
+    }
+
+    for now in (0, 3600, 7200):
+        estimate = estimator.observe(now=now, **common)
+    assert estimate["sample_count"] == 3
+
+    duplicate = estimator.observe(now=7200, **common)
+    out_of_order = estimator.observe(now=7000, **common)
+
+    assert duplicate["sample_count"] == 3
+    assert out_of_order["sample_count"] == 3
+
+
 def test_balance_estimator_uses_mode_specific_heat_loss_coefficient():
     estimator = bc.BalancePointEstimator()
     for now in (0, 3600, 7200):
