@@ -188,7 +188,6 @@ local denominator with the same name is computed as
 `heat_loss_coefficient + effective_outlet_effectiveness`; that derived value
 has units kW/K and is distinct from this legacy stored parameter. The current
 energy-based balance path divides thermal power by `heat_loss_coefficient`.
-- May indicate a well-insulated house with a weak heat pump
 
 ---
 

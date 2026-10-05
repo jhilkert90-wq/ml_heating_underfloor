@@ -49,8 +49,8 @@ class PhysicsConstants:
     MAX_TIME_CONSTANT = 100.0   # Maximum thermal time constant (100 hours)
     
     # Heat loss bounds
-    MIN_HEAT_LOSS_COEFF = 0.01  # Minimum heat loss coefficient
-    MAX_HEAT_LOSS_COEFF = 10.0  # Maximum heat loss coefficient
+    MIN_HEAT_LOSS_COEFF = 0.01  # Minimum heat loss coefficient (kW/K)
+    MAX_HEAT_LOSS_COEFF = 10.0  # Maximum heat loss coefficient (kW/K)
 
     # Specific heat capacity of water (kJ/kg·K)
     SPECIFIC_HEAT_WATER = 4.186
@@ -60,8 +60,8 @@ class PhysicsConstants:
     MAX_FLOW_RATE = 5000.0
     
     # Effectiveness bounds
-    MIN_EFFECTIVENESS = 0.05   # Covers the cooling-mode lower bound
-    MAX_EFFECTIVENESS = 2.0    # Covers the heating-mode upper bound
+    MIN_EFFECTIVENESS = 0.05   # kW/K; covers the cooling-mode lower bound
+    MAX_EFFECTIVENESS = 2.0    # kW/K; covers the heating-mode upper bound
     
     # Gradient calculation epsilon values
     # Calibrated via scripts/epsilon_sensitivity_analysis.py so that each

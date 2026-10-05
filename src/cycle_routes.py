@@ -699,7 +699,7 @@ def step_save_state(ctx: CycleContext) -> None:
 _BUILDING_CURVE_PUBLISHER = BuildingCurvePublisher()
 
 
-def _read_target(ctx: CycleContext, entity_id: str) -> float | None:
+def _read_entity_float(ctx: CycleContext, entity_id: str) -> float | None:
     if not entity_id:
         return None
     try:
@@ -721,8 +721,8 @@ def step_publish_building_curves(
         mode = ctx.climate_mode if ctx.climate_mode == "cooling" else "heating"
         current_target = float(ctx.target_indoor_temp)
         if mode == "cooling":
-            heat = _read_target(ctx, config.TARGET_INDOOR_TEMP_ENTITY_ID)
-            cool = _read_target(
+            heat = _read_entity_float(ctx, config.TARGET_INDOOR_TEMP_ENTITY_ID)
+            cool = _read_entity_float(
                 ctx, getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
             )
             targets = {
@@ -730,7 +730,7 @@ def step_publish_building_curves(
                 "cooling": cool if cool is not None else current_target,
             }
         else:
-            cool = _read_target(
+            cool = _read_entity_float(
                 ctx, getattr(config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", "")
             )
             targets = {
@@ -740,7 +740,7 @@ def step_publish_building_curves(
 
         balance_observation = None
         if allow_balance_observation and isinstance(ctx.features_dict, dict):
-            flow_rate = _read_target(ctx, config.FLOW_RATE_ENTITY_ID)
+            flow_rate = _read_entity_float(ctx, config.FLOW_RATE_ENTITY_ID)
             indoor_drift = ctx.features_dict.get("indoor_temp_delta_60m")
             thermal_power = ctx.features_dict.get("thermal_power_kw")
             if (

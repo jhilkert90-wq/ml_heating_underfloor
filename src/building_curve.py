@@ -191,12 +191,10 @@ class BalancePointEstimator:
             return None
         if not math.isfinite(hlc) or hlc <= 0:
             return None
-        gains = (
-            sum(sample[1] for sample in samples) / len(samples)
-        ) * hlc
+        mean_delta = sum(sample[1] for sample in samples) / len(samples)
+        gains = mean_delta * hlc
         if not 0 <= gains <= BALANCE_ESTIMATE_MAX_GAIN_KW:
             return None
-        mean_delta = sum(sample[1] for sample in samples) / len(samples)
         spread_k = math.sqrt(
             sum((sample[1] - mean_delta) ** 2 for sample in samples)
             / len(samples)
