@@ -1,5 +1,75 @@
 # Active Context - Current Work & Decision State
 
+### PR #90 Review Fixes — 2026-10-05
+
+#### **What changed**
+- Limited dashboard energy aggregation to the half-open interval from selected start through, but not including, the effective history end.
+- Added `auto` as a heating alias in historical replay and enforced the shared minimum and maximum fallback COP bounds for direct callers.
+- Added regressions for next-midnight exclusion, `auto` replay, and both valid COP boundaries.
+
+#### **Why**
+- Avoid counting energy beyond the requested/current history end, replay supported Home Assistant climate states consistently, and prevent unsupported fallback COP values from biasing estimates.
+
+#### **Files modified**
+- `src/counterfactual_replay.py`
+- `dashboard/components/counterfactual.py`
+- `tests/unit/test_counterfactual_replay.py`
+- `tests/unit/test_dashboard_counterfactual.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
+### Historical Target-Hold Replay — 2026-10-05
+
+#### **What changed**
+- Added a standalone counterfactual replay that uses recorded targets, climate modes, indoor/outdoor temperatures, modeled PV/internal gains, and observed heat-pump power to estimate required target-hold thermal and electrical energy.
+- Added an experimental dashboard page that fetches aligned Home Assistant history, plots actual/target/replay temperatures, and reports counterfactual energy and actual-minus-counterfactual differences.
+- Effective storage is approximated with a one-node RC model (`heat_loss_coefficient × thermal_time_constant`); fallback COP is explicit; missing/invalid history withholds totals.
+- The tool does not mutate state, teach model parameters, or control the heat pump.
+- Fixed interval decay to use the selected heating/cooling model's time constant, aligned fallback heat-source weights with the model's defaults, named replay thresholds, and avoided row-Series iteration.
+- Replay and dashboard now share a sampling interval, reject unresolved numerical timesteps before simulation, and distinguish missing heating-model parameters from cooling history.
+- Dashboard requires both dates in a range selection and rejects future, reversed, or overlong periods before requesting history.
+- Replay and dashboard use the same climate-mode alias mapping; history validation, per-mode parameter resolution, gain replay, and selected-period aggregation are isolated helpers.
+- Unexpected dashboard exceptions are logged with tracebacks while users receive a generic error; PV-lag calculation at the first tail sample is covered.
+- Dashboard regression coverage now checks history alignment and invalid sensor states, selected target by HVAC mode, model-based PV-lag gains, model-state parameter merging, warm-up exclusion/re-summing, and user-visible incomplete-data return paths.
+
+#### **Why**
+- Quantify how solar gains, preheating, and stored thermal energy affect the heat-pump energy that would have been required to follow the actual target without rewriting observed indoor temperatures.
+
+#### **Files modified**
+- `src/counterfactual_replay.py`
+- `dashboard/components/counterfactual.py`
+- `dashboard/app.py`
+- `tests/unit/test_counterfactual_replay.py`
+- `tests/unit/test_dashboard_counterfactual.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
+### Calibration Settings and Idle Feature Publishing — 2026-10-05
+
+#### **What changed**
+- Heating historical calibration now reads the configured stability temperature threshold and stable-period duration when callers do not explicitly override them.
+- Idle cycles publish the complete feature payload after building it; they continue to avoid active prediction/setpoint control and retain the dedicated idle balance-estimate sampling path.
+
+#### **Why**
+- The stability settings already exposed as Home Assistant add-on options were not reaching the heating calibration filter. Feature data should also remain observable while climate mode is idle, without weakening the zero-HVAC conditions required for a real balance estimate.
+
+#### **Files modified**
+- `src/physics_calibration.py`
+- `src/cycle_routes.py`
+- `tests/unit/test_physics_calibration.py`
+- `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`
+- `memory-bank/progress.md`
+- `memory-bank/activeContext.md`
+
+---
+
 ### PR #89 Review Fixes — 2026-10-05
 
 #### **What changed**

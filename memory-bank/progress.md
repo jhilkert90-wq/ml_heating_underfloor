@@ -1,5 +1,35 @@
 # ML Heating System - Current Progress
 
+## PR #90 Review Fixes — 2026-10-05
+
+**Status:** COMPLETED — fixed all three counterfactual replay findings from review.
+
+**Files changed:** `src/counterfactual_replay.py`, `dashboard/components/counterfactual.py`, `tests/unit/test_counterfactual_replay.py`, `tests/unit/test_dashboard_counterfactual.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Dashboard aggregation now keeps only timestamps in the effective half-open selected range, supported `auto` mode history replays as heating, and direct replay callers must provide a fallback COP within the declared 1–10 range. Added regression coverage for end-bound exclusion, mode mapping, and inclusive COP limits.
+
+---
+
+## Historical Target-Hold Replay — 2026-10-05
+
+**Status:** COMPLETED — added an experimental, read-only counterfactual replay for historical target tracking and addressed validation feedback.
+
+**Files changed:** `src/counterfactual_replay.py`, `dashboard/components/counterfactual.py`, `dashboard/app.py`, `tests/unit/test_counterfactual_replay.py`, `tests/unit/test_dashboard_counterfactual.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Replay uses interval-specific targets, heating/cooling/off mode history, mode-specific model parameters and decay constants, model-derived external heat gains, measured thermal/electrical data, an explicitly disclosed fallback COP, and a one-node effective thermal-storage approximation. Incomplete history is rejected, and results remain informational only. Validation tests pass (65 focused); the full suite reports 1,700 passed and 7 unrelated existing failures in main-loop behavior and model calibration. Replay and dashboard now share mode aliases, use focused calculation helpers, cover the beginning of the PV-lag window, and log unexpected errors without displaying internals.
+
+---
+
+## Calibration Settings and Idle Feature Publishing — 2026-10-05
+
+**Status:** COMPLETED — heating calibration now uses the Home Assistant-configured stable-period settings, and idle cycles publish their complete feature telemetry.
+
+**Files changed:** `src/physics_calibration.py`, `src/cycle_routes.py`, `tests/unit/test_physics_calibration.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Preserved the zero-HVAC and indoor-stability requirements for empirical balance estimates, while confirming heating/cooling feature calculations and mode calibration remain available during active operation. Idle dispatch computes and publishes features without issuing control outputs.
+
+---
+
 ## PR #89 Review Fixes — 2026-10-05
 
 **Status:** COMPLETED — addressed the balance-estimate availability and mode issues and cooling channel clamps.

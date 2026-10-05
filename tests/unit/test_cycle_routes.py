@@ -421,10 +421,11 @@ class TestRunIdleRoute:
     """Test idle route handler."""
 
     @patch("src.cycle_routes.step_build_features")
+    @patch("src.cycle_routes.step_publish_features")
     @patch("src.cycle_routes.step_determine_prediction_indoor")
     @patch("src.cycle_routes.step_get_sensor_data")
     def test_builds_features_for_learning(
-        self, mock_sensors, mock_predict, mock_features
+        self, mock_sensors, mock_predict, mock_publish_features, mock_features
     ):
         mock_sensors.return_value = True
         mock_features.return_value = True
@@ -433,6 +434,7 @@ class TestRunIdleRoute:
         mock_sensors.assert_called_once()
         mock_predict.assert_called_once()
         mock_features.assert_called_once()
+        mock_publish_features.assert_called_once_with(ctx)
 
     @patch("src.cycle_routes.step_get_sensor_data")
     def test_early_exit_on_missing_sensors(self, mock_sensors):
