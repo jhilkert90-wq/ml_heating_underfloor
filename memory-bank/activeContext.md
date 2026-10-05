@@ -9,6 +9,7 @@
 - The tool does not mutate state, teach model parameters, or control the heat pump.
 - Fixed interval decay to use the selected heating/cooling model's time constant, aligned fallback heat-source weights with the model's defaults, named replay thresholds, and avoided row-Series iteration.
 - Replay and dashboard now share a sampling interval, reject unresolved numerical timesteps before simulation, and distinguish missing heating-model parameters from cooling history.
+- Dashboard requires both dates in a range selection and rejects future, reversed, or overlong periods before requesting history.
 - Dashboard regression coverage now checks history alignment and invalid sensor states, selected target by HVAC mode, model-based PV-lag gains, model-state parameter merging, warm-up exclusion/re-summing, and user-visible incomplete-data return paths.
 
 #### **Why**

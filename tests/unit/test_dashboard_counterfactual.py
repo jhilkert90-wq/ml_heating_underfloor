@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import pytest
@@ -263,3 +263,35 @@ def test_run_counterfactual_reports_empty_selected_period(monkeypatch):
 
     assert not result["complete"]
     assert "selected date range" in result["reason"]
+
+
+def test_run_counterfactual_rejects_future_period_before_fetch(monkeypatch):
+    def fail_if_fetch_called(*_args):
+        pytest.fail("history must not be fetched for future dates")
+
+    monkeypatch.setattr(counterfactual, "_fetch_history", fail_if_fetch_called)
+
+    result = counterfactual._run_counterfactual(date(2999, 1, 1), date(2999, 1, 1), 3.0)
+
+    assert not result["complete"]
+    assert "future" in result["reason"]
+
+
+def test_render_counterfactual_waits_for_both_dates(monkeypatch):
+    messages = []
+    fake_streamlit = type(
+        "FakeStreamlit",
+        (),
+        {
+            "header": lambda *_args: None,
+            "warning": lambda *_args: None,
+            "caption": lambda *_args: None,
+            "date_input": lambda *_args, **_kwargs: (date.today(),),
+            "info": lambda _self, message: messages.append(message),
+        },
+    )()
+    monkeypatch.setattr(counterfactual, "st", fake_streamlit)
+
+    counterfactual.render_counterfactual()
+
+    assert messages == ["Select both a start and end date to calculate a replay."]

@@ -136,8 +136,10 @@ def replay_target_hold(
         or interval_hours <= 0
         or (elapsed_hours.dropna() > MAX_HISTORY_GAP_HOURS).any()
     ):
+        max_gap_minutes = MAX_HISTORY_GAP_HOURS * 60
         return _incomplete(
-            "History must have at least two ordered samples with no gap over 15 minutes."
+            "History must have at least two ordered samples with no gap over "
+            f"{max_gap_minutes:g} minutes."
         )
 
     frame["mode"] = frame["mode"].replace(

@@ -26,6 +26,7 @@ from src.thermal_equilibrium_model import ThermalEquilibriumModel
 
 _HISTORY_TAIL_HOURS = 24
 _HISTORY_INTERVAL_MINUTES = 5
+_MAX_PERIOD_DAYS = 14
 _LOG = logging.getLogger(__name__)
 _STATE_ALIASES = {
     "heat": "heating",
@@ -165,9 +166,9 @@ def _read_state(path: str | None) -> dict[str, Any]:
         ):
             channel_parameters = channels.get(channel, {}).get("parameters", {})
             if parameter in channel_parameters:
-                return_value = channel_parameters[parameter]
-                if isinstance(return_value, (int, float)):
-                    effective[parameter] = return_value
+                channel_value = channel_parameters[parameter]
+                if isinstance(channel_value, (int, float)):
+                    effective[parameter] = channel_value
         return effective
     except (OSError, ValueError, TypeError) as exc:
         _LOG.warning(
@@ -252,29 +253,28 @@ def _external_gain_kw(
 
 
 def _run_counterfactual(start_date: date, end_date: date, fallback_cop: float) -> dict[str, Any]:
+    if start_date > end_date:
+        return {"complete": False, "reason": "Start date must not be after end date."}
+    if (end_date - start_date).days > _MAX_PERIOD_DAYS:
+        return {
+            "complete": False,
+            "reason": f"Select a period of {_MAX_PERIOD_DAYS} days or less.",
+        }
     selected_start = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
     selected_end = datetime.combine(
         end_date + timedelta(days=1), time.min, tzinfo=timezone.utc
     )
     end = min(selected_end, datetime.now(timezone.utc))
+    if end <= selected_start:
+        return {
+            "complete": False,
+            "reason": "The selected period is in the future; no history can be fetched.",
+        }
     fetch_start = selected_start - timedelta(hours=_HISTORY_TAIL_HOURS)
     history = _fetch_history(fetch_start, end)
     if history.empty:
         return {"complete": False, "reason": "Home Assistant returned no usable history."}
-    required_history = (
-        "indoor_temp",
-        "outdoor_temp",
-        "target_heating",
-        "target_cooling",
-        "outlet_temp",
-        "inlet_temp",
-        "flow_rate",
-        "electrical_power_w",
-        "pv_power",
-        "fireplace_on",
-        "tv_on",
-        "mode",
-    )
+    required_history = tuple(_NUMERIC_ENTITIES) + ("mode",)
     missing_inputs = [
         column for column in required_history if column not in history
     ]
@@ -431,12 +431,16 @@ def render_counterfactual() -> None:
     )
 
     today = datetime.now(timezone.utc).date()
-    start_date, end_date = st.date_input(
+    selected_dates = st.date_input(
         "Historical period (UTC)",
         value=(today - timedelta(days=1), today),
         max_value=today,
         key="counterfactual_period",
     )
+    if not isinstance(selected_dates, (tuple, list)) or len(selected_dates) != 2:
+        st.info("Select both a start and end date to calculate a replay.")
+        return
+    start_date, end_date = selected_dates
     fallback_cop = st.number_input(
         "Fallback COP when a valid measured COP is unavailable",
         min_value=MIN_VALID_COP,
@@ -448,8 +452,8 @@ def render_counterfactual() -> None:
     if start_date > end_date:
         st.error("Start date must not be after end date.")
         return
-    if (end_date - start_date).days > 14:
-        st.error("Select a period of 14 days or less.")
+    if (end_date - start_date).days > _MAX_PERIOD_DAYS:
+        st.error(f"Select a period of {_MAX_PERIOD_DAYS} days or less.")
         return
 
     if not st.button("Calculate target-hold replay", type="primary"):
