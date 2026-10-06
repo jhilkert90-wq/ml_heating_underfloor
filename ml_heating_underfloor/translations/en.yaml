@@ -826,11 +826,65 @@ configuration:
       solar gain, making PV data unreliable. Set just below your blind trigger threshold.
       Default: 23.0°C.'
   building_curve_enabled:
-    name: '[Advanced] Building Curve Sensors'
-    description: 'Publish sensor.ml_heating_base_outlet_curve and sensor.ml_heating_building_curve_kw. Default: true.'
+    name: '[Balance] Building Curve Sensors'
+    description: 'Publish sensor.ml_heating_base_outlet_curve and sensor.ml_heating_building_curve_kw with the balance outdoor temperatures. Default: true.'
   building_curve_poly_degree:
-    name: '[Advanced] Building Curve Polynomial Degree'
+    name: '[Balance] Building Curve Polynomial Degree'
     description: 'Polynomial degree (1-4) for the curve coefficients exported as attributes. Default: 4.'
+  building_balance_method:
+    name: '[Balance] Balance Point Method'
+    description: 'Which balance outdoor temperature appears under *_balance_outdoor_temp. modelled = gains from PV, fireplace and TV weights only; available early but blind to unmodelled gains such as people or appliances. measured = energy balance from measured heat-pump energy, building losses and stored energy; includes every gain but depends on HLC, the capacities below and the thermal-power measurement. measured_with_fallback = measured when valid, otherwise modelled. Both values are always exported as *_balance_outdoor_temp_modelled and *_balance_outdoor_temp_measured. Default: measured_with_fallback.'
+  building_balance_window_hours:
+    name: '[Balance] Rolling Window (hours)'
+    description: 'Length of the rolling window behind the balance point. A day-long window lets daytime preheating be offset against the night; shorter windows react faster to weather changes but follow the day/night swing. Default: 24.'
+  building_balance_min_provisional_hours:
+    name: '[Balance] Minimum Coverage for Provisional Value (hours)'
+    description: 'Covered hours required before a first balance temperature is published with status provisional. A short window around midday overstates PV gains and yields a far too low balance temperature, so keep this at 6 hours or more. Default: 6.'
+  building_balance_full_coverage_fraction:
+    name: '[Balance] Coverage for Status Full'
+    description: 'Share of the rolling window that must contain valid samples before the status changes from provisional to full. Default: 0.9.'
+  building_balance_max_interval_minutes:
+    name: '[Balance] Maximum Sample Gap (minutes)'
+    description: 'Intervals between two samples longer than this are not counted; coverage drops instead of extrapolating across the gap. Default: 30.'
+  building_balance_storage_enabled:
+    name: '[Balance] Include Stored Energy'
+    description: 'Include energy stored in room and slab in the measured balance. Heat put in during the day and released at night then cancels out over the window. Disable to ignore storage; preheating then shows up as missing gains. Default: true.'
+  building_balance_capacity_mode:
+    name: '[Balance] Thermal Capacity Source'
+    description: 'Where the thermal capacities in kWh/K come from. model = room capacity tau x (outlet effectiveness + HLC) from the learned model, slab capacity as water flow x specific heat x slab time constant. manual = the two values below. learned (experimental) = slab capacity estimated by regression on recent data, falling back to model when the data is not sufficient. Default: model.'
+  building_balance_room_capacity_kwh_per_k:
+    name: '[Balance] Manual Room Capacity (kWh/K)'
+    description: 'Room thermal capacity used in capacity mode manual, and as fallback when the model values are unavailable. A typical underfloor house is roughly 3 to 10 kWh/K. Default: 5.'
+  building_balance_slab_capacity_kwh_per_k:
+    name: '[Balance] Manual Slab Capacity (kWh/K)'
+    description: 'Slab (screed) thermal capacity used in capacity mode manual, and as fallback when the model values are unavailable. Typical values are roughly 2 to 10 kWh/K. Default: 4.'
+  building_balance_dhw_intervals:
+    name: '[Balance] Hot Water Intervals'
+    description: 'Behaviour during DHW, disinfection and boost-heater intervals. zero_floor_power = a diverter valve is assumed, no heat reaches the floor (power 0, interval stays valid, last return temperature is held). exclude = leave these intervals out of the measured balance. Defrost is always counted with its negative thermal power because it draws energy from the slab. Default: zero_floor_power.'
+  building_balance_hvac_off_min_samples:
+    name: '[Balance] HVAC-Off Reference: Minimum Samples'
+    description: 'Reference estimate from stable HVAC-off periods: number of stable samples required before a value is published. Default: 3.'
+  building_balance_hvac_off_min_window_hours:
+    name: '[Balance] HVAC-Off Reference: Minimum Window (hours)'
+    description: 'Reference estimate: the stable samples must span at least this many hours. Default: 2.'
+  building_balance_hvac_off_max_gap_minutes:
+    name: '[Balance] HVAC-Off Reference: Maximum Sample Gap (minutes)'
+    description: 'Reference estimate: a longer gap between samples clears the collected window. Default: 60.'
+  building_balance_hvac_off_max_indoor_drift_60m:
+    name: '[Balance] HVAC-Off Reference: Maximum Indoor Drift per 60 min (K)'
+    description: 'Reference estimate: samples with a larger indoor temperature change over 60 minutes are rejected as not stable. Default: 0.25.'
+  building_balance_hvac_off_max_hvac_power_kw:
+    name: '[Balance] HVAC-Off Reference: Maximum Thermal Power (kW)'
+    description: 'Reference estimate: samples with a larger absolute hydronic thermal power are treated as HVAC active. Default: 0.1.'
+  building_balance_hvac_off_max_flow_rate:
+    name: '[Balance] HVAC-Off Reference: Maximum Flow (l/min)'
+    description: 'Reference estimate: samples with a larger water flow are treated as HVAC active. Default: 0.1.'
+  building_balance_hvac_off_max_gain_kw:
+    name: '[Balance] HVAC-Off Reference: Maximum Inferred Gain (kW)'
+    description: 'Reference estimate: implausibly large inferred gains are rejected. Default: 5.0.'
+  building_balance_hvac_off_max_spread_k:
+    name: '[Balance] HVAC-Off Reference: Maximum Spread (K)'
+    description: 'Reference estimate: samples whose indoor-outdoor difference varies more than this over the window are rejected. Default: 2.0.'
   heating_min_thermal_power_kw:
     name: '[Advanced] Heating Minimum Thermal Power (kW)'
     description: 'Minimum water-side thermal power (kW) required to accept a period

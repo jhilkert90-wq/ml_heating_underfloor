@@ -210,6 +210,133 @@ class TestStepPublishBuildingCurves:
         assert mock_save.call_args.kwargs["last_active_climate_mode"] == "cooling"
 
 
+class TestStepRecordBuildingSample:
+    def _ctx(
+        self,
+        flags=(),
+        wrapper_modes=("off", "cooling"),
+        outlet=30.0,
+        inlet=28.0,
+    ):
+        cfg = cycle_routes.config
+        values = {
+            cfg.OUTDOOR_TEMP_ENTITY_ID: 8.0,
+            cfg.INDOOR_TEMP_ENTITY_ID: 22.0,
+            cfg.ACTUAL_OUTLET_TEMP_ENTITY_ID: outlet,
+            cfg.INLET_TEMP_ENTITY_ID: inlet,
+            cfg.FLOW_RATE_ENTITY_ID: 6.0,
+            cfg.PV_POWER_ENTITY_ID: 1500.0,
+        }
+        active = set(flags)
+
+        def get_state(entity_id, _cache=None, is_binary=False):
+            if is_binary:
+                return entity_id in active
+            return values.get(entity_id)
+
+        ctx = _make_ctx()
+        ctx.ha_client.get_state.side_effect = get_state
+        ctx.wrapper.last_raw_climate_mode = wrapper_modes[0]
+        ctx.wrapper.last_active_climate_mode = wrapper_modes[1]
+        return ctx
+
+    def _record(self, ctx):
+        with patch.object(
+            cycle_routes._BUILDING_CURVE_PUBLISHER, "record_sample"
+        ) as record:
+            cycle_routes.step_record_building_sample(ctx)
+        return record.call_args.args[1]
+
+    def test_idle_sample_uses_last_active_mode_and_signed_thermal_power(self):
+        sample = self._record(self._ctx())
+
+        assert sample["mode"] == "cooling"
+        assert sample["outdoor"] == 8.0
+        assert sample["pv"] == 1500.0
+        assert sample["dhw_active"] is False
+        assert sample["return_temp"] == 28.0
+        assert sample["outlet_temp"] == 30.0
+        assert sample["flow"] == 6.0
+        assert sample["thermal_power_kw"] == pytest.approx(
+            0.2 * cycle_routes.config.SPECIFIC_HEAT_CAPACITY
+        )
+
+    def test_defrost_is_recorded_with_negative_thermal_power(self):
+        ctx = self._ctx(
+            flags=[cycle_routes.config.DEFROST_STATUS_ENTITY_ID],
+            outlet=26.0,
+            inlet=29.0,
+        )
+
+        sample = self._record(ctx)
+
+        assert sample["dhw_active"] is False
+        assert sample["thermal_power_kw"] < 0
+
+    @pytest.mark.parametrize(
+        "entity_name",
+        [
+            "DHW_STATUS_ENTITY_ID",
+            "DISINFECTION_STATUS_ENTITY_ID",
+            "DHW_BOOST_HEATER_STATUS_ENTITY_ID",
+        ],
+    )
+    def test_dhw_type_blocking_is_flagged(self, entity_name):
+        entity_id = getattr(cycle_routes.config, entity_name)
+
+        sample = self._record(self._ctx(flags=[entity_id]))
+
+        assert sample["dhw_active"] is True
+
+    def test_missing_hydronic_sensor_leaves_thermal_power_unset(self):
+        ctx = self._ctx()
+        ctx.ha_client.get_state.side_effect = (
+            lambda entity_id, _cache=None, is_binary=False: (
+                False
+                if is_binary
+                else None
+                if entity_id == cycle_routes.config.FLOW_RATE_ENTITY_ID
+                else 5.0
+            )
+        )
+
+        assert self._record(ctx)["thermal_power_kw"] is None
+
+
+class TestBlockingAndGraceRecordSamples:
+    @patch("src.cycle_routes.save_state")
+    @patch("src.cycle_routes.step_record_building_sample")
+    def test_blocking_route_records_a_sample(self, mock_record, _save):
+        ctx = _make_ctx()
+
+        run_blocking_route(ctx)
+
+        mock_record.assert_called_once_with(ctx)
+
+    @patch("src.cycle_routes.save_state")
+    @patch("src.cycle_routes.step_record_building_sample")
+    def test_grace_route_records_a_sample(self, mock_record, _save):
+        ctx = _make_ctx(state={"last_final_temp": 30.0})
+
+        cycle_routes.run_grace_period_route(ctx)
+
+        mock_record.assert_called_once_with(ctx)
+
+    @patch("src.cycle_routes.step_record_building_sample")
+    @patch("src.cycle_routes.step_get_sensor_data", return_value=True)
+    @patch("src.cycle_routes.step_build_features", return_value=False)
+    @patch("src.cycle_routes.step_publish_building_curves")
+    @patch("src.cycle_routes.step_determine_prediction_indoor")
+    def test_idle_route_records_even_when_features_fail(
+        self, _predict, _publish, _features, _sensors, mock_record
+    ):
+        ctx = _make_ctx()
+
+        run_idle_route(ctx)
+
+        mock_record.assert_called_once_with(ctx)
+
+
 def test_idle_route_publishes_curves_without_balance_observation_on_feature_failure(
     monkeypatch,
 ):

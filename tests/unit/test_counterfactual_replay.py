@@ -133,3 +133,48 @@ def test_missing_required_sensor_column_marks_result_incomplete():
 
     assert not result["complete"]
     assert "electrical_power_w" in result["reason"]
+
+
+def test_capacity_includes_outlet_effectiveness_when_available():
+    parameters = {
+        "heat_loss_coefficient": 0.1,
+        "thermal_time_constant": 4.0,
+        "outlet_effectiveness": 1.0,
+    }
+
+    result = replay_target_hold(
+        _history(),
+        parameters_by_mode={"heating": parameters, "cooling": parameters},
+        specific_heat_capacity=4.186,
+    )
+
+    assert result["complete"]
+    assert result["effective_heat_capacity_kwh_per_k_by_mode"][
+        "heating"
+    ] == pytest.approx(4.0 * (0.1 + 1.0))
+
+
+def test_larger_capacity_slows_the_replayed_temperature_response():
+    legacy = {"heat_loss_coefficient": 0.1, "thermal_time_constant": 4.0}
+    with_slab_coupling = {**legacy, "outlet_effectiveness": 1.0}
+    frame = _history(indoor=21.0, target=22.6, outdoor=5.0, thermal_power=0.0)
+
+    fast = replay_target_hold(
+        frame,
+        parameters_by_mode={"heating": legacy, "cooling": legacy},
+        specific_heat_capacity=4.186,
+    )
+    slow = replay_target_hold(
+        frame,
+        parameters_by_mode={
+            "heating": with_slab_coupling,
+            "cooling": with_slab_coupling,
+        },
+        specific_heat_capacity=4.186,
+    )
+
+    # Heating the larger storage to the same target needs more power.
+    assert (
+        slow["intervals"]["counterfactual_thermal_power_kw"].iloc[0]
+        > fast["intervals"]["counterfactual_thermal_power_kw"].iloc[0]
+    )

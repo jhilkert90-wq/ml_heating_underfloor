@@ -1,5 +1,46 @@
 # Active Context - Current Work & Decision State
 
+### Measured and Modelled Balance Point, Dashboard Settings — 2026-10-06
+
+#### **What changed**
+- `BuildingGainWindow` (`src/building_gain_window.py`) now records outlet/return temperature, flow and a DHW flag next to the existing samples, and provides `gain_estimate` (modelled), `measured_estimate` (energy balance with room and slab storage), `median_flow` and an experimental `learned_slab_capacity`. `BalanceSettings` collects all dashboard options.
+- `src/building_capacity.py` holds the shared capacities; the replay uses `room_capacity_kwh_per_k`.
+- `BuildingCurvePublisher` exports modelled, measured, selected (per `building_balance_method`) and HVAC-off values plus capacity attributes.
+- New dashboard group "[Balance] Building Curve & Balance Point" (config.yaml options and schema, en/de tooltips, `config_adapter`, `config.py`, `dashboard/config_schema.py`).
+
+#### **Why**
+- The balance point should include measured heat-pump energy and stored energy, so daytime preheating is offset against the night, while the modelled value stays available early. The thermal model implies `C_room = tau·(OE+HLC)`; the replay's earlier `HLC·tau` underestimated storage.
+
+#### **Decisions**
+- Default method `measured_with_fallback`; DHW intervals assume a diverter valve (floor power 0); defrost counts with negative power; only balance parameters are configurable (curve ranges, grid and refresh stay fixed). Open assumption: the return-temperature sensor tracks the slab, to be checked against real data; the learned capacity mode stays experimental.
+
+#### **Files modified**
+- `src/building_gain_window.py`, `src/building_capacity.py`, `src/building_curve.py`, `src/cycle_routes.py`, `src/config.py`, `src/counterfactual_replay.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, translations, `dashboard/config_schema.py`, `dashboard/components/counterfactual.py`
+- Tests: `test_building_gain_window.py`, `test_building_capacity.py`, `test_building_curve.py`, `test_cycle_routes.py`, `test_counterfactual_replay.py`, `test_dashboard_settings.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### Rolling 24 h Building Balance Point — 2026-10-06
+
+#### **What changed**
+- New `src/building_gain_window.py` keeps a persisted (`BUILDING_GAIN_WINDOW_PATH`, next to the unified state) rolling 24 h window. `step_record_building_sample()` in `src/cycle_routes.py` records one raw sample per cycle in every route, including blocking and grace.
+- `BuildingCurvePublisher` computes the primary balance point from modelled non-HP gains for both modes, a residual diagnostic from the signed energy balance, and keeps the old stable HVAC-off estimate as a `hvac_off` reference.
+- `_external_gain_kw` logic moved out of the dashboard into the shared `external_gain_kw()`.
+
+#### **Why**
+- The HVAC-off-only estimator never produced a value during heating or cooling. Modelled gains are independent of HP heat, so preheating cannot be counted as a passive gain. Defrost is a cooling process (negative thermal power from the slab) and stays valid for the residual; DHW-type blocking does not.
+
+#### **Decisions**
+- Provisional minimum 6 h (not 2 h) because a short midday window overstates PV; gains use all samples with per-mode weights instead of per-mode segments so the cooling balance does not vanish outside the cooling season. Comfort-target curves remain independent of control offsets.
+
+#### **Files modified**
+- `src/building_gain_window.py`, `src/building_curve.py`, `src/cycle_routes.py`, `src/config.py`, `dashboard/components/counterfactual.py`
+- `tests/unit/test_building_gain_window.py`, `tests/unit/test_building_curve.py`, `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### PR #90 Review Fixes — 2026-10-05
 
 #### **What changed**

@@ -506,11 +506,30 @@ options:
   # cooling thermal equilibrium model.
   cooling_physics_min_outdoor_rolling_24h_c: 16.0
 
-  # === Building Curve Sensors ===
+  # === Building Curve & Balance Point ===
   # Publish sensor.ml_heating_base_outlet_curve and
   # sensor.ml_heating_building_curve_kw (heating -20..20 C, cooling 10..40 C).
   building_curve_enabled: true
   building_curve_poly_degree: 4
+  # Which balance outdoor temperature appears under *_balance_outdoor_temp.
+  building_balance_method: "measured_with_fallback"
+  building_balance_window_hours: 24
+  building_balance_min_provisional_hours: 6.0
+  building_balance_full_coverage_fraction: 0.9
+  building_balance_max_interval_minutes: 30
+  building_balance_storage_enabled: true
+  building_balance_capacity_mode: "model"
+  building_balance_room_capacity_kwh_per_k: 5.0
+  building_balance_slab_capacity_kwh_per_k: 4.0
+  building_balance_dhw_intervals: "zero_floor_power"
+  building_balance_hvac_off_min_samples: 3
+  building_balance_hvac_off_min_window_hours: 2.0
+  building_balance_hvac_off_max_gap_minutes: 60
+  building_balance_hvac_off_max_indoor_drift_60m: 0.25
+  building_balance_hvac_off_max_hvac_power_kw: 0.1
+  building_balance_hvac_off_max_flow_rate: 0.1
+  building_balance_hvac_off_max_gain_kw: 5.0
+  building_balance_hvac_off_max_spread_k: 2.0
 
   # === Thermal Power Gate Thresholds ===
   # Minimum water-side thermal power (kW) to accept a period as genuine heating.
@@ -916,6 +935,24 @@ schema:
   cooling_physics_min_outdoor_rolling_24h_c: "float(10.0,25.0)"
   building_curve_enabled: bool
   building_curve_poly_degree: "int(1,4)"
+  building_balance_method: "list(modelled|measured|measured_with_fallback)"
+  building_balance_window_hours: "int(6,72)"
+  building_balance_min_provisional_hours: "float(1.0,24.0)"
+  building_balance_full_coverage_fraction: "float(0.5,1.0)"
+  building_balance_max_interval_minutes: "int(10,120)"
+  building_balance_storage_enabled: bool
+  building_balance_capacity_mode: "list(model|manual|learned)"
+  building_balance_room_capacity_kwh_per_k: "float(0.5,100.0)"
+  building_balance_slab_capacity_kwh_per_k: "float(0.5,100.0)"
+  building_balance_dhw_intervals: "list(zero_floor_power|exclude)"
+  building_balance_hvac_off_min_samples: "int(2,50)"
+  building_balance_hvac_off_min_window_hours: "float(0.5,24.0)"
+  building_balance_hvac_off_max_gap_minutes: "int(10,240)"
+  building_balance_hvac_off_max_indoor_drift_60m: "float(0.05,2.0)"
+  building_balance_hvac_off_max_hvac_power_kw: "float(0.0,2.0)"
+  building_balance_hvac_off_max_flow_rate: "float(0.0,5.0)"
+  building_balance_hvac_off_max_gain_kw: "float(0.5,20.0)"
+  building_balance_hvac_off_max_spread_k: "float(0.5,10.0)"
   # Thermal Power Gate Thresholds
   heating_min_thermal_power_kw: "float(0.1,5.0)"
   cooling_min_thermal_power_kw: "float(-5.0,-0.05)"

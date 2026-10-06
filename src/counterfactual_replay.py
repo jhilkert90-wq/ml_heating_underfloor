@@ -7,6 +7,8 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
+from .building_capacity import room_capacity_kwh_per_k
+
 
 REQUIRED_COLUMNS = (
     "_time",
@@ -54,8 +56,8 @@ def replay_target_hold(
     """Estimate required HP energy to follow historical targets.
 
     A one-node RC model carries the initial indoor temperature forward and
-    estimates effective heat capacity as HLC × thermal time constant. This
-    captures a room already above target without pretending the temperature
+    estimates effective heat capacity as tau x (outlet effectiveness + HLC).
+    This captures a room already above target without pretending the temperature
     was actually at target. It is an informational approximation, not a
     measured slab-temperature model or a live-control input.
     """
@@ -92,6 +94,7 @@ def replay_target_hold(
             },
         }
     mode_parameters = {}
+    capacity_by_mode = {}
     try:
         for mode in ("heating", "cooling"):
             parameters = parameters_by_mode[mode]
@@ -104,7 +107,18 @@ def replay_target_hold(
                 or mode_tau <= 0
             ):
                 return _incomplete(f"Invalid {mode} thermal parameters.")
-            mode_parameters[mode] = (mode_hlc, mode_tau)
+            capacity = room_capacity_kwh_per_k(
+                {
+                    "thermal_time_constant": mode_tau,
+                    "heat_loss_coefficient": mode_hlc,
+                    "outlet_effectiveness": parameters.get(
+                        "outlet_effectiveness"
+                    ),
+                }
+            )
+            capacity_by_mode[mode] = capacity
+            # Direct power input relaxes with C/HLC, not with the model tau.
+            mode_parameters[mode] = (mode_hlc, capacity / mode_hlc)
     except (KeyError, TypeError, ValueError):
         return _incomplete("Heating and cooling thermal parameters are required.")
 
@@ -170,9 +184,7 @@ def replay_target_hold(
     if not np.all(decay_values < 1.0):
         return _incomplete("Thermal replay interval is too short to resolve.")
 
-    effective_capacity_by_mode = {
-        mode: hlc * tau for mode, (hlc, tau) in mode_parameters.items()
-    }
+    effective_capacity_by_mode = capacity_by_mode
     simulated_indoor = float(frame.loc[0, "indoor_temp"])
     interval_rows = []
     actual_thermal_kwh = 0.0

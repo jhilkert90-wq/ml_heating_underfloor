@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Building-curve balance outdoor temperatures are published in every route (heating, cooling, idle, blocking, grace) from a persisted rolling window of samples. Two values are always exported: `*_balance_outdoor_temp_modelled` (time-weighted PV/fireplace/TV gains with each mode's own model weights; HP heat never enters it) and `*_balance_outdoor_temp_measured` (energy balance `G = HLC·(Ti−To) + dU/dt − P`, including measured heat-pump energy and room plus slab storage, so daytime preheating cancels against the night). Status is `provisional` from the minimum coverage and `full` from about 90 % of the window; gaps lower coverage instead of clearing the window.
+- Measured thermal power is signed: defrost and cooling (return > flow) draw energy from the slab. DHW, disinfection and boost-heater intervals assume a diverter valve (floor power 0, last return temperature held) or can be excluded.
+- Shared thermal capacities in `src/building_capacity.py`: room `tau·(OE+HLC)` and slab `flow·cp·tau_slab` from the model, manual values, or an experimental learned slab capacity (regression of slab storage rate on return-temperature change, falls back to the model).
+- Dashboard group "[Balance] Building Curve & Balance Point" with settings for the method (`modelled`, `measured`, `measured_with_fallback`), window length, minimum and full coverage, maximum sample gap, storage, capacity source and manual values, DHW behaviour and the HVAC-off reference thresholds, each with English and German tooltips.
+
+### Changed
+- `*_balance_outdoor_temp`, `*_balance_gain_kw` and `*_balance_estimate_status` follow the configured method (default `measured_with_fallback`, attribute `*_balance_method_used`). The previous stable HVAC-off estimate and its thresholds moved to `*_balance_hvac_off_*` attributes and settings.
+- The target-hold replay now uses the model-consistent room capacity `tau·(OE+HLC)` when the outlet effectiveness is available; previously it used `HLC·tau`, about ten times too small for this model structure. Replay results change accordingly.
+- The modelled external-gain helper moved from the dashboard replay into `src/building_gain_window.py` and is shared.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

@@ -1,5 +1,25 @@
 # ML Heating System - Current Progress
 
+## Measured and Modelled Balance Point, Dashboard Settings — 2026-10-06
+
+**Status:** COMPLETED — balance point from a rolling window with a measured energy balance next to the modelled value; all balance parameters are dashboard settings.
+
+**Files changed:** `src/building_gain_window.py`, `src/building_capacity.py` (new), `src/building_curve.py`, `src/cycle_routes.py`, `src/config.py`, `src/counterfactual_replay.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `dashboard/config_schema.py`, `dashboard/components/counterfactual.py`, `tests/unit/test_building_gain_window.py`, `tests/unit/test_building_capacity.py` (new), `tests/unit/test_building_curve.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_counterfactual_replay.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Measured value uses `G = HLC·(Ti−To) + (C_room·dTi + C_slab·dT_return)/dt − P` per interval with signed thermal power (defrost negative, DHW floor power 0 with held return temperature by default); a synthetic two-node closure test recovers the true gain exactly and shows the bias when storage is ignored. Capacities: room `tau·(OE+HLC)`, slab `flow·cp·tau_slab`, manual, or experimental learned slab capacity. The replay switched to the same room capacity (old `HLC·tau` was about ten times too small). 18 new options in the group "[Balance]"; default method `measured_with_fallback`. Focused suites pass (146); the full suite shows the same 13 failures and 8 Docker smoke-test errors as the unmodified baseline.
+
+---
+
+## Rolling 24 h Building Balance Point — 2026-10-06
+
+**Status:** COMPLETED — balance outdoor temperatures are published in heating, cooling, idle, blocking and grace cycles from a persisted rolling 24 h window of modelled non-HP gains.
+
+**Files changed:** `src/building_gain_window.py` (new), `src/building_curve.py`, `src/cycle_routes.py`, `src/config.py`, `dashboard/components/counterfactual.py`, `tests/unit/test_building_gain_window.py` (new), `tests/unit/test_building_curve.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Primary value is `T_target − G_24h / HLC_mode` with G the time-weighted mean of PV/fireplace/TV gains computed from shared measurements with each mode's own weights, so HP heat and indoor overshoot cannot contaminate it and cooling stays available while only heating ran. Statuses: unavailable, provisional (>= 6 h covered), full (>= 90 % of 24 h); gaps lower coverage instead of clearing. A storage-corrected residual (`G = HLC·(Ti−To) + C·dTi/dt − P_hp`, C = HLC·τ) is published as a diagnostic using signed thermal power, so defrost and cooling draw from the slab; DHW/disinfection/boost-heater/grace intervals are excluded. The earlier stable HVAC-off estimate remains as `*_balance_hvac_off_*`. Focused suites pass (84 + 24); the full suite shows the same 13 failures and 8 Docker smoke-test errors as the unmodified baseline.
+
+---
+
 ## PR #90 Review Fixes — 2026-10-05
 
 **Status:** COMPLETED — fixed all three counterfactual replay findings from review.

@@ -164,19 +164,250 @@ def test_publisher_exports_balance_estimate_after_stable_idle_samples():
         )
 
     attributes = ha.set_state.call_args_list[-1].args[2]
-    assert attributes["heating_balance_outdoor_temp"] == pytest.approx(9.0)
-    assert attributes["heating_balance_gain_kw"] == pytest.approx(2.4)
-    assert attributes["heating_balance_estimate_method"] == (
+    assert attributes["heating_balance_hvac_off_outdoor_temp"] == pytest.approx(
+        9.0
+    )
+    assert attributes["heating_balance_hvac_off_gain_kw"] == pytest.approx(2.4)
+    assert attributes["heating_balance_hvac_off_estimate_method"] == (
         "stable_hvac_off_observations; assumes negligible stored-heat drift"
     )
-    assert attributes["heating_balance_min_sample_count"] == 3
-    assert attributes["heating_balance_min_window_minutes"] == 120
-    assert attributes["heating_balance_max_indoor_drift_60m"] == 0.25
-    assert attributes["heating_balance_max_hvac_power_kw"] == 0.1
-    assert attributes["heating_balance_max_flow_rate"] == 0.1
-    assert attributes["heating_balance_max_inferred_gains_kw"] == 5.0
-    assert attributes["heating_balance_max_uncertainty_k"] == 2.0
+    assert attributes["heating_balance_hvac_off_min_sample_count"] == 3
+    assert attributes["heating_balance_hvac_off_min_window_minutes"] == 120
+    assert attributes["heating_balance_hvac_off_max_indoor_drift_60m"] == 0.25
+    assert attributes["heating_balance_hvac_off_max_hvac_power_kw"] == 0.1
+    assert attributes["heating_balance_hvac_off_max_flow_rate"] == 0.1
+    assert attributes["heating_balance_hvac_off_max_inferred_gains_kw"] == 5.0
+    assert attributes["heating_balance_hvac_off_max_uncertainty_k"] == 2.0
+    assert attributes["cooling_balance_hvac_off_outdoor_temp"] is None
+    # No rolling-window samples yet, so the primary value stays unavailable.
+    assert attributes["heating_balance_outdoor_temp"] is None
+    assert attributes["heating_balance_estimate_status"] == "unavailable"
+
+
+class _GainModel:
+    def __init__(self, heat_loss_coefficient, pv_weight):
+        self.heat_loss_coefficient = heat_loss_coefficient
+        self.pv_weight = pv_weight
+
+    def predict_equilibrium_temperature(self, **kwargs):
+        assert kwargs["thermal_power"] == 0.0
+        return kwargs["outdoor_temp"] + (
+            self.pv_weight * kwargs["pv_power"][-1] / self.heat_loss_coefficient
+        )
+
+
+def _record_hours(pub, models, hours, mode="heating", step=600):
+    last = 0
+    for index in range(int(hours * 3600 / step) + 1):
+        last = index * step
+        pub.record_sample(
+            models,
+            {
+                "t": last,
+                "outdoor": 10.0,
+                "indoor": 22.0,
+                "pv": 1000.0,
+                "fireplace": 0.0,
+                "tv": 0.0,
+                "thermal_power_kw": 0.0,
+                "mode": mode,
+            },
+        )
+    return last + step
+
+
+def test_rolling_balance_uses_mode_specific_weights_for_both_modes():
+    ha = MagicMock()
+    ha.set_state.return_value = True
+    pub = bc.BuildingCurvePublisher()
+    gain_models = {
+        "heating": _GainModel(0.2, 0.001),
+        "cooling": _GainModel(0.2, 0.0002),
+    }
+    now = _record_hours(pub, gain_models, 7)
+
+    assert pub.publish(
+        ha,
+        {"heating": _model(), "cooling": _model()},
+        {"heating": 21.0, "cooling": 24.0},
+        "heating",
+        10.0,
+        now=now,
+    )
+
+    attributes = ha.set_state.call_args_list[-1].args[2]
+    assert attributes["heating_balance_gain_kw"] == pytest.approx(1.0)
+    assert attributes["heating_balance_outdoor_temp"] == pytest.approx(16.0)
+    # Cooling stays available although only heating mode was attributed.
+    assert attributes["cooling_balance_gain_kw"] == pytest.approx(0.2)
+    assert attributes["cooling_balance_outdoor_temp"] == pytest.approx(23.0)
+    assert attributes["heating_balance_estimate_status"] == "provisional"
+    assert attributes["heating_balance_min_provisional_hours"] == 6.0
+
+
+def test_rolling_balance_is_full_after_a_covered_day():
+    ha = MagicMock()
+    ha.set_state.return_value = True
+    pub = bc.BuildingCurvePublisher()
+    gain_models = {
+        "heating": _GainModel(0.2, 0.001),
+        "cooling": _GainModel(0.2, 0.0002),
+    }
+    now = _record_hours(pub, gain_models, 24)
+
+    pub.publish(
+        ha,
+        {"heating": _model(), "cooling": _model()},
+        {"heating": 21.0, "cooling": 24.0},
+        "heating",
+        10.0,
+        now=now,
+    )
+
+    attributes = ha.set_state.call_args_list[-1].args[2]
+    assert attributes["heating_balance_estimate_status"] == "full"
+    assert attributes["heating_balance_coverage_fraction"] == pytest.approx(1.0)
+
+
+def test_record_sample_skips_modelled_gain_without_pv_reading():
+    pub = bc.BuildingCurvePublisher()
+    models = {"heating": _GainModel(0.2, 0.001), "cooling": None}
+
+    pub.record_sample(models, {"t": 0, "outdoor": 10.0, "pv": None})
+
+    assert pub.gain_window._samples[0]["g_heating"] is None
+    assert pub.gain_window._samples[0]["g_cooling"] is None
+
+
+def test_external_gain_kw_uses_model_energy_branch():
+    gain = bc.external_gain_kw(
+        _GainModel(0.2, 0.001), [0.0, 500.0], 5.0, 0.0, 0.0
+    )
+
+    assert gain == pytest.approx(0.5)
+
+
+def _record_measured_hours(pub, models, hours, mode="heating", step=600):
+    last = 0
+    for index in range(int(hours * 3600 / step) + 1):
+        last = index * step
+        pub.record_sample(
+            models,
+            {
+                "t": last,
+                "outdoor": 10.0,
+                "indoor": 22.0,
+                "pv": 1000.0,
+                "fireplace": 0.0,
+                "tv": 0.0,
+                "thermal_power_kw": 1.0,
+                "return_temp": 30.0,
+                "outlet_temp": 33.0,
+                "flow": 10.0,
+                "mode": mode,
+                "dhw_active": False,
+            },
+        )
+    return last + step
+
+
+def _publish_balance(method, mode_of_samples="heating"):
+    ha = MagicMock()
+    ha.set_state.return_value = True
+    pub = bc.BuildingCurvePublisher(
+        settings=bc.BalanceSettings(method=method)
+    )
+    gain_models = {
+        "heating": _GainModel(0.2, 0.001),
+        "cooling": _GainModel(0.2, 0.0002),
+    }
+    now = _record_measured_hours(pub, gain_models, 7, mode=mode_of_samples)
+    pub.publish(
+        ha,
+        {"heating": _model(), "cooling": _model()},
+        {"heating": 21.0, "cooling": 24.0},
+        "heating",
+        10.0,
+        now=now,
+    )
+    return ha.set_state.call_args_list[-1].args[2]
+
+
+def test_default_method_publishes_measured_and_keeps_modelled_next_to_it():
+    attributes = _publish_balance("measured_with_fallback")
+
+    # measured: 0.2 * (22 - 10) - 1.0 kW heat pump; modelled: 0.001 * 1000 W
+    assert attributes["heating_balance_gain_kw"] == pytest.approx(1.4)
+    assert attributes["heating_balance_outdoor_temp"] == pytest.approx(14.0)
+    assert attributes["heating_balance_method_used"] == "measured"
+    assert attributes["heating_balance_gain_kw_measured"] == pytest.approx(1.4)
+    assert attributes["heating_balance_gain_kw_modelled"] == pytest.approx(1.0)
+    assert attributes["heating_balance_outdoor_temp_modelled"] == pytest.approx(
+        16.0
+    )
+    assert attributes["heating_balance_status_measured"] == "provisional"
+
+
+def test_fallback_uses_modelled_value_when_no_measured_mode_data_exists():
+    attributes = _publish_balance("measured_with_fallback")
+
+    assert attributes["cooling_balance_method_used"] == "modelled"
+    assert attributes["cooling_balance_gain_kw"] == pytest.approx(0.2)
+    assert attributes["cooling_balance_status_measured"] == "unavailable"
+
+
+def test_modelled_method_ignores_the_measured_value():
+    attributes = _publish_balance("modelled")
+
+    assert attributes["heating_balance_gain_kw"] == pytest.approx(1.0)
+    assert attributes["heating_balance_method_used"] == "modelled"
+    assert attributes["heating_balance_gain_kw_measured"] == pytest.approx(1.4)
+
+
+def test_measured_method_does_not_fall_back():
+    attributes = _publish_balance("measured")
+
+    assert attributes["heating_balance_method_used"] == "measured"
     assert attributes["cooling_balance_outdoor_temp"] is None
+    assert attributes["cooling_balance_method_used"] == "unavailable"
+    assert attributes["cooling_balance_estimate_status"] == "unavailable"
+
+
+def test_capacity_source_and_settings_are_exported():
+    attributes = _publish_balance("measured_with_fallback")
+
+    assert attributes["heating_balance_capacity_mode"] == "model"
+    assert attributes["heating_balance_capacity_room_kwh_per_k"] == 5.0
+    assert attributes["heating_balance_capacity_slab_kwh_per_k"] == 4.0
+    assert attributes["heating_balance_capacity_source"] == (
+        "room:manual_fallback,slab:manual_fallback"
+    )
+    assert attributes["heating_balance_method"] == "measured_with_fallback"
+    assert attributes["heating_balance_dhw_intervals"] == "zero_floor_power"
+    assert attributes["heating_balance_window_hours"] == 24.0
+
+
+def test_hvac_off_thresholds_follow_the_settings():
+    estimator = bc.BalancePointEstimator(
+        bc.BalanceSettings(
+            hvac_off_min_samples=2, hvac_off_min_window_hours=0.5
+        )
+    )
+    common = {
+        "mode": "heating",
+        "indoor_temp": 22.0,
+        "outdoor_temp": 10.0,
+        "heat_loss_coefficient": 0.2,
+        "indoor_temp_delta_60m": 0.1,
+        "thermal_power_kw": 0.0,
+        "flow_rate": 0.0,
+    }
+
+    estimator.observe(now=0, **common)
+    estimate = estimator.observe(now=1800, **common)
+
+    assert estimate["sample_count"] == 2
+    assert estimate["gain_kw"] == pytest.approx(2.4)
 
 
 def test_publisher_uses_both_mode_parameters_and_signs_both():

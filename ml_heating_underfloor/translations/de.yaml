@@ -743,11 +743,65 @@ configuration:
       solar gain, making PV data unreliable. Set just below your blind trigger threshold.
       Default: 23.0°C.'
   building_curve_enabled:
-    name: '[Advanced] Gebäudekennlinien-Sensoren'
-    description: 'Publish sensor.ml_heating_base_outlet_curve and sensor.ml_heating_building_curve_kw. Default: true.'
+    name: '[Balance] Gebäudekennlinien-Sensoren'
+    description: 'Veröffentlicht sensor.ml_heating_base_outlet_curve und sensor.ml_heating_building_curve_kw mit den Balance-Außentemperaturen. Standard: true.'
   building_curve_poly_degree:
-    name: '[Advanced] Building Curve Polynomial Degree'
-    description: 'Polynomgrad (1-4) der als Attribute exportierten Kennlinien-Koeffizienten. Default: 4.'
+    name: '[Balance] Polynomgrad der Kennlinie'
+    description: 'Polynomgrad (1-4) der als Attribute exportierten Kennlinien-Koeffizienten. Standard: 4.'
+  building_balance_method:
+    name: '[Balance] Balancepunkt-Methode'
+    description: 'Welche Balance-Außentemperatur unter *_balance_outdoor_temp erscheint. modelled = nur Gewinne aus PV-, Kamin- und TV-Gewichten; früh verfügbar, aber blind für nicht modellierte Gewinne wie Personen oder Geräte. measured = Energiebilanz aus gemessener Wärmepumpenenergie, Gebäudeverlusten und gespeicherter Energie; erfasst alle Gewinne, hängt aber von HLC, den Kapazitäten unten und der Leistungsmessung ab. measured_with_fallback = measured, wenn gültig, sonst modelled. Beide Werte werden immer als *_balance_outdoor_temp_modelled und *_balance_outdoor_temp_measured veröffentlicht. Standard: measured_with_fallback.'
+  building_balance_window_hours:
+    name: '[Balance] Gleitendes Fenster (Stunden)'
+    description: 'Länge des gleitenden Fensters hinter dem Balancepunkt. Ein Tagesfenster rechnet Vorheizen am Tag gegen die Nacht; kürzere Fenster reagieren schneller auf Wetter, folgen aber dem Tag/Nacht-Verlauf. Standard: 24.'
+  building_balance_min_provisional_hours:
+    name: '[Balance] Mindestabdeckung für vorläufigen Wert (Stunden)'
+    description: 'Abgedeckte Stunden, bevor ein erster Balancewert mit Status provisional veröffentlicht wird. Ein kurzes Fenster um die Mittagszeit überschätzt PV-Gewinne und liefert eine viel zu niedrige Balancetemperatur; daher mindestens 6 Stunden lassen. Standard: 6.'
+  building_balance_full_coverage_fraction:
+    name: '[Balance] Abdeckung für Status full'
+    description: 'Anteil des Fensters mit gültigen Stichproben, ab dem der Status von provisional auf full wechselt. Standard: 0.9.'
+  building_balance_max_interval_minutes:
+    name: '[Balance] Maximale Stichproben-Lücke (Minuten)'
+    description: 'Abstände zwischen zwei Stichproben, die länger sind, werden nicht gezählt; die Abdeckung sinkt, statt über die Lücke zu extrapolieren. Standard: 30.'
+  building_balance_storage_enabled:
+    name: '[Balance] Gespeicherte Energie berücksichtigen'
+    description: 'Bezieht in Raum und Estrich gespeicherte Energie in die gemessene Bilanz ein. Tags eingebrachte und nachts abgegebene Wärme hebt sich dann im Fenster auf. Abschalten ignoriert Speicher; Vorheizen erscheint dann als fehlender Gewinn. Standard: true.'
+  building_balance_capacity_mode:
+    name: '[Balance] Quelle der Wärmekapazität'
+    description: 'Woher die Wärmekapazitäten in kWh/K kommen. model = Raumkapazität tau x (Outlet Effectiveness + HLC) aus dem gelernten Modell, Estrichkapazität als Wasserdurchfluss x spezifische Wärme x Estrich-Zeitkonstante. manual = die beiden Werte unten. learned (experimentell) = Estrichkapazität per Regression aus aktuellen Daten, mit Rückfall auf model bei zu wenig Daten. Standard: model.'
+  building_balance_room_capacity_kwh_per_k:
+    name: '[Balance] Manuelle Raumkapazität (kWh/K)'
+    description: 'Raumkapazität im Modus manual und als Rückfall, wenn Modellwerte fehlen. Ein typisches Haus mit Fußbodenheizung liegt grob bei 3 bis 10 kWh/K. Standard: 5.'
+  building_balance_slab_capacity_kwh_per_k:
+    name: '[Balance] Manuelle Estrichkapazität (kWh/K)'
+    description: 'Estrichkapazität im Modus manual und als Rückfall, wenn Modellwerte fehlen. Typisch sind grob 2 bis 10 kWh/K. Standard: 4.'
+  building_balance_dhw_intervals:
+    name: '[Balance] Warmwasser-Intervalle'
+    description: 'Verhalten während Warmwasser, Desinfektion und Heizstab. zero_floor_power = Umschaltventil angenommen, keine Wärme erreicht den Boden (Leistung 0, Intervall bleibt gültig, letzte Rücklauftemperatur wird gehalten). exclude = diese Intervalle aus der gemessenen Bilanz ausschließen. Abtauen zählt immer mit negativer Leistung, weil es dem Estrich Energie entzieht. Standard: zero_floor_power.'
+  building_balance_hvac_off_min_samples:
+    name: '[Balance] HVAC-aus-Referenz: Mindestanzahl Stichproben'
+    description: 'Referenzschätzung aus stabilen HVAC-aus-Phasen: Anzahl stabiler Stichproben vor der Veröffentlichung. Standard: 3.'
+  building_balance_hvac_off_min_window_hours:
+    name: '[Balance] HVAC-aus-Referenz: Mindestfenster (Stunden)'
+    description: 'Referenzschätzung: Die stabilen Stichproben müssen mindestens so viele Stunden umfassen. Standard: 2.'
+  building_balance_hvac_off_max_gap_minutes:
+    name: '[Balance] HVAC-aus-Referenz: Maximale Lücke (Minuten)'
+    description: 'Referenzschätzung: Eine längere Lücke löscht das gesammelte Fenster. Standard: 60.'
+  building_balance_hvac_off_max_indoor_drift_60m:
+    name: '[Balance] HVAC-aus-Referenz: Maximale Innendrift je 60 min (K)'
+    description: 'Referenzschätzung: Stichproben mit größerer Innentemperaturänderung in 60 Minuten gelten als nicht stabil. Standard: 0.25.'
+  building_balance_hvac_off_max_hvac_power_kw:
+    name: '[Balance] HVAC-aus-Referenz: Maximale thermische Leistung (kW)'
+    description: 'Referenzschätzung: Stichproben mit größerer hydraulischer Leistung gelten als HVAC aktiv. Standard: 0.1.'
+  building_balance_hvac_off_max_flow_rate:
+    name: '[Balance] HVAC-aus-Referenz: Maximaler Durchfluss (l/min)'
+    description: 'Referenzschätzung: Stichproben mit größerem Durchfluss gelten als HVAC aktiv. Standard: 0.1.'
+  building_balance_hvac_off_max_gain_kw:
+    name: '[Balance] HVAC-aus-Referenz: Maximaler abgeleiteter Gewinn (kW)'
+    description: 'Referenzschätzung: Unplausibel große abgeleitete Gewinne werden verworfen. Standard: 5.0.'
+  building_balance_hvac_off_max_spread_k:
+    name: '[Balance] HVAC-aus-Referenz: Maximale Streuung (K)'
+    description: 'Referenzschätzung: Stichproben, deren Innen-Außen-Differenz im Fenster stärker streut, werden verworfen. Standard: 2.0.'
   heating_min_thermal_power_kw:
     name: '[Erweitert] Heizen Minimum Thermal Leistung (kW)'
     description: 'Minimum water-side thermal power (kW) required to accept a period

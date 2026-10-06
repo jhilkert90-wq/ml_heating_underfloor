@@ -776,6 +776,67 @@ PRE_COOL_DUAL_OUTPUT_STRATEGY: str = os.getenv(
 _UNIFIED_STATE_DIR: str = os.path.dirname(
     os.getenv("UNIFIED_STATE_FILE", "/opt/ml_heating/unified_thermal_state.json")
 )
+# Persisted rolling 24 h window behind the building balance-point sensors.
+BUILDING_GAIN_WINDOW_PATH: str = os.getenv(
+    "BUILDING_GAIN_WINDOW_PATH",
+    os.path.join(_UNIFIED_STATE_DIR, "building_gain_window.json"),
+)
+# Building balance point (dashboard group "Balance"): method, rolling window,
+# storage capacities and the stable HVAC-off reference thresholds.
+BUILDING_BALANCE_METHOD: str = os.getenv(
+    "BUILDING_BALANCE_METHOD", "measured_with_fallback"
+)
+BUILDING_BALANCE_WINDOW_HOURS: float = float(
+    os.getenv("BUILDING_BALANCE_WINDOW_HOURS", "24")
+)
+BUILDING_BALANCE_MIN_PROVISIONAL_HOURS: float = float(
+    os.getenv("BUILDING_BALANCE_MIN_PROVISIONAL_HOURS", "6")
+)
+BUILDING_BALANCE_FULL_COVERAGE_FRACTION: float = float(
+    os.getenv("BUILDING_BALANCE_FULL_COVERAGE_FRACTION", "0.9")
+)
+BUILDING_BALANCE_MAX_INTERVAL_MINUTES: float = float(
+    os.getenv("BUILDING_BALANCE_MAX_INTERVAL_MINUTES", "30")
+)
+BUILDING_BALANCE_STORAGE_ENABLED: bool = os.getenv(
+    "BUILDING_BALANCE_STORAGE_ENABLED", "true"
+).lower() in ("1", "true", "yes")
+BUILDING_BALANCE_CAPACITY_MODE: str = os.getenv(
+    "BUILDING_BALANCE_CAPACITY_MODE", "model"
+)
+BUILDING_BALANCE_ROOM_CAPACITY_KWH_PER_K: float = float(
+    os.getenv("BUILDING_BALANCE_ROOM_CAPACITY_KWH_PER_K", "5.0")
+)
+BUILDING_BALANCE_SLAB_CAPACITY_KWH_PER_K: float = float(
+    os.getenv("BUILDING_BALANCE_SLAB_CAPACITY_KWH_PER_K", "4.0")
+)
+BUILDING_BALANCE_DHW_INTERVALS: str = os.getenv(
+    "BUILDING_BALANCE_DHW_INTERVALS", "zero_floor_power"
+)
+BUILDING_BALANCE_HVAC_OFF_MIN_SAMPLES: int = int(
+    os.getenv("BUILDING_BALANCE_HVAC_OFF_MIN_SAMPLES", "3")
+)
+BUILDING_BALANCE_HVAC_OFF_MIN_WINDOW_HOURS: float = float(
+    os.getenv("BUILDING_BALANCE_HVAC_OFF_MIN_WINDOW_HOURS", "2")
+)
+BUILDING_BALANCE_HVAC_OFF_MAX_GAP_MINUTES: float = float(
+    os.getenv("BUILDING_BALANCE_HVAC_OFF_MAX_GAP_MINUTES", "60")
+)
+BUILDING_BALANCE_HVAC_OFF_MAX_INDOOR_DRIFT_60M: float = float(
+    os.getenv("BUILDING_BALANCE_HVAC_OFF_MAX_INDOOR_DRIFT_60M", "0.25")
+)
+BUILDING_BALANCE_HVAC_OFF_MAX_HVAC_POWER_KW: float = float(
+    os.getenv("BUILDING_BALANCE_HVAC_OFF_MAX_HVAC_POWER_KW", "0.1")
+)
+BUILDING_BALANCE_HVAC_OFF_MAX_FLOW_RATE: float = float(
+    os.getenv("BUILDING_BALANCE_HVAC_OFF_MAX_FLOW_RATE", "0.1")
+)
+BUILDING_BALANCE_HVAC_OFF_MAX_GAIN_KW: float = float(
+    os.getenv("BUILDING_BALANCE_HVAC_OFF_MAX_GAIN_KW", "5.0")
+)
+BUILDING_BALANCE_HVAC_OFF_MAX_SPREAD_K: float = float(
+    os.getenv("BUILDING_BALANCE_HVAC_OFF_MAX_SPREAD_K", "2.0")
+)
 # Path to trained LightGBM classifier (joblib). Tooltip: MODEL-BASED only.
 COOLING_ML_MODEL_PATH: str = os.getenv(
     "COOLING_ML_MODEL_PATH",

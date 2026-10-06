@@ -15,10 +15,12 @@ Two curves are computed per climate mode, using only the learned physics
 
 Each curve is also approximated by a polynomial (degree 1-4).
 
-The building-kW sensor also estimates the zero-HVAC outdoor balance
-temperature from stable observations while hydronic flow and thermal power
-are near zero.  It keeps up to 24 hours of observations and withholds the
-estimate until at least three stable samples span two hours with low spread.
+The building-kW sensor reports a balance outdoor temperature per mode from a
+persisted rolling window (see ``building_gain_window``): a modelled value
+from PV/fireplace/TV gains and a measured value from the energy balance.  Both
+are always exported; ``building_balance_method`` selects the one published as
+``*_balance_outdoor_temp``.  The stable HVAC-off estimate is kept as a
+``hvac_off`` reference.
 """
 
 from __future__ import annotations
@@ -33,21 +35,19 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from .building_capacity import resolve_capacities
+from .building_gain_window import (
+    BalanceSettings,
+    BuildingGainWindow,
+    external_gain_kw,
+)
+
 HEATING_RANGE = (-20.0, 20.0)
 COOLING_RANGE = (10.0, 40.0)
 GRID_STEP = 1.0
 MAX_ATTRIBUTE_BYTES = 14000  # HA recorder limit is 16384
 REFRESH_SECONDS = 3600.0
 OUTDOOR_REPUBLISH_DELTA = 0.5
-BALANCE_ESTIMATE_WINDOW_SECONDS = 24 * 3600
-BALANCE_ESTIMATE_MIN_SAMPLES = 3
-BALANCE_ESTIMATE_MIN_WINDOW_SECONDS = 2 * 3600
-BALANCE_ESTIMATE_MAX_SAMPLE_GAP_SECONDS = 60 * 60
-BALANCE_ESTIMATE_MAX_INDOOR_DRIFT = 0.25
-BALANCE_ESTIMATE_MAX_HVAC_POWER_KW = 0.1
-BALANCE_ESTIMATE_MAX_FLOW_RATE = 0.1
-BALANCE_ESTIMATE_MAX_GAIN_KW = 5.0
-BALANCE_ESTIMATE_MAX_SPREAD_K = 2.0
 
 BASE_OUTLET_ENTITY_ID = "sensor.ml_heating_base_outlet_curve"
 BUILDING_KW_ENTITY_ID = "sensor.ml_heating_building_curve_kw"
@@ -100,7 +100,8 @@ def balance_outdoor_temp(
 class BalancePointEstimator:
     """Estimate average gains from stable observations while HVAC is off."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Optional[BalanceSettings] = None) -> None:
+        self.settings = settings or BalanceSettings()
         self._samples: Dict[str, deque] = {
             "heating": deque(),
             "cooling": deque(),
@@ -152,29 +153,30 @@ class BalancePointEstimator:
         ):
             self.clear(mode)
             return None
+        settings = self.settings
         if (
             hlc <= 0
-            or abs(drift) > BALANCE_ESTIMATE_MAX_INDOOR_DRIFT
-            or abs(power) > BALANCE_ESTIMATE_MAX_HVAC_POWER_KW
-            or abs(flow) > BALANCE_ESTIMATE_MAX_FLOW_RATE
+            or abs(drift) > settings.hvac_off_max_indoor_drift_60m
+            or abs(power) > settings.hvac_off_max_hvac_power_kw
+            or abs(flow) > settings.hvac_off_max_flow_rate
         ):
             self.clear(mode)
             return None
 
         indoor_outdoor_delta = indoor - outdoor
         gains_kw = hlc * indoor_outdoor_delta
-        if not 0 <= gains_kw <= BALANCE_ESTIMATE_MAX_GAIN_KW:
+        if not 0 <= gains_kw <= settings.hvac_off_max_gain_kw:
             self.clear(mode)
             return None
 
         samples = self._samples[mode]
-        cutoff = timestamp - BALANCE_ESTIMATE_WINDOW_SECONDS
+        cutoff = timestamp - settings.window_seconds
         while samples and samples[0][0] < cutoff:
             samples.popleft()
         if (
             samples
             and timestamp - samples[-1][0]
-            > BALANCE_ESTIMATE_MAX_SAMPLE_GAP_SECONDS
+            > settings.hvac_off_max_gap_minutes * 60
         ):
             samples.clear()
         if samples and timestamp <= samples[-1][0]:
@@ -198,13 +200,14 @@ class BalancePointEstimator:
             return None
         timestamp = time.time() if now is None else float(now)
         samples = self._samples[mode]
-        cutoff = timestamp - BALANCE_ESTIMATE_WINDOW_SECONDS
+        settings = self.settings
+        cutoff = timestamp - settings.window_seconds
         while samples and samples[0][0] < cutoff:
             samples.popleft()
         if (
-            len(samples) < BALANCE_ESTIMATE_MIN_SAMPLES
+            len(samples) < settings.hvac_off_min_samples
             or samples[-1][0] - samples[0][0]
-            < BALANCE_ESTIMATE_MIN_WINDOW_SECONDS
+            < settings.hvac_off_min_window_hours * 3600
         ):
             return None
         try:
@@ -219,13 +222,13 @@ class BalancePointEstimator:
             return None
         mean_delta = sum(sample[1] for sample in samples) / len(samples)
         gains = mean_delta * hlc
-        if not 0 <= gains <= BALANCE_ESTIMATE_MAX_GAIN_KW:
+        if not 0 <= gains <= settings.hvac_off_max_gain_kw:
             return None
         spread_k = math.sqrt(
             sum((sample[1] - mean_delta) ** 2 for sample in samples)
             / len(samples)
         )
-        if spread_k > BALANCE_ESTIMATE_MAX_SPREAD_K:
+        if spread_k > settings.hvac_off_max_spread_k:
             return None
         return {
             "gain_kw": gains,
@@ -279,17 +282,75 @@ def _curve_attributes(
     return attrs
 
 
+def _estimate_balance(
+    estimate: Dict[str, Any], target: float, hlc: float
+) -> tuple:
+    """Return (balance outdoor temp, gain kW) for an estimate dict."""
+    gain_kw = estimate.get("gain_kw")
+    balance_temp = estimate.get("balance_outdoor_temp")
+    if balance_temp is None and gain_kw is not None:
+        balance_temp = balance_outdoor_temp(target, hlc, gain_kw)
+    return balance_temp, gain_kw
+
+
+def _select_balance(method: str, modelled, measured) -> tuple:
+    """Return (estimate, method used) for the configured method."""
+    if method == "modelled":
+        return modelled, "modelled" if modelled else "unavailable"
+    if method == "measured":
+        return measured, "measured" if measured else "unavailable"
+    if measured:
+        return measured, "measured"
+    if modelled:
+        return modelled, "modelled"
+    return None, "unavailable"
+
+
+def _variant_attributes(
+    attrs: Dict[str, Any],
+    mode: str,
+    suffix: str,
+    estimate: Dict[str, Any],
+    target: float,
+    hlc: float,
+) -> None:
+    temp, gain = _estimate_balance(estimate, target, hlc)
+    present = estimate.get("gain_kw") is not None
+    attrs[f"{mode}_balance_outdoor_temp_{suffix}"] = (
+        _r(temp, 2) if temp is not None else None
+    )
+    attrs[f"{mode}_balance_gain_kw_{suffix}"] = (
+        _r(gain, 3) if present else None
+    )
+    attrs[f"{mode}_balance_status_{suffix}"] = (
+        estimate.get("status", "full") if present else "unavailable"
+    )
+    attrs[f"{mode}_balance_window_minutes_{suffix}"] = (
+        int(estimate.get("window_minutes", 0)) if present else 0
+    )
+
+
 def compute_curves(
     parameters_by_mode: Dict[str, Dict[str, Any]],
     targets: Dict[str, float],
     degree: int = 4,
     balance_estimates: Optional[Dict[str, Dict[str, Any]]] = None,
+    hvac_off_estimates: Optional[Dict[str, Dict[str, Any]]] = None,
+    modelled_estimates: Optional[Dict[str, Dict[str, Any]]] = None,
+    measured_estimates: Optional[Dict[str, Dict[str, Any]]] = None,
+    methods_used: Optional[Dict[str, str]] = None,
+    capacities: Optional[Dict[str, Dict[str, Any]]] = None,
+    settings: Optional[BalanceSettings] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Compute attribute dicts for both sensors (all modes).
 
     ``targets`` maps climate mode -> active target indoor temperature.
+    ``balance_estimates`` is the estimate selected by the configured method;
+    ``modelled_estimates`` and ``measured_estimates`` are always exported
+    next to it, ``hvac_off_estimates`` is the legacy stable-idle reference.
     Returns ``{"outlet": {...}, "kw": {...}}``.
     """
+    settings = settings or BalanceSettings()
     outlet_attrs: Dict[str, Any] = {}
     kw_attrs: Dict[str, Any] = {}
     for mode, target in targets.items():
@@ -310,64 +371,148 @@ def compute_curves(
         )
         kw_attrs[f"{mode}_target_indoor"] = _r(target, 2)
         kw_attrs.update(_curve_attributes(mode, grid, loads, degree))
-        # Retain the no-gains zero crossing separately from the empirical
-        # balance estimate, which is only available after stable idle samples.
+        # Retain the no-gains zero crossing separately from the estimates.
         kw_attrs[f"{mode}_no_gains_zero_load_outdoor_temp"] = _r(target, 2)
+
         estimate = (balance_estimates or {}).get(mode) or {}
-        gain_kw = estimate.get("gain_kw")
-        balance_temp = estimate.get("balance_outdoor_temp")
-        if balance_temp is None and gain_kw is not None:
-            balance_temp = balance_outdoor_temp(target, hlc, gain_kw)
-        estimate_available = balance_temp is not None
+        balance_temp, gain_kw = _estimate_balance(estimate, target, hlc)
+        available = balance_temp is not None
+        uncertainty = estimate.get("uncertainty_k")
         kw_attrs[f"{mode}_balance_outdoor_temp"] = (
-            _r(balance_temp, 2) if estimate_available else None
+            _r(balance_temp, 2) if available else None
         )
         kw_attrs[f"{mode}_balance_gain_kw"] = (
-            _r(gain_kw, 3) if estimate_available else None
+            _r(gain_kw, 3) if available else None
         )
-        uncertainty = estimate.get("uncertainty_k")
         kw_attrs[f"{mode}_balance_uncertainty_k"] = (
             _r(uncertainty, 2)
-            if estimate_available and uncertainty is not None
+            if available and uncertainty is not None
             else None
         )
         kw_attrs[f"{mode}_balance_estimate_status"] = (
-            "available" if estimate_available else "unavailable"
+            estimate.get("status", "full") if available else "unavailable"
         )
         kw_attrs[f"{mode}_balance_sample_count"] = (
-            int(estimate.get("sample_count", 0)) if estimate_available else 0
+            int(estimate.get("sample_count", 0)) if available else 0
         )
         kw_attrs[f"{mode}_balance_window_minutes"] = (
-            int(estimate.get("window_minutes", 0)) if estimate_available else 0
+            int(estimate.get("window_minutes", 0)) if available else 0
+        )
+        kw_attrs[f"{mode}_balance_coverage_fraction"] = (
+            _r(estimate.get("coverage_fraction", 1.0), 3)
+            if available
+            else 0.0
+        )
+        used = (methods_used or {}).get(mode, "modelled")
+        kw_attrs[f"{mode}_balance_method"] = settings.method
+        kw_attrs[f"{mode}_balance_method_used"] = (
+            used if available else "unavailable"
         )
         kw_attrs[f"{mode}_balance_estimate_method"] = (
-            "stable_hvac_off_observations; assumes negligible stored-heat drift"
-            if estimate_available
+            (
+                "rolling_window_measured_energy_balance; includes hp heat "
+                "and room/slab storage"
+                if used == "measured"
+                else "rolling_window_modelled_non_hp_gains; mode-specific "
+                "model weights; hp heat and indoor overshoot excluded"
+            )
+            if available
             else "unavailable"
         )
-        kw_attrs[f"{mode}_balance_min_sample_count"] = (
-            BALANCE_ESTIMATE_MIN_SAMPLES
+        kw_attrs[f"{mode}_balance_window_hours"] = _r(settings.window_hours, 2)
+        kw_attrs[f"{mode}_balance_min_provisional_hours"] = _r(
+            settings.min_provisional_hours, 2
         )
-        kw_attrs[f"{mode}_balance_min_window_minutes"] = int(
-            BALANCE_ESTIMATE_MIN_WINDOW_SECONDS / 60
+        kw_attrs[f"{mode}_balance_full_coverage_fraction"] = (
+            settings.full_coverage_fraction
         )
-        kw_attrs[f"{mode}_balance_max_sample_gap_minutes"] = int(
-            BALANCE_ESTIMATE_MAX_SAMPLE_GAP_SECONDS / 60
+        kw_attrs[f"{mode}_balance_max_interval_minutes"] = (
+            settings.max_interval_minutes
         )
-        kw_attrs[f"{mode}_balance_max_indoor_drift_60m"] = (
-            BALANCE_ESTIMATE_MAX_INDOOR_DRIFT
+        kw_attrs[f"{mode}_balance_storage_enabled"] = settings.storage_enabled
+        kw_attrs[f"{mode}_balance_dhw_intervals"] = settings.dhw_intervals
+        kw_attrs[f"{mode}_balance_capacity_mode"] = settings.capacity_mode
+        capacity = (capacities or {}).get(mode) or {}
+        kw_attrs[f"{mode}_balance_capacity_room_kwh_per_k"] = (
+            _r(capacity["room"], 3) if capacity.get("room") else None
         )
-        kw_attrs[f"{mode}_balance_max_hvac_power_kw"] = (
-            BALANCE_ESTIMATE_MAX_HVAC_POWER_KW
+        kw_attrs[f"{mode}_balance_capacity_slab_kwh_per_k"] = (
+            _r(capacity["slab"], 3) if capacity.get("slab") else None
         )
-        kw_attrs[f"{mode}_balance_max_flow_rate"] = (
-            BALANCE_ESTIMATE_MAX_FLOW_RATE
+        kw_attrs[f"{mode}_balance_capacity_source"] = capacity.get(
+            "source", "unavailable"
         )
-        kw_attrs[f"{mode}_balance_max_inferred_gains_kw"] = (
-            BALANCE_ESTIMATE_MAX_GAIN_KW
+        _variant_attributes(
+            kw_attrs,
+            mode,
+            "modelled",
+            (modelled_estimates or {}).get(mode) or {},
+            target,
+            hlc,
         )
-        kw_attrs[f"{mode}_balance_max_uncertainty_k"] = (
-            BALANCE_ESTIMATE_MAX_SPREAD_K
+        _variant_attributes(
+            kw_attrs,
+            mode,
+            "measured",
+            (measured_estimates or {}).get(mode) or {},
+            target,
+            hlc,
+        )
+
+        reference = (hvac_off_estimates or {}).get(mode) or {}
+        reference_temp, reference_gain = _estimate_balance(
+            reference, target, hlc
+        )
+        reference_available = reference_temp is not None
+        kw_attrs[f"{mode}_balance_hvac_off_outdoor_temp"] = (
+            _r(reference_temp, 2) if reference_available else None
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_gain_kw"] = (
+            _r(reference_gain, 3) if reference_available else None
+        )
+        reference_uncertainty = reference.get("uncertainty_k")
+        kw_attrs[f"{mode}_balance_hvac_off_uncertainty_k"] = (
+            _r(reference_uncertainty, 2)
+            if reference_available and reference_uncertainty is not None
+            else None
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_sample_count"] = (
+            int(reference.get("sample_count", 0)) if reference_available else 0
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_window_minutes"] = (
+            int(reference.get("window_minutes", 0)) if reference_available else 0
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_estimate_status"] = (
+            "available" if reference_available else "unavailable"
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_estimate_method"] = (
+            "stable_hvac_off_observations; assumes negligible stored-heat drift"
+            if reference_available
+            else "unavailable"
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_min_sample_count"] = (
+            settings.hvac_off_min_samples
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_min_window_minutes"] = int(
+            settings.hvac_off_min_window_hours * 60
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_max_sample_gap_minutes"] = int(
+            settings.hvac_off_max_gap_minutes
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_max_indoor_drift_60m"] = (
+            settings.hvac_off_max_indoor_drift_60m
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_max_hvac_power_kw"] = (
+            settings.hvac_off_max_hvac_power_kw
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_max_flow_rate"] = (
+            settings.hvac_off_max_flow_rate
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_max_inferred_gains_kw"] = (
+            settings.hvac_off_max_gain_kw
+        )
+        kw_attrs[f"{mode}_balance_hvac_off_max_uncertainty_k"] = (
+            settings.hvac_off_max_spread_k
         )
         kw_attrs[f"{mode}_design_load_kw"] = _r(
             building_load_kw(float(grid[0] if mode == "heating" else grid[-1]),
@@ -421,11 +566,41 @@ def _parameter_signature(
 class BuildingCurvePublisher:
     """Publishes both curve sensors when needed (parameter change/hourly)."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        gain_window: Optional[BuildingGainWindow] = None,
+        settings: Optional[BalanceSettings] = None,
+    ) -> None:
         self._last_signature = None
         self._last_time = 0.0
         self._last_outdoor: Optional[float] = None
-        self.balance_estimator = BalancePointEstimator()
+        self.gain_window = gain_window or BuildingGainWindow(settings=settings)
+        self.settings = self.gain_window.settings
+        self.balance_estimator = BalancePointEstimator(self.settings)
+
+    def record_sample(
+        self, thermal_models: Dict[str, Any], sample: Dict[str, Any]
+    ) -> None:
+        """Store one raw measurement set with both modes' modelled gains."""
+        stored = dict(sample)
+        outdoor = sample.get("outdoor")
+        pv = sample.get("pv")
+        for mode in ("heating", "cooling"):
+            stored[f"g_{mode}"] = None
+            model = thermal_models.get(mode)
+            if model is None or outdoor is None or pv is None:
+                continue
+            try:
+                stored[f"g_{mode}"] = external_gain_kw(
+                    model,
+                    self.gain_window.recent_pv() + [max(0.0, float(pv))],
+                    outdoor,
+                    sample.get("fireplace") or 0.0,
+                    sample.get("tv") or 0.0,
+                )
+            except Exception:
+                logging.debug("Modelled gain unavailable.", exc_info=True)
+        self.gain_window.add_sample(stored)
 
     def should_publish(self, signature, outdoor_temp, now: float) -> bool:
         if signature != self._last_signature:
@@ -514,32 +689,82 @@ class BuildingCurvePublisher:
                         "indoor_history_available", True
                     ),
                 )
-        balance_estimates = {}
+        hvac_off_estimates = {}
         for mode in ("heating", "cooling"):
             if mode == observed_mode and observed_estimate is not None:
-                balance_estimates[mode] = observed_estimate
+                hvac_off_estimates[mode] = observed_estimate
             else:
-                balance_estimates[mode] = self.balance_estimator.get_estimate(
+                hvac_off_estimates[mode] = self.balance_estimator.get_estimate(
                     mode,
                     now,
                     float(parameters_by_mode[mode]["heat_loss_coefficient"]),
                 )
+        settings = self.settings
+        median_flow = self.gain_window.median_flow(now)
+        specific_heat = float(
+            getattr(config, "SPECIFIC_HEAT_CAPACITY", 4.186)
+        )
+        capacities: Dict[str, Dict[str, Any]] = {}
+        modelled_estimates: Dict[str, Optional[Dict[str, Any]]] = {}
+        measured_estimates: Dict[str, Optional[Dict[str, Any]]] = {}
+        for mode in ("heating", "cooling"):
+            mode_parameters = parameters_by_mode[mode]
+            hlc = float(mode_parameters["heat_loss_coefficient"])
+            learned_slab = None
+            if settings.capacity_mode == "learned":
+                learned_slab = self.gain_window.learned_slab_capacity(
+                    mode, now, mode_parameters.get("outlet_effectiveness")
+                )
+            capacities[mode] = resolve_capacities(
+                settings.capacity_mode,
+                mode_parameters,
+                manual_room=settings.room_capacity_kwh_per_k,
+                manual_slab=settings.slab_capacity_kwh_per_k,
+                median_flow_l_min=median_flow,
+                specific_heat_kj_per_kg_k=specific_heat,
+                learned_slab=learned_slab,
+            )
+            modelled_estimates[mode] = self.gain_window.gain_estimate(
+                mode, now, hlc
+            )
+            measured_estimates[mode] = self.gain_window.measured_estimate(
+                mode,
+                now,
+                hlc,
+                capacities[mode]["room"],
+                capacities[mode]["slab"],
+            )
+        selected_estimates: Dict[str, Optional[Dict[str, Any]]] = {}
+        methods_used: Dict[str, str] = {}
         balance_signature = []
         for mode in ("heating", "cooling"):
-            estimate = balance_estimates[mode]
-            balance_temp = None
-            if estimate is not None and mode in targets:
-                estimate = dict(estimate)
-                balance_estimates[mode] = estimate
-                balance_temp = balance_outdoor_temp(
-                    targets[mode],
-                    float(parameters_by_mode[mode]["heat_loss_coefficient"]),
-                    estimate["gain_kw"],
+            hlc = float(parameters_by_mode[mode]["heat_loss_coefficient"])
+            entry = [mode]
+            for estimates in (
+                hvac_off_estimates, modelled_estimates, measured_estimates
+            ):
+                estimate = estimates[mode]
+                balance_temp = None
+                if estimate is not None and mode in targets:
+                    estimate = dict(estimate)
+                    balance_temp = balance_outdoor_temp(
+                        targets[mode], hlc, estimate["gain_kw"]
+                    )
+                    estimate["balance_outdoor_temp"] = balance_temp
+                    estimates[mode] = estimate
+                entry.append(
+                    round(balance_temp * 2) / 2
+                    if balance_temp is not None
+                    else None
                 )
-                estimate["balance_outdoor_temp"] = balance_temp
-            balance_signature.append(
-                (mode, round(balance_temp, 1) if balance_temp is not None else None)
+            selected_estimates[mode], methods_used[mode] = _select_balance(
+                settings.method,
+                modelled_estimates[mode],
+                measured_estimates[mode],
             )
+            entry.append(methods_used[mode])
+            entry.append((selected_estimates[mode] or {}).get("status"))
+            balance_signature.append(tuple(entry))
         signature = (
             _parameter_signature(parameters_by_mode, targets),
             climate_mode,
@@ -550,7 +775,16 @@ class BuildingCurvePublisher:
             return False
 
         curves = compute_curves(
-            parameters_by_mode, targets, degree, balance_estimates
+            parameters_by_mode,
+            targets,
+            degree,
+            balance_estimates=selected_estimates,
+            hvac_off_estimates=hvac_off_estimates,
+            modelled_estimates=modelled_estimates,
+            measured_estimates=measured_estimates,
+            methods_used=methods_used,
+            capacities=capacities,
+            settings=settings,
         )
         learned = {}
         for mode, parameters in parameters_by_mode.items():

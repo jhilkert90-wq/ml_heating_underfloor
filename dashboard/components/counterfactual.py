@@ -15,6 +15,7 @@ import streamlit as st
 
 from dashboard.data_service import _find_cooling_state_file, _find_state_file
 from src import config
+from src.building_gain_window import external_gain_kw
 from src.counterfactual_replay import (
     CLIMATE_MODE_ALIASES,
     MAX_VALID_COP,
@@ -231,18 +232,14 @@ def _external_gain_kw(
         1, int(round(config.HISTORY_STEP_MINUTES / _HISTORY_INTERVAL_MINUTES))
     )
     pv_history = list(reversed(pv_values[position::-history_step]))
-    equilibrium = model.predict_equilibrium_temperature(
-        outlet_temp=float(outlet_temp),
-        outdoor_temp=float(outdoor_temp),
-        current_indoor=float(indoor_temp),
-        pv_power=pv_history,
-        fireplace_on=float(fireplace_on),
-        tv_on=float(tv_on),
-        thermal_power=0.0,
-        _suppress_logging=True,
-    )
-    return (float(equilibrium) - float(outdoor_temp)) * float(
-        model.heat_loss_coefficient
+    return external_gain_kw(
+        model,
+        pv_history,
+        outdoor_temp,
+        fireplace_on,
+        tv_on,
+        outlet_temp=outlet_temp,
+        indoor_temp=indoor_temp,
     )
 
 

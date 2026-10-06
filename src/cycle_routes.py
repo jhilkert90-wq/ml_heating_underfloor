@@ -12,6 +12,7 @@ full control over execution order.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 
 import numpy as np
@@ -19,6 +20,7 @@ import pandas as pd
 
 from . import config
 from .building_curve import BuildingCurvePublisher
+from .building_gain_window import BalanceSettings, BuildingGainWindow
 from .cycle_context import CycleContext
 from .ha_client import get_sensor_attributes
 from .heating_controller import SensorDataManager
@@ -702,7 +704,12 @@ def step_save_state(ctx: CycleContext) -> None:
     ctx.state.update(state_to_save)
 
 
-_BUILDING_CURVE_PUBLISHER = BuildingCurvePublisher()
+_BUILDING_CURVE_PUBLISHER = BuildingCurvePublisher(
+    gain_window=BuildingGainWindow(
+        path=config.BUILDING_GAIN_WINDOW_PATH,
+        settings=BalanceSettings.from_config(config),
+    )
+)
 
 
 def _read_entity_float(ctx: CycleContext, entity_id: str) -> float | None:
@@ -713,6 +720,89 @@ def _read_entity_float(ctx: CycleContext, entity_id: str) -> float | None:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _read_entity_flag(ctx: CycleContext, entity_id: str) -> bool:
+    if not entity_id:
+        return False
+    return bool(
+        ctx.ha_client.get_state(entity_id, ctx.all_states, is_binary=True)
+    )
+
+
+def step_record_building_sample(ctx: CycleContext) -> None:
+    """Record one raw sample for the rolling building-gain window.
+
+    Runs in every route.  Defrost needs no special case: its negative thermal
+    power is recorded as measured.  DHW-type intervals are flagged so the
+    window can apply the configured floor-power policy.
+    """
+    if not getattr(config, "BUILDING_CURVE_ENABLED", True):
+        return
+    if ctx.wrapper is None:
+        return
+    try:
+        outdoor = (
+            ctx.outdoor_temp
+            if ctx.outdoor_temp is not None
+            else _read_entity_float(ctx, config.OUTDOOR_TEMP_ENTITY_ID)
+        )
+        indoor = (
+            ctx.actual_indoor
+            if ctx.actual_indoor is not None
+            else _read_entity_float(ctx, config.INDOOR_TEMP_ENTITY_ID)
+        )
+        outlet = _read_entity_float(ctx, config.ACTUAL_OUTLET_TEMP_ENTITY_ID)
+        inlet = _read_entity_float(ctx, config.INLET_TEMP_ENTITY_ID)
+        flow = _read_entity_float(ctx, config.FLOW_RATE_ENTITY_ID)
+        thermal_power = None
+        if None not in (outlet, inlet, flow):
+            thermal_power = (
+                (flow / 60.0)
+                * config.SPECIFIC_HEAT_CAPACITY
+                * (outlet - inlet)
+            )
+
+        dhw_active = any(
+            _read_entity_flag(ctx, entity_id)
+            for entity_id in (
+                config.DHW_STATUS_ENTITY_ID,
+                config.DISINFECTION_STATUS_ENTITY_ID,
+                config.DHW_BOOST_HEATER_STATUS_ENTITY_ID,
+            )
+        )
+        raw_mode = getattr(ctx.wrapper, "last_raw_climate_mode", None)
+        mode = (
+            raw_mode
+            if raw_mode in ("heating", "cooling")
+            else getattr(ctx.wrapper, "last_active_climate_mode", None)
+        )
+        _BUILDING_CURVE_PUBLISHER.record_sample(
+            {
+                "heating": ctx.wrapper._heating_thermal_model,
+                "cooling": ctx.wrapper._cooling_thermal_model,
+            },
+            {
+                "t": time.time(),
+                "outdoor": outdoor,
+                "indoor": indoor,
+                "pv": _read_entity_float(ctx, config.PV_POWER_ENTITY_ID),
+                "fireplace": float(
+                    _read_entity_flag(ctx, config.FIREPLACE_STATUS_ENTITY_ID)
+                ),
+                "tv": float(
+                    _read_entity_flag(ctx, config.TV_STATUS_ENTITY_ID)
+                ),
+                "thermal_power_kw": thermal_power,
+                "return_temp": inlet,
+                "outlet_temp": outlet,
+                "flow": flow,
+                "mode": mode,
+                "dhw_active": dhw_active,
+            },
+        )
+    except Exception:
+        logging.debug("Failed to record building gain sample.", exc_info=True)
 
 
 def step_publish_building_curves(
@@ -1155,6 +1245,7 @@ def run_blocking_route(ctx: CycleContext) -> None:
     2. Save blocking state for next cycle
     """
     logging.info("Blocking process active (DHW/Defrost), skipping.")
+    step_record_building_sample(ctx)
     try:
         heating_state_entity_id = get_shadow_output_entity_id(
             "sensor.ml_heating_state"
@@ -1201,6 +1292,7 @@ def run_grace_period_route(ctx: CycleContext) -> None:
     Uses the heating state manager (same as IDLE).
     """
     logging.info("⏳ Grace period active - Passive learning mode")
+    step_record_building_sample(ctx)
 
     preserved_target = ctx.state.get("last_final_temp")
     if preserved_target is None:
@@ -1239,6 +1331,7 @@ def run_idle_route(ctx: CycleContext) -> None:
     if not step_get_sensor_data(ctx):
         return
 
+    step_record_building_sample(ctx)
     step_determine_prediction_indoor(ctx)
 
     if not step_build_features(ctx):
@@ -1295,6 +1388,7 @@ def run_heating_route(ctx: CycleContext) -> None:
     if not step_get_sensor_data(ctx):
         return
 
+    step_record_building_sample(ctx)
     step_determine_prediction_indoor(ctx)
 
     if not step_build_features(ctx):
@@ -1338,6 +1432,7 @@ def run_cooling_route(ctx: CycleContext) -> None:
     if not step_get_sensor_data(ctx):
         return
 
+    step_record_building_sample(ctx)
     step_apply_cooling_target(ctx)
     step_determine_prediction_indoor(ctx)
 

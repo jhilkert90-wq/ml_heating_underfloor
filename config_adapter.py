@@ -341,6 +341,60 @@ def convert_addon_to_env(config):
         'BUILDING_CURVE_POLY_DEGREE': str(
             config.get('building_curve_poly_degree', 4)
         ),
+        'BUILDING_BALANCE_METHOD': str(
+            config.get('building_balance_method', 'measured_with_fallback')
+        ),
+        'BUILDING_BALANCE_WINDOW_HOURS': str(
+            config.get('building_balance_window_hours', 24)
+        ),
+        'BUILDING_BALANCE_MIN_PROVISIONAL_HOURS': str(
+            config.get('building_balance_min_provisional_hours', 6.0)
+        ),
+        'BUILDING_BALANCE_FULL_COVERAGE_FRACTION': str(
+            config.get('building_balance_full_coverage_fraction', 0.9)
+        ),
+        'BUILDING_BALANCE_MAX_INTERVAL_MINUTES': str(
+            config.get('building_balance_max_interval_minutes', 30)
+        ),
+        'BUILDING_BALANCE_STORAGE_ENABLED': str(
+            config.get('building_balance_storage_enabled', True)
+        ).lower(),
+        'BUILDING_BALANCE_CAPACITY_MODE': str(
+            config.get('building_balance_capacity_mode', 'model')
+        ),
+        'BUILDING_BALANCE_ROOM_CAPACITY_KWH_PER_K': str(
+            config.get('building_balance_room_capacity_kwh_per_k', 5.0)
+        ),
+        'BUILDING_BALANCE_SLAB_CAPACITY_KWH_PER_K': str(
+            config.get('building_balance_slab_capacity_kwh_per_k', 4.0)
+        ),
+        'BUILDING_BALANCE_DHW_INTERVALS': str(
+            config.get('building_balance_dhw_intervals', 'zero_floor_power')
+        ),
+        'BUILDING_BALANCE_HVAC_OFF_MIN_SAMPLES': str(
+            config.get('building_balance_hvac_off_min_samples', 3)
+        ),
+        'BUILDING_BALANCE_HVAC_OFF_MIN_WINDOW_HOURS': str(
+            config.get('building_balance_hvac_off_min_window_hours', 2.0)
+        ),
+        'BUILDING_BALANCE_HVAC_OFF_MAX_GAP_MINUTES': str(
+            config.get('building_balance_hvac_off_max_gap_minutes', 60)
+        ),
+        'BUILDING_BALANCE_HVAC_OFF_MAX_INDOOR_DRIFT_60M': str(
+            config.get('building_balance_hvac_off_max_indoor_drift_60m', 0.25)
+        ),
+        'BUILDING_BALANCE_HVAC_OFF_MAX_HVAC_POWER_KW': str(
+            config.get('building_balance_hvac_off_max_hvac_power_kw', 0.1)
+        ),
+        'BUILDING_BALANCE_HVAC_OFF_MAX_FLOW_RATE': str(
+            config.get('building_balance_hvac_off_max_flow_rate', 0.1)
+        ),
+        'BUILDING_BALANCE_HVAC_OFF_MAX_GAIN_KW': str(
+            config.get('building_balance_hvac_off_max_gain_kw', 5.0)
+        ),
+        'BUILDING_BALANCE_HVAC_OFF_MAX_SPREAD_K': str(
+            config.get('building_balance_hvac_off_max_spread_k', 2.0)
+        ),
 
         # --- Thermal Power Gate Thresholds ---
         'HEATING_MIN_THERMAL_POWER_KW': str(
