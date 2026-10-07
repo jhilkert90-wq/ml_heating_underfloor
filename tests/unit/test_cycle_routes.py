@@ -547,6 +547,49 @@ class TestRunBlockingRoute:
 class TestRunIdleRoute:
     """Test idle route handler."""
 
+    @pytest.mark.parametrize(
+        ("mode", "thermal_power"),
+        [("heating", 0.8), ("cooling", -0.8)],
+    )
+    def test_continues_active_mode_control_while_heat_pump_runs(
+        self, mode, thermal_power, monkeypatch
+    ):
+        ctx = _make_ctx()
+        ctx.wrapper.last_active_climate_mode = mode
+        ctx.wrapper._heating_state_manager = ctx.wrapper.state_manager
+        ctx.features_dict = {}
+        monkeypatch.setattr(cycle_routes, "step_get_sensor_data", lambda _ctx: True)
+        monkeypatch.setattr(
+            cycle_routes, "step_determine_prediction_indoor", lambda _ctx: None
+        )
+
+        def build_features(_ctx):
+            _ctx.features_dict = {
+                "thermal_power_kw": thermal_power,
+                "delta_t": 1.0 if mode == "heating" else -1.0,
+                "inlet_temp": 28.0,
+                "outlet_temp": 32.0 if mode == "heating" else 20.0,
+            }
+            return True
+
+        monkeypatch.setattr(cycle_routes, "step_build_features", build_features)
+        continue_control = MagicMock()
+        monkeypatch.setattr(
+            cycle_routes, "_run_active_control_steps", continue_control
+        )
+        monkeypatch.setattr(
+            cycle_routes, "step_publish_building_curves", MagicMock()
+        )
+        monkeypatch.setattr(cycle_routes, "step_publish_features", MagicMock())
+        monkeypatch.setattr(cycle_routes, "step_record_building_sample", MagicMock())
+        monkeypatch.setattr(cycle_routes, "step_apply_cooling_target", MagicMock())
+
+        run_idle_route(ctx)
+
+        assert ctx.climate_mode == mode
+        ctx.wrapper.set_climate_mode.assert_called_once_with(mode)
+        continue_control.assert_called_once_with(ctx)
+
     @patch("src.cycle_routes.step_build_features")
     @patch("src.cycle_routes.step_publish_features")
     @patch("src.cycle_routes.step_determine_prediction_indoor")
