@@ -1351,6 +1351,7 @@ def run_idle_route(ctx: CycleContext) -> None:
     active_mode = getattr(ctx.wrapper, "last_active_climate_mode", "heating")
     if active_mode not in ("heating", "cooling"):
         active_mode = "heating"
+    heating_target = ctx.target_indoor_temp
     ctx.climate_mode = active_mode
 
     step_record_building_sample(ctx)
@@ -1360,6 +1361,7 @@ def run_idle_route(ctx: CycleContext) -> None:
 
     if not step_build_features(ctx):
         ctx.climate_mode = "heating"
+        ctx.target_indoor_temp = heating_target
         step_publish_building_curves(ctx)
         return
 
@@ -1375,12 +1377,10 @@ def run_idle_route(ctx: CycleContext) -> None:
             "current_indoor": ctx.actual_indoor,
         }
     )
-    step_publish_building_curves(
-        ctx, allow_balance_observation=not heat_pump_active
-    )
-    step_publish_features(ctx)
 
     if heat_pump_active:
+        step_publish_building_curves(ctx)
+        step_publish_features(ctx)
         ctx.wrapper.set_climate_mode(active_mode)
         ctx.state_manager = ctx.wrapper.state_manager
         if (
@@ -1398,6 +1398,14 @@ def run_idle_route(ctx: CycleContext) -> None:
 
     # Preserve the normal idle semantics once the heat pump has stopped.
     ctx.climate_mode = "heating"
+    if active_mode == "cooling":
+        ctx.target_indoor_temp = heating_target
+        step_determine_prediction_indoor(ctx)
+        if not step_build_features(ctx):
+            step_publish_building_curves(ctx)
+            return
+    step_publish_building_curves(ctx, allow_balance_observation=True)
+    step_publish_features(ctx)
 
     # Dynamic trajectory / price still calculated for feature completeness.
     # NOTE: step_dynamic_trajectory mutates config.TRAJECTORY_STEPS and

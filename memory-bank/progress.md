@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## PR #91 Review Fix — 2026-10-07
+
+**Status:** COMPLETED — stopped-pump idle cycles rebuild cooling-origin data as heating before persistence.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Preserve the original heating target while using the last active mode to identify residual heat-pump activity. If a cooling-mode pump has stopped, reset to heating and rebuild features before publishing and saving to the heating state. Active-pump shutdown control remains mode-specific. The focused idle-route tests pass (6).
+
+---
+
 ## HVAC-Off Reference Flow Filter Removal — 2026-10-07
 
 **Status:** COMPLETED — removed the configurable maximum-flow gate and retained a symmetric absolute thermal-power check.

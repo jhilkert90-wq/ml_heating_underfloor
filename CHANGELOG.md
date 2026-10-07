@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Continue calculating and updating the mode-specific outlet target after climate mode turns idle, until heat-pump operation stops
+- Rebuild idle features with the heating target and mode before saving after a cooling shutdown
 
 ## [0.2.0] - 2026-02-10
 

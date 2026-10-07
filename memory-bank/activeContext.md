@@ -1,5 +1,21 @@
 # Active Context - Current Work & Decision State
 
+### PR #91 Review Fix — 2026-10-07
+
+#### **What changed**
+- Preserved the heating target through idle-mode activity detection and rebuilt features in heating mode when the prior cooling-mode heat pump had stopped.
+- Kept active-pump shutdown control and its per-mode state persistence unchanged.
+- Added regression coverage for the cooling-to-heating idle transition.
+
+#### **Why**
+- Cooling-target features must not be saved into the heating state and fed to heating online learning after the pump stops.
+
+#### **Files modified**
+- `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### HVAC-Off Reference Flow Filter Removal — 2026-10-07
 
 #### **What changed**
