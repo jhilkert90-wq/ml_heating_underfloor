@@ -1,5 +1,14 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.89] - 2026-10-07
+
+### Changed
+- Removed maximum water-flow as a criterion for the HVAC-off balance reference; it now relies on the absolute estimated thermal power threshold
+
+### Fixed
+- Continue calculating and updating the mode-specific outlet target after climate mode turns idle, until heat-pump operation stops
+- Rebuild idle features with the heating target and mode before saving after a cooling shutdown
+
 ## [0.2.88] - 2026-10-06
 
 ### Added
