@@ -1,5 +1,21 @@
 # Active Context - Current Work & Decision State
 
+### Outlet Control During Heat-Pump Shutdown — 2026-10-07
+
+#### **What changed**
+- `src/cycle_routes.py` now detects residual heat-pump operation during idle using the last active mode and measured thermal power, loop ΔT, and outlet/inlet temperatures.
+- While operation continues, the idle route runs the same mode-specific prediction and setpoint pipeline as heating/cooling, using the corresponding model and state file. It returns to normal idle processing when the pump stops.
+- `tests/unit/test_cycle_routes.py` covers both heating and cooling shutdown transitions.
+
+#### **Why**
+- The climate mode can report idle before the heat pump has stopped. Continuing outlet-temperature calculations through this interval avoids freezing the requested setpoint during shutdown.
+
+#### **Files modified**
+- `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Measured and Modelled Balance Point, Dashboard Settings — 2026-10-06
 
 #### **What changed**

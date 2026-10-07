@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Outlet Control During Heat-Pump Shutdown — 2026-10-07
+
+**Status:** COMPLETED — idle cycles keep mode-specific outlet-temperature control active while measured heat-pump operation continues.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Idle dispatch detects ongoing heating/cooling from signed thermal power, loop ΔT, and outlet/inlet temperatures. While the pump remains active, it runs the last active mode's prediction/setpoint pipeline and persists to that mode's state file; normal idle behavior resumes once operation stops. Regression tests cover both heating and cooling transitions.
+
+---
+
 ## Measured and Modelled Balance Point, Dashboard Settings — 2026-10-06
 
 **Status:** COMPLETED — balance point from a rolling window with a measured energy balance next to the modelled value; all balance parameters are dashboard settings.

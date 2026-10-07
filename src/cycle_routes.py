@@ -1340,14 +1340,15 @@ def _run_active_control_steps(ctx: CycleContext) -> None:
 
 
 def run_idle_route(ctx: CycleContext) -> None:
-    """IDLE state: system not active.
+    """Handle idle cycles and continue control during an active HP shutdown.
 
     Full feature calculation and state saving so that:
     - Online learning (pre-dispatch) has valid last_run_features next cycle
     - The heating observation buffer still resolves labels
-    - Control continues through the heat-pump shutdown transition
+    - Outlet control continues until the heat pump actually stops
 
-    State is saved to the heating unified thermal state file.
+    Normal idle state is saved to the heating state file; a residual active
+    cycle uses the last active mode's state file.
     """
     if not step_get_sensor_data(ctx):
         return
