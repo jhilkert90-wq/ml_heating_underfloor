@@ -1,5 +1,54 @@
 # Active Context - Current Work & Decision State
 
+### PR #91 Review Fix — 2026-10-07
+
+#### **What changed**
+- Preserved the heating target through idle-mode activity detection and rebuilt features in heating mode when the prior cooling-mode heat pump had stopped.
+- Kept active-pump shutdown control and its per-mode state persistence unchanged.
+- Added regression coverage for the cooling-to-heating idle transition.
+
+#### **Why**
+- Cooling-target features must not be saved into the heating state and fed to heating online learning after the pump stops.
+
+#### **Files modified**
+- `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### HVAC-Off Reference Flow Filter Removal — 2026-10-07
+
+#### **What changed**
+- Removed `building_balance_hvac_off_max_flow_rate` from the add-on config defaults/schema and English/German translations, plus its adapter mapping and runtime config.
+- Removed flow-rate gating and flow-specific exported attributes from the stable HVAC-off balance estimator.
+- Kept HVAC activity rejection based on `abs(thermal_power_kw)` and added regression tests for positive/negative power and large flow with unavailable flow status.
+
+#### **Why**
+- Water flow alone should not reject an HVAC-off sample when the estimated thermal power indicates the heat pump is off.
+
+#### **Files modified**
+- `src/building_gain_window.py`, `src/building_curve.py`, `src/config.py`, `src/cycle_routes.py`, `config_adapter.py`, add-on config and translations
+- Tests: `test_building_curve.py`, `test_cycle_routes.py`, `test_dashboard_settings.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### Outlet Control During Heat-Pump Shutdown — 2026-10-07
+
+#### **What changed**
+- `src/cycle_routes.py` now detects residual heat-pump operation during idle using the last active mode and measured thermal power, loop ΔT, and outlet/inlet temperatures.
+- While operation continues, the idle route runs the same mode-specific prediction and setpoint pipeline as heating/cooling, using the corresponding model and state file. It returns to normal idle processing when the pump stops.
+- `tests/unit/test_cycle_routes.py` covers both heating and cooling shutdown transitions.
+
+#### **Why**
+- The climate mode can report idle before the heat pump has stopped. Continuing outlet-temperature calculations through this interval avoids freezing the requested setpoint during shutdown.
+
+#### **Files modified**
+- `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Measured and Modelled Balance Point, Dashboard Settings — 2026-10-06
 
 #### **What changed**

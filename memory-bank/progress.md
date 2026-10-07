@@ -1,5 +1,35 @@
 # ML Heating System - Current Progress
 
+## PR #91 Review Fix — 2026-10-07
+
+**Status:** COMPLETED — stopped-pump idle cycles rebuild cooling-origin data as heating before persistence.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Preserve the original heating target while using the last active mode to identify residual heat-pump activity. If a cooling-mode pump has stopped, reset to heating and rebuild features before publishing and saving to the heating state. Active-pump shutdown control remains mode-specific. The focused idle-route tests pass (6).
+
+---
+
+## HVAC-Off Reference Flow Filter Removal — 2026-10-07
+
+**Status:** COMPLETED — removed the configurable maximum-flow gate and retained a symmetric absolute thermal-power check.
+
+**Files changed:** `src/building_gain_window.py`, `src/building_curve.py`, `src/config.py`, `src/cycle_routes.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `tests/unit/test_building_curve.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Removed the HVAC-off maximum flow option from add-on defaults/schema/translations, environment mapping, estimator settings and exported attributes. HVAC-off sampling no longer requires or filters on flow-rate data; thermal power is still compared by absolute magnitude, so high positive and negative power both invalidate the sample. Added regression coverage for nonzero flow with unavailable flow status and both power signs.
+
+---
+
+## Outlet Control During Heat-Pump Shutdown — 2026-10-07
+
+**Status:** COMPLETED — idle cycles keep mode-specific outlet-temperature control active while measured heat-pump operation continues.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Idle dispatch detects ongoing heating/cooling from signed thermal power, loop ΔT, and outlet/inlet temperatures. While the pump remains active, it runs the last active mode's prediction/setpoint pipeline and persists to that mode's state file; normal idle behavior resumes once operation stops. Regression tests cover both heating and cooling transitions.
+
+---
+
 ## Measured and Modelled Balance Point, Dashboard Settings — 2026-10-06
 
 **Status:** COMPLETED — balance point from a rolling window with a measured energy balance next to the modelled value; all balance parameters are dashboard settings.

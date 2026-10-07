@@ -23,11 +23,12 @@ from .building_curve import BuildingCurvePublisher
 from .building_gain_window import BalanceSettings, BuildingGainWindow
 from .cycle_context import CycleContext
 from .ha_client import get_sensor_attributes
+from .heat_source_channels import _is_heat_pump_active
 from .heating_controller import SensorDataManager
 from .model_wrapper import simplified_outlet_prediction
 from .physics_features import build_physics_features
 from .shadow_mode import get_shadow_output_entity_id
-from .state_manager import save_state
+from .state_manager import load_state, save_state
 from .temperature_control import apply_ema_smoothing
 from .thermal_constants import PhysicsConstants
 
@@ -842,7 +843,6 @@ def step_publish_building_curves(
             else None
         )
         if allow_balance_observation and isinstance(ctx.features_dict, dict):
-            flow_rate = ctx.features_dict.get("flow_rate")
             indoor_drift = ctx.features_dict.get("indoor_temp_delta_60m")
             thermal_power = ctx.features_dict.get("thermal_power_kw")
             observation_mode = getattr(
@@ -856,10 +856,6 @@ def step_publish_building_curves(
                 "outdoor_temp": ctx.outdoor_temp,
                 "indoor_temp_delta_60m": indoor_drift,
                 "thermal_power_kw": thermal_power,
-                "flow_rate": flow_rate,
-                "flow_rate_available": ctx.features_dict.get(
-                    "flow_rate_available", False
-                ),
                 "inlet_temp_available": ctx.features_dict.get(
                     "inlet_temp_available", False
                 ),
@@ -1318,26 +1314,96 @@ def run_grace_period_route(ctx: CycleContext) -> None:
     )
 
 
+def _run_active_control_steps(ctx: CycleContext) -> None:
+    """Run the prediction and setpoint pipeline for the selected climate mode."""
+    step_dynamic_trajectory(ctx)
+    if ctx.climate_mode == "cooling":
+        step_pre_cooling(ctx)
+    else:
+        step_heating_obs_buffer(ctx)
+
+    step_prediction(ctx)
+    step_gradual_control(ctx)
+    step_ema_smoothing(ctx)
+    step_setpoint_hold(ctx)
+    step_update_ha(ctx)
+    step_log_metrics(ctx)
+    step_update_ml_state_sensor(ctx)
+    step_shadow_comparison(ctx)
+    step_save_state(ctx)
+    step_publish_auxiliary_sensors(ctx)
+
+
 def run_idle_route(ctx: CycleContext) -> None:
-    """IDLE state: system not active.
+    """Handle idle cycles and continue control during an active HP shutdown.
 
     Full feature calculation and state saving so that:
     - Online learning (pre-dispatch) has valid last_run_features next cycle
     - The heating observation buffer still resolves labels
-    - Thermal model keeps learning even when HP is off
+    - Outlet control continues until the heat pump actually stops
 
-    State is saved to the heating unified thermal state file.
+    Normal idle state is saved to the heating state file; a residual active
+    cycle uses the last active mode's state file.
     """
     if not step_get_sensor_data(ctx):
         return
 
+    active_mode = getattr(ctx.wrapper, "last_active_climate_mode", "heating")
+    if active_mode not in ("heating", "cooling"):
+        active_mode = "heating"
+    heating_target = ctx.target_indoor_temp
+    ctx.climate_mode = active_mode
+
     step_record_building_sample(ctx)
+    if active_mode == "cooling":
+        step_apply_cooling_target(ctx)
     step_determine_prediction_indoor(ctx)
 
     if not step_build_features(ctx):
+        ctx.climate_mode = "heating"
+        ctx.target_indoor_temp = heating_target
         step_publish_building_curves(ctx)
         return
 
+    heat_pump_active = _is_heat_pump_active(
+        {
+            "climate_mode": active_mode,
+            "thermal_power": ctx.features_dict.get("thermal_power_kw"),
+            "delta_t": ctx.features_dict.get("delta_t"),
+            "outlet_temp": ctx.features_dict.get(
+                "outlet_temp", ctx.actual_outlet_temp
+            ),
+            "inlet_temp": ctx.features_dict.get("inlet_temp"),
+            "current_indoor": ctx.actual_indoor,
+        }
+    )
+
+    if heat_pump_active:
+        step_publish_building_curves(ctx)
+        step_publish_features(ctx)
+        ctx.wrapper.set_climate_mode(active_mode)
+        ctx.state_manager = ctx.wrapper.state_manager
+        if (
+            ctx.state_manager is not None
+            and ctx.state_manager
+            is not getattr(ctx.wrapper, "_heating_state_manager", None)
+        ):
+            ctx.state = load_state(state_manager=ctx.state_manager)
+        logging.info(
+            "IDLE climate state with heat pump still active; continuing %s outlet control",
+            active_mode,
+        )
+        _run_active_control_steps(ctx)
+        return
+
+    # Preserve the normal idle semantics once the heat pump has stopped.
+    ctx.climate_mode = "heating"
+    if active_mode == "cooling":
+        ctx.target_indoor_temp = heating_target
+        step_determine_prediction_indoor(ctx)
+        if not step_build_features(ctx):
+            step_publish_building_curves(ctx)
+            return
     step_publish_building_curves(ctx, allow_balance_observation=True)
     step_publish_features(ctx)
 
@@ -1394,18 +1460,7 @@ def run_heating_route(ctx: CycleContext) -> None:
     if not step_build_features(ctx):
         return
 
-    step_dynamic_trajectory(ctx)
-    step_heating_obs_buffer(ctx)
-    step_prediction(ctx)
-    step_gradual_control(ctx)
-    step_ema_smoothing(ctx)
-    step_setpoint_hold(ctx)
-    step_update_ha(ctx)
-    step_log_metrics(ctx)
-    step_update_ml_state_sensor(ctx)
-    step_shadow_comparison(ctx)
-    step_save_state(ctx)
-    step_publish_auxiliary_sensors(ctx)
+    _run_active_control_steps(ctx)
 
 
 def run_cooling_route(ctx: CycleContext) -> None:
@@ -1439,15 +1494,4 @@ def run_cooling_route(ctx: CycleContext) -> None:
     if not step_build_features(ctx):
         return
 
-    step_dynamic_trajectory(ctx)
-    step_pre_cooling(ctx)
-    step_prediction(ctx)
-    step_gradual_control(ctx)
-    step_ema_smoothing(ctx)
-    step_setpoint_hold(ctx)
-    step_update_ha(ctx)
-    step_log_metrics(ctx)
-    step_update_ml_state_sensor(ctx)
-    step_shadow_comparison(ctx)
-    step_save_state(ctx)
-    step_publish_auxiliary_sensors(ctx)
+    _run_active_control_steps(ctx)

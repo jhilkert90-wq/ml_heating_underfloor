@@ -149,7 +149,8 @@ def test_publisher_exports_balance_estimate_after_stable_idle_samples():
         "outdoor_temp": 10.0,
         "indoor_temp_delta_60m": 0.1,
         "thermal_power_kw": 0.0,
-        "flow_rate": 0.0,
+        "flow_rate": 3.0,
+        "flow_rate_available": False,
     }
 
     for now in (1000.0, 4600.0, 8200.0):
@@ -175,7 +176,7 @@ def test_publisher_exports_balance_estimate_after_stable_idle_samples():
     assert attributes["heating_balance_hvac_off_min_window_minutes"] == 120
     assert attributes["heating_balance_hvac_off_max_indoor_drift_60m"] == 0.25
     assert attributes["heating_balance_hvac_off_max_hvac_power_kw"] == 0.1
-    assert attributes["heating_balance_hvac_off_max_flow_rate"] == 0.1
+    assert "heating_balance_hvac_off_max_flow_rate" not in attributes
     assert attributes["heating_balance_hvac_off_max_inferred_gains_kw"] == 5.0
     assert attributes["heating_balance_hvac_off_max_uncertainty_k"] == 2.0
     assert attributes["cooling_balance_hvac_off_outdoor_temp"] is None
@@ -400,14 +401,18 @@ def test_hvac_off_thresholds_follow_the_settings():
         "heat_loss_coefficient": 0.2,
         "indoor_temp_delta_60m": 0.1,
         "thermal_power_kw": 0.0,
-        "flow_rate": 0.0,
     }
 
     estimator.observe(now=0, **common)
     estimate = estimator.observe(now=1800, **common)
+    estimator.observe(
+        now=3600,
+        **{**common, "thermal_power_kw": -0.5},
+    )
 
     assert estimate["sample_count"] == 2
     assert estimate["gain_kw"] == pytest.approx(2.4)
+    assert estimator.get_estimate("heating", now=3600) is None
 
 
 def test_publisher_uses_both_mode_parameters_and_signs_both():
@@ -498,7 +503,6 @@ def test_balance_estimator_requires_stable_hvac_off_observations():
         "heat_loss_coefficient": 0.2,
         "indoor_temp_delta_60m": 0.1,
         "thermal_power_kw": 0.0,
-        "flow_rate": 0.0,
     }
 
     assert estimator.observe(now=0, **common) is None
@@ -532,23 +536,27 @@ def test_balance_estimator_resets_after_unstable_observation_and_long_gap():
         "heat_loss_coefficient": 0.2,
         "indoor_temp_delta_60m": 0.1,
         "thermal_power_kw": 0.0,
-        "flow_rate": 0.0,
     }
 
     estimator.observe(now=0, **common)
     assert estimator.observe(
         now=1800, **{**common, "thermal_power_kw": 0.5}
     ) is None
-    assert estimator.observe(now=3600, **common) is None
+    assert estimator.observe(
+        now=3600,
+        **{**common, "thermal_power_kw": -0.5},
+    ) is None
+    assert estimator.get_estimate("heating", now=7200) is None
     assert estimator.observe(now=7200, **common) is None
-    assert estimator.observe(now=10800, **common) is not None
+    assert estimator.observe(now=10800, **common) is None
+    assert estimator.observe(now=14400, **common) is not None
 
-    assert estimator.observe(now=14401, **common) is None
     assert estimator.observe(now=18001, **common) is None
-    assert estimator.observe(now=21601, **common) is not None
+    assert estimator.observe(now=21601, **common) is None
+    assert estimator.observe(now=25201, **common) is not None
 
 
-def test_balance_estimator_clears_samples_when_sensor_or_history_unavailable():
+def test_balance_estimator_does_not_require_flow_rate_for_hvac_off_samples():
     estimator = bc.BalancePointEstimator()
     common = {
         "mode": "cooling",
@@ -557,13 +565,10 @@ def test_balance_estimator_clears_samples_when_sensor_or_history_unavailable():
         "heat_loss_coefficient": 0.4,
         "indoor_temp_delta_60m": 0.0,
         "thermal_power_kw": 0.0,
-        "flow_rate": 0.0,
     }
     estimator.observe(now=0, **common)
-    assert estimator.observe(
-        now=3600, **common, flow_rate_available=False
-    ) is None
-    assert estimator.get_estimate("cooling", now=7200) is None
+    assert estimator.observe(now=3600, **common) is None
+    assert estimator.observe(now=7200, **common) is not None
 
 
 def test_balance_estimator_ignores_duplicate_and_out_of_order_timestamps():
@@ -575,7 +580,6 @@ def test_balance_estimator_ignores_duplicate_and_out_of_order_timestamps():
         "heat_loss_coefficient": 0.2,
         "indoor_temp_delta_60m": 0.1,
         "thermal_power_kw": 0.0,
-        "flow_rate": 0.0,
     }
 
     for now in (0, 3600, 7200):
@@ -599,7 +603,6 @@ def test_balance_estimator_uses_mode_specific_heat_loss_coefficient():
             heat_loss_coefficient=0.4,
             indoor_temp_delta_60m=0.0,
             thermal_power_kw=0.0,
-            flow_rate=0.0,
             now=now,
         )
 
@@ -620,7 +623,6 @@ def test_balance_estimator_rejects_variable_gain_conditions():
             heat_loss_coefficient=0.2,
             indoor_temp_delta_60m=0.0,
             thermal_power_kw=0.0,
-            flow_rate=0.0,
             now=now,
         )
 

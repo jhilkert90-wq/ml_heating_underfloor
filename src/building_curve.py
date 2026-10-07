@@ -115,9 +115,7 @@ class BalancePointEstimator:
         heat_loss_coefficient: float,
         indoor_temp_delta_60m: float,
         thermal_power_kw: float,
-        flow_rate: float,
         now: float,
-        flow_rate_available: bool = True,
         inlet_temp_available: bool = True,
         indoor_history_available: bool = True,
     ) -> Optional[Dict[str, Any]]:
@@ -125,14 +123,13 @@ class BalancePointEstimator:
         if mode not in self._samples:
             return None
         if not (
-            flow_rate_available
-            and inlet_temp_available
+            inlet_temp_available
             and indoor_history_available
         ):
             self.clear(mode)
             return None
         try:
-            indoor, outdoor, hlc, drift, power, flow, timestamp = (
+            indoor, outdoor, hlc, drift, power, timestamp = (
                 float(value)
                 for value in (
                     indoor_temp,
@@ -140,7 +137,6 @@ class BalancePointEstimator:
                     heat_loss_coefficient,
                     indoor_temp_delta_60m,
                     thermal_power_kw,
-                    flow_rate,
                     now,
                 )
             )
@@ -149,7 +145,7 @@ class BalancePointEstimator:
             return None
         if not all(
             math.isfinite(value)
-            for value in (indoor, outdoor, hlc, drift, power, flow, timestamp)
+            for value in (indoor, outdoor, hlc, drift, power, timestamp)
         ):
             self.clear(mode)
             return None
@@ -158,7 +154,6 @@ class BalancePointEstimator:
             hlc <= 0
             or abs(drift) > settings.hvac_off_max_indoor_drift_60m
             or abs(power) > settings.hvac_off_max_hvac_power_kw
-            or abs(flow) > settings.hvac_off_max_flow_rate
         ):
             self.clear(mode)
             return None
@@ -505,9 +500,6 @@ def compute_curves(
         kw_attrs[f"{mode}_balance_hvac_off_max_hvac_power_kw"] = (
             settings.hvac_off_max_hvac_power_kw
         )
-        kw_attrs[f"{mode}_balance_hvac_off_max_flow_rate"] = (
-            settings.hvac_off_max_flow_rate
-        )
         kw_attrs[f"{mode}_balance_hvac_off_max_inferred_gains_kw"] = (
             settings.hvac_off_max_gain_kw
         )
@@ -677,11 +669,7 @@ class BuildingCurvePublisher:
                         "indoor_temp_delta_60m"
                     ),
                     thermal_power_kw=observation.get("thermal_power_kw"),
-                    flow_rate=observation.get("flow_rate"),
                     now=now,
-                    flow_rate_available=observation.get(
-                        "flow_rate_available", True
-                    ),
                     inlet_temp_available=observation.get(
                         "inlet_temp_available", True
                     ),

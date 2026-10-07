@@ -386,9 +386,6 @@ def convert_addon_to_env(config):
         'BUILDING_BALANCE_HVAC_OFF_MAX_HVAC_POWER_KW': str(
             config.get('building_balance_hvac_off_max_hvac_power_kw', 0.1)
         ),
-        'BUILDING_BALANCE_HVAC_OFF_MAX_FLOW_RATE': str(
-            config.get('building_balance_hvac_off_max_flow_rate', 0.1)
-        ),
         'BUILDING_BALANCE_HVAC_OFF_MAX_GAIN_KW': str(
             config.get('building_balance_hvac_off_max_gain_kw', 5.0)
         ),

@@ -70,7 +70,6 @@ class BalanceSettings:
     hvac_off_max_gap_minutes: float = 60.0
     hvac_off_max_indoor_drift_60m: float = 0.25
     hvac_off_max_hvac_power_kw: float = 0.1
-    hvac_off_max_flow_rate: float = 0.1
     hvac_off_max_gain_kw: float = 5.0
     hvac_off_max_spread_k: float = 2.0
 
@@ -171,13 +170,6 @@ class BalanceSettings:
                 defaults.hvac_off_max_hvac_power_kw,
                 0,
                 2,
-            ),
-            hvac_off_max_flow_rate=_number(
-                cfg,
-                prefix + "HVAC_OFF_MAX_FLOW_RATE",
-                defaults.hvac_off_max_flow_rate,
-                0,
-                5,
             ),
             hvac_off_max_gain_kw=_number(
                 cfg,

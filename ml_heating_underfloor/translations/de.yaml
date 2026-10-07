@@ -793,9 +793,6 @@ configuration:
   building_balance_hvac_off_max_hvac_power_kw:
     name: '[Balance] HVAC-aus-Referenz: Maximale thermische Leistung (kW)'
     description: 'Referenzschätzung: Stichproben mit größerer hydraulischer Leistung gelten als HVAC aktiv. Standard: 0.1.'
-  building_balance_hvac_off_max_flow_rate:
-    name: '[Balance] HVAC-aus-Referenz: Maximaler Durchfluss (l/min)'
-    description: 'Referenzschätzung: Stichproben mit größerem Durchfluss gelten als HVAC aktiv. Standard: 0.1.'
   building_balance_hvac_off_max_gain_kw:
     name: '[Balance] HVAC-aus-Referenz: Maximaler abgeleiteter Gewinn (kW)'
     description: 'Referenzschätzung: Unplausibel große abgeleitete Gewinne werden verworfen. Standard: 5.0.'
