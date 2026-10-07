@@ -843,7 +843,6 @@ def step_publish_building_curves(
             else None
         )
         if allow_balance_observation and isinstance(ctx.features_dict, dict):
-            flow_rate = ctx.features_dict.get("flow_rate")
             indoor_drift = ctx.features_dict.get("indoor_temp_delta_60m")
             thermal_power = ctx.features_dict.get("thermal_power_kw")
             observation_mode = getattr(
@@ -857,10 +856,6 @@ def step_publish_building_curves(
                 "outdoor_temp": ctx.outdoor_temp,
                 "indoor_temp_delta_60m": indoor_drift,
                 "thermal_power_kw": thermal_power,
-                "flow_rate": flow_rate,
-                "flow_rate_available": ctx.features_dict.get(
-                    "flow_rate_available", False
-                ),
                 "inlet_temp_available": ctx.features_dict.get(
                     "inlet_temp_available", False
                 ),

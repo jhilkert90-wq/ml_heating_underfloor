@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## HVAC-Off Reference Flow Filter Removal — 2026-10-07
+
+**Status:** COMPLETED — removed the configurable maximum-flow gate and retained a symmetric absolute thermal-power check.
+
+**Files changed:** `src/building_gain_window.py`, `src/building_curve.py`, `src/config.py`, `src/cycle_routes.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `tests/unit/test_building_curve.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Removed the HVAC-off maximum flow option from add-on defaults/schema/translations, environment mapping, estimator settings and exported attributes. HVAC-off sampling no longer requires or filters on flow-rate data; thermal power is still compared by absolute magnitude, so high positive and negative power both invalidate the sample. Added regression coverage for nonzero flow with unavailable flow status and both power signs.
+
+---
+
 ## Outlet Control During Heat-Pump Shutdown — 2026-10-07
 
 **Status:** COMPLETED — idle cycles keep mode-specific outlet-temperature control active while measured heat-pump operation continues.

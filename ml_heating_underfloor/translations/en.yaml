@@ -876,9 +876,6 @@ configuration:
   building_balance_hvac_off_max_hvac_power_kw:
     name: '[Balance] HVAC-Off Reference: Maximum Thermal Power (kW)'
     description: 'Reference estimate: samples with a larger absolute hydronic thermal power are treated as HVAC active. Default: 0.1.'
-  building_balance_hvac_off_max_flow_rate:
-    name: '[Balance] HVAC-Off Reference: Maximum Flow (l/min)'
-    description: 'Reference estimate: samples with a larger water flow are treated as HVAC active. Default: 0.1.'
   building_balance_hvac_off_max_gain_kw:
     name: '[Balance] HVAC-Off Reference: Maximum Inferred Gain (kW)'
     description: 'Reference estimate: implausibly large inferred gains are rejected. Default: 5.0.'

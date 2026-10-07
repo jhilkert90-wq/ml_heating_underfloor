@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Removed maximum water-flow as a criterion for the HVAC-off balance reference; it now relies on the absolute estimated thermal power threshold
+
 ### Fixed
 - Continue calculating and updating the mode-specific outlet target after climate mode turns idle, until heat-pump operation stops
 

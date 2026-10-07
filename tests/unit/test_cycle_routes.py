@@ -136,7 +136,7 @@ class TestStepPublishBuildingCurves:
 
     @patch("src.cycle_routes._BUILDING_CURVE_PUBLISHER.publish")
     @patch("src.cycle_routes.config")
-    def test_balance_observation_uses_existing_feature_flow_rate(
+    def test_balance_observation_does_not_use_flow_rate_as_hvac_off_gate(
         self, mock_config, mock_publish
     ):
         mock_config.BUILDING_CURVE_ENABLED = True
@@ -163,7 +163,8 @@ class TestStepPublishBuildingCurves:
         step_publish_building_curves(ctx, allow_balance_observation=True)
 
         observation = mock_publish.call_args.kwargs["balance_observation"]
-        assert observation["flow_rate"] == 0.0
+        assert "flow_rate" not in observation
+        assert "flow_rate_available" not in observation
         assert all(
             call.args[0] != "sensor.flow_rate"
             for call in ctx.ha_client.get_state.call_args_list

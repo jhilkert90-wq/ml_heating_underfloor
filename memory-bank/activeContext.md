@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### HVAC-Off Reference Flow Filter Removal — 2026-10-07
+
+#### **What changed**
+- Removed `building_balance_hvac_off_max_flow_rate` from the add-on config defaults/schema and English/German translations, plus its adapter mapping and runtime config.
+- Removed flow-rate gating and flow-specific exported attributes from the stable HVAC-off balance estimator.
+- Kept HVAC activity rejection based on `abs(thermal_power_kw)` and added regression tests for positive/negative power and large flow with unavailable flow status.
+
+#### **Why**
+- Water flow alone should not reject an HVAC-off sample when the estimated thermal power indicates the heat pump is off.
+
+#### **Files modified**
+- `src/building_gain_window.py`, `src/building_curve.py`, `src/config.py`, `src/cycle_routes.py`, `config_adapter.py`, add-on config and translations
+- Tests: `test_building_curve.py`, `test_cycle_routes.py`, `test_dashboard_settings.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Outlet Control During Heat-Pump Shutdown — 2026-10-07
 
 #### **What changed**

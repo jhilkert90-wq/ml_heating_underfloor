@@ -527,7 +527,6 @@ options:
   building_balance_hvac_off_max_gap_minutes: 60
   building_balance_hvac_off_max_indoor_drift_60m: 0.25
   building_balance_hvac_off_max_hvac_power_kw: 0.1
-  building_balance_hvac_off_max_flow_rate: 0.1
   building_balance_hvac_off_max_gain_kw: 5.0
   building_balance_hvac_off_max_spread_k: 2.0
 
@@ -950,7 +949,6 @@ schema:
   building_balance_hvac_off_max_gap_minutes: "int(10,240)"
   building_balance_hvac_off_max_indoor_drift_60m: "float(0.05,2.0)"
   building_balance_hvac_off_max_hvac_power_kw: "float(0.0,2.0)"
-  building_balance_hvac_off_max_flow_rate: "float(0.0,5.0)"
   building_balance_hvac_off_max_gain_kw: "float(0.5,20.0)"
   building_balance_hvac_off_max_spread_k: "float(0.5,10.0)"
   # Thermal Power Gate Thresholds
