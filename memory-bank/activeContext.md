@@ -1,5 +1,21 @@
 # Active Context - Current Work & Decision State
 
+### Fireplace Review Feedback — 2026-10-11
+
+#### **What changed**
+- Reset the fireplace channel's learning history when the sensor transitions off, preventing separate sessions from sharing a differential window.
+- Included the fireplace channel's 20× effective gradient learning rate in update telemetry.
+- Added regression tests for session boundaries and the reported rate.
+
+#### **Why**
+- The fireplace channel may not receive records while off, so its history cannot establish continuity across sessions by itself. Persisted update events also need to reflect the learning rate actually used for fireplace gradient updates.
+
+#### **Files modified**
+- `src/heat_source_channels.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_solar_transition.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Earlier Fireplace Differential Learning — 2026-10-11
 
 #### **What changed**

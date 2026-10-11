@@ -315,7 +315,8 @@ class HeatSourceChannel(ABC):
             "record_type": "channel_update",
             "channel": self.name,
             "error": error,
-            "learning_rate": _get_channel_learning_rate(),
+            "learning_rate": _get_channel_learning_rate()
+            * getattr(self, "LEARNING_RATE_MULTIPLIER", 1.0),
             "parameters_before": parameters_before,
             "parameters_after": parameters_after,
             "changes": changes,
@@ -1195,6 +1196,8 @@ class HeatSourceChannelOrchestrator:
             self._fireplace_was_on = True
             self._fireplace_off_cycle_count = 0
         elif self._fireplace_was_on:
+            if self._fireplace_off_cycle_count == 0 and fp_channel:
+                fp_channel.history.clear()
             self._fireplace_off_cycle_count += 1
             if self._fireplace_off_cycle_count > fp_decay_window_cycles:
                 self._fireplace_was_on = False

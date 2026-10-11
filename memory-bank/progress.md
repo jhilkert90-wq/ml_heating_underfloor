@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ Fireplace Review Feedback — 2026-10-11
+
+**Status:** COMPLETED — fireplace learning windows and update-rate telemetry now match the applied behavior.
+
+**Files changed:** `src/heat_source_channels.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_solar_transition.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Clear fireplace observations at the first off transition so later sessions cannot reuse stale differential samples. Report the fireplace gradient's effective learning rate (shared rate × 20) in update events. Added regression coverage for both review findings.
+
+---
+
 ## ✅ Earlier Fireplace Differential Learning — 2026-10-11
 
 **Status:** COMPLETED — fireplace output learning now responds from a 0.5 K living-room differential.

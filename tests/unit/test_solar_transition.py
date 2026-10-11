@@ -466,6 +466,17 @@ class TestFireplaceIndependentLearning:
             "Fireplace channel should self-learn through orchestrator"
         )
 
+    def test_fireplace_update_reports_effective_learning_rate(self, monkeypatch):
+        monkeypatch.setattr(config, "RECENT_ERRORS_WINDOW", 1)
+        monkeypatch.setattr(config, "ADAPTIVE_LEARNING_RATE", 0.01)
+        channel = FireplaceChannel()
+
+        event = channel.record_learning(
+            error=1.0, context=_make_context(fireplace_on=1)
+        )
+
+        assert event["learning_rate"] == pytest.approx(0.2)
+
     def test_fireplace_learns_from_temperature_differential(self):
         """A clear living room excess must lift a too-low fp output."""
         ch = FireplaceChannel()
