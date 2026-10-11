@@ -42,6 +42,10 @@ def _trajectory_has_undershoot(
     target_indoor: float,
     tolerance: float,
 ) -> bool:
+    """Return whether trajectory reaches the inclusive undershoot boundary.
+
+    An empty trajectory is not an undershoot.
+    """
     return bool(trajectory_temps) and (
         min(trajectory_temps) <= target_indoor - tolerance
     )
