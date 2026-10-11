@@ -37,6 +37,16 @@ from src.pv_trajectory import get_forecast_trajectory_state
 _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C = 0.1
 
 
+def _trajectory_has_undershoot(
+    trajectory_temps: list[float],
+    target_indoor: float,
+    tolerance: float,
+) -> bool:
+    return bool(trajectory_temps) and (
+        min(trajectory_temps) <= target_indoor - tolerance
+    )
+
+
 # Singleton pattern to prevent multiple model instantiation
 _enhanced_model_wrapper_instance = None
 
@@ -2008,7 +2018,11 @@ class EnhancedModelWrapper:
                     # future. During expensive electricity, tighten to catch
                     # overshoot earlier and reduce outlet.
                     temp_boundary_violation = (
-                        min_temp <= target_indoor - sensor_precision_tolerance
+                        _trajectory_has_undershoot(
+                            trajectory_temps,
+                            target_indoor,
+                            sensor_precision_tolerance,
+                        )
                         or max_temp >= target_indoor + future_overshoot_tolerance
                     )
 
@@ -2028,17 +2042,21 @@ class EnhancedModelWrapper:
                 else:
                     # Immediate overshoot detected - enforce strict boundaries
                     temp_boundary_violation = (
-                        min_temp <= target_indoor - sensor_precision_tolerance
+                        _trajectory_has_undershoot(
+                            trajectory_temps,
+                            target_indoor,
+                            sensor_precision_tolerance,
+                        )
                         or max_temp >= target_indoor + sensor_precision_tolerance
                     )
             else:
                 temp_boundary_violation = False
 
             if _skip_forecast_overshoot_correction:
-                predicted_undershoot = bool(trajectory_temps) and (
-                    # Match the inclusive boundary used by correction logic.
-                    min(trajectory_temps)
-                    <= target_indoor - sensor_precision_tolerance
+                predicted_undershoot = _trajectory_has_undershoot(
+                    trajectory_temps,
+                    target_indoor,
+                    sensor_precision_tolerance,
                 )
                 if not predicted_undershoot:
                     logging.debug(
@@ -2069,8 +2087,11 @@ class EnhancedModelWrapper:
                     # tolerance (±0.3°C instead of ±0.1°C)
                     if reaches_target_at <= 0.5:  # Very fast achievement
                         relaxed_boundary_violation = (
-                            min_temp
-                            <= target_indoor - sensor_precision_tolerance
+                            _trajectory_has_undershoot(
+                                trajectory_temps,
+                                target_indoor,
+                                sensor_precision_tolerance,
+                            )
                             or max_temp >= target_indoor + 0.3  # Relaxed overshoot only
                         )
                         if not relaxed_boundary_violation:
