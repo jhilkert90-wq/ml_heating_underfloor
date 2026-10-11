@@ -307,7 +307,7 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
             config.PV_TRAJ_RESCUE_MIN_HOURS = 1
             self.wrapper._current_features["pv_now_electrical"] = 4000.0
         self.assertEqual(result, 35.0)
-        self.wrapper.thermal_model.predict_thermal_trajectory.assert_not_called()
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
         self.wrapper._calculate_physics_based_correction.assert_not_called()
 
     def test_default_flag_value_is_false(self):
@@ -337,7 +337,7 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
             config.PV_TRAJ_MIN_STEPS = 2
             config.TRAJECTORY_STEPS = 4
         self.assertEqual(result, 35.0)
-        self.wrapper.thermal_model.predict_thermal_trajectory.assert_not_called()
+        self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
         self.wrapper._calculate_physics_based_correction.assert_not_called()
 
     def test_min_steps_boundary_reenables_correction_path(self):
