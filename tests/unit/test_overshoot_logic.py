@@ -7,7 +7,10 @@ import os
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-from src.model_wrapper import EnhancedModelWrapper as ModelWrapper
+from src.model_wrapper import (
+    EnhancedModelWrapper as ModelWrapper,
+    _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C,
+)
 from src import config
 
 class TestOvershootLogic(unittest.TestCase):
@@ -191,11 +194,11 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
         }
         self.wrapper._calculate_physics_based_correction = MagicMock(return_value=32.0)
 
-    def _call(self, outlet_temp=35.0):
+    def _call(self, outlet_temp=35.0, target_indoor=21.5):
         return self.wrapper._verify_trajectory_and_correct(
             outlet_temp=outlet_temp,
             current_indoor=21.0,
-            target_indoor=21.5,
+            target_indoor=target_indoor,
             outdoor_temp=8.6,
             thermal_features={"pv_power": 0, "fireplace_on": 0, "tv_on": 0},
         )
@@ -235,18 +238,49 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
         """The inclusive correction boundary is treated as an undershoot."""
         config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
         config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        target_indoor = 21.5
+        boundary_temp = (
+            target_indoor - _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C
+        )
         self.wrapper.thermal_model.predict_thermal_trajectory.return_value = {
-            "trajectory": [21.4, 21.4, 21.4, 21.4],
+            "trajectory": [boundary_temp] * 4,
             "times": [0.5, 1.0, 1.5, 2.0],
             "reaches_target_at": None,
         }
         try:
-            result = self._call(outlet_temp=35.0)
+            result = self._call(
+                outlet_temp=35.0,
+                target_indoor=target_indoor,
+            )
         finally:
             config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
             config.PV_TRAJ_FORECAST_MODE_ENABLED = False
         self.assertEqual(result, 32.0)
         self.wrapper._calculate_physics_based_correction.assert_called_once()
+
+    def test_forecast_mode_skips_undershoot_just_above_tolerance(self):
+        """A near-target trajectory above the inclusive boundary stays skipped."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        target_indoor = 21.5
+        just_above_boundary = (
+            target_indoor - _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C + 0.01
+        )
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = {
+            "trajectory": [just_above_boundary] * 4,
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        try:
+            result = self._call(
+                outlet_temp=35.0,
+                target_indoor=target_indoor,
+            )
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+        self.assertEqual(result, 35.0)
+        self.wrapper._calculate_physics_based_correction.assert_not_called()
 
     def test_forecast_mode_skips_when_trajectory_is_empty(self):
         """An empty trajectory has no predicted undershoot to correct."""

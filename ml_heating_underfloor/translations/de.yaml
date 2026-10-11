@@ -1019,10 +1019,10 @@ configuration:
       the trajectory active during gradual PV decline (e.g. late afternoon). Set higher
       (e.g. 2–4) for stricter rescue that only fires during brief dips.'
   pv_traj_disable_overshoot_correction:
-    name: '[Erweitert] Overshoot-Korrektur im Prognosemodus deaktivieren'
+    name: '[Erweitert] Korrektur bei Überschwingen im Prognosemodus deaktivieren'
     description: 'Wenn aktiviert, wird die Korrektur bei Überschwingen übersprungen,
       solange die PV-Prognose-Trajektorie aktiv ist und trajectory_steps über
-      pv_traj_min_steps liegt. Vorhergesagtes Unterschreiten wird weiterhin korrigiert.
+      pv_traj_min_steps liegt. Vorhergesagte Unterschreitungen der Zieltemperatur werden weiterhin korrigiert.
       Bei der Mindesthorizontlänge wird die Überschwingkorrektur wieder aktiviert.
       Standard: false.'
   outlet_smoothing_alpha:

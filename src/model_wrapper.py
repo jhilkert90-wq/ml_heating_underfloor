@@ -34,6 +34,8 @@ from src.shadow_mode import resolve_shadow_mode
 from src.heat_source_channels import _is_heat_pump_active
 from src.pv_trajectory import get_forecast_trajectory_state
 
+_TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C = 0.1
+
 
 # Singleton pattern to prevent multiple model instantiation
 _enhanced_model_wrapper_instance = None
@@ -1914,7 +1916,9 @@ class EnhancedModelWrapper:
             # sub-step timing.
             cycle_hours = config.CYCLE_INTERVAL_MINUTES / 60.0
             tolerance_hours = cycle_hours * 2  # 2 extra time steps
-            sensor_precision_tolerance = 0.1  # °C — must match binary search convergence tolerance
+            sensor_precision_tolerance = (
+                _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C
+            )
 
             # Price-aware future overshoot threshold.  During expensive
             # electricity periods a tighter limit catches overshoot earlier,
