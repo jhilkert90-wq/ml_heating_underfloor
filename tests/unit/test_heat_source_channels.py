@@ -516,7 +516,7 @@ def test_load_channel_state_clamps_out_of_range_fireplace_heat():
         {"fireplace": {"parameters": {"fp_heat_output_kw": 0.171567}}}
     )
 
-    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(0.5)
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(1.5)
 
 
 def test_load_channel_state_ignores_corrupt_fireplace_output_and_continues():

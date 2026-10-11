@@ -65,7 +65,7 @@ class ThermalParameterConfig:
         'pv_heat_weight': (0.00001, 0.005),       # kW/W
         'fireplace_heat_weight': (0.01, 6.0),    # kW
         'tv_heat_weight': (0.05, 1.5),           # kW
-        'fp_heat_output_kw': (0.5, 15.0),        # kW
+        'fp_heat_output_kw': (1.5, 15.0),        # kW
         'fp_decay_time_constant': (0.1, 5.0),    # hours
         'room_spread_delay_minutes': (0.0, 180.0),  # minutes
         'adaptive_learning_rate': (0.001, 0.1),
@@ -176,7 +176,7 @@ class ThermalParameterConfig:
         'pv_heat_weight': (0.00001, 0.005),
         'fireplace_heat_weight': (0.01, 6.0),
         'tv_heat_weight': (0.05, 1.5),
-        'fp_heat_output_kw': (0.5, 15.0),
+        'fp_heat_output_kw': (1.5, 15.0),
         'fp_decay_time_constant': (0.1, 5.0),
         'room_spread_delay_minutes': (0.0, 180.0),
         'adaptive_learning_rate': (0.001, 0.1),

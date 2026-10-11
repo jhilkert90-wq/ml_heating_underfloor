@@ -1,5 +1,19 @@
 # Active Context - Current Work & Decision State
 
+### Fireplace Channel Learning — 2026-10-11
+
+#### **What changed**
+- `FireplaceChannel` now learns from the living room vs. other rooms differential and uses an amplified gradient step; `fp_heat_output_kw` lower bound is 1.5 kW.
+
+#### **Why**
+- Logs showed `fp_heat_output_kw` stuck at 0.50 kW with ~0.0002 kW steps per cycle because prediction errors are ~0.01 K.
+
+#### **Files modified**
+- `src/heat_source_channels.py`, `src/thermal_config.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_solar_transition.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Forecast-Mode Undershoot Correction — 2026-10-11
 
 #### **What changed**
