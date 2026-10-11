@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Fireplace channel learning**: `fp_heat_output_kw` lower bound raised from 0.5 to 1.5 kW, the error-gradient step is amplified for the fireplace channel, and the living room vs. other rooms temperature differential now drives `fp_heat_output_kw` directly during fireplace sessions so it no longer stalls at the lower bound.
+- Lower the fireplace room-differential learning threshold from 1.0 K to 0.5 K so learning can respond earlier during a session.
 
 ## [0.2.0] - 2026-02-10
 

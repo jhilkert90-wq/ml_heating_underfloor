@@ -734,7 +734,7 @@ class FireplaceChannel(HeatSourceChannel):
     # Differential signal: kW of fireplace output per K of living room
     # excess over the other rooms (same ratio as the legacy learner).
     DIFFERENTIAL_KW_PER_K = 2.0
-    DIFFERENTIAL_MIN_K = 1.0
+    DIFFERENTIAL_MIN_K = 0.5
     DIFFERENTIAL_BLEND = 0.05
     DIFFERENTIAL_MAX_STEP_KW = 0.5
 

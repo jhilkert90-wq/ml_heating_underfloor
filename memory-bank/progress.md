@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ Earlier Fireplace Differential Learning — 2026-10-11
+
+**Status:** COMPLETED — fireplace output learning now responds from a 0.5 K living-room differential.
+
+**Files changed:** `src/heat_source_channels.py`, `tests/unit/test_solar_transition.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Lowered the differential trigger from 1.0 K to 0.5 K. The fireplace sensor still establishes whether the channel is active; the temperature differential only gates this additional learning signal. Added coverage for the threshold and a value just below it.
+
+---
+
 ## ✅ Faster Fireplace Channel Learning — 2026-10-11
 
 **Status:** COMPLETED — fireplace channel output converges using the living room differential and a higher lower bound.

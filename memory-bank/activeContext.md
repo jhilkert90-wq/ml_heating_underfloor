@@ -1,5 +1,20 @@
 # Active Context - Current Work & Decision State
 
+### Earlier Fireplace Differential Learning — 2026-10-11
+
+#### **What changed**
+- Lowered `FireplaceChannel.DIFFERENTIAL_MIN_K` from 1.0 K to 0.5 K.
+- Added tests for learning at 0.5 K and skipping below the threshold.
+
+#### **Why**
+- The fireplace sensor starts the session; the room differential is a separate learning signal. A 0.5 K threshold lets it act earlier given the observed peak differential of about 1.1 K.
+
+#### **Files modified**
+- `src/heat_source_channels.py`, `tests/unit/test_solar_transition.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Fireplace Channel Learning — 2026-10-11
 
 #### **What changed**

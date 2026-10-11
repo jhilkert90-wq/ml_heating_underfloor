@@ -477,11 +477,21 @@ class TestFireplaceIndependentLearning:
             ch.record_learning(error=0.001, context=ctx)
         assert ch.fp_heat_output_kw > 3.0
 
-    def test_fireplace_ignores_small_differential(self):
+    def test_fireplace_learns_at_reduced_differential_threshold(self):
+        ch = FireplaceChannel()
+        ch.fp_heat_output_kw = 3.0
+        ctx = _make_context(fireplace_on=1)
+        ctx["living_room_temp"] = 20.5
+        ctx["avg_other_rooms_temp"] = 20.0
+        for _ in range(_get_min_records_for_learning() * 2):
+            ch.record_learning(error=0.001, context=ctx)
+        assert ch.fp_heat_output_kw < 3.0
+
+    def test_fireplace_ignores_differential_below_reduced_threshold(self):
         ch = FireplaceChannel()
         original_kw = ch.fp_heat_output_kw
         ctx = _make_context(fireplace_on=1)
-        ctx["living_room_temp"] = 20.5
+        ctx["living_room_temp"] = 20.49
         ctx["avg_other_rooms_temp"] = 20.0
         for _ in range(_get_min_records_for_learning() * 2):
             ch.record_learning(error=0.001, context=ctx)
