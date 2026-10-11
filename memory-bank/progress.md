@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ Preserve Undershoot Correction in Forecast Mode — 2026-10-11
+
+**Status:** COMPLETED — forecast-mode overshoot suppression now allows correction when the predicted trajectory undershoots the target.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_overshoot_logic.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `docs/PARAMETER_REFERENCE.md`, `CHANGELOG.md`, `ml_heating_underfloor/CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Deferred the forecast-mode correction guard until after trajectory prediction. The option continues suppressing corrections when there is no meaningful undershoot, while predicted undershoots continue through the existing correction path. Added regression coverage for both cases and clarified the option documentation.
+
+---
+
 ## PR #91 Review Fix — 2026-10-07
 
 **Status:** COMPLETED — stopped-pump idle cycles rebuild cooling-origin data as heating before persistence.

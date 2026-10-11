@@ -655,10 +655,10 @@ options:
   # scaling is active, including rescue-driven activation. This replaces the
   # standard PV surplus cheap offset while forecast mode is active.
   pv_traj_heating_target_offset: 0.2
-  # When true, disable overshoot/undershoot outlet correction only while
-  # forecast-driven trajectory scaling is active and trajectory_steps is above
-  # pv_traj_min_steps. At trajectory_steps == pv_traj_min_steps, correction is
-  # re-enabled. Default: false (correction remains active).
+  # When true, suppress overshoot outlet correction while forecast-driven
+  # trajectory scaling is active and trajectory_steps is above pv_traj_min_steps.
+  # Predicted undershoots are still corrected to protect comfort. At the minimum
+  # horizon, overshoot correction is re-enabled. Default: false.
   pv_traj_disable_overshoot_correction: false
 
   # === Outlet Smoothing ===
