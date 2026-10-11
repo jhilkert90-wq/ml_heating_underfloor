@@ -1,5 +1,15 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.91] - 2026-10-11
+
+### Changed
+- **Fireplace channel learning**: `fp_heat_output_kw` lower bound raised from 0.5 to 1.5 kW, the error-gradient step is amplified for the fireplace channel, and the living room vs. other rooms temperature differential now drives `fp_heat_output_kw` directly during fireplace sessions so it no longer stalls at the lower bound.
+- Lower the fireplace room-differential learning threshold from 1.0 K to 0.5 K so learning can respond earlier during a session.
+
+### Fixed
+- Reset fireplace learning history when the sensor turns off, preventing differential learning from combining separate fireplace sessions.
+- Report the fireplace channel's effective learning rate in persisted parameter-update telemetry.
+
 ## [0.2.90] - 2026-10-11
 
 ### Fixed
