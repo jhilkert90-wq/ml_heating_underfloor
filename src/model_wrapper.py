@@ -1821,11 +1821,9 @@ class EnhancedModelWrapper:
                     or [thermal_features.get("pv_power", 0.0)]
                 )
 
-            # Guard: when forecast-driven trajectory scaling is active, the
-            # user has opted to suppress corrections, and the dynamic horizon
-            # is still above the minimum floor, return outlet temperature
-            # unchanged. At the minimum horizon floor, correction is re-enabled
-            # to preserve comfort protection near/after sunset.
+            # Forecast-mode correction suppression only applies to trajectories
+            # without a meaningful undershoot; undershoot correction remains
+            # available to protect comfort while the dynamic horizon is active.
             _forecast_features = features or getattr(
                 self,
                 "_current_features",
@@ -1834,17 +1832,11 @@ class EnhancedModelWrapper:
             _forecast_state = self._get_forecast_trajectory_state_from_features(
                 _forecast_features
             )
-            if (
+            _skip_forecast_overshoot_correction = (
                 getattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", False)
                 and _forecast_state.active
                 and _forecast_state.dynamic_steps_above_min
-            ):
-                logging.debug(
-                    "⏭️ Skipping overshoot/undershoot correction: "
-                    "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION=true and "
-                    "forecast trajectory active and dynamic steps > minimum"
-                )
-                return outlet_temp
+            )
 
             fireplace_on = thermal_features.get("fireplace_on", 0.0)
             fireplace_power_kw, fp_decay_kw = self._calculate_fireplace_power_kw(
@@ -2037,6 +2029,20 @@ class EnhancedModelWrapper:
                     )
             else:
                 temp_boundary_violation = False
+
+            if _skip_forecast_overshoot_correction:
+                predicted_undershoot = bool(trajectory_temps) and (
+                    min(trajectory_temps)
+                    <= target_indoor - sensor_precision_tolerance
+                )
+                if not predicted_undershoot:
+                    logging.debug(
+                        "⏭️ Skipping overshoot correction: "
+                        "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION=true and "
+                        "forecast trajectory active and dynamic steps > "
+                        "minimum; no undershoot predicted"
+                    )
+                    return outlet_temp
 
             # Enhanced logic: If target reached quickly, be more lenient with
             # boundary violations. Use tolerance to allow reaching target
