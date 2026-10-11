@@ -1107,12 +1107,11 @@ configuration:
       trajectory scaling is active, including rescue-driven activation. This replaces
       the standard PV surplus cheap offset while forecast mode is active. Default: 0.2°C.'
   pv_traj_disable_overshoot_correction:
-    name: '[Advanced] Disable Overshoot/Undershoot Correction in Forecast Mode'
-    description: 'When enabled, the overshoot and undershoot outlet-temperature correction
-      is skipped only while forecast-driven trajectory scaling is active and trajectory_steps
-      is above pv_traj_min_steps. At trajectory_steps == pv_traj_min_steps, correction
-      is re-enabled. Disable with caution: leaving correction active is the safer
-      default. Default: false.'
+    name: '[Advanced] Disable Overshoot Correction in Forecast Mode'
+    description: 'When enabled, overshoot correction is skipped while forecast-driven
+      trajectory scaling is active and trajectory_steps is above pv_traj_min_steps.
+      Predicted undershoots are still corrected to protect comfort. Overshoot correction
+      is re-enabled at the minimum horizon. Default: false.'
   outlet_smoothing_alpha:
     name: '[Advanced] Outlet Smoothing Alpha (EMA factor)'
     description: 'Exponential moving average smoothing factor for the outlet temperature

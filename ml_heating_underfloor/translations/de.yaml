@@ -1019,12 +1019,12 @@ configuration:
       the trajectory active during gradual PV decline (e.g. late afternoon). Set higher
       (e.g. 2–4) for stricter rescue that only fires during brief dips.'
   pv_traj_disable_overshoot_correction:
-    name: '[Erweitert] Disable Overshoot/Undershoot Correction in Prognose Modus'
-    description: 'When enabled, the overshoot and undershoot outlet-temperature correction
-      is skipped only while forecast-driven trajectory scaling is active and trajectory_steps
-      is above pv_traj_min_steps. At trajectory_steps == pv_traj_min_steps, correction
-      is re-enabled. Disable with caution: leaving correction active is the safer
-      default. Default: false.'
+    name: '[Erweitert] Overshoot-Korrektur im Prognosemodus deaktivieren'
+    description: 'Wenn aktiviert, wird die Korrektur bei Überschwingen übersprungen,
+      solange die PV-Prognose-Trajektorie aktiv ist und trajectory_steps über
+      pv_traj_min_steps liegt. Vorhergesagtes Unterschreiten wird weiterhin korrigiert.
+      Bei der Mindesthorizontlänge wird die Überschwingkorrektur wieder aktiviert.
+      Standard: false.'
   outlet_smoothing_alpha:
     name: '[Erweitert] Vorlauf Smoothing Alpha (EMA factor)'
     description: 'Exponential moving average smoothing factor for the outlet temperature

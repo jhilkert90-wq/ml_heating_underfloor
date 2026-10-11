@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### Forecast-Mode Undershoot Correction — 2026-10-11
+
+#### **What changed**
+- Forecast-mode correction suppression now checks the predicted trajectory before deciding to skip. It suppresses correction only when no meaningful undershoot is predicted.
+- Added tests that ensure forecast mode still skips non-undershoot correction cases and permits correction for a predicted undershoot.
+- Updated option help, translation strings, parameter reference, and changelogs to clarify that the setting suppresses overshoot correction only.
+
+#### **Why**
+- The previous early return skipped both overshoot and undershoot correction, so a falling indoor temperature below target could not receive comfort correction while the PV-driven horizon was active.
+
+#### **Files modified**
+- `src/model_wrapper.py`, `tests/unit/test_overshoot_logic.py`
+- Add-on configuration, translations, `docs/PARAMETER_REFERENCE.md`, and changelogs
+- `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### PR #91 Review Fix — 2026-10-07
 
 #### **What changed**
