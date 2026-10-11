@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.90] - 2026-10-11
+
+### Fixed
+- Forecast-mode overshoot suppression no longer blocks correction when the predicted trajectory undershoots the indoor target
+
 ## [Unreleased]
 
 ### Fixed
