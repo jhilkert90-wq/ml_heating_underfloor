@@ -231,6 +231,40 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
         self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
         self.wrapper._calculate_physics_based_correction.assert_called_once()
 
+    def test_forecast_mode_corrects_undershoot_at_tolerance_boundary(self):
+        """The inclusive correction boundary is treated as an undershoot."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = {
+            "trajectory": [21.4, 21.4, 21.4, 21.4],
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        try:
+            result = self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+        self.assertEqual(result, 32.0)
+        self.wrapper._calculate_physics_based_correction.assert_called_once()
+
+    def test_forecast_mode_skips_when_trajectory_is_empty(self):
+        """An empty trajectory has no predicted undershoot to correct."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = {
+            "trajectory": [],
+            "times": [],
+            "reaches_target_at": None,
+        }
+        try:
+            result = self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+        self.assertEqual(result, 35.0)
+        self.wrapper._calculate_physics_based_correction.assert_not_called()
+
     def test_flag_true_forecast_mode_false_does_not_skip(self):
         """When disable flag is true but forecast mode is off, correction still runs."""
         config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True

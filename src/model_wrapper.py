@@ -2032,6 +2032,7 @@ class EnhancedModelWrapper:
 
             if _skip_forecast_overshoot_correction:
                 predicted_undershoot = bool(trajectory_temps) and (
+                    # Match the inclusive boundary used by correction logic.
                     min(trajectory_temps)
                     <= target_indoor - sensor_precision_tolerance
                 )
