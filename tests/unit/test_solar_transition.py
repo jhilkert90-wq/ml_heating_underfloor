@@ -466,8 +466,60 @@ class TestFireplaceIndependentLearning:
             "Fireplace channel should self-learn through orchestrator"
         )
 
+    def test_fireplace_update_reports_effective_learning_rate(self, monkeypatch):
+        monkeypatch.setattr(config, "RECENT_ERRORS_WINDOW", 1)
+        monkeypatch.setattr(config, "ADAPTIVE_LEARNING_RATE", 0.01)
+        channel = FireplaceChannel()
+
+        event = channel.record_learning(
+            error=1.0, context=_make_context(fireplace_on=1)
+        )
+
+        assert event["learning_rate"] == pytest.approx(0.2)
+
+    def test_fireplace_learns_from_temperature_differential(self):
+        """A clear living room excess must lift a too-low fp output."""
+        ch = FireplaceChannel()
+        ch.fp_heat_output_kw = 1.5
+        ctx = _make_context(fireplace_on=1)
+        ctx["living_room_temp"] = 24.0
+        ctx["avg_other_rooms_temp"] = 20.0
+        for _ in range(_get_min_records_for_learning() * 3):
+            ch.record_learning(error=0.001, context=ctx)
+        assert ch.fp_heat_output_kw > 3.0
+
+    def test_fireplace_learns_at_reduced_differential_threshold(self):
+        ch = FireplaceChannel()
+        ch.fp_heat_output_kw = 3.0
+        ctx = _make_context(fireplace_on=1)
+        ctx["living_room_temp"] = 20.5
+        ctx["avg_other_rooms_temp"] = 20.0
+        for _ in range(_get_min_records_for_learning() * 2):
+            ch.record_learning(error=0.001, context=ctx)
+        assert ch.fp_heat_output_kw < 3.0
+
+    def test_fireplace_ignores_differential_below_reduced_threshold(self):
+        ch = FireplaceChannel()
+        original_kw = ch.fp_heat_output_kw
+        ctx = _make_context(fireplace_on=1)
+        ctx["living_room_temp"] = 20.49
+        ctx["avg_other_rooms_temp"] = 20.0
+        for _ in range(_get_min_records_for_learning() * 2):
+            ch.record_learning(error=0.001, context=ctx)
+        assert ch.fp_heat_output_kw == original_kw
+
+    def test_fireplace_differential_skipped_without_room_temps(self):
+        ch = FireplaceChannel()
+        original_kw = ch.fp_heat_output_kw
+        ctx = _make_context(fireplace_on=1)
+        ctx["living_room_temp"] = None
+        ctx["avg_other_rooms_temp"] = 20.0
+        for _ in range(_get_min_records_for_learning() * 2):
+            ch.record_learning(error=0.001, context=ctx)
+        assert ch.fp_heat_output_kw == original_kw
+
     def test_fireplace_params_bounded(self):
-        """fp_heat_output_kw must stay within [0.5, 15.0]."""
+        """fp_heat_output_kw must stay within [1.5, 15.0]."""
         ch = FireplaceChannel()
         ctx = _make_context(fireplace_on=1)
         # Push hard with many large positive errors
@@ -477,7 +529,7 @@ class TestFireplaceIndependentLearning:
         # Push hard negative
         for _ in range(100):
             ch.record_learning(error=-10.0, context=ctx)
-        assert ch.fp_heat_output_kw >= 0.5
+        assert ch.fp_heat_output_kw >= 1.5
 
 
 # ===================================================================

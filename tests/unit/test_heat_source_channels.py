@@ -205,6 +205,41 @@ def test_fireplace_freezes_hp_and_renormalizes_mixed_error(
     )
 
 
+def test_fireplace_learning_history_resets_after_off_transition():
+    orch = HeatSourceChannelOrchestrator()
+    fireplace = orch.channels["fireplace"]
+    initial_output = fireplace.fp_heat_output_kw
+    min_records = heat_source_channels._get_min_records_for_learning()
+    first_session = make_context(fireplace_on=1)
+    first_session.update(living_room_temp=24.0, avg_other_rooms_temp=20.0)
+
+    for _ in range(min_records - 1):
+        orch.route_learning(0.0, first_session)
+
+    off_context = make_context(fireplace_on=0)
+    orch.route_learning(0.0, off_context)
+
+    next_session = make_context(fireplace_on=1)
+    next_session.update(living_room_temp=20.0, avg_other_rooms_temp=20.0)
+    orch.route_learning(0.0, next_session)
+
+    assert len(fireplace.history) == 1
+    assert fireplace.fp_heat_output_kw == initial_output
+
+
+def test_fireplace_decay_history_accumulates_after_off_transition():
+    orch = HeatSourceChannelOrchestrator()
+    fireplace = orch.channels["fireplace"]
+
+    orch.route_learning(0.0, make_context(fireplace_on=1))
+    for _ in range(2):
+        orch.route_learning(
+            0.0, make_context(fireplace_on=0, current_indoor=23.0)
+        )
+
+    assert len(fireplace.history) == 2
+
+
 def test_no_external_source_defaults_learning_to_heat_pump():
     orch = HeatSourceChannelOrchestrator()
 
@@ -516,7 +551,7 @@ def test_load_channel_state_clamps_out_of_range_fireplace_heat():
         {"fireplace": {"parameters": {"fp_heat_output_kw": 0.171567}}}
     )
 
-    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(0.5)
+    assert orch.channels["fireplace"].fp_heat_output_kw == pytest.approx(1.5)
 
 
 def test_load_channel_state_ignores_corrupt_fireplace_output_and_continues():

@@ -1,5 +1,35 @@
 # ML Heating System - Current Progress
 
+## ✅ Fireplace Review Feedback — 2026-10-11
+
+**Status:** COMPLETED — fireplace learning windows and update-rate telemetry now match the applied behavior.
+
+**Files changed:** `src/heat_source_channels.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_solar_transition.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Clear fireplace observations at the first off transition so later sessions cannot reuse stale differential samples. Report the fireplace gradient's effective learning rate (shared rate × 20) in update events. Added regression coverage for both review findings.
+
+---
+
+## ✅ Earlier Fireplace Differential Learning — 2026-10-11
+
+**Status:** COMPLETED — fireplace output learning now responds from a 0.5 K living-room differential.
+
+**Files changed:** `src/heat_source_channels.py`, `tests/unit/test_solar_transition.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Lowered the differential trigger from 1.0 K to 0.5 K. The fireplace sensor still establishes whether the channel is active; the temperature differential only gates this additional learning signal. Added coverage for the threshold and a value just below it.
+
+---
+
+## ✅ Faster Fireplace Channel Learning — 2026-10-11
+
+**Status:** COMPLETED — fireplace channel output converges using the living room differential and a higher lower bound.
+
+**Files changed:** `src/heat_source_channels.py`, `src/thermal_config.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_solar_transition.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** `fp_heat_output_kw` bounds are now 1.5–15 kW. FireplaceChannel multiplies the shared learning rate by 20 and blends toward `2 kW/K × (living_room_temp − avg_other_rooms_temp)` (5% per cycle, max ±0.5 kW) when the fireplace was on for the whole learning window and the differential is ≥1 K. Added tests for the differential path.
+
+---
+
 ## ✅ Preserve Undershoot Correction in Forecast Mode — 2026-10-11
 
 **Status:** COMPLETED — forecast-mode overshoot suppression now allows correction when the predicted trajectory undershoots the target.

@@ -315,7 +315,8 @@ class HeatSourceChannel(ABC):
             "record_type": "channel_update",
             "channel": self.name,
             "error": error,
-            "learning_rate": _get_channel_learning_rate(),
+            "learning_rate": _get_channel_learning_rate()
+            * getattr(self, "LEARNING_RATE_MULTIPLIER", 1.0),
             "parameters_before": parameters_before,
             "parameters_after": parameters_after,
             "changes": changes,
@@ -721,7 +722,22 @@ class FireplaceChannel(HeatSourceChannel):
 
     Decay: exponential after fireplace turned off (τ ~ 30-60 min).
     Room spread: living room heat distributes to house average with delay.
+
+    Besides the prediction-error gradient, the channel uses the living
+    room vs. other-rooms temperature differential as a direct signal of
+    fireplace output, so ``fp_heat_output_kw`` converges within a few
+    sessions instead of drifting by ~0.0002 kW per cycle.
     """
+
+    # Fireplace error gradients are tiny (~0.01 K); amplify the shared
+    # channel learning rate so the output can actually move.
+    LEARNING_RATE_MULTIPLIER = 20.0
+    # Differential signal: kW of fireplace output per K of living room
+    # excess over the other rooms (same ratio as the legacy learner).
+    DIFFERENTIAL_KW_PER_K = 2.0
+    DIFFERENTIAL_MIN_K = 0.5
+    DIFFERENTIAL_BLEND = 0.05
+    DIFFERENTIAL_MAX_STEP_KW = 0.5
 
     def __init__(self):
         super().__init__("fireplace")
@@ -778,6 +794,52 @@ class FireplaceChannel(HeatSourceChannel):
                 self.fp_decay_time_constant + max(-0.1, min(0.1, delta)),
             )
 
+    def _learn_from_temperature_differential(self, recent: List[Dict]) -> None:
+        """Move ``fp_heat_output_kw`` toward the living room differential.
+
+        Uses only records where the fireplace was actually on and both the
+        living room and other-rooms temperatures are known.  Needs a
+        clear differential (>= ``DIFFERENTIAL_MIN_K``) so that noise and
+        post-off decay cycles do not move the parameter.
+        """
+        differentials: List[float] = []
+        for record in recent:
+            ctx = record.get("context", {})
+            if not _is_fireplace_active(ctx):
+                return
+            living = ctx.get("living_room_temp")
+            others = ctx.get("avg_other_rooms_temp")
+            if living is None or others is None:
+                return
+            living_f = _to_float(living, float("nan"))
+            others_f = _to_float(others, float("nan"))
+            if not (math.isfinite(living_f) and math.isfinite(others_f)):
+                return
+            differentials.append(living_f - others_f)
+
+        avg_differential = sum(differentials) / len(differentials)
+        if avg_differential < self.DIFFERENTIAL_MIN_K:
+            return
+
+        target_kw = _clip_to_parameter_bounds(
+            "fp_heat_output_kw", avg_differential * self.DIFFERENTIAL_KW_PER_K
+        )
+        delta = (target_kw - self.fp_heat_output_kw) * self.DIFFERENTIAL_BLEND
+        delta = max(
+            -self.DIFFERENTIAL_MAX_STEP_KW,
+            min(self.DIFFERENTIAL_MAX_STEP_KW, delta),
+        )
+        self.fp_heat_output_kw = self._clip_parameter(
+            "fp_heat_output_kw", self.fp_heat_output_kw + delta
+        )
+        logger.debug(
+            "🔥 FireplaceChannel differential: Δ=%.2fK → target=%.2fkW, "
+            "fp_heat_output_kw=%.2f",
+            avg_differential,
+            target_kw,
+            self.fp_heat_output_kw,
+        )
+
     def _learn_from_recent(self) -> None:
         """Independent gradient learning from fireplace-active observations.
 
@@ -791,6 +853,10 @@ class FireplaceChannel(HeatSourceChannel):
         if len(self.history) < min_records:
             return
 
+        self._learn_from_temperature_differential(
+            self.history[-min_records:]
+        )
+
         recent = self.history[-min_records:]
         avg_error = sum(r["error"] for r in recent) / len(recent)
         raw_avg = _average_recent_raw_error(self.history)
@@ -802,7 +868,10 @@ class FireplaceChannel(HeatSourceChannel):
         gradients: Dict[str, float] = {
             "fp_heat_output_kw": avg_error,
         }
-        self.apply_gradient_update(gradients, _get_channel_learning_rate())
+        self.apply_gradient_update(
+            gradients,
+            _get_channel_learning_rate() * self.LEARNING_RATE_MULTIPLIER,
+        )
         logger.debug(
             "🔥 FireplaceChannel self-learned: avg_error=%.3f, "
             "fp_heat_output_kw=%.2f",
@@ -1127,6 +1196,8 @@ class HeatSourceChannelOrchestrator:
             self._fireplace_was_on = True
             self._fireplace_off_cycle_count = 0
         elif self._fireplace_was_on:
+            if self._fireplace_off_cycle_count == 0 and fp_channel:
+                fp_channel.history.clear()
             self._fireplace_off_cycle_count += 1
             if self._fireplace_off_cycle_count > fp_decay_window_cycles:
                 self._fireplace_was_on = False

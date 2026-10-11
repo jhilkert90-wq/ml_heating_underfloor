@@ -1,5 +1,50 @@
 # Active Context - Current Work & Decision State
 
+### Fireplace Review Feedback — 2026-10-11
+
+#### **What changed**
+- Reset the fireplace channel's learning history when the sensor transitions off, preventing separate sessions from sharing a differential window.
+- Included the fireplace channel's 20× effective gradient learning rate in update telemetry.
+- Added regression tests for session boundaries and the reported rate.
+
+#### **Why**
+- The fireplace channel may not receive records while off, so its history cannot establish continuity across sessions by itself. Persisted update events also need to reflect the learning rate actually used for fireplace gradient updates.
+
+#### **Files modified**
+- `src/heat_source_channels.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_solar_transition.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### Earlier Fireplace Differential Learning — 2026-10-11
+
+#### **What changed**
+- Lowered `FireplaceChannel.DIFFERENTIAL_MIN_K` from 1.0 K to 0.5 K.
+- Added tests for learning at 0.5 K and skipping below the threshold.
+
+#### **Why**
+- The fireplace sensor starts the session; the room differential is a separate learning signal. A 0.5 K threshold lets it act earlier given the observed peak differential of about 1.1 K.
+
+#### **Files modified**
+- `src/heat_source_channels.py`, `tests/unit/test_solar_transition.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### Fireplace Channel Learning — 2026-10-11
+
+#### **What changed**
+- `FireplaceChannel` now learns from the living room vs. other rooms differential and uses an amplified gradient step; `fp_heat_output_kw` lower bound is 1.5 kW.
+
+#### **Why**
+- Logs showed `fp_heat_output_kw` stuck at 0.50 kW with ~0.0002 kW steps per cycle because prediction errors are ~0.01 K.
+
+#### **Files modified**
+- `src/heat_source_channels.py`, `src/thermal_config.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_solar_transition.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Forecast-Mode Undershoot Correction — 2026-10-11
 
 #### **What changed**
