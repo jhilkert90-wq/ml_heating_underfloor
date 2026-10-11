@@ -4,7 +4,7 @@
 
 #### **What changed**
 - Forecast-mode correction suppression now checks the predicted trajectory before deciding to skip. It suppresses correction only when no meaningful undershoot is predicted.
-- Added tests that ensure forecast mode still skips non-undershoot correction cases and permits correction for a predicted undershoot.
+- Added tests for retained overshoot suppression, clear and tolerance-boundary undershoots, and empty trajectories.
 - Updated option help, translation strings, parameter reference, and changelogs to clarify that the setting suppresses overshoot correction only.
 
 #### **Why**
