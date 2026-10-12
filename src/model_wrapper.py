@@ -1127,11 +1127,9 @@ class EnhancedModelWrapper:
             _inlet = None
         
         if self._climate_mode == "cooling":
-            # COOLING MODE: Use the full COOLING_CLAMP_MIN_ABS –
-            # COOLING_CLAMP_MAX_ABS range so the binary search can
-            # explore all physically valid outlets including those near
-            # the inlet (HP-off territory).  The post-search cooling
-            # cycle gate (RUNNING/RECOVERY) handles HP-cannot-run cases.
+            # COOLING MODE: Start from the configured cooling range. The
+            # inlet-relative upper bound below avoids candidates that can
+            # shut down the heat pump; the cycle gate handles HP-off cases.
             if outlet_min >= outlet_max:
                 logging.info(
                     "❄️ Cooling: no viable outlet range "
