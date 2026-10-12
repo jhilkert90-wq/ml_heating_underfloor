@@ -270,20 +270,17 @@ class TestModelWrapperCoolingMode:
         assert result >= config.CLAMP_MIN_ABS
         assert result <= config.CLAMP_MAX_ABS
 
-    def test_cooling_outlet_not_tightened_by_inlet_in_search(self, wrapper):
-        """Binary search does NOT tighten outlet_max by inlet.
-
-        The post-search RUNNING/RECOVERY gate handles HP-cannot-run
-        scenarios when the outlet converges near the inlet.
-        """
+    def test_cooling_outlet_search_respects_inlet_bound(self, wrapper):
+        """Binary search candidates stay within 1°C above the inlet."""
         wrapper.set_climate_mode("cooling")
-        wrapper._current_features = {
-            "inlet_temp": 22.0,
-            "delta_t": -2.3,
-        }
-        mock_trajectory = {"trajectory": [22.0], "timestamps": [""]}
+        sampled_outlets = []
+
+        def mock_trajectory(**kwargs):
+            sampled_outlets.append(kwargs["outlet_temp"])
+            return {"trajectory": [22.0], "timestamps": [""]}
+
         wrapper.thermal_model.predict_thermal_trajectory = Mock(
-            return_value=mock_trajectory
+            side_effect=mock_trajectory
         )
         wrapper.thermal_model.predict_equilibrium_temperature = Mock(
             return_value=22.0
@@ -293,10 +290,11 @@ class TestModelWrapperCoolingMode:
             target_indoor=22.0,
             outdoor_temp=30.0,
             thermal_features={"pv_power": 0.0, "fireplace_on": 0.0, "tv_on": 0.0},
+            inlet_temp=22.0,
         )
-        # Result may be above inlet − delta; the gate will handle it.
         assert result >= config.COOLING_CLAMP_MIN_ABS
-        assert result <= config.COOLING_CLAMP_MAX_ABS
+        assert sampled_outlets
+        assert max(sampled_outlets) <= 23.0
 
 
 # ── Thermal constants tests ──────────────────────────────────────────

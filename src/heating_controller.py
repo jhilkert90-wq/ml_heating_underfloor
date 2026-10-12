@@ -248,6 +248,7 @@ class BlockingStateManager:
                 float(target_indoor),
                 float(outdoor_temp),
                 thermal_features,
+                inlet_temp=features_dict.get("inlet_temp"),
             )
 
             # Apply gradual control to prevent sudden jumps (e.g. 65°C)
@@ -476,6 +477,9 @@ class BlockingStateManager:
                             float(target_indoor),
                             float(outdoor_temp),
                             thermal_features,
+                            inlet_temp=ha_client.get_state(
+                                config.INLET_TEMP_ENTITY_ID, all_states_poll
+                            ),
                         )
                         
                         # If target changed significantly, update it
