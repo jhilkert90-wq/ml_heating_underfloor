@@ -1,5 +1,11 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.92] - 2026-10-12
+
+### Fixed
+- Constrain heating and cooling outlet-search bounds to within 1°C of the inlet on the heat-pump shutdown side, and safely skip searches when no natural-range intersection exists.
+- Pass current inlet readings through every outlet-search path, clamp failed-search fallbacks to active bounds, and preserve those bounds after bisection.
+
 ## [0.2.91] - 2026-10-11
 
 ### Changed
