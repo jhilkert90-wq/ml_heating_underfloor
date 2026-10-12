@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ Outlet-Bound Review Fixes — 2026-10-12
+
+**Status:** COMPLETED — outlet searches use fresh inlet readings and remain within their active bounds on all return paths.
+
+**Files changed:** `src/model_wrapper.py`, `src/heating_controller.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `tests/unit/test_cooling_bugfixes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Pass inlet values explicitly through normal and grace-period searches, including fresh polling reads. Clamp failed-search fallbacks and post-verification corrections to the immutable active outlet bounds. Update contradictory cooling tests and add coverage for missing/stale wrapper features, invalid predictions, and non-monotonic search brackets.
+
+---
+
 ## ✅ Inlet-Relative Outlet Search Bounds — 2026-10-12
 
 **Status:** COMPLETED — heating and cooling outlet searches now respect a 1°C inlet-relative limit on the shutdown side.

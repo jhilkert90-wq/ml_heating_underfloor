@@ -1,5 +1,23 @@
 # Active Context - Current Work & Decision State
 
+### Outlet-Bound Review Fixes — 2026-10-12
+
+#### **What changed**
+- `src/model_wrapper.py`: accept the current inlet explicitly, clamp invalid-search fallbacks to the active range, and clamp post-verification results to immutable pre-bisection bounds.
+- `src/heating_controller.py`: pass inlet readings from freshly built features and each grace-period polling cycle.
+- `tests/unit/test_model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `tests/unit/test_cooling_bugfixes.py`: cover explicit/current inlets, fallback and post-search bounds, and replace contradictory cooling expectations.
+- `CHANGELOG.md`: document the fixes under `[Unreleased]`.
+
+#### **Why**
+- Direct callers could otherwise skip the inlet limit or reuse stale wrapper state. Failed predictions and mutated bisection brackets could also return temperatures outside the active inlet-limited interval.
+
+#### **Files modified**
+- `src/model_wrapper.py`, `src/heating_controller.py`
+- `tests/unit/test_model_wrapper.py`, `tests/unit/test_cooling_mode.py`, `tests/unit/test_cooling_bugfixes.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Inlet-Relative Outlet Search Bounds — 2026-10-12
 
 #### **What changed**

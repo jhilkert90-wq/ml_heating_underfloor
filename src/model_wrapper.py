@@ -35,6 +35,7 @@ from src.heat_source_channels import _is_heat_pump_active
 from src.pv_trajectory import get_forecast_trajectory_state
 
 _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C = 0.1
+_INLET_TEMP_UNSET = object()
 
 
 def _trajectory_has_undershoot(
@@ -663,6 +664,7 @@ class EnhancedModelWrapper:
                 target_adjusted,
                 outdoor_temp,
                 thermal_features,
+                inlet_temp=features.get("inlet_temp"),
             )
 
             # COOLING CYCLE GATE: Prevents HP short-cycling in cooling
@@ -1081,6 +1083,7 @@ class EnhancedModelWrapper:
         target_indoor: float,
         outdoor_temp: float,
         thermal_features: Dict,
+        inlet_temp: Any = _INLET_TEMP_UNSET,
     ) -> float:
         """
         Calculate required outlet temperature to reach target indoor temp.
@@ -1112,8 +1115,9 @@ class EnhancedModelWrapper:
         fallback_temp = config.get_fallback_outlet(self._climate_mode)
         _inlet = (
             self._current_features.get("inlet_temp")
-            if hasattr(self, "_current_features")
-            else None
+            if inlet_temp is _INLET_TEMP_UNSET
+            and hasattr(self, "_current_features")
+            else inlet_temp
         )
         try:
             _inlet = float(_inlet) if _inlet is not None else None
@@ -1173,6 +1177,9 @@ class EnhancedModelWrapper:
             )
             self._search_delta_t_floor = None
             return safe_outlet
+
+        active_outlet_min = outlet_min
+        active_outlet_max = outlet_max
 
         logging.debug(
             f"🔧 Using search bounds: outlet_min={outlet_min:.1f}°C, "
@@ -1518,7 +1525,9 @@ class EnhancedModelWrapper:
         # local sampling to handle non-monotonic/discontinuous response.
         if best_candidate is None:
             logging.warning("⚠️ Binary search found no valid candidate, using fallback")
-            return fallback_temp
+            return min(
+                active_outlet_max, max(active_outlet_min, fallback_temp)
+            )
 
         if converged_iteration is None or collapsed_search:
             base_outlet = float(best_candidate["outlet"])
@@ -1597,11 +1606,7 @@ class EnhancedModelWrapper:
         # SATURATION SAFETY CAP: When search saturates near outlet_max the model
         # couldn't find a sensible temperature. Cap at inlet + 5°C to prevent
         # runaway outlet temperatures (self-adjusting as slab warms).
-        _inlet_now = (
-            self._current_features.get("inlet_temp")
-            if hasattr(self, "_current_features")
-            else None
-        )
+        _inlet_now = _inlet
         if _inlet_now is not None and final_outlet > _inlet_now + 5.0:
             capped = _inlet_now + 5.0
             logging.warning(
@@ -1625,7 +1630,10 @@ class EnhancedModelWrapper:
                 pv_forecast=pv_forecast,
                 pv_history_for_buffer=pv_input,
             )
-            final_outlet = min(outlet_max, max(outlet_min, final_outlet))
+            final_outlet = min(
+                active_outlet_max,
+                max(active_outlet_min, final_outlet),
+            )
 
         return final_outlet
 

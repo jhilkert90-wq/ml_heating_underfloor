@@ -425,9 +425,8 @@ class TestCoolingBinarySearchBounds:
         assert low == cfg.CLAMP_MIN_ABS
         assert high == cfg.CLAMP_MAX_ABS
 
-    def test_binary_search_does_not_tighten_outlet_max_by_inlet(self):
-        """In cooling mode the binary search must NOT tighten outlet_max
-        using the inlet temperature.  The post-search gate handles that."""
+    def test_binary_search_limits_outlet_max_by_inlet(self):
+        """Cooling candidates must remain within 1°C above the inlet."""
         from src.model_wrapper import EnhancedModelWrapper
 
         wrapper = EnhancedModelWrapper()
@@ -450,28 +449,22 @@ class TestCoolingBinarySearchBounds:
 
         # Patch trajectory to return a fixed indoor prediction so the
         # search converges quickly without running real physics.
+        sampled_outlets = []
+
+        def fixed_trajectory(**kwargs):
+            sampled_outlets.append(kwargs["outlet_temp"])
+            return {"trajectory": [22.5]}
+
         with patch.object(
             wrapper.thermal_model,
             "predict_thermal_trajectory",
-            return_value={"trajectory": [22.5]},
+            side_effect=fixed_trajectory,
         ):
             outlet, metadata = wrapper.calculate_optimal_outlet_temp(features)
 
-        # The search should have used the full COOLING_CLAMP_MAX_ABS as
-        # the ceiling — NOT inlet − delta.
-        from src import config as cfg
-
-        # outlet_max is an internal variable, but we can verify that the
-        # search explored beyond inlet−delta.  With inlet=22.5 and
-        # delta=2.0, old code would cap at 20.5.  With trajectory
-        # returning exactly target (22.5), the search converges at the
-        # midpoint of the full range — which must be > 20.5 unless
-        # the gate clamps it.  The gate only clamps when in RECOVERY
-        # or when outlet > inlet−delta triggers RUNNING→RECOVERY, so
-        # the raw search result shows the unconstrained midpoint.
-        # Since prediction = target → error ≈ 0 → search converges
-        # near the first midpoint of (CLAMP_MIN, CLAMP_MAX).
         assert outlet is not None
+        assert sampled_outlets
+        assert max(sampled_outlets) <= features["inlet_temp"] + 1.0
 
 
 # ── Review-round fixes ───────────────────────────────────────────────
