@@ -1233,6 +1233,78 @@ class TestBinarySearchRobustObjectiveSelection:
             "pv_power_history": [0.0] * 18,
         }
 
+    @pytest.mark.parametrize(
+        ("mode", "inlet_temp", "expected_bound"),
+        [
+            ("heating", 24.0, 23.0),
+            ("cooling", 24.0, 25.0),
+        ],
+    )
+    def test_search_respects_mode_specific_inlet_bounds(
+        self, wrapper_instance, monkeypatch, mode, inlet_temp, expected_bound
+    ):
+        monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
+        monkeypatch.setattr(config, "CLAMP_MIN_ABS", 20.0)
+        monkeypatch.setattr(config, "CLAMP_MAX_ABS", 35.0)
+        monkeypatch.setattr(config, "COOLING_CLAMP_MIN_ABS", 18.0)
+        monkeypatch.setattr(config, "COOLING_CLAMP_MAX_ABS", 30.0)
+        wrapper_instance.set_climate_mode(mode)
+        wrapper_instance._current_features = {
+            "inlet_temp": inlet_temp,
+            "delta_t": 2.0 if mode == "heating" else -2.0,
+            "indoor_temp_delta_60m": 0.0,
+        }
+        sampled_outlets = []
+
+        def target_trajectory(**kwargs):
+            sampled_outlets.append(kwargs["outlet_temp"])
+            return {"trajectory": [23.0, 23.0], "times": [0.25, 0.5]}
+
+        monkeypatch.setattr(
+            wrapper_instance.thermal_model,
+            "predict_thermal_trajectory",
+            target_trajectory,
+        )
+
+        wrapper_instance._calculate_required_outlet_temp(
+            current_indoor=23.0,
+            target_indoor=23.0,
+            outdoor_temp=10.0,
+            thermal_features=self._base_features(),
+        )
+
+        assert expected_bound in sampled_outlets
+        if mode == "heating":
+            assert min(sampled_outlets) == expected_bound
+            assert all(outlet >= inlet_temp - 1.0 for outlet in sampled_outlets)
+        else:
+            assert max(sampled_outlets) == expected_bound
+            assert all(outlet <= inlet_temp + 1.0 for outlet in sampled_outlets)
+
+    @pytest.mark.parametrize(
+        ("mode", "inlet_temp", "expected_outlet"),
+        [("heating", 40.0, 35.0), ("cooling", 10.0, 18.0)],
+    )
+    def test_empty_inlet_limited_range_returns_nearest_natural_bound(
+        self, wrapper_instance, monkeypatch, mode, inlet_temp, expected_outlet
+    ):
+        monkeypatch.setattr(config, "CLAMP_MIN_ABS", 20.0)
+        monkeypatch.setattr(config, "CLAMP_MAX_ABS", 35.0)
+        monkeypatch.setattr(config, "COOLING_CLAMP_MIN_ABS", 18.0)
+        monkeypatch.setattr(config, "COOLING_CLAMP_MAX_ABS", 30.0)
+        wrapper_instance.set_climate_mode(mode)
+        wrapper_instance._current_features = {"inlet_temp": inlet_temp}
+
+        result = wrapper_instance._calculate_required_outlet_temp(
+            current_indoor=23.0,
+            target_indoor=23.0,
+            outdoor_temp=10.0,
+            thermal_features=self._base_features(),
+        )
+
+        assert result == expected_outlet
+        assert wrapper_instance._search_delta_t_floor is None
+
     def test_non_monotonic_search_returns_best_sampled_candidate(
         self, wrapper_instance, monkeypatch
     ):

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Constrain heating and cooling outlet-search bounds to within 1°C of the inlet on the heat-pump shutdown side, and safely skip searches when no natural-range intersection exists.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

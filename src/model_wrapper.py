@@ -1110,6 +1110,17 @@ class EnhancedModelWrapper:
         # Use mode-aware outlet bounds.
         outlet_min, outlet_max = config.get_outlet_bounds(self._climate_mode)
         fallback_temp = config.get_fallback_outlet(self._climate_mode)
+        _inlet = (
+            self._current_features.get("inlet_temp")
+            if hasattr(self, "_current_features")
+            else None
+        )
+        try:
+            _inlet = float(_inlet) if _inlet is not None else None
+        except (TypeError, ValueError):
+            _inlet = None
+        if _inlet is not None and not math.isfinite(_inlet):
+            _inlet = None
         
         if self._climate_mode == "cooling":
             # COOLING MODE: Use the full COOLING_CLAMP_MIN_ABS –
@@ -1142,8 +1153,29 @@ class EnhancedModelWrapper:
             if target_indoor - current_indoor > 0.5:
                 outlet_min = max(outlet_min, 23.0)
 
+        if _inlet is not None:
+            if self._climate_mode == "cooling":
+                outlet_max = min(outlet_max, _inlet + 1.0)
+            else:
+                outlet_min = max(outlet_min, _inlet - 1.0)
+
+        if outlet_min >= outlet_max:
+            safe_outlet = (
+                outlet_min if self._climate_mode == "cooling" else outlet_max
+            )
+            logging.warning(
+                "⚠️ No viable outlet search range in %s mode "
+                "(min=%.1f°C, max=%.1f°C, inlet=%s); using nearest natural bound",
+                self._climate_mode,
+                outlet_min,
+                outlet_max,
+                f"{_inlet:.1f}°C" if _inlet is not None else "unknown",
+            )
+            self._search_delta_t_floor = None
+            return safe_outlet
+
         logging.debug(
-            f"🔧 Using natural bounds: outlet_min={outlet_min:.1f}°C, "
+            f"🔧 Using search bounds: outlet_min={outlet_min:.1f}°C, "
             f"outlet_max={outlet_max:.1f}°C"
         )
 
@@ -1177,11 +1209,6 @@ class EnhancedModelWrapper:
 
         # Resolve delta_t for the binary search ONCE, before both the
         # pre-check and the binary-search loop, so both use the same value.
-        _inlet = (
-            self._current_features.get("inlet_temp")
-            if hasattr(self, "_current_features")
-            else None
-        )
         _dtf = (
             self._current_features.get("delta_t", 0.0)
             if hasattr(self, "_current_features")
@@ -1598,6 +1625,7 @@ class EnhancedModelWrapper:
                 pv_forecast=pv_forecast,
                 pv_history_for_buffer=pv_input,
             )
+            final_outlet = min(outlet_max, max(outlet_min, final_outlet))
 
         return final_outlet
 

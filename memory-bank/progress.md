@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ Inlet-Relative Outlet Search Bounds — 2026-10-12
+
+**Status:** COMPLETED — heating and cooling outlet searches now respect a 1°C inlet-relative limit on the shutdown side.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Bound heating candidates below the inlet to inlet − 1°C and cooling candidates above it to inlet + 1°C. If this constraint leaves no intersection with the configured natural range, skip trajectory search and return its nearest natural-range boundary. Clamp any post-search trajectory correction to the active search bounds. Added tests for both mode limits and empty-range handling.
+
+---
+
 ## ✅ Fireplace Review Feedback — 2026-10-11
 
 **Status:** COMPLETED — fireplace learning windows and update-rate telemetry now match the applied behavior.

@@ -1,5 +1,21 @@
 # Active Context - Current Work & Decision State
 
+### Inlet-Relative Outlet Search Bounds — 2026-10-12
+
+#### **What changed**
+- `src/model_wrapper.py`: limit heating search below the inlet to inlet − 1°C and cooling search above the inlet to inlet + 1°C. Return the nearest natural-range boundary without searching when the limits leave no viable range, and clamp post-search trajectory correction to the active bounds.
+- `tests/unit/test_model_wrapper.py`: cover valid within-1°C candidates in both modes and explicit empty-range handling.
+- `CHANGELOG.md`: document the fix under `[Unreleased]`.
+
+#### **Why**
+- Outlet requests on the shutdown side of the inlet can make the heat pump stop sooner than requesting the inlet itself. Keep those candidates available within a small margin while preventing extreme values from winning the trajectory search.
+
+#### **Files modified**
+- `src/model_wrapper.py`, `tests/unit/test_model_wrapper.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Fireplace Review Feedback — 2026-10-11
 
 #### **What changed**
