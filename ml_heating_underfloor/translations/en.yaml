@@ -1008,9 +1008,10 @@ configuration:
       when multiple are on simultaneously. Experimental feature. Default: false.'
   pv_room_decay_multiplier:
     name: '[Advanced] PV Room Decay Multiplier'
-    description: 'Multiplier applied to thermal_time_constant to define the PV heat
-      decay window. After PV drops below threshold, HP learning is frozen for this
-      factor × thermal_time_constant hours. Default: 2.0.'
+    description: 'Multiplier applied to solar_decay_tau_hours (heat release of
+      sun-warmed surfaces) to define the PV heat decay window (3τ rule). After PV
+      drops below threshold, HP learning is frozen for this factor × solar_decay_tau_hours
+      hours. Default: 3.0.'
   decay_cancel_margin:
     name: '[Advanced] Decay Cancel Margin (°C)'
     description: 'Indoor temperature margin above the target at which PV/fireplace

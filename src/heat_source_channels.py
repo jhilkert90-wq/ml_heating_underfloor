@@ -686,16 +686,36 @@ class SolarChannel(HeatSourceChannel):
             else 0.0
         )
 
-        gradients: Dict[str, float] = {
-            "pv_heat_weight": avg_error * 0.1,
-            "solar_decay_tau_hours": avg_error * 0.05,
-        }
-        if (avg_cloud_cover > 0.0
+        # Gating: daytime parameters only learn while real solar input is
+        # present; the decay time constant only learns during the active
+        # post-PV decay window.  At night (0 W, surfaces cooled) errors are
+        # sensor noise / passive losses and must not drift solar parameters.
+        daytime = any(
+            max(
+                _get_pv_power(record.get("context", {})),
+                _to_float(record.get("context", {}).get("pv_power", 0.0)),
+            )
+            > SolarChannel.PV_LEARNING_THRESHOLD
+            for record in recent
+        )
+        in_decay = any(
+            bool(record.get("context", {}).get("pv_in_decay"))
+            for record in recent
+        )
+
+        gradients: Dict[str, float] = {}
+        if daytime:
+            gradients["pv_heat_weight"] = avg_error * 0.1
+        if in_decay:
+            gradients["solar_decay_tau_hours"] = avg_error * 0.05
+        if not daytime and not in_decay:
+            return
+        if (daytime and avg_cloud_cover > 0.0
                 and getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)):
             gradients["cloud_factor_exponent"] = avg_error * (
                 avg_cloud_cover / 100.0
             )
-        if avg_rising_pv > 0.0:
+        if daytime and avg_rising_pv > 0.0:
             gradients["solar_lag_minutes"] = -avg_error * (
                 avg_rising_pv / max(1.0, SolarChannel.PV_LEARNING_THRESHOLD)
             )
@@ -1211,12 +1231,21 @@ class HeatSourceChannelOrchestrator:
 
         # --- PV post-off decay window ---
         # When PV drops below threshold, continue routing learning to the
-        # PV channel for a decay window of thermal_time_constant × multiplier
-        # so that residual room heat from PV is not misattributed to HP.
-        hp_channel = self.channels.get("heat_pump")
-        ttc = getattr(hp_channel, "thermal_time_constant", 4.0) if hp_channel else 4.0
-        pv_decay_multiplier = getattr(config, "PV_ROOM_DECAY_MULTIPLIER", 2.0)
-        pv_decay_window_cycles = max(1, int((ttc * pv_decay_multiplier * 60) / cycle_min))
+        # PV channel for a decay window of solar_decay_tau_hours × multiplier
+        # (3τ rule, like the fireplace) so that residual heat from sun-warmed
+        # surfaces is not misattributed to HP.  The building-level
+        # thermal_time_constant is deliberately NOT used here: it is far too
+        # slow and would freeze the HP deep into the night.
+        pv_channel = self.channels.get("pv")
+        solar_tau_h = (
+            getattr(pv_channel, "solar_decay_tau_hours", 0.5)
+            if pv_channel
+            else 0.5
+        )
+        pv_decay_multiplier = getattr(config, "PV_ROOM_DECAY_MULTIPLIER", 3.0)
+        pv_decay_window_cycles = max(
+            1, int((solar_tau_h * pv_decay_multiplier * 60) / cycle_min)
+        )
 
         if pv_active:
             self._pv_was_active = True
@@ -1264,6 +1293,7 @@ class HeatSourceChannelOrchestrator:
 
         raw_context = context.copy()
         raw_context["raw_prediction_error"] = error
+        raw_context["pv_in_decay"] = bool(pv_in_decay)
 
         # --- Cooling-mode HP routing ---
         # In cooling mode the heat pump is always the controllable source and

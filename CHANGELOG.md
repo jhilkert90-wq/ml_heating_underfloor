@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- PV post-off decay window now uses the solar surface time constant (`solar_decay_tau_hours` × `PV_ROOM_DECAY_MULTIPLIER`, default 3.0 → ~3 h) instead of the building `thermal_time_constant` (~8 h), so the heat pump is no longer frozen until deep into the night.
+- `SolarChannel` learning is gated: `pv_heat_weight`, `solar_lag_minutes` and `cloud_factor_exponent` only adapt with PV above `PV_LEARNING_THRESHOLD`; `solar_decay_tau_hours` only adapts during the active PV decay window, so night-time errors no longer drift solar parameters.
+
+### Changed
+- `PV_ROOM_DECAY_MULTIPLIER` is now a multiplier of `solar_decay_tau_hours` (default 2.0 → 3.0); docs, config and translations updated.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

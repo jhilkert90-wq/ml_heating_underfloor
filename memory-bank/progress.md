@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## ✅ PV Decay Window & Solar Learning Gating — 2026-10-13
+
+**Status:** COMPLETED — PV decay window follows the solar surface τ and solar parameters no longer drift at night.
+
+**Files changed:** `src/heat_source_channels.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `.env_sample`, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_heat_source_channels.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Root causes:** (1) `pv_decay_window_cycles` used the building `thermal_time_constant` (~4 h × 2 ≈ 8 h), freezing the HP until ~02:30. (2) `SolarChannel._learn_from_recent()` had no PV/daylight gate, so `pv_heat_weight` and `solar_decay_tau_hours` adapted to night-time noise.
+
+**Summary:** Window = `solar_decay_tau_hours × PV_ROOM_DECAY_MULTIPLIER` (default 3.0, 3τ rule). Daytime parameters learn only with PV > threshold; `solar_decay_tau_hours` only during `pv_in_decay` (flag added to the routed context). Tests added for gating, window length and HP release.
+
+---
+
 ## ✅ Outlet-Bound Review Fixes — 2026-10-12
 
 **Status:** COMPLETED — outlet searches use fresh inlet readings and remain within their active bounds on all return paths.

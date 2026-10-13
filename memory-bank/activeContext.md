@@ -1,5 +1,20 @@
 # Active Context - Current Work & Decision State
 
+### PV Decay Window & Solar Learning Gating — 2026-10-13
+
+#### **What changed**
+- `src/heat_source_channels.py`: `pv_decay_window_cycles` is computed from `solar_decay_tau_hours × PV_ROOM_DECAY_MULTIPLIER` (3τ) instead of the HP `thermal_time_constant`. `route_learning` passes `pv_in_decay` in the routed context. `SolarChannel._learn_from_recent()` only learns daytime parameters with PV above `PV_LEARNING_THRESHOLD` and `solar_decay_tau_hours` only during the decay window.
+- `PV_ROOM_DECAY_MULTIPLIER` default 2.0 → 3.0 and descriptions updated in config, adapter, add-on config/translations, `.env_sample`, docs.
+- `tests/unit/test_heat_source_channels.py`: gating, window length and HP release tests.
+
+#### **Why**
+- The ~8 h window froze HP learning until ~02:30, and un-gated night errors drifted solar parameters.
+
+#### **Files modified**
+- See progress.md entry of the same date.
+
+---
+
 ### Outlet-Bound Review Fixes — 2026-10-12
 
 #### **What changed**
