@@ -7,15 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- PV post-off decay window now uses the solar surface time constant (`solar_decay_tau_hours` × `PV_ROOM_DECAY_MULTIPLIER`, default 3.0 → ~3 h) instead of the building `thermal_time_constant` (~8 h), so the heat pump is no longer frozen until deep into the night.
-- `SolarChannel` computes daytime and PV-decay parameter gradients from only their matching records, preventing records retained across phase transitions from contaminating solar learning.
-- AI code review now uses the supported OpenAI API with the concrete `gpt-4.1` default; missing credentials or API failures fail the workflow instead of silently skipping the review.
-
-### Changed
-- AI code review requires the `OPENAI_API_KEY` repository secret; `AI_REVIEW_MODEL` can override the default model.
-- `PV_ROOM_DECAY_MULTIPLIER` is now a multiplier of `solar_decay_tau_hours` (default 2.0 → 3.0); docs, config and translations updated.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
