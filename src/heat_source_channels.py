@@ -651,16 +651,29 @@ class SolarChannel(HeatSourceChannel):
         return smoothed
 
     def _learn_from_recent(self) -> None:
-        avg_error = _average_recent_error(self.history)
-        raw_avg = _average_recent_raw_error(self.history)
-        if avg_error is None or raw_avg is None or abs(raw_avg) < _get_learning_dead_zone():
-            return
-
         min_records = _get_min_records_for_learning()
+        if len(self.history) < min_records:
+            return
         recent = self.history[-min_records:]
+        avg_error = sum(record["error"] for record in recent) / len(recent)
+        daytime_records = [
+            record
+            for record in recent
+            if max(
+                _get_pv_power(record.get("context", {})),
+                _to_float(record.get("context", {}).get("pv_power", 0.0)),
+            )
+            > SolarChannel.PV_LEARNING_THRESHOLD
+        ]
+        decay_records = [
+            record
+            for record in recent
+            if bool(record.get("context", {}).get("pv_in_decay"))
+        ]
+
         cloud_samples = [
             _to_float(record.get("context", {}).get("avg_cloud_cover", 0.0))
-            for record in recent
+            for record in daytime_records
         ]
         avg_cloud_cover = (
             sum(cloud_samples) / len(cloud_samples)
@@ -669,7 +682,7 @@ class SolarChannel(HeatSourceChannel):
         )
 
         rising_pv_samples = []
-        for record in recent:
+        for record in daytime_records:
             context = record.get("context", {})
             pv_now = _get_pv_power(context)
             pv_history = context.get("pv_power_history")
@@ -690,33 +703,65 @@ class SolarChannel(HeatSourceChannel):
         # present; the decay time constant only learns during the active
         # post-PV decay window.  At night (0 W, surfaces cooled) errors are
         # sensor noise / passive losses and must not drift solar parameters.
-        daytime = any(
-            max(
-                _get_pv_power(record.get("context", {})),
-                _to_float(record.get("context", {}).get("pv_power", 0.0)),
-            )
-            > SolarChannel.PV_LEARNING_THRESHOLD
-            for record in recent
+        daytime_error = (
+            sum(record["error"] for record in daytime_records)
+            / len(daytime_records)
+            if daytime_records
+            else 0.0
         )
-        in_decay = any(
-            bool(record.get("context", {}).get("pv_in_decay"))
-            for record in recent
+        daytime_raw_error = (
+            sum(
+                _to_float(
+                    record.get("context", {}).get("raw_prediction_error"),
+                    record["error"],
+                )
+                for record in daytime_records
+            )
+            / len(daytime_records)
+            if daytime_records
+            else 0.0
+        )
+        decay_error = (
+            sum(record["error"] for record in decay_records)
+            / len(decay_records)
+            if decay_records
+            else 0.0
+        )
+        decay_raw_error = (
+            sum(
+                _to_float(
+                    record.get("context", {}).get("raw_prediction_error"),
+                    record["error"],
+                )
+                for record in decay_records
+            )
+            / len(decay_records)
+            if decay_records
+            else 0.0
+        )
+        daytime = (
+            bool(daytime_records)
+            and abs(daytime_raw_error) >= _get_learning_dead_zone()
+        )
+        in_decay = (
+            bool(decay_records)
+            and abs(decay_raw_error) >= _get_learning_dead_zone()
         )
 
         gradients: Dict[str, float] = {}
         if daytime:
-            gradients["pv_heat_weight"] = avg_error * 0.1
+            gradients["pv_heat_weight"] = daytime_error * 0.1
         if in_decay:
-            gradients["solar_decay_tau_hours"] = avg_error * 0.05
+            gradients["solar_decay_tau_hours"] = decay_error * 0.05
         if not daytime and not in_decay:
             return
         if (daytime and avg_cloud_cover > 0.0
                 and getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)):
-            gradients["cloud_factor_exponent"] = avg_error * (
+            gradients["cloud_factor_exponent"] = daytime_error * (
                 avg_cloud_cover / 100.0
             )
         if daytime and avg_rising_pv > 0.0:
-            gradients["solar_lag_minutes"] = -avg_error * (
+            gradients["solar_lag_minutes"] = -daytime_error * (
                 avg_rising_pv / max(1.0, SolarChannel.PV_LEARNING_THRESHOLD)
             )
         self.apply_gradient_update(gradients, _get_channel_learning_rate())

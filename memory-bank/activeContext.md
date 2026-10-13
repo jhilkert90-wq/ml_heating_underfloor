@@ -1,15 +1,24 @@
 # Active Context - Current Work & Decision State
 
-### AI Code Review Uses "auto" Model — 2026-10-13
+### PR #95 Review Feedback — 2026-10-13
 
 #### **What changed**
-- `.github/workflows/ai-code-review.yaml`: model is read from `AI_REVIEW_MODEL` (repo variable, default `auto`) instead of `gpt-4.1`; footer text updated.
+- `.github/workflows/ai-code-review.yaml`: replaced the retired GitHub Models endpoint with the OpenAI API, a concrete `gpt-4.1` default, and the required `OPENAI_API_KEY` secret; provider failures are no longer silently skipped.
+- `src/heat_source_channels.py`: compute solar gradients using only daytime-eligible or PV-decay-eligible observations.
+- `tests/unit/test_heat_source_channels.py`: added a mixed-phase transition regression test.
 
 #### **Why**
-- Reduce token usage of the automated code review.
+- GitHub Models was retired, and the old model/endpoint could not produce reviews. Solar decay routing and phase-isolated learning are retained in this PR because they prevent residual solar heat and mixed-phase observations from contaminating heat-pump and solar parameter learning.
 
 #### **Files modified**
-- `.github/workflows/ai-code-review.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+- `.github/workflows/ai-code-review.yaml`, `src/heat_source_channels.py`, `tests/unit/test_heat_source_channels.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### AI Code Review Uses "auto" Model — 2026-10-13 (superseded)
+
+The initial model configuration used `auto` with GitHub Models. GitHub Models has since been retired; see the review-feedback entry above for the supported provider configuration.
 
 ---
 

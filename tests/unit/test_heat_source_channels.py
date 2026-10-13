@@ -1123,6 +1123,41 @@ def test_solar_decay_tau_learns_only_during_decay_window():
     assert solar.solar_decay_tau_hours != pytest.approx(initial_tau)
 
 
+def test_solar_learning_uses_phase_specific_errors_across_transition():
+    solar = SolarChannel()
+    initial_weight = solar.pv_heat_weight
+    initial_tau = solar.solar_decay_tau_hours
+    min_records = _get_min_records_for_learning()
+
+    solar.history = [
+        {
+            "error": 1.0,
+            "context": {
+                "pv_power": 1200,
+                "pv_power_current": 1200,
+                "raw_prediction_error": 1.0,
+            },
+        }
+        for _ in range(min_records // 2)
+    ] + [
+        {
+            "error": -1.0,
+            "context": {
+                "pv_power": 0,
+                "pv_power_current": 0,
+                "pv_in_decay": True,
+                "raw_prediction_error": -1.0,
+            },
+        }
+        for _ in range(min_records - min_records // 2)
+    ]
+
+    solar._learn_from_recent()
+
+    assert solar.pv_heat_weight > initial_weight
+    assert solar.solar_decay_tau_hours < initial_tau
+
+
 def _decay_window_orchestrator(monkeypatch, tau_hours=1.0, multiplier=3.0):
     monkeypatch.setattr(
         heat_source_channels.config, "PV_ROOM_DECAY_MULTIPLIER", multiplier,

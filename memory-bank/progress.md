@@ -1,8 +1,18 @@
 # ML Heating System - Current Progress
 
-## ✅ AI Code Review Uses "auto" Model — 2026-10-13
+## ✅ Address PR #95 Review Feedback — 2026-10-13
 
-**Status:** COMPLETED — `.github/workflows/ai-code-review.yaml` selects the review model via `AI_REVIEW_MODEL` (default `auto`) instead of hard-coded `gpt-4.1`.
+**Status:** COMPLETED — AI reviews use a supported API and solar learning is isolated across phase transitions.
+
+**Files changed:** `.github/workflows/ai-code-review.yaml`, `src/heat_source_channels.py`, `tests/unit/test_heat_source_channels.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary and rationale:** GitHub Models was retired, so the workflow now calls OpenAI with a concrete `gpt-4.1` default and requires the `OPENAI_API_KEY` secret; missing credentials and API failures fail visibly. The PR scope also retains PV decay routing and solar learning changes because the decay window prevents residual solar heat from being attributed to the heat pump; parameter gradients now use only records from their matching daytime or decay phase.
+
+---
+
+## ✅ AI Code Review Uses "auto" Model — 2026-10-13 (superseded)
+
+**Status:** SUPERSEDED — the workflow now uses OpenAI with a concrete model and required API-key secret; see the review-feedback milestone above.
 
 **Files changed:** `.github/workflows/ai-code-review.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
