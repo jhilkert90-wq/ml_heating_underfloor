@@ -1263,11 +1263,12 @@ ENABLE_MIXED_SOURCE_ATTRIBUTION: bool = (
 )
 
 # --- Decay Window & Safety Thresholds ---
-# Multiplier applied to thermal_time_constant for PV room-heat decay window.
-# After PV drops below threshold, HP learning is frozen for
-# thermal_time_constant × PV_ROOM_DECAY_MULTIPLIER hours (~8.7h at τ=4.37h).
+# Multiplier applied to solar_decay_tau_hours (sun-warmed surface heat release)
+# for the PV decay window (3τ rule). After PV drops below threshold, HP
+# learning is frozen for solar_decay_tau_hours × PV_ROOM_DECAY_MULTIPLIER hours
+# (~3.15h at τ=1.05h).
 PV_ROOM_DECAY_MULTIPLIER: float = float(
-    os.getenv("PV_ROOM_DECAY_MULTIPLIER", "2.0")
+    os.getenv("PV_ROOM_DECAY_MULTIPLIER", "3.0")
 )
 # Indoor temp margin above target_temp at which PV/FP decay is cancelled
 # early — residual heat from the external source has dissipated.

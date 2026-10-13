@@ -1060,3 +1060,153 @@ def test_estimate_heat_contribution_zero_when_hp_off_residual_slab():
         "climate_mode": "heating",
     }
     assert hp.estimate_heat_contribution(ctx) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Solar learning gating and solar-τ based PV decay window
+# ---------------------------------------------------------------------------
+
+def test_solar_channel_night_cycles_do_not_drift_parameters():
+    """0 W PV with a persistent room error must not change solar parameters."""
+    solar = SolarChannel()
+    before = solar.get_learnable_parameters().copy()
+
+    for _ in range(_get_min_records_for_learning() + 5):
+        solar.record_learning(
+            1.0,
+            make_context(pv_power=0, pv_power_current=0)
+            | {"raw_prediction_error": 1.0},
+        )
+
+    assert solar.get_learnable_parameters() == before
+
+
+def test_solar_channel_night_decay_cycles_do_not_raise_pv_heat_weight():
+    """During pv_in_decay at 0 W the PV heat weight must stay untouched."""
+    solar = SolarChannel()
+    initial_weight = solar.pv_heat_weight
+
+    for _ in range(_get_min_records_for_learning() + 5):
+        solar.record_learning(
+            1.0,
+            make_context(pv_power=0, pv_power_current=0)
+            | {"raw_prediction_error": 1.0, "pv_in_decay": True},
+        )
+
+    assert solar.pv_heat_weight == pytest.approx(initial_weight)
+
+
+def test_solar_channel_learns_with_active_pv():
+    solar = SolarChannel()
+    initial_weight = solar.pv_heat_weight
+
+    for _ in range(_get_min_records_for_learning() + 1):
+        solar.record_learning(
+            1.0,
+            make_context(pv_power=1200) | {"raw_prediction_error": 1.0},
+        )
+
+    assert solar.pv_heat_weight != pytest.approx(initial_weight)
+
+
+def test_solar_decay_tau_learns_only_during_decay_window():
+    solar = SolarChannel()
+    initial_tau = solar.solar_decay_tau_hours
+
+    for _ in range(_get_min_records_for_learning() + 1):
+        solar.record_learning(
+            1.0,
+            make_context(pv_power=0, pv_power_current=0)
+            | {"raw_prediction_error": 1.0, "pv_in_decay": True},
+        )
+
+    assert solar.solar_decay_tau_hours != pytest.approx(initial_tau)
+
+
+def test_solar_learning_uses_phase_specific_errors_across_transition():
+    solar = SolarChannel()
+    initial_weight = solar.pv_heat_weight
+    initial_tau = solar.solar_decay_tau_hours
+    min_records = _get_min_records_for_learning()
+
+    solar.history = [
+        {
+            "error": 1.0,
+            "context": {
+                "pv_power": 1200,
+                "pv_power_current": 1200,
+                "raw_prediction_error": 1.0,
+            },
+        }
+        for _ in range(min_records // 2)
+    ] + [
+        {
+            "error": -1.0,
+            "context": {
+                "pv_power": 0,
+                "pv_power_current": 0,
+                "pv_in_decay": True,
+                "raw_prediction_error": -1.0,
+            },
+        }
+        for _ in range(min_records - min_records // 2)
+    ]
+
+    solar._learn_from_recent()
+
+    assert solar.pv_heat_weight > initial_weight
+    assert solar.solar_decay_tau_hours < initial_tau
+
+
+def _decay_window_orchestrator(monkeypatch, tau_hours=1.0, multiplier=3.0):
+    monkeypatch.setattr(
+        heat_source_channels.config, "PV_ROOM_DECAY_MULTIPLIER", multiplier,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        heat_source_channels.config, "CYCLE_INTERVAL_MINUTES", 10,
+        raising=False,
+    )
+    orch = HeatSourceChannelOrchestrator()
+    orch.channels["pv"].solar_decay_tau_hours = tau_hours
+    # Make sure the building time constant is irrelevant to the window
+    orch.channels["heat_pump"].thermal_time_constant = 4.0
+    orch._pv_was_active = True
+    orch._pv_off_cycle_count = 0
+    return orch
+
+
+def _night_context():
+    return make_context(
+        pv_power=0,
+        pv_power_current=0,
+        heat_pump_active=False,
+        current_indoor=22.5,
+        target_temp=22.0,
+    )
+
+
+def test_pv_decay_window_uses_solar_tau(monkeypatch, mixed_source_attribution_enabled):
+    """τ=1 h × 3 = 3 h = 18 cycles (not ~8 h = 48 cycles from HP τ)."""
+    orch = _decay_window_orchestrator(monkeypatch)
+
+    for _ in range(18):
+        orch.route_learning(0.5, _night_context())
+    assert orch._pv_was_active is True
+
+    orch.route_learning(0.5, _night_context())
+    assert orch._pv_was_active is False
+
+
+def test_hp_released_after_solar_decay_window(
+    monkeypatch, mixed_source_attribution_enabled
+):
+    orch = _decay_window_orchestrator(monkeypatch)
+
+    for _ in range(18):
+        orch.route_learning(0.5, _night_context())
+    assert orch.channels["heat_pump"].history == []
+
+    # Window expires → routing falls back to the heat pump
+    orch.route_learning(0.5, _night_context())
+    assert len(orch.channels["heat_pump"].history) == 1

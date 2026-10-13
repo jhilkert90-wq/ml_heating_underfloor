@@ -581,7 +581,7 @@ def convert_addon_to_env(config):
             config.get('enable_mixed_source_attribution', False)
         ).lower(),
         'PV_ROOM_DECAY_MULTIPLIER': str(
-            config.get('pv_room_decay_multiplier', 2.0)
+            config.get('pv_room_decay_multiplier', 3.0)
         ),
         'DECAY_CANCEL_MARGIN': str(
             config.get('decay_cancel_margin', 0.1)

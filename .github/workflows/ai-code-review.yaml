@@ -8,7 +8,6 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
-  models: read
 
 jobs:
   ai-review:
@@ -50,11 +49,12 @@ jobs:
         if: steps.pr_diff.outputs.file_count != '0'
         id: review
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AI_REVIEW_MODEL: ${{ vars.AI_REVIEW_MODEL || 'gpt-4.1' }}
         run: |
-          pip install openai==1.* 2>/dev/null
+          pip install openai==1.*
 
           python3 << 'PYTHON_SCRIPT'
           import json
@@ -62,25 +62,14 @@ jobs:
           import sys
           from pathlib import Path
 
-          try:
-              from openai import OpenAI
-          except ImportError:
-              print("::warning::openai package not available. Skipping AI review.")
-              Path("/tmp/review_result.json").write_text(json.dumps({"skip": True}))
-              sys.exit(0)
+          from openai import OpenAI
 
-          # Use the GitHub Models API — no separate API key needed,
-          # the built-in GITHUB_TOKEN provides access via the models: read permission.
-          github_token = os.environ.get("GITHUB_TOKEN", "")
-          if not github_token:
-              print("::warning::GITHUB_TOKEN not available. Skipping AI review.")
-              Path("/tmp/review_result.json").write_text(json.dumps({"skip": True}))
-              sys.exit(0)
+          openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+          if not openai_api_key:
+              print("::error::OPENAI_API_KEY secret is required for AI review.")
+              sys.exit(1)
 
-          client = OpenAI(
-              base_url="https://models.inference.ai.azure.com",
-              api_key=github_token,
-          )
+          client = OpenAI(api_key=openai_api_key)
 
           diff = Path("/tmp/pr_diff.txt").read_text(errors="replace")[:25000]
           changed_files = Path("/tmp/changed_files.txt").read_text(errors="replace")
@@ -138,25 +127,21 @@ jobs:
           - Keep issues list concise (max 10 most important).
           """
 
-          try:
-              resp = client.chat.completions.create(
-                  model="gpt-4.1",  # gpt-4.1 via GitHub Models API (https://models.inference.ai.azure.com).
-                  messages=[{"role": "user", "content": prompt}],
-                  temperature=0.1,
-                  max_tokens=3000,
-              )
-              content = resp.choices[0].message.content.strip()
-              if content.startswith("```"):
-                  content = content.split("\n", 1)[1]
-                  if content.endswith("```"):
-                      content = content[:-3]
-                  elif "```" in content:
-                      content = content[:content.rfind("```")]
-              result = json.loads(content)
-              result["skip"] = False
-          except Exception as e:
-              print(f"::warning::AI review failed: {e}")
-              result = {"skip": True, "error": str(e)}
+          resp = client.chat.completions.create(
+              model=os.environ["AI_REVIEW_MODEL"],
+              messages=[{"role": "user", "content": prompt}],
+              temperature=0.1,
+              max_tokens=3000,
+          )
+          content = resp.choices[0].message.content.strip()
+          if content.startswith("```"):
+              content = content.split("\n", 1)[1]
+              if content.endswith("```"):
+                  content = content[:-3]
+              elif "```" in content:
+                  content = content[:content.rfind("```")]
+          result = json.loads(content)
+          result["skip"] = False
 
           Path("/tmp/review_result.json").write_text(json.dumps(result, indent=2))
           print(json.dumps(result, indent=2))
@@ -167,6 +152,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          AI_REVIEW_MODEL: ${{ vars.AI_REVIEW_MODEL || 'gpt-4.1' }}
         run: |
           python3 << 'PYTHON_SCRIPT'
           import json
@@ -191,7 +177,7 @@ jobs:
           icon = {"approve": "✅", "request_changes": "🔴", "comment": "💬"}.get(verdict, "💬")
           severity_icon = {"critical": "🔴", "warning": "⚠️", "suggestion": "💡"}
 
-          body = f"## {icon} AI Code Review (GitHub Models)\n\n"
+          body = f"## {icon} AI Code Review (OpenAI)\n\n"
           body += f"**Verdict: {verdict.upper().replace('_', ' ')}**\n\n"
           body += f"{summary}\n\n"
 
@@ -212,7 +198,10 @@ jobs:
               body += "\n"
 
           body += "---\n"
-          body += "*This review was generated automatically by GitHub Models (gpt-4.1). "
+          body += (
+              f"*This review was generated automatically by OpenAI "
+              f"({os.environ['AI_REVIEW_MODEL']}). "
+          )
           body += "You can reject suggestions by dismissing or replying to this comment. "
           body += "To re-run the review, push a new commit or re-run the workflow.*\n"
 

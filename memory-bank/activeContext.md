@@ -1,5 +1,42 @@
 # Active Context - Current Work & Decision State
 
+### PR #95 Review Feedback — 2026-10-13
+
+#### **What changed**
+- `.github/workflows/ai-code-review.yaml`: replaced the retired GitHub Models endpoint with the OpenAI API, a concrete `gpt-4.1` default, and the required `OPENAI_API_KEY` secret; provider failures are no longer silently skipped.
+- `src/heat_source_channels.py`: compute solar gradients using only daytime-eligible or PV-decay-eligible observations.
+- `tests/unit/test_heat_source_channels.py`: added a mixed-phase transition regression test.
+
+#### **Why**
+- GitHub Models was retired, and the old model/endpoint could not produce reviews. Solar decay routing and phase-isolated learning are retained in this PR because they prevent residual solar heat and mixed-phase observations from contaminating heat-pump and solar parameter learning.
+
+#### **Files modified**
+- `.github/workflows/ai-code-review.yaml`, `src/heat_source_channels.py`, `tests/unit/test_heat_source_channels.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### AI Code Review Uses "auto" Model — 2026-10-13 (superseded)
+
+The initial model configuration used `auto` with GitHub Models. GitHub Models has since been retired; see the review-feedback entry above for the supported provider configuration.
+
+---
+
+### PV Decay Window & Solar Learning Gating — 2026-10-13
+
+#### **What changed**
+- `src/heat_source_channels.py`: `pv_decay_window_cycles` is computed from `solar_decay_tau_hours × PV_ROOM_DECAY_MULTIPLIER` (3τ) instead of the HP `thermal_time_constant`. `route_learning` passes `pv_in_decay` in the routed context. `SolarChannel._learn_from_recent()` only learns daytime parameters with PV above `PV_LEARNING_THRESHOLD` and `solar_decay_tau_hours` only during the decay window.
+- `PV_ROOM_DECAY_MULTIPLIER` default 2.0 → 3.0 and descriptions updated in config, adapter, add-on config/translations, `.env_sample`, docs.
+- `tests/unit/test_heat_source_channels.py`: gating, window length and HP release tests.
+
+#### **Why**
+- The ~8 h window froze HP learning until ~02:30, and un-gated night errors drifted solar parameters.
+
+#### **Files modified**
+- See progress.md entry of the same date.
+
+---
+
 ### Outlet-Bound Review Fixes — 2026-10-12
 
 #### **What changed**

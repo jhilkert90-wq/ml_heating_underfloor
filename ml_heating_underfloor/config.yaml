@@ -587,10 +587,11 @@ options:
   enable_heat_source_channels: true
   # Enable proportional mixed-source attribution
   enable_mixed_source_attribution: true
-  # Multiplier applied to thermal_time_constant for PV room-heat decay window.
-  # After PV drops below threshold, HP learning is frozen for
-  # thermal_time_constant × pv_room_decay_multiplier hours.
-  pv_room_decay_multiplier: 2.0
+  # Multiplier applied to solar_decay_tau_hours (sun-warmed surface heat
+  # release) for the PV decay window (3τ rule). After PV drops below
+  # threshold, HP learning is frozen for
+  # solar_decay_tau_hours × pv_room_decay_multiplier hours.
+  pv_room_decay_multiplier: 3.0
   # Indoor temp margin above target_temp at which PV/FP decay is cancelled
   # early — residual heat from the external source has dissipated.
   decay_cancel_margin: 0.1

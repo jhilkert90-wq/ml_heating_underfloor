@@ -349,7 +349,7 @@ Required for historical calibration. Optional for ongoing operation (HA history 
 |---|---|---|---|---|
 | `enable_heat_source_channels` | `ENABLE_HEAT_SOURCE_CHANNELS` | bool | `true` | 🧪 Enables decomposed heat-source learning with independent channels for HP, solar, fireplace, and TV. Prevents cross-contamination. Strongly recommended. |
 | `enable_mixed_source_attribution` | `ENABLE_MIXED_SOURCE_ATTRIBUTION` | bool | `false` | 🧪 Enables proportional attribution of heat between simultaneously active sources. Experimental. |
-| `pv_room_decay_multiplier` | `PV_ROOM_DECAY_MULTIPLIER` | float (0.1–10) | `2.0` | 🧪 Multiplier × `thermal_time_constant` = hours HP learning is frozen after PV drops below threshold. |
+| `pv_room_decay_multiplier` | `PV_ROOM_DECAY_MULTIPLIER` | float (0.1–10) | `3.0` | 🧪 Multiplier × `solar_decay_tau_hours` (heat release of sun-warmed surfaces, 3τ rule) = hours HP learning is frozen after PV drops below threshold. |
 | `decay_cancel_margin` | `DECAY_CANCEL_MARGIN` | float (0–2) | `0.1` | 🧪 Indoor temp margin (°C) above target at which PV/FP decay is cancelled early, indicating residual heat has dissipated. |
 
 ---

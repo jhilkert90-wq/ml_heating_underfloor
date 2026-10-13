@@ -1,5 +1,35 @@
 # ML Heating System - Current Progress
 
+## ✅ Address PR #95 Review Feedback — 2026-10-13
+
+**Status:** COMPLETED — AI reviews use a supported API and solar learning is isolated across phase transitions.
+
+**Files changed:** `.github/workflows/ai-code-review.yaml`, `src/heat_source_channels.py`, `tests/unit/test_heat_source_channels.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary and rationale:** GitHub Models was retired, so the workflow now calls OpenAI with a concrete `gpt-4.1` default and requires the `OPENAI_API_KEY` secret; missing credentials and API failures fail visibly. The PR scope also retains PV decay routing and solar learning changes because the decay window prevents residual solar heat from being attributed to the heat pump; parameter gradients now use only records from their matching daytime or decay phase.
+
+---
+
+## ✅ AI Code Review Uses "auto" Model — 2026-10-13 (superseded)
+
+**Status:** SUPERSEDED — the workflow now uses OpenAI with a concrete model and required API-key secret; see the review-feedback milestone above.
+
+**Files changed:** `.github/workflows/ai-code-review.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+## ✅ PV Decay Window & Solar Learning Gating — 2026-10-13
+
+**Status:** COMPLETED — PV decay window follows the solar surface τ and solar parameters no longer drift at night.
+
+**Files changed:** `src/heat_source_channels.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `.env_sample`, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_heat_source_channels.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Root causes:** (1) `pv_decay_window_cycles` used the building `thermal_time_constant` (~4 h × 2 ≈ 8 h), freezing the HP until ~02:30. (2) `SolarChannel._learn_from_recent()` had no PV/daylight gate, so `pv_heat_weight` and `solar_decay_tau_hours` adapted to night-time noise.
+
+**Summary:** Window = `solar_decay_tau_hours × PV_ROOM_DECAY_MULTIPLIER` (default 3.0, 3τ rule). Daytime parameters learn only with PV > threshold; `solar_decay_tau_hours` only during `pv_in_decay` (flag added to the routed context). Tests added for gating, window length and HP release.
+
+---
+
 ## ✅ Outlet-Bound Review Fixes — 2026-10-12
 
 **Status:** COMPLETED — outlet searches use fresh inlet readings and remain within their active bounds on all return paths.
