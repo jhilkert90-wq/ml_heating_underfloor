@@ -53,6 +53,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          # Review model; "auto" lets the service pick a suitable model.
+          # Override via the AI_REVIEW_MODEL repository variable.
+          AI_REVIEW_MODEL: ${{ vars.AI_REVIEW_MODEL || 'auto' }}
         run: |
           pip install openai==1.* 2>/dev/null
 
@@ -140,7 +143,7 @@ jobs:
 
           try:
               resp = client.chat.completions.create(
-                  model="gpt-4.1",  # gpt-4.1 via GitHub Models API (https://models.inference.ai.azure.com).
+                  model=os.environ.get("AI_REVIEW_MODEL", "auto"),
                   messages=[{"role": "user", "content": prompt}],
                   temperature=0.1,
                   max_tokens=3000,
@@ -212,7 +215,7 @@ jobs:
               body += "\n"
 
           body += "---\n"
-          body += "*This review was generated automatically by GitHub Models (gpt-4.1). "
+          body += "*This review was generated automatically by GitHub Models (auto). "
           body += "You can reject suggestions by dismissing or replying to this comment. "
           body += "To re-run the review, push a new commit or re-run the workflow.*\n"
 

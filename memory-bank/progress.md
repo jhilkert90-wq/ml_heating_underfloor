@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ AI Code Review Uses "auto" Model — 2026-10-13
+
+**Status:** COMPLETED — `.github/workflows/ai-code-review.yaml` selects the review model via `AI_REVIEW_MODEL` (default `auto`) instead of hard-coded `gpt-4.1`.
+
+**Files changed:** `.github/workflows/ai-code-review.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ## ✅ PV Decay Window & Solar Learning Gating — 2026-10-13
 
 **Status:** COMPLETED — PV decay window follows the solar surface τ and solar parameters no longer drift at night.

@@ -1,5 +1,18 @@
 # Active Context - Current Work & Decision State
 
+### AI Code Review Uses "auto" Model — 2026-10-13
+
+#### **What changed**
+- `.github/workflows/ai-code-review.yaml`: model is read from `AI_REVIEW_MODEL` (repo variable, default `auto`) instead of `gpt-4.1`; footer text updated.
+
+#### **Why**
+- Reduce token usage of the automated code review.
+
+#### **Files modified**
+- `.github/workflows/ai-code-review.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### PV Decay Window & Solar Learning Gating — 2026-10-13
 
 #### **What changed**

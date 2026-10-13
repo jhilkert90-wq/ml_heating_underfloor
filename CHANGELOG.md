@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SolarChannel` learning is gated: `pv_heat_weight`, `solar_lag_minutes` and `cloud_factor_exponent` only adapt with PV above `PV_LEARNING_THRESHOLD`; `solar_decay_tau_hours` only adapts during the active PV decay window, so night-time errors no longer drift solar parameters.
 
 ### Changed
+- AI code review workflow now uses the `auto` model (overridable via the `AI_REVIEW_MODEL` repository variable) instead of a fixed `gpt-4.1` to reduce token usage.
 - `PV_ROOM_DECAY_MULTIPLIER` is now a multiplier of `solar_decay_tau_hours` (default 2.0 → 3.0); docs, config and translations updated.
 
 ## [0.2.0] - 2026-02-10
