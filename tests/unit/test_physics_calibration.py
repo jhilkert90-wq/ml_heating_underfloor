@@ -118,6 +118,17 @@ def test_filter_stable_periods_with_blocking(sample_df):
         assert len(stable_periods) < 83
 
 
+def test_filter_stable_periods_excludes_defrost_recovery(sample_df):
+    sample_df.loc[40, 'defrosting'] = 1
+    with patch('src.physics_calibration.log_filtering_stats'), \
+         patch('src.physics_calibration.json'), \
+         patch('builtins.open'):
+        stable_periods = physics_calibration.filter_stable_periods(sample_df)
+
+    assert stable_periods
+    assert all(period['minutes_since_defrost'] >= 45 for period in stable_periods)
+
+
 def test_filter_stable_periods_low_flow(sample_df):
     sample_df['flow_rate'] = 5.0  # Below 10.0 threshold
     with patch('src.physics_calibration.log_filtering_stats'), \

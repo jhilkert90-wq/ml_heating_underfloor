@@ -333,7 +333,8 @@ class TestSlabTauCoOptimization:
         from unittest.mock import patch
         with patch('src.physics_calibration.config') as mock_cfg:
             mock_cfg.INLET_TEMP_ENTITY_ID = "sensor.inlet"
-            mock_cfg.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
+            mock_cfg.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID = "sensor.target_outlet"
+            mock_cfg.ACTUAL_OUTLET_TEMP_ENTITY_ID = "sensor.outlet"
             mock_cfg.FLOW_RATE_ENTITY_ID = "sensor.flow"
             mock_cfg.INDOOR_TEMP_ENTITY_ID = "sensor.indoor"
             mock_cfg.SPECIFIC_HEAT_CAPACITY = 4.186

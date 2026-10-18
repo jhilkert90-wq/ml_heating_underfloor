@@ -388,9 +388,7 @@ class TestSlabTauGridSearch:
         from src.physics_calibration_direct import _calibrate_slab_tau_grid_search
 
         df = self._make_slab_df(tau_true=1.0, n_events=5, steps_per_event=25)
-        df["defrosting"] = 0
-        # Mark the first row of each synthetic event as an active defrost.
-        df.loc[[0, 30, 60, 90, 120], "defrosting"] = 1
+        df["defrosting"] = 1
 
         with patch("src.physics_calibration_direct.config") as mc:
             mc.INLET_TEMP_ENTITY_ID = "sensor.hp_inlet_temp"
@@ -472,13 +470,27 @@ class TestFilterHelpers:
         periods = [
             {
                 "fireplace_on": 1,
-                "tv_on": 1,
+                "tv_on": 0,
                 "pv_power": 0,
                 "thermal_power_kw": 1.0,
                 "minutes_since_defrost": 20,
             },
             {
                 "fireplace_on": 1,
+                "tv_on": 0,
+                "pv_power": 0,
+                "thermal_power_kw": 1.0,
+                "minutes_since_defrost": 60,
+            },
+            {
+                "fireplace_on": 0,
+                "tv_on": 1,
+                "pv_power": 0,
+                "thermal_power_kw": 1.0,
+                "minutes_since_defrost": 20,
+            },
+            {
+                "fireplace_on": 0,
                 "tv_on": 1,
                 "pv_power": 0,
                 "thermal_power_kw": 1.0,
@@ -489,7 +501,7 @@ class TestFilterHelpers:
             mc.HEATING_MIN_THERMAL_POWER_KW = 0.5
             mc.DEFROST_RECOVERY_GRACE_MINUTES = 45
             assert _filter_fp_only_periods(periods) == [periods[1]]
-            assert _filter_tv_only_periods(periods) == [periods[1]]
+            assert _filter_tv_only_periods(periods) == [periods[3]]
 
 
 # ---------------------------------------------------------------------------

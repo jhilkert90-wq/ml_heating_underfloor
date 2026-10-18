@@ -1014,12 +1014,7 @@ def filter_transient_periods(df, sequence_length_steps=12, min_temp_change=0.3):
         return []
 
     indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
-    measured_outlet_entity = getattr(
-        config, "ACTUAL_OUTLET_TEMP_ENTITY_ID", None
-    )
-    if not isinstance(measured_outlet_entity, str) or not measured_outlet_entity:
-        measured_outlet_entity = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID
-    outlet_col = measured_outlet_entity.split(".", 1)[-1]
+    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
     outdoor_col = config.OUTDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
     pv_col = config.PV_POWER_ENTITY_ID.split(".", 1)[-1]
     fireplace_col = config.FIREPLACE_STATUS_ENTITY_ID.split(".", 1)[-1]
@@ -2902,7 +2897,12 @@ def calibrate_slab_time_constant(df, delta_t_floor=None):
         return None
 
     inlet_col = config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    measured_outlet_entity = getattr(
+        config, "ACTUAL_OUTLET_TEMP_ENTITY_ID", None
+    )
+    if not isinstance(measured_outlet_entity, str) or not measured_outlet_entity:
+        measured_outlet_entity = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID
+    outlet_col = measured_outlet_entity.split(".", 1)[-1]
     flow_col = config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1]
     indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
 
