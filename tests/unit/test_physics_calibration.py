@@ -96,6 +96,7 @@ def test_filter_stable_periods_stable_data(sample_df):
         assert len(stable_periods) > 0
         for period in stable_periods:
             assert 'stability_score' in period
+            assert period['measured_delta_t'] == pytest.approx(5.0)
 
 
 def test_filter_stable_periods_unstable_temp(sample_df):
@@ -802,3 +803,59 @@ def test_delta_t_floor_rejects_low_dt():
         periods.append({"outlet_temp": 30.0, "inlet_temp": 29.2, "thermal_power_kw": 2.0})
     result = physics_calibration.calibrate_delta_t_floor(periods)
     assert result is None  # All excluded by dt > 1.0 filter
+
+
+def test_delta_t_floor_uses_measured_delta_and_excludes_defrost_recovery():
+    periods = [
+        {
+            "outlet_temp": 45.0,
+            "inlet_temp": 40.0,
+            "measured_delta_t": 2.4,
+            "thermal_power_kw": 1.0,
+            "minutes_since_defrost": 60,
+        }
+        for _ in range(10)
+    ]
+    periods.extend(
+        [
+            {
+                "outlet_temp": 45.0,
+                "inlet_temp": 40.0,
+                "measured_delta_t": -4.0,
+                "thermal_power_kw": -2.0,
+                "minutes_since_defrost": 120,
+            }
+            for _ in range(10)
+        ]
+    )
+    periods.extend(
+        [
+            {
+                "outlet_temp": 45.0,
+                "inlet_temp": 40.0,
+                "measured_delta_t": 6.0,
+                "thermal_power_kw": 2.0,
+                "minutes_since_defrost": 20,
+            }
+            for _ in range(10)
+        ]
+    )
+
+    result = physics_calibration.calibrate_delta_t_floor(periods)
+
+    assert result == pytest.approx(2.4)
+
+
+def test_delta_t_floor_does_not_fall_back_to_setpoint_delta_when_measured_exists():
+    periods = [
+        {
+            "outlet_temp": 45.0,
+            "inlet_temp": 40.0,
+            "measured_delta_t": 0.8,
+            "thermal_power_kw": 2.0,
+            "minutes_since_defrost": 120,
+        }
+        for _ in range(20)
+    ]
+
+    assert physics_calibration.calibrate_delta_t_floor(periods) is None
