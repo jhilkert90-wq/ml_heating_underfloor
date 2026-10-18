@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Heating calibration now derives `delta_t_floor` from measured supply-return ΔT, rejects negative or sub-threshold heat output, and excludes active/recent defrost and recovery samples from heating slab and heat-source calibration.
+- Online heat-pump parameter learning now skips active defrost and the configured post-defrost recovery interval.
 
 ## [0.2.0] - 2026-02-10
 

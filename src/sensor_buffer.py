@@ -116,6 +116,32 @@ class SensorBuffer:
             
         return self._buffers[sensor_id][-1][1]
 
+    def get_minutes_since_active(
+        self,
+        sensor_id: str,
+        now: Optional[datetime] = None,
+        active_threshold: float = 0.5,
+    ) -> Optional[float]:
+        """Return elapsed minutes since the latest reading above a threshold."""
+        readings = self._buffers.get(sensor_id)
+        if not readings:
+            return None
+
+        current_time = now or datetime.now(timezone.utc)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+        active_timestamps = [
+            timestamp
+            for timestamp, value in readings
+            if value > active_threshold
+        ]
+        if not active_timestamps:
+            return None
+        elapsed = (
+            current_time - active_timestamps[-1]
+        ).total_seconds() / 60.0
+        return max(0.0, elapsed)
+
     def _prune(self, sensor_id: str):
         """
         Remove readings older than max_age from the buffer.

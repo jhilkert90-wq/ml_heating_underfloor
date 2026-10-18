@@ -12,6 +12,7 @@ import pytest
 import numpy as np
 import sys
 import os
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
@@ -129,6 +130,18 @@ def _runtime_signal(model, parameter_name, epsilon, climate_mode="heating"):
 # ── Dead Zone ────────────────────────────────────────────────────────
 
 class TestDeadZone:
+    def test_hp_parameter_gradient_skips_post_defrost_recovery(self, model):
+        prediction = _make_runtime_replay_prediction("outlet_effectiveness")
+        prediction["context"]["minutes_since_defrost"] = 20.0
+
+        with patch.object(model, "predict_thermal_trajectory") as predict:
+            gradient = model._calculate_parameter_gradient(
+                "outlet_effectiveness", 0.1, [prediction]
+            )
+
+        assert gradient == 0.0
+        predict.assert_not_called()
+
     def test_dead_zone_constant_exists(self):
         assert hasattr(PhysicsConstants, "LEARNING_DEAD_ZONE")
         assert PhysicsConstants.LEARNING_DEAD_ZONE == 0.01

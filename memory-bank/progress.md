@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ Defrost-Aware Runtime Learning — 2026-10-18
+
+**Status:** COMPLETED — Runtime heat-pump learning receives defrost age and skips active defrost and its recovery interval.
+
+**Files changed:** `src/sensor_buffer.py`, `src/pre_dispatch.py`, `src/main.py`, `src/physics_features.py`, `src/temperature_control.py`, `src/heat_source_channels.py`, `src/thermal_equilibrium_model.py`, `tests/unit/test_sensor_buffer.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_learning_stability.py`, `tests/unit/test_physics_features.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** The sensor buffer tracks elapsed time since the latest active defrost reading. This age is included in online learning context, and both heat-source channel updates and thermal-model gradients reject samples during active defrost and the configured recovery grace period. Focused tests passed (237); the full suite passed 1,789 tests and retained 10 failures in pre-existing main integration, fireplace-decay routing, calibration dispatch, and outlet-search tests.
+
+---
+
 ## ✅ Heating Defrost Calibration Filters — 2026-10-18
 
 **Status:** COMPLETED — Heating calibration uses measured loop ΔT and excludes active defrost, reverse heat flow, and the configured post-defrost recovery window.

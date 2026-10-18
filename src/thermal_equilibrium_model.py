@@ -1768,6 +1768,22 @@ class ThermalEquilibriumModel:
                     continue
                 if pred.get("pump_off", False):
                     continue
+                try:
+                    defrosting = float(context.get("defrosting", 0.0))
+                except (TypeError, ValueError):
+                    defrosting = 0.0
+                if defrosting > 0.5:
+                    continue
+                try:
+                    minutes_since_defrost = float(
+                        context.get("minutes_since_defrost", float("inf"))
+                    )
+                except (TypeError, ValueError):
+                    minutes_since_defrost = float("inf")
+                if minutes_since_defrost < getattr(
+                    config, "DEFROST_RECOVERY_GRACE_MINUTES", 45
+                ):
+                    continue
 
             climate_mode = context.get("climate_mode", "heating")
             thermal_power_kw = context.get(

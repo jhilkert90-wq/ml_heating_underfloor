@@ -73,6 +73,19 @@ class TestSensorBuffer:
         assert buffer.get_latest("sensor.test") == 20.0
         assert buffer.get_latest("sensor.unknown") is None
 
+    def test_get_minutes_since_active(self):
+        buffer = SensorBuffer()
+        now = datetime.now(timezone.utc)
+        buffer.add_reading("binary_sensor.defrost", 1.0, now - timedelta(minutes=30))
+        buffer.add_reading("binary_sensor.defrost", 0.0, now - timedelta(minutes=10))
+
+        assert buffer.get_minutes_since_active(
+            "binary_sensor.defrost", now=now
+        ) == pytest.approx(30.0)
+        assert buffer.get_minutes_since_active(
+            "binary_sensor.unknown", now=now
+        ) is None
+
     def test_hydrate(self):
         buffer = SensorBuffer()
         now = datetime.now(timezone.utc)

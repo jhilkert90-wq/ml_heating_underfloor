@@ -65,7 +65,8 @@ def test_build_physics_features_success(mock_ha_client, mock_influx_service):
     # Add +1 for the newly added pv_power_history_electrical column.
     # Add +3 for ML correction features: wind_speed, is_weekend, indoor_margin_rate.
     # Add +2 for slab thermal state features: d_inlet_temp_60min, is_equilibrium.
-    expected_cols = expected_cols_without_raw_history + 1 + 3 + 2  # 3 groups: temp, pv, cloud_cover
+    # Add +1 for runtime defrost recovery age used by learning guards.
+    expected_cols = expected_cols_without_raw_history + 1 + 3 + 2 + 1
     assert len(features_df.columns) == expected_cols
     
     # Verify original features

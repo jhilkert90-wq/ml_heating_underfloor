@@ -1,5 +1,25 @@
 # Active Context - Current Work & Decision State
 
+### Defrost-Aware Runtime Learning — 2026-10-18
+
+#### **What changed**
+- `src/sensor_buffer.py`: expose elapsed minutes since the latest active defrost sample.
+- `src/pre_dispatch.py`, `src/main.py`, and `src/physics_features.py`: buffer/hydrate the defrost sensor and add `minutes_since_defrost` to the feature payload.
+- `src/temperature_control.py`: include defrost state and age in online learning context.
+- `src/heat_source_channels.py` and `src/thermal_equilibrium_model.py`: skip heat-pump parameter updates during active defrost and the configured recovery interval.
+- Tests cover sensor-buffer timing, heat-source and model-gradient gating, and the updated feature set.
+
+#### **Why**
+- Negative ΔT and reverse heat flow during heating-mode defrost are valid signed observations for energy accounting, but must not teach heating parameters. Runtime learning now shares the calibration recovery guard so transient defrost behavior does not contaminate the learned heat-pump response.
+
+#### **Files modified**
+- `src/sensor_buffer.py`, `src/pre_dispatch.py`, `src/main.py`, `src/physics_features.py`, `src/temperature_control.py`
+- `src/heat_source_channels.py`, `src/thermal_equilibrium_model.py`
+- `tests/unit/test_sensor_buffer.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_learning_stability.py`, `tests/unit/test_physics_features.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Heating Defrost Calibration Filters — 2026-10-18
 
 #### **What changed**

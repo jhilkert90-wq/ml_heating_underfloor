@@ -436,6 +436,28 @@ class HeatPumpChannel(HeatSourceChannel):
     def _learn_from_recent(self) -> None:
         min_records = _get_min_records_for_learning()
         recent = self.history[-min_records:]
+        recovery_grace = getattr(
+            config, "DEFROST_RECOVERY_GRACE_MINUTES", 45
+        )
+        for record in recent:
+            context = record.get("context", {})
+            minutes_since_defrost = context.get(
+                "minutes_since_defrost", float("inf")
+            )
+            try:
+                minutes_since_defrost = float(minutes_since_defrost)
+            except (TypeError, ValueError):
+                minutes_since_defrost = float("inf")
+            if (
+                _to_float(context.get("defrosting", 0.0)) > 0.5
+                or minutes_since_defrost < recovery_grace
+            ):
+                logger.debug(
+                    "♨️ HeatPumpChannel skipping self-learning during "
+                    "defrost recovery (%.1f min since defrost)",
+                    minutes_since_defrost,
+                )
+                return
         if any(_is_fireplace_active(record.get("context", {})) for record in recent):
             logger.debug(
                 "♨️ HeatPumpChannel skipping self-learning: fireplace-contaminated history"

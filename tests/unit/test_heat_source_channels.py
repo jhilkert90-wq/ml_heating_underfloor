@@ -412,6 +412,22 @@ def test_heat_pump_self_learning_updates_hp_owned_model_parameters():
     assert updated["delta_t_floor"] > initial["delta_t_floor"]
 
 
+def test_heat_pump_self_learning_skips_post_defrost_recovery():
+    channel = HeatPumpChannel()
+    initial = channel.get_learnable_parameters()
+    context = make_context(
+        heat_pump_active=True,
+        delta_t=4.5,
+        thermal_power=2.5,
+        minutes_since_defrost=20.0,
+    )
+
+    for _ in range(_get_min_records_for_learning() + 1):
+        channel.record_learning(1.0, context)
+
+    assert channel.get_learnable_parameters() == initial
+
+
 def test_solar_channel_self_learning_updates_retained_adaptive_parameters():
     from src import config
     original = getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)

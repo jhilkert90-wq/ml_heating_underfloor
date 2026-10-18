@@ -73,6 +73,11 @@ def update_sensor_buffer_and_thermo(
         config.INLET_TEMP_ENTITY_ID: get_float_state(config.INLET_TEMP_ENTITY_ID),
         config.FLOW_RATE_ENTITY_ID: get_float_state(config.FLOW_RATE_ENTITY_ID),
     }
+    defrost_state = ha_client.get_state(
+        config.DEFROST_STATUS_ENTITY_ID, all_states, is_binary=True
+    )
+    if defrost_state is not None:
+        buffer_updates[config.DEFROST_STATUS_ENTITY_ID] = float(defrost_state)
 
     for entity_id, value in buffer_updates.items():
         if value is not None:
