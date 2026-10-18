@@ -71,6 +71,31 @@ class TestCorrectedThermalPhysics:
         assert abs(predicted - expected) < 0.1, (
             f"Expected {expected:.1f}°C, got {predicted:.1f}°C")
 
+    def test_outlet_effectiveness_curve_changes_equilibrium_by_outdoor_temp(
+        self, clean_model, monkeypatch
+    ):
+        monkeypatch.setattr(
+            thermal_equilibrium_model.config,
+            "OUTLET_EFFECTIVENESS_MODE",
+            "curve",
+            raising=False,
+        )
+        clean_model.outlet_effectiveness_curve = [
+            {"outdoor_temp": 0.0, "outlet_effectiveness": 0.5},
+            {"outdoor_temp": 10.0, "outlet_effectiveness": 1.5},
+        ]
+        clean_model.heat_loss_coefficient = 1.0
+
+        cold_prediction = clean_model.predict_equilibrium_temperature(
+            outlet_temp=30.0, outdoor_temp=0.0, current_indoor=20.0
+        )
+        warm_prediction = clean_model.predict_equilibrium_temperature(
+            outlet_temp=30.0, outdoor_temp=10.0, current_indoor=20.0
+        )
+
+        assert cold_prediction == pytest.approx((0.5 * 30 + 1.0 * 0) / 1.5)
+        assert warm_prediction == pytest.approx((1.5 * 30 + 1.0 * 10) / 2.5)
+
     def test_energy_conservation_at_equilibrium(self, clean_model):
         """Test that energy is conserved at equilibrium (Heat Input = Heat Loss)."""
         pv_power = 1000

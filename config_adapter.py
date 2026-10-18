@@ -299,6 +299,9 @@ def convert_addon_to_env(config):
         'OUTLET_EFFECTIVENESS': str(
             config.get('outlet_effectiveness', 0.9526723072021629)
         ),
+        'OUTLET_EFFECTIVENESS_MODE': str(
+            config.get('outlet_effectiveness_mode', 'scalar')
+        ),
         'OUTDOOR_COUPLING': str(config.get('outdoor_coupling', 0.3)),
         'THERMAL_BRIDGE_FACTOR': str(
             config.get('thermal_bridge_factor', 0.1)

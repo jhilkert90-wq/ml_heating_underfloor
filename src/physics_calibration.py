@@ -27,6 +27,7 @@ try:
     from .influx_service import InfluxService
     from .thermal_config import ThermalParameterConfig
     from .unified_thermal_state import get_thermal_state_manager
+    from .outlet_effectiveness_curve import calibrate_curve
 except ImportError:
     # Direct import fallback for standalone execution
     import config
@@ -35,6 +36,7 @@ except ImportError:
     from influx_service import InfluxService
     from thermal_config import ThermalParameterConfig
     from unified_thermal_state import get_thermal_state_manager
+    from outlet_effectiveness_curve import calibrate_curve
 
 
 def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
@@ -155,6 +157,14 @@ def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
         logging.error("❌ Parameter optimization failed")
         return None
 
+    optimized_params["outlet_effectiveness_curve"] = calibrate_curve(
+        stable_periods,
+        optimized_params["heat_loss_coefficient"],
+        optimized_params["outlet_effectiveness"],
+        ThermalParameterConfig.get_bounds("outlet_effectiveness"),
+        climate_mode="heating",
+    )
+
     logging.info(
         f"✅ Optimization completed - MAE: {optimized_params['mae']:.4f}°C"
     )
@@ -166,6 +176,9 @@ def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
     temp_model = ThermalEquilibriumModel()
     temp_model.heat_loss_coefficient = optimized_params['heat_loss_coefficient']
     temp_model.outlet_effectiveness = optimized_params['outlet_effectiveness']
+    temp_model.outlet_effectiveness_curve = optimized_params[
+        "outlet_effectiveness_curve"
+    ]
 
     # Apply weights
     temp_model.external_source_weights['pv'] = optimized_params.get(
@@ -424,6 +437,8 @@ def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
             'thermal_time_constant': optimized_params['thermal_time_constant'],
             'heat_loss_coefficient': optimized_params['heat_loss_coefficient'],
             'outlet_effectiveness': optimized_params['outlet_effectiveness'],
+            'outlet_effectiveness_curve':
+                optimized_params["outlet_effectiveness_curve"],
             'pv_heat_weight': pv_weight,
             'fireplace_heat_weight': fireplace_weight,
             'tv_heat_weight': tv_weight,

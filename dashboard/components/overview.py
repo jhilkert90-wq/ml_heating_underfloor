@@ -21,7 +21,10 @@ from data_service import (
     get_prediction_history,
     get_state_file_info,
     load_thermal_state,
+    load_thermal_state_for_mode,
+    is_cooling_mode_active,
 )
+from settings_service import load_local_options
 
 
 def get_recent_trend_data():
@@ -210,6 +213,13 @@ def render_configuration_summary():
         return
 
     baseline = state.get("baseline_parameters", {})
+    options = load_local_options()
+    selected_oe_mode = options.get("outlet_effectiveness_mode", "scalar")
+    active_climate_mode = (
+        "cooling" if is_cooling_mode_active() else "heating"
+    )
+    st.write(f"**Active climate model:** `{active_climate_mode}`")
+    st.write(f"**Selected OE model:** `{selected_oe_mode}`")
 
     col1, col2 = st.columns(2)
 
@@ -233,6 +243,28 @@ def render_configuration_summary():
             val = baseline.get(key)
             if val is not None:
                 st.write(f"{key}: `{val}`")
+
+    st.write("**Calibrated OE curves**")
+    for mode in ("heating", "cooling"):
+        mode_state = load_thermal_state_for_mode(mode) or {}
+        mode_baseline = mode_state.get("baseline_parameters", {})
+        curve = mode_baseline.get("outlet_effectiveness_curve", [])
+        with st.expander(f"{mode.title()} OE curve", expanded=False):
+            if curve:
+                st.dataframe(
+                    [
+                        {
+                            "Outdoor temperature (°C)": point.get("outdoor_temp"),
+                            "OE": point.get("outlet_effectiveness"),
+                            "Samples": point.get("sample_count", 0),
+                        }
+                        for point in curve
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            else:
+                st.caption("No calibrated curve is stored; scalar OE is used as fallback.")
 
 
 def render_overview():

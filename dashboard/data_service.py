@@ -114,6 +114,11 @@ def _is_cooling_mode_active() -> bool:
         return False
 
 
+def is_cooling_mode_active() -> bool:
+    """Return the dashboard's current heating/cooling mode estimate."""
+    return _is_cooling_mode_active()
+
+
 def load_thermal_state() -> Optional[Dict[str, Any]]:
     """Load the unified thermal state from JSON.
 
@@ -138,6 +143,23 @@ def load_thermal_state() -> Optional[Dict[str, Any]]:
             return json.load(fh)
     except (json.JSONDecodeError, OSError) as exc:
         logger.error("Failed to load thermal state from %s: %s", path, exc)
+        return None
+
+
+def load_thermal_state_for_mode(mode: str) -> Optional[Dict[str, Any]]:
+    """Load the persisted thermal state for one climate mode."""
+    path = (
+        _find_cooling_state_file()
+        if str(mode).lower() == "cooling"
+        else _find_state_file()
+    )
+    if path is None:
+        return None
+    try:
+        with open(path, "r") as fh:
+            return json.load(fh)
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.error("Failed to load %s thermal state from %s: %s", mode, path, exc)
         return None
 
 

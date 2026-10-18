@@ -146,6 +146,7 @@ class ThermalStateManager:
                 ThermalParameterConfig.get_default('heat_loss_coefficient'),
                 "outlet_effectiveness":
                 ThermalParameterConfig.get_default('outlet_effectiveness'),
+                "outlet_effectiveness_curve": [],
                 "solar_lag_minutes":
                 ThermalParameterConfig.get_default('solar_lag_minutes'),
                 "slab_time_constant_hours":
@@ -180,6 +181,7 @@ class ThermalStateManager:
                     "total_conductance_delta": 0.0,
                     "heat_loss_coefficient_delta": 0.0,
                     "outlet_effectiveness_delta": 0.0,
+                    "outlet_effectiveness_curve_delta": [],
                     "thermal_time_constant_delta": 0.0,
                     "pv_heat_weight_delta": 0.0,
                     "tv_heat_weight_delta": 0.0,
@@ -450,6 +452,10 @@ class ThermalStateManager:
         if "outlet_effectiveness" in parameters:
             baseline["outlet_effectiveness"] = \
                 parameters["outlet_effectiveness"]
+        if "outlet_effectiveness_curve" in parameters:
+            baseline["outlet_effectiveness_curve"] = parameters[
+                "outlet_effectiveness_curve"
+            ]
 
         # Update heat source weights if provided
         if "pv_heat_weight" in parameters:
@@ -490,6 +496,7 @@ class ThermalStateManager:
             "total_conductance_delta": 0.0,
             "heat_loss_coefficient_delta": 0.0,
             "outlet_effectiveness_delta": 0.0,
+            "outlet_effectiveness_curve_delta": [],
             "thermal_time_constant_delta": 0.0,
             "pv_heat_weight_delta": 0.0,
             "tv_heat_weight_delta": 0.0,
@@ -526,6 +533,9 @@ class ThermalStateManager:
                                   adjustments.get("heat_loss_coefficient_delta", 0.0)),
             "outlet_effectiveness": (baseline["outlet_effectiveness"] +
                                   adjustments.get("outlet_effectiveness_delta", 0.0)),
+            "outlet_effectiveness_curve": baseline.get(
+                "outlet_effectiveness_curve", []
+            ),
             "pv_heat_weight": (baseline["pv_heat_weight"] +
                                adjustments.get("pv_heat_weight_delta", 0.0)),
             "fireplace_heat_weight": baseline["fireplace_heat_weight"],

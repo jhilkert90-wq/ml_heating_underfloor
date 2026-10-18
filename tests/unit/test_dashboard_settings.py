@@ -41,7 +41,7 @@ class TestSettingsMetadata:
         metadata = load_settings_metadata()
 
         _SKIPPED_KEYS = {"heating_profile", "cooling_profile"}
-        assert len(metadata.defaults) == 254
+        assert len(metadata.defaults) == 255
         assert len(metadata.fields) == len(metadata.defaults) - len(_SKIPPED_KEYS)
         assert len(metadata.field_order) == len(metadata.fields)
         assert set(metadata.defaults.keys()) - set(metadata.fields.keys()) == _SKIPPED_KEYS
@@ -66,6 +66,11 @@ class TestSettingsMetadata:
         assert metadata.fields["heating_ml_cv_enabled"].label
         assert metadata.fields["cooling_physics_min_outdoor_rolling_24h_c"].label
         assert metadata.fields["cooling_physics_min_outdoor_rolling_24h_c"].description
+        assert metadata.fields["outlet_effectiveness_mode"].widget_type == "select"
+        assert metadata.fields["outlet_effectiveness_mode"].options == (
+            "scalar",
+            "curve",
+        )
 
     def test_group_definitions_keep_expected_order(self):
         assert list(GROUP_DEFINITIONS) == [

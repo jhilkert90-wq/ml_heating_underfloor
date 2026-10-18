@@ -57,6 +57,9 @@ class TestThermalStateManager:
         params = {
             "heat_loss_coefficient": 0.1,
             "outlet_effectiveness": 0.2,
+            "outlet_effectiveness_curve": [
+                {"outdoor_temp": 0.0, "outlet_effectiveness": 0.3, "sample_count": 12}
+            ],
             "thermal_time_constant": 25.5,
         }
         state_manager.set_calibrated_baseline(params, calibration_cycles=100)
@@ -69,6 +72,9 @@ class TestThermalStateManager:
             "thermal_time_constant"] == 25.5
         assert current_params["baseline_parameters"][
             "calibration_cycles"] == 100
+        assert current_params["baseline_parameters"][
+            "outlet_effectiveness_curve"
+        ] == params["outlet_effectiveness_curve"]
 
     def test_update_and_get_learning_state(self, state_manager):
         """Test updating and getting the learning state."""
@@ -248,4 +254,3 @@ class TestThermalStateManager:
         assert manager.state_file == str(tmp_path / "thermal_state_shadow.json")
         assert os.path.exists(tmp_path / "thermal_state_shadow.json") is True
         assert os.path.exists(base_path) is False
-

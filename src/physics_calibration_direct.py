@@ -64,6 +64,7 @@ try:
     from .thermal_equilibrium_model import ThermalEquilibriumModel
     from .thermal_config import ThermalParameterConfig
     from .unified_thermal_state import get_thermal_state_manager
+    from .outlet_effectiveness_curve import calibrate_curve
     from .state_manager import save_state
     from .physics_calibration import (
         fetch_historical_data_for_calibration,
@@ -89,6 +90,7 @@ except ImportError:
     from thermal_equilibrium_model import ThermalEquilibriumModel  # type: ignore
     from thermal_config import ThermalParameterConfig  # type: ignore
     from unified_thermal_state import get_thermal_state_manager  # type: ignore
+    from outlet_effectiveness_curve import calibrate_curve  # type: ignore
     from state_manager import save_state  # type: ignore
     from physics_calibration import (  # type: ignore
         fetch_historical_data_for_calibration,
@@ -1072,6 +1074,13 @@ def calibrate_thermal_model_physics(
         logging.warning("⚠️ OE calibration failed — using %s value",
                         _fallback_source("outlet_effectiveness"))
         oe = _state_fallback("outlet_effectiveness")
+    oe_curve = calibrate_curve(
+        stable_periods,
+        hlc,
+        oe,
+        ThermalParameterConfig.get_bounds("outlet_effectiveness"),
+        climate_mode="heating",
+    )
 
     # --- Step 3: τ_room (thermal time constant) ---
     # Priority: (1) transient calibration from heating sequences (most data),
@@ -1224,6 +1233,7 @@ def calibrate_thermal_model_physics(
     calibrated_params: Dict[str, float] = {
         "heat_loss_coefficient": hlc,
         "outlet_effectiveness": oe,
+        "outlet_effectiveness_curve": oe_curve,
         "thermal_time_constant": tau,
         "pv_heat_weight": pv_weight,
         "fireplace_heat_weight": fp_weight,
@@ -1243,6 +1253,7 @@ def calibrate_thermal_model_physics(
     thermal_model.thermal_time_constant = tau
     thermal_model.heat_loss_coefficient = hlc
     thermal_model.outlet_effectiveness = oe
+    thermal_model.outlet_effectiveness_curve = oe_curve
     thermal_model.external_source_weights["pv"] = pv_weight
     thermal_model.external_source_weights["fireplace"] = fp_weight
     thermal_model.external_source_weights["tv"] = tv_weight
