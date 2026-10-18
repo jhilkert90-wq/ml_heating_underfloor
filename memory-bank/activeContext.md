@@ -1,5 +1,29 @@
 # Active Context - Current Work & Decision State
 
+### Outdoor-Temperature OE Curve — 2026-10-18
+
+#### **What changed**
+- `src/outlet_effectiveness_curve.py`: validate and interpolate curve support points; calibrate robust binned estimates with scalar shrinkage and minimum sample counts; apply bounded local updates.
+- `src/thermal_equilibrium_model.py`: select scalar or interpolated curve from the add-on setting, use outdoor temperature in the temperature-based equilibrium prediction, and persist curve learning deltas separately from calibrated supports.
+- `src/physics_calibration.py`, `src/physics_calibration_direct.py`, and `src/physics_calibration_cooling.py`: create OE curves during every respective calibration path.
+- `src/unified_thermal_state.py` and `src/unified_thermal_state_cooling.py`: store per-mode OE support points and online corrections in the matching state JSON.
+- `ml_heating_underfloor/config.yaml`, translations, `config_adapter.py`, and `src/config.py`: expose scalar/curve choice through dashboard add-on settings.
+- `src/model_wrapper.py` and `src/ha_client.py`: export both heating and cooling OE values and curve support points to HA. `dashboard/components/overview.py` shows active mode, selection, curve supports, and coverage.
+- Regression tests cover curve calibration, interpolation, bounded updates, mode-specific state persistence, dashboard metadata, runtime learning gradient, and HA attributes.
+
+#### **Why**
+- A single global OE can lag behind changing outdoor-temperature conditions. Both the original scalar and the binned curve are recalibrated and retained, while the selected curve adapts locally without overwriting the calibrated baseline. Defrost and recovery samples remain excluded by the prior heating calibration and online-learning guards.
+- The model's measured-energy equilibrium path intentionally continues to use measured thermal power and HLC directly; OE affects the temperature-based equilibrium path, where no thermal-power measurement is supplied.
+
+#### **Files modified**
+- `src/outlet_effectiveness_curve.py`, `src/thermal_equilibrium_model.py`, `src/physics_calibration.py`, `src/physics_calibration_direct.py`, `src/physics_calibration_cooling.py`
+- `src/unified_thermal_state.py`, `src/unified_thermal_state_cooling.py`, `src/model_wrapper.py`, `src/ha_client.py`, `src/config.py`, `config_adapter.py`
+- `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `dashboard/data_service.py`, `dashboard/components/overview.py`
+- `tests/unit/test_outlet_effectiveness_curve.py`, `tests/unit/test_thermal_equilibrium_model.py`, `tests/unit/test_learning_stability.py`, `tests/unit/test_unified_thermal_state.py`, `tests/unit/test_unified_thermal_state_cooling.py`, `tests/unit/test_ha_client.py`, `tests/unit/test_dashboard_settings.py`, `tests/unit/test_config_adapter.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### Defrost-Aware Runtime Learning — 2026-10-18
 
 #### **What changed**

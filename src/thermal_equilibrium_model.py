@@ -1383,6 +1383,10 @@ class ThermalEquilibriumModel:
         old_tv_heat_weight = self.tv_heat_weight
         old_solar_lag = self.solar_lag_minutes
         old_slab_time_constant = self.slab_time_constant_hours
+        old_curve_delta_by_temp = {
+            point["outdoor_temp"]: point["outlet_effectiveness"]
+            for point in self.outlet_effectiveness_curve_delta
+        }
 
         thermal_update = current_learning_rate * thermal_gradient
         heat_loss_coefficient_update = (
@@ -1736,11 +1740,18 @@ class ThermalEquilibriumModel:
         if new_curve_delta is not None:
             outlet_effectiveness_change = max(
                 [
-                    abs(point["outlet_effectiveness"])
+                    abs(
+                        point["outlet_effectiveness"]
+                        - old_curve_delta_by_temp.get(
+                            point["outdoor_temp"], 0.0
+                        )
+                    )
                     for point in new_curve_delta
                 ]
                 or [0.0]
             )
+            if outlet_effectiveness_change <= 0.0001:
+                new_curve_delta = None
         pv_heat_weight_change = abs(self.pv_heat_weight - old_pv_heat_weight)
         tv_heat_weight_change = abs(self.tv_heat_weight - old_tv_heat_weight)
         solar_lag_change = abs(self.solar_lag_minutes - old_solar_lag)
@@ -3025,13 +3036,7 @@ class ThermalEquilibriumModel:
                 or abs(new_tv_heat_weight_adjustment) > 0.0001
                 or abs(new_solar_lag_adjustment) > 0.1
                 or abs(new_slab_adjustment) > 0.001
-                or (
-                    new_outlet_effectiveness_curve_delta is not None
-                    and any(
-                        abs(point.get("outlet_effectiveness", 0.0)) > 0.0001
-                        for point in new_outlet_effectiveness_curve_delta
-                    )
-                )
+                or new_outlet_effectiveness_curve_delta is not None
             ):
                 # Persist the latest parameter record BEFORE save_state is
                 # triggered by update_learning_state. This fixes the shared-

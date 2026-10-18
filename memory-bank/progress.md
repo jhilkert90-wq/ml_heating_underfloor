@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ Outdoor-Temperature OE Curve — 2026-10-18
+
+**Status:** COMPLETED — Scalar and outdoor-temperature OE variants are independently calibrated and persisted for heating and cooling, with dashboard selection, online curve corrections, and Home Assistant export.
+
+**Files changed:** `src/outlet_effectiveness_curve.py`, `src/thermal_equilibrium_model.py`, `src/physics_calibration.py`, `src/physics_calibration_direct.py`, `src/physics_calibration_cooling.py`, `src/unified_thermal_state.py`, `src/unified_thermal_state_cooling.py`, `src/model_wrapper.py`, `src/ha_client.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `dashboard/data_service.py`, `dashboard/components/overview.py`, `tests/unit/test_outlet_effectiveness_curve.py`, `tests/unit/test_thermal_equilibrium_model.py`, `tests/unit/test_learning_stability.py`, `tests/unit/test_unified_thermal_state.py`, `tests/unit/test_unified_thermal_state_cooling.py`, `tests/unit/test_ha_client.py`, `tests/unit/test_dashboard_settings.py`, `tests/unit/test_config_adapter.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Added a dashboard option selecting scalar OE or a calibrated outdoor-temperature curve; both are calculated in SciPy heating, physics-direct heating, and physics-direct cooling calibration. Per-mode support points and learning deltas persist separately, the runtime interpolates the curve in the temperature-based equilibrium calculation, and online gradients update bounded nearby supports. HA exports both modes' curve diagnostics; dashboard overview shows active mode, choice, supports and sample coverage. Focused tests passed (239); full suite: 1,798 passed, 10 failed in the existing main integration, fireplace-decay routing, calibration dispatch, and outlet-search cases. The energy-based path with measured thermal power remains authoritative and does not use OE, since measured heat output already defines the heat balance.
+
+---
+
 ## ✅ Defrost-Aware Runtime Learning — 2026-10-18
 
 **Status:** COMPLETED — Runtime heat-pump learning receives defrost age and skips active defrost and its recovery interval.

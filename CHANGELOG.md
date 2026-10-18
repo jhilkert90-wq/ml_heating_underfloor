@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added scalar and outdoor-temperature OE modes selectable in add-on dashboard settings. Heating and cooling scalar baselines and calibrated support-point curves are stored independently in their respective unified thermal state files; both curves are calibrated during every matching physics calibration.
+- Added per-mode OE model, scalar, and compact curve support-point attributes to the Home Assistant learning sensor, plus dashboard visibility for the selected model, active climate mode, and calibration sample coverage.
+- Added bounded, locally weighted online learning corrections for the OE curve. Predictions interpolate support points by outdoor temperature when using the temperature-based equilibrium path.
+
 ### Fixed
 - Heating calibration now derives `delta_t_floor` from measured supply-return ΔT, rejects negative or sub-threshold heat output, and excludes active/recent defrost and recovery samples from heating slab and heat-source calibration.
 - Online heat-pump parameter learning now skips active defrost and the configured post-defrost recovery interval.

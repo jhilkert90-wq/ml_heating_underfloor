@@ -96,6 +96,41 @@ class TestCorrectedThermalPhysics:
         assert cold_prediction == pytest.approx((0.5 * 30 + 1.0 * 0) / 1.5)
         assert warm_prediction == pytest.approx((1.5 * 30 + 1.0 * 10) / 2.5)
 
+    def test_curve_learning_delta_survives_model_reload(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            thermal_equilibrium_model.config,
+            "OUTLET_EFFECTIVENESS_MODE",
+            "curve",
+            raising=False,
+        )
+        manager = unified_thermal_state.ThermalStateManager(
+            state_file=str(tmp_path / "curve-state.json")
+        )
+        curve = [
+            {"outdoor_temp": 0.0, "outlet_effectiveness": 0.5, "sample_count": 12}
+        ]
+        manager.set_calibrated_baseline(
+            {
+                "thermal_time_constant": 4.0,
+                "heat_loss_coefficient": 1.0,
+                "outlet_effectiveness": 0.75,
+                "outlet_effectiveness_curve": curve,
+            }
+        )
+        delta = [
+            {"outdoor_temp": 0.0, "outlet_effectiveness": 0.05, "sample_count": 12}
+        ]
+        manager.update_learning_state(
+            parameter_adjustments={
+                "outlet_effectiveness_curve_delta": delta
+            }
+        )
+
+        reloaded_model = thermal_equilibrium_model.ThermalEquilibriumModel(
+            state_manager=manager
+        )
+        assert reloaded_model.get_outlet_effectiveness(0.0) == pytest.approx(0.55)
+
     def test_energy_conservation_at_equilibrium(self, clean_model):
         """Test that energy is conserved at equilibrium (Heat Input = Heat Loss)."""
         pv_power = 1000
