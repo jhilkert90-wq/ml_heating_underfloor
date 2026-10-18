@@ -68,6 +68,7 @@ try:
     from .physics_calibration import (
         fetch_historical_data_for_calibration,
         filter_stable_periods,
+        _heating_defrost_sample_mask,
         backup_existing_calibration,
         calculate_cooling_time_constant,
         calibrate_delta_t_floor,
@@ -92,6 +93,7 @@ except ImportError:
     from physics_calibration import (  # type: ignore
         fetch_historical_data_for_calibration,
         filter_stable_periods,
+        _heating_defrost_sample_mask,
         backup_existing_calibration,
         calculate_cooling_time_constant,
         calibrate_delta_t_floor,
@@ -457,23 +459,31 @@ def _residual_heat_source_weight(
 
 def _filter_fp_only_periods(stable_periods):
     """HP + fireplace on, no PV (< _MIN_PV_POWER_W W), no TV."""
+    defrost_grace = getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45)
+    if not isinstance(defrost_grace, (int, float)):
+        defrost_grace = 45
     return [
         p for p in stable_periods
         if p.get("fireplace_on", 0) > 0
         and p.get("pv_power", 0) < _MIN_PV_POWER_W
         and p.get("tv_on", 0) == 0
         and p.get("thermal_power_kw", 0) >= config.HEATING_MIN_THERMAL_POWER_KW
+        and p.get("minutes_since_defrost", float("inf")) >= defrost_grace
     ]
 
 
 def _filter_tv_only_periods(stable_periods):
     """HP + TV on, no PV (< _MIN_PV_POWER_W W), no fireplace."""
+    defrost_grace = getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45)
+    if not isinstance(defrost_grace, (int, float)):
+        defrost_grace = 45
     return [
         p for p in stable_periods
         if p.get("tv_on", 0) > 0
         and p.get("pv_power", 0) < _MIN_PV_POWER_W
         and p.get("fireplace_on", 0) == 0
         and p.get("thermal_power_kw", 0) >= config.HEATING_MIN_THERMAL_POWER_KW
+        and p.get("minutes_since_defrost", float("inf")) >= defrost_grace
     ]
 
 
@@ -660,7 +670,12 @@ def _calibrate_slab_tau_grid_search(
         return None
 
     inlet_col = config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    measured_outlet_entity = getattr(
+        config, "ACTUAL_OUTLET_TEMP_ENTITY_ID", None
+    )
+    if not isinstance(measured_outlet_entity, str) or not measured_outlet_entity:
+        measured_outlet_entity = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID
+    outlet_col = measured_outlet_entity.split(".", 1)[-1]
     flow_col = config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1]
 
     for c in (inlet_col, outlet_col, flow_col):
@@ -681,7 +696,21 @@ def _calibrate_slab_tau_grid_search(
         * delta_t_vals
     ).clip(lower=0.0)
 
-    hp_on = thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW
+    defrost_entity = getattr(config, "DEFROST_STATUS_ENTITY_ID", "")
+    defrost_col = (
+        defrost_entity.split(".", 1)[-1]
+        if isinstance(defrost_entity, str)
+        else ""
+    )
+    defrost_valid = _heating_defrost_sample_mask(
+        df_s,
+        defrost_col,
+        getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45),
+    )
+    hp_on = (
+        (thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW)
+        & defrost_valid
+    )
     hp_on_prev = hp_on.shift(1, fill_value=False)
     startups = hp_on & ~hp_on_prev
 

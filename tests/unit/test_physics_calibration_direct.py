@@ -371,7 +371,8 @@ class TestSlabTauGridSearch:
 
         with patch("src.physics_calibration_direct.config") as mc:
             mc.INLET_TEMP_ENTITY_ID = "sensor.hp_inlet_temp"
-            mc.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID = "sensor.hp_outlet_temp"
+            mc.ACTUAL_OUTLET_TEMP_ENTITY_ID = "sensor.hp_outlet_temp"
+            mc.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID = "sensor.hp_target_temp"
             mc.FLOW_RATE_ENTITY_ID = "sensor.hp_current_flow_rate"
             mc.SPECIFIC_HEAT_CAPACITY = 4.186
             mc.HEATING_MIN_THERMAL_POWER_KW = 0.5
@@ -382,6 +383,28 @@ class TestSlabTauGridSearch:
         assert abs(result - tau_true) <= 0.15, (
             f"Grid search tau {result:.3f}h deviates more than 0.15h from true {tau_true}h"
         )
+
+    def test_excludes_defrost_and_recovery_samples(self):
+        from src.physics_calibration_direct import _calibrate_slab_tau_grid_search
+
+        df = self._make_slab_df(tau_true=1.0, n_events=5, steps_per_event=25)
+        df["defrosting"] = 0
+        # Mark the first row of each synthetic event as an active defrost.
+        df.loc[[0, 30, 60, 90, 120], "defrosting"] = 1
+
+        with patch("src.physics_calibration_direct.config") as mc:
+            mc.INLET_TEMP_ENTITY_ID = "sensor.hp_inlet_temp"
+            mc.ACTUAL_OUTLET_TEMP_ENTITY_ID = "sensor.hp_outlet_temp"
+            mc.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID = "sensor.hp_target_temp"
+            mc.FLOW_RATE_ENTITY_ID = "sensor.hp_current_flow_rate"
+            mc.DEFROST_STATUS_ENTITY_ID = "sensor.defrosting"
+            mc.DEFROST_RECOVERY_GRACE_MINUTES = 45
+            mc.SPECIFIC_HEAT_CAPACITY = 4.186
+            mc.HEATING_MIN_THERMAL_POWER_KW = 0.5
+
+            result = _calibrate_slab_tau_grid_search(df)
+
+        assert result is None
 
     def test_returns_none_for_empty_df(self):
         from src.physics_calibration_direct import _calibrate_slab_tau_grid_search
@@ -440,6 +463,33 @@ class TestFilterHelpers:
             result = _filter_tv_only_periods(periods)
         assert len(result) == 1
         assert result[0]["tv_on"] == 1
+
+    def test_fp_and_tv_filters_exclude_defrost_recovery(self):
+        from src.physics_calibration_direct import (
+            _filter_fp_only_periods,
+            _filter_tv_only_periods,
+        )
+        periods = [
+            {
+                "fireplace_on": 1,
+                "tv_on": 1,
+                "pv_power": 0,
+                "thermal_power_kw": 1.0,
+                "minutes_since_defrost": 20,
+            },
+            {
+                "fireplace_on": 1,
+                "tv_on": 1,
+                "pv_power": 0,
+                "thermal_power_kw": 1.0,
+                "minutes_since_defrost": 60,
+            },
+        ]
+        with patch("src.physics_calibration_direct.config") as mc:
+            mc.HEATING_MIN_THERMAL_POWER_KW = 0.5
+            mc.DEFROST_RECOVERY_GRACE_MINUTES = 45
+            assert _filter_fp_only_periods(periods) == [periods[1]]
+            assert _filter_tv_only_periods(periods) == [periods[1]]
 
 
 # ---------------------------------------------------------------------------
