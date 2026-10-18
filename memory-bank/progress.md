@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## ✅ Heating Defrost Calibration Filters — 2026-10-18
+
+**Status:** COMPLETED — Heating calibration uses measured loop ΔT and excludes active defrost, reverse heat flow, and the configured post-defrost recovery window.
+
+**Files changed:** `src/physics_calibration.py`, `src/physics_calibration_direct.py`, `tests/unit/test_physics_calibration.py`, `tests/unit/test_physics_calibration_direct.py`, `tests/unit/test_channel_calibration.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Stable calibration samples retain measured supply-return ΔT separately from the commanded outlet target. `delta_t_floor` now prefers that measurement and rejects negative/low-power and post-defrost samples. Both slab-time-constant paths exclude active/recent defrost, and the fireplace/TV heating calibration filters enforce the defrost recovery grace period. Focused calibration/cooling/heat-source tests passed (215); the full suite reported 1,789 passed and 10 unrelated existing failures.
+
+---
+
 ## ✅ Address PR #95 Review Feedback — 2026-10-13
 
 **Status:** COMPLETED — AI reviews use a supported API and solar learning is isolated across phase transitions.

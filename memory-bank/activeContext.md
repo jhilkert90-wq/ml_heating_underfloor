@@ -1,5 +1,22 @@
 # Active Context - Current Work & Decision State
 
+### Heating Defrost Calibration Filters — 2026-10-18
+
+#### **What changed**
+- `src/physics_calibration.py`: retain measured supply-return ΔT in stable samples; use it for `delta_t_floor`; reject negative/low-power and post-defrost samples; exclude recent defrost from slab-tau fitting.
+- `src/physics_calibration_direct.py`: use the measured outlet sensor for slab-tau fitting, exclude active/recent defrost, and gate fireplace/TV heat-source calibration on the defrost recovery interval.
+- Regression tests cover measured ΔT versus target setpoint, negative flow heat, defrost recovery, and calibration outlet sensor selection.
+
+#### **Why**
+- The prior `delta_t_floor` estimator combined measured thermal power with a commanded outlet target, which could return a misleadingly low HP loop ΔT. Heating defrost has negative signed power and must not train heating parameters; the same signed measurement remains meaningful in energy-balance use cases.
+
+#### **Files modified**
+- `src/physics_calibration.py`, `src/physics_calibration_direct.py`
+- `tests/unit/test_physics_calibration.py`, `tests/unit/test_physics_calibration_direct.py`, `tests/unit/test_channel_calibration.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### PR #95 Review Feedback — 2026-10-13
 
 #### **What changed**
