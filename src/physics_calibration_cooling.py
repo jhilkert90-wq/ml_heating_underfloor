@@ -42,6 +42,7 @@ try:
     from .thermal_config import ThermalParameterConfig
     from .unified_thermal_state import get_thermal_state_manager
     from .unified_thermal_state_cooling import get_cooling_state_manager
+    from .outlet_effectiveness_curve import calibrate_curve
     from .physics_calibration import (
         fetch_historical_data_for_calibration,
         calculate_cooling_time_constant,
@@ -60,6 +61,7 @@ except ImportError:
     from thermal_config import ThermalParameterConfig  # type: ignore
     from unified_thermal_state import get_thermal_state_manager  # type: ignore
     from unified_thermal_state_cooling import get_cooling_state_manager  # type: ignore
+    from outlet_effectiveness_curve import calibrate_curve  # type: ignore
     from physics_calibration import (  # type: ignore
         fetch_historical_data_for_calibration,
         calculate_cooling_time_constant,
@@ -638,6 +640,13 @@ def calibrate_cooling_physics(
     if oe is None:
         logging.warning("⚠️ Cooling OE calibration failed — using fallback")
         oe = _cooling_fallback("outlet_effectiveness")
+    oe_curve = calibrate_curve(
+        stable_periods,
+        hlc,
+        oe,
+        ThermalParameterConfig.get_cooling_bounds("outlet_effectiveness"),
+        climate_mode="cooling",
+    )
 
     # --- Step 3: Thermal time constant — LOCKED from heating ---
     # The slab time constant is a physical property of the screed mass, not
@@ -702,6 +711,7 @@ def calibrate_cooling_physics(
     calibrated_params: Dict[str, float] = {
         "heat_loss_coefficient": hlc,
         "outlet_effectiveness": oe,
+        "outlet_effectiveness_curve": oe_curve,
         "thermal_time_constant": tau,
         "pv_heat_weight": pv_weight,
         "fireplace_heat_weight": fp_weight,
@@ -717,10 +727,11 @@ def calibrate_cooling_physics(
 
     # --- Build thermal model ---
     logging.info("Building cooling thermal model with calibrated parameters...")
-    thermal_model = ThermalEquilibriumModel()
+    thermal_model = ThermalEquilibriumModel(climate_mode="cooling")
     thermal_model.thermal_time_constant = tau
     thermal_model.heat_loss_coefficient = hlc
     thermal_model.outlet_effectiveness = oe
+    thermal_model.outlet_effectiveness_curve = oe_curve
     thermal_model.external_source_weights["pv"] = pv_weight
     thermal_model.external_source_weights["fireplace"] = fp_weight
     thermal_model.external_source_weights["tv"] = tv_weight

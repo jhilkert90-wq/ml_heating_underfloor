@@ -57,6 +57,9 @@ class TestThermalStateManager:
         params = {
             "heat_loss_coefficient": 0.1,
             "outlet_effectiveness": 0.2,
+            "outlet_effectiveness_curve": [
+                {"outdoor_temp": 0.0, "outlet_effectiveness": 0.3, "sample_count": 12}
+            ],
             "thermal_time_constant": 25.5,
         }
         state_manager.set_calibrated_baseline(params, calibration_cycles=100)
@@ -69,6 +72,9 @@ class TestThermalStateManager:
             "thermal_time_constant"] == 25.5
         assert current_params["baseline_parameters"][
             "calibration_cycles"] == 100
+        assert current_params["baseline_parameters"][
+            "outlet_effectiveness_curve"
+        ] == params["outlet_effectiveness_curve"]
 
     def test_update_and_get_learning_state(self, state_manager):
         """Test updating and getting the learning state."""
@@ -79,7 +85,9 @@ class TestThermalStateManager:
         assert learning_state["current_cycle_count"] == 10
         assert learning_state["learning_confidence"] == 4.5
 
-    def test_heat_source_channel_state_roundtrip(self, state_manager):
+    def test_heat_source_channel_state_roundtrip(
+        self, state_manager, temp_state_file
+    ):
         """Heat-source channel state should preserve essential fields.
 
         History entries are compressed on persistence: redundant fields
@@ -94,7 +102,12 @@ class TestThermalStateManager:
                 "history": [
                     {
                         "error": 0.5,
-                        "context": {"fireplace_on": 1, "outlet_temp": 40.0},
+                        "context": {
+                            "fireplace_on": 1,
+                            "outlet_temp": 40.0,
+                            "defrosting": 0.0,
+                            "minutes_since_defrost": 20.0,
+                        },
                         "parameters": {"fp_heat_output_kw": 7.0},
                         "parameters_before": {"fp_heat_output_kw": 6.5},
                         "parameters_after": {"fp_heat_output_kw": 7.0},
@@ -125,6 +138,8 @@ class TestThermalStateManager:
         assert fp_hist[0]["error"] == 0.5
         assert fp_hist[0]["context"]["fireplace_on"] == 1
         assert fp_hist[0]["context"]["outlet_temp"] == 40.0
+        assert fp_hist[0]["context"]["defrosting"] == 0.0
+        assert fp_hist[0]["context"]["minutes_since_defrost"] == 20.0
         assert fp_hist[0]["parameters"] == {"fp_heat_output_kw": 7.0}
         assert fp_hist[0]["changes"] == {"fp_heat_output_kw": {"delta": 0.5}}
 
@@ -132,6 +147,28 @@ class TestThermalStateManager:
         assert "parameters_before" not in fp_hist[0]
         assert "parameters_after" not in fp_hist[0]
         assert restored["pv"]["history"] == []
+
+        state_manager.add_prediction_record(
+            {
+                "predicted": 21.0,
+                "actual": 20.8,
+                "context": {
+                    "defrosting": 1.0,
+                    "minutes_since_defrost": 0.0,
+                },
+            }
+        )
+        state_manager.save_state()
+        reloaded = ThermalStateManager(state_file=str(temp_state_file))
+        prediction_context = reloaded.state["learning_state"][
+            "prediction_history"
+        ][0]["context"]
+        assert prediction_context["defrosting"] == 1.0
+        assert prediction_context["minutes_since_defrost"] == 0.0
+        persisted_channel_context = reloaded.get_heat_source_channel_state()[
+            "fireplace"
+        ]["history"][0]["context"]
+        assert persisted_channel_context["minutes_since_defrost"] == 20.0
 
     def test_add_prediction_record(self, state_manager):
         """Test adding a prediction record."""
@@ -248,4 +285,3 @@ class TestThermalStateManager:
         assert manager.state_file == str(tmp_path / "thermal_state_shadow.json")
         assert os.path.exists(tmp_path / "thermal_state_shadow.json") is True
         assert os.path.exists(base_path) is False
-

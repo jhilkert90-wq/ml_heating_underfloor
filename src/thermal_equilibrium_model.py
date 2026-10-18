@@ -17,12 +17,22 @@ try:
     from .thermal_constants import PhysicsConstants  # type: ignore
     from .thermal_config import ThermalParameterConfig  # type: ignore
     from . import config  # type: ignore
+    from .outlet_effectiveness_curve import (
+        interpolate_curve,
+        normalize_curve,
+        update_curve_at_temperature,
+    )
 except ImportError:
     # Direct import fallback for notebooks and standalone tests
     from thermal_parameters import thermal_params  # type: ignore
     from thermal_constants import PhysicsConstants  # type: ignore
     from thermal_config import ThermalParameterConfig  # type: ignore
     import config  # type: ignore
+    from outlet_effectiveness_curve import (
+        interpolate_curve,
+        normalize_curve,
+        update_curve_at_temperature,
+    )
 
 
 class ThermalEquilibriumModel:
@@ -31,14 +41,20 @@ class ThermalEquilibriumModel:
     and adapts its parameters based on real-world feedback.
     """
 
-    def __init__(self, state_manager=None):
+    def __init__(self, state_manager=None, climate_mode="heating"):
         # Optional injected state manager.  When provided (e.g. by the cooling
         # wrapper) this instance reads from / writes to the supplied manager
         # instead of the global heating singleton.
         self._state_manager = state_manager
+        self.climate_mode = (
+            "cooling" if climate_mode == "cooling" else "heating"
+        )
         self._defer_persistence = False
         self._deferred_channel_history_records: List[Dict] = []
         self._deferred_channel_state_dirty = False
+        self.outlet_effectiveness_curve = []
+        self.outlet_effectiveness_curve_delta = []
+        self._oe_curve_gradient_offset = 0.0
 
         # Initialize default attributes to ensure existence
         self.solar_lag_minutes = config.SOLAR_LAG_MINUTES
@@ -116,6 +132,12 @@ class ThermalEquilibriumModel:
                 self.outlet_effectiveness = (
                     baseline_params["outlet_effectiveness"]
                     + adjustments.get("outlet_effectiveness_delta", 0.0)
+                )
+                self.outlet_effectiveness_curve = normalize_curve(
+                    baseline_params.get("outlet_effectiveness_curve", [])
+                )
+                self.outlet_effectiveness_curve_delta = normalize_curve(
+                    adjustments.get("outlet_effectiveness_curve_delta", [])
                 )
 
                 self.solar_lag_minutes = (
@@ -451,6 +473,10 @@ class ThermalEquilibriumModel:
                 "fp_decay_time_constant": self.fp_decay_time_constant,
                 "room_spread_delay_minutes":
                     self.room_spread_delay_minutes,
+                "outlet_effectiveness_curve":
+                    self.outlet_effectiveness_curve,
+                "outlet_effectiveness_curve_delta":
+                    self.outlet_effectiveness_curve_delta,
             }
         )
 
@@ -487,6 +513,11 @@ class ThermalEquilibriumModel:
         self.solar_lag_minutes = parameters["solar_lag_minutes"]
         self.fireplace_heat_weight = parameters["fireplace_heat_weight"]
         self.tv_heat_weight = parameters["tv_heat_weight"]
+        heat_pump = self.orchestrator.channels.get("heat_pump")
+        if heat_pump is not None:
+            self.outlet_effectiveness_curve_delta = normalize_curve(
+                heat_pump.outlet_effectiveness_curve_delta
+            )
 
     def _persist_heat_source_channel_state(
         self, parameter_history_records: Optional[List[Dict]] = None
@@ -646,6 +677,44 @@ class ThermalEquilibriumModel:
         )
 
     @property
+    def outlet_effectiveness_mode(self) -> str:
+        mode = str(getattr(config, "OUTLET_EFFECTIVENESS_MODE", "scalar")).lower()
+        return mode if mode in {"scalar", "curve"} else "scalar"
+
+    def get_outlet_effectiveness(self, outdoor_temp: float) -> float:
+        """Return scalar OE or its outdoor-temperature-specific curve value."""
+        if self.outlet_effectiveness_mode != "curve":
+            return float(self.outlet_effectiveness)
+        curve = self._effective_outlet_effectiveness_curve()
+        return interpolate_curve(
+            curve, outdoor_temp, self.outlet_effectiveness
+        ) + self._oe_curve_gradient_offset
+
+    def _effective_outlet_effectiveness_curve(self) -> list[dict]:
+        base = self.outlet_effectiveness_curve
+        deltas = self.outlet_effectiveness_curve_delta
+        if not base:
+            return []
+        delta_by_temp = {
+            point["outdoor_temp"]: point["outlet_effectiveness"]
+            for point in deltas
+        }
+        return [
+            {
+                **point,
+                "outlet_effectiveness": float(
+                    np.clip(
+                        point["outlet_effectiveness"]
+                        + delta_by_temp.get(point["outdoor_temp"], 0.0),
+                        self.outlet_effectiveness_bounds[0],
+                        self.outlet_effectiveness_bounds[1],
+                    )
+                ),
+            }
+            for point in base
+        ]
+
+    @property
     def slab_time_constant_hours(self) -> float:
         """Get slab time constant."""
         return getattr(self, "_slab_time_constant_hours", 0.0)
@@ -749,7 +818,12 @@ class ThermalEquilibriumModel:
         self.heat_loss_coefficient_bounds = ThermalParameterConfig.get_bounds(
             "heat_loss_coefficient"
         )
-        self.outlet_effectiveness_bounds = ThermalParameterConfig.get_bounds(
+        bounds_getter = (
+            ThermalParameterConfig.get_cooling_bounds
+            if self.climate_mode == "cooling"
+            else ThermalParameterConfig.get_bounds
+        )
+        self.outlet_effectiveness_bounds = bounds_getter(
             "outlet_effectiveness"
         )
         self.pv_heat_weight_bounds = ThermalParameterConfig.get_bounds(
@@ -967,16 +1041,17 @@ class ThermalEquilibriumModel:
             return equilibrium_temp
 
         # Fallback: Temperature-based approximation
+        effective_outlet_effectiveness = self.get_outlet_effectiveness(
+            outdoor_temp
+        )
         # RESTORED: Differential-based effectiveness scaling
         # Currently disabled (factor=0.0) — kept for future re-enabling
         if outlet_temp > current_indoor:
             temp_diff = max(1.0, outlet_temp - current_indoor)
             scaling_factor = 1.0 + (temp_diff - 25.0) * 0.0  # DISABLED
-            effective_outlet_effectiveness = self.outlet_effectiveness * max(
+            effective_outlet_effectiveness = effective_outlet_effectiveness * max(
                 0.8, scaling_factor
             )
-        else:
-            effective_outlet_effectiveness = self.outlet_effectiveness
 
         total_conductance = (
             self.heat_loss_coefficient + effective_outlet_effectiveness
@@ -1325,6 +1400,10 @@ class ThermalEquilibriumModel:
         old_tv_heat_weight = self.tv_heat_weight
         old_solar_lag = self.solar_lag_minutes
         old_slab_time_constant = self.slab_time_constant_hours
+        old_curve_delta_by_temp = {
+            point["outdoor_temp"]: point["outlet_effectiveness"]
+            for point in self.outlet_effectiveness_curve_delta
+        }
 
         thermal_update = current_learning_rate * thermal_gradient
         heat_loss_coefficient_update = (
@@ -1569,13 +1648,70 @@ class ThermalEquilibriumModel:
             )
             self.heat_loss_coefficient = hlc_floor
 
-        self.outlet_effectiveness = float(
-            np.clip(
-                self.outlet_effectiveness - outlet_effectiveness_update,
-                self.outlet_effectiveness_bounds[0],
-                self.outlet_effectiveness_bounds[1],
+        new_curve_delta = None
+        if (
+            self.outlet_effectiveness_mode == "curve"
+            and self.outlet_effectiveness_curve
+        ):
+            curve = self._effective_outlet_effectiveness_curve()
+            outdoor_samples = []
+            for prediction in recent_predictions:
+                context = prediction.get("context", {})
+                if (
+                    prediction.get("fireplace_active", False)
+                    or prediction.get("pump_off", False)
+                ):
+                    continue
+                try:
+                    if float(context.get("defrosting", 0.0)) > 0.5:
+                        continue
+                    if float(
+                        context.get("minutes_since_defrost", float("inf"))
+                    ) < getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45):
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                try:
+                    outdoor = float(context.get("outdoor_temp"))
+                except (TypeError, ValueError):
+                    continue
+                if np.isfinite(outdoor):
+                    outdoor_samples.append(outdoor)
+            if outdoor_samples:
+                per_sample_update = -outlet_effectiveness_update / len(
+                    outdoor_samples
+                )
+                for outdoor in outdoor_samples:
+                    curve = update_curve_at_temperature(
+                        curve,
+                        outdoor,
+                        per_sample_update,
+                        self.outlet_effectiveness_bounds,
+                    )
+                base_by_temp = {
+                    point["outdoor_temp"]: point["outlet_effectiveness"]
+                    for point in self.outlet_effectiveness_curve
+                }
+                self.outlet_effectiveness_curve_delta = [
+                    {
+                        "outdoor_temp": point["outdoor_temp"],
+                        "outlet_effectiveness": (
+                            point["outlet_effectiveness"]
+                            - base_by_temp[point["outdoor_temp"]]
+                        ),
+                        "sample_count": point.get("sample_count", 0.0),
+                    }
+                    for point in curve
+                ]
+                new_curve_delta = self.outlet_effectiveness_curve_delta
+        else:
+            self.outlet_effectiveness = float(
+                np.clip(
+                    self.outlet_effectiveness - outlet_effectiveness_update,
+                    self.outlet_effectiveness_bounds[0],
+                    self.outlet_effectiveness_bounds[1],
+                )
             )
-        )
 
         self.pv_heat_weight = float(
             np.clip(
@@ -1618,6 +1754,21 @@ class ThermalEquilibriumModel:
         outlet_effectiveness_change = abs(
             self.outlet_effectiveness - old_outlet_effectiveness
         )
+        if new_curve_delta is not None:
+            outlet_effectiveness_change = max(
+                [
+                    abs(
+                        point["outlet_effectiveness"]
+                        - old_curve_delta_by_temp.get(
+                            point["outdoor_temp"], 0.0
+                        )
+                    )
+                    for point in new_curve_delta
+                ]
+                or [0.0]
+            )
+            if outlet_effectiveness_change <= 0.0001:
+                new_curve_delta = None
         pv_heat_weight_change = abs(self.pv_heat_weight - old_pv_heat_weight)
         tv_heat_weight_change = abs(self.tv_heat_weight - old_tv_heat_weight)
         solar_lag_change = abs(self.solar_lag_minutes - old_solar_lag)
@@ -1708,6 +1859,7 @@ class ThermalEquilibriumModel:
                 self.tv_heat_weight - old_tv_heat_weight,
                 new_solar_lag_adjustment=self.solar_lag_minutes - old_solar_lag,
                 new_slab_adjustment=self.slab_time_constant_hours - old_slab_time_constant,
+                new_outlet_effectiveness_curve_delta=new_curve_delta,
             )
         else:
             logging.debug(
@@ -1744,6 +1896,12 @@ class ThermalEquilibriumModel:
         count = 0
 
         original_value = getattr(self, parameter_name)
+        use_curve_gradient = (
+            parameter_name == "outlet_effectiveness"
+            and self.outlet_effectiveness_mode == "curve"
+            and bool(self.outlet_effectiveness_curve)
+        )
+        original_curve_offset = self._oe_curve_gradient_offset
 
         # HP parameters whose gradients must be shielded from contaminated
         # records (fireplace active or pump off).
@@ -1767,6 +1925,22 @@ class ThermalEquilibriumModel:
                 if pred.get("fireplace_active", False):
                     continue
                 if pred.get("pump_off", False):
+                    continue
+                try:
+                    defrosting = float(context.get("defrosting", 0.0))
+                except (TypeError, ValueError):
+                    defrosting = 0.0
+                if defrosting > 0.5:
+                    continue
+                try:
+                    minutes_since_defrost = float(
+                        context.get("minutes_since_defrost", float("inf"))
+                    )
+                except (TypeError, ValueError):
+                    minutes_since_defrost = float("inf")
+                if minutes_since_defrost < getattr(
+                    config, "DEFROST_RECOVERY_GRACE_MINUTES", 45
+                ):
                     continue
 
             climate_mode = context.get("climate_mode", "heating")
@@ -1827,7 +2001,10 @@ class ThermalEquilibriumModel:
             _g_pv_fc = context.get("pv_forecast")
             _g_horizon = float(config.TRAJECTORY_STEPS)
 
-            setattr(self, parameter_name, original_value + epsilon)
+            if use_curve_gradient:
+                self._oe_curve_gradient_offset = original_curve_offset + epsilon
+            else:
+                setattr(self, parameter_name, original_value + epsilon)
             pred_plus_trajectory = self.predict_thermal_trajectory(
                 current_indoor=context["current_indoor"],
                 target_indoor=context["current_indoor"],
@@ -1854,7 +2031,10 @@ class ThermalEquilibriumModel:
             )
             pred_plus = pred_plus_trajectory["trajectory"][-1]
 
-            setattr(self, parameter_name, original_value - epsilon)
+            if use_curve_gradient:
+                self._oe_curve_gradient_offset = original_curve_offset - epsilon
+            else:
+                setattr(self, parameter_name, original_value - epsilon)
             pred_minus_trajectory = self.predict_thermal_trajectory(
                 current_indoor=context["current_indoor"],
                 target_indoor=context["current_indoor"],
@@ -1878,7 +2058,10 @@ class ThermalEquilibriumModel:
             )
             pred_minus = pred_minus_trajectory["trajectory"][-1]
 
-            setattr(self, parameter_name, original_value)
+            if use_curve_gradient:
+                self._oe_curve_gradient_offset = original_curve_offset
+            else:
+                setattr(self, parameter_name, original_value)
 
             finite_diff = (pred_plus - pred_minus) / (2 * epsilon)
             error = np.clip(pred["error"], -2.0, 2.0)
@@ -2558,6 +2741,8 @@ class ThermalEquilibriumModel:
             "thermal_time_constant": self.thermal_time_constant,
             "heat_loss_coefficient": self.heat_loss_coefficient,
             "outlet_effectiveness": self.outlet_effectiveness,
+            "outlet_effectiveness_mode": self.outlet_effectiveness_mode,
+            "outlet_effectiveness_curve": self._effective_outlet_effectiveness_curve(),
             "pv_heat_weight": self.pv_heat_weight,
             "fireplace_heat_weight": self.fireplace_heat_weight,
             "tv_heat_weight": self.tv_heat_weight,
@@ -2804,6 +2989,7 @@ class ThermalEquilibriumModel:
         new_tv_heat_weight_adjustment=0.0,
         new_solar_lag_adjustment=0.0,
         new_slab_adjustment=0.0,
+        new_outlet_effectiveness_curve_delta=None,
     ):
         """
         Save learned parameter adjustments to unified thermal state.
@@ -2867,6 +3053,7 @@ class ThermalEquilibriumModel:
                 or abs(new_tv_heat_weight_adjustment) > 0.0001
                 or abs(new_solar_lag_adjustment) > 0.1
                 or abs(new_slab_adjustment) > 0.001
+                or new_outlet_effectiveness_curve_delta is not None
             ):
                 # Persist the latest parameter record BEFORE save_state is
                 # triggered by update_learning_state. This fixes the shared-
@@ -2891,6 +3078,14 @@ class ThermalEquilibriumModel:
                         ),
                         "outlet_effectiveness_delta": (
                             updated_outlet_effectiveness_delta
+                        ),
+                        **(
+                            {
+                                "outlet_effectiveness_curve_delta":
+                                    new_outlet_effectiveness_curve_delta
+                            }
+                            if new_outlet_effectiveness_curve_delta is not None
+                            else {}
                         ),
                         "pv_heat_weight_delta": updated_pv_heat_weight_delta,
                         "tv_heat_weight_delta": updated_tv_heat_weight_delta,

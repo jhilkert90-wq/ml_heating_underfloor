@@ -1,5 +1,82 @@
 # Active Context - Current Work & Decision State
 
+### PR #96 Review Feedback — 2026-10-18
+
+#### **What changed**
+- Scalar OE optimization candidates clear inherited curve supports and corrections. Heating curve calibration in both calibration paths now consumes only `_filter_hp_only_periods()` results.
+- Defrost state and recovery age are passed from previous-cycle features into production learning and retained in prediction and channel-history persistence.
+- Thermal model instances choose their own heating/cooling OE bounds, including the cooling calibration model. HeatPumpChannel performs bounded local curve updates during its channel-owned learning path; the model synchronizes and persists these deltas through channel state.
+- Regression coverage checks scalar optimization, state reload, the production online-learning context, cooling bounds, and channel-owned curve delta persistence.
+
+#### **Why**
+- Persisted curves previously made scalar objectives insensitive to scalar candidates; auxiliary heating contaminated curve inversion; missing defrost fields reopened recovery samples to learning after restart; and cooling bounds clipped valid curve knots. Channel mode also bypassed the old global curve adaptation, so the selected curve now learns through the existing heat-pump channel without duplicate global updates.
+
+#### **Files modified**
+- `src/thermal_equilibrium_model.py`, `src/heat_source_channels.py`, `src/unified_thermal_state.py`, `src/pre_dispatch.py`, `src/physics_calibration.py`, `src/physics_calibration_direct.py`, `src/physics_calibration_cooling.py`, `src/model_wrapper.py`
+- `tests/unit/test_physics_calibration.py`, `tests/unit/test_physics_calibration_direct.py`, `tests/unit/test_unified_thermal_state.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_thermal_equilibrium_model.py`, `tests/unit/test_pre_dispatch.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+### Outdoor-Temperature OE Curve — 2026-10-18
+
+#### **What changed**
+- `src/outlet_effectiveness_curve.py`: validate and interpolate curve support points; calibrate robust binned estimates with scalar shrinkage and minimum sample counts; apply bounded local updates.
+- `src/thermal_equilibrium_model.py`: select scalar or interpolated curve from the add-on setting, use outdoor temperature in the temperature-based equilibrium prediction, and persist curve learning deltas separately from calibrated supports.
+- `src/physics_calibration.py`, `src/physics_calibration_direct.py`, and `src/physics_calibration_cooling.py`: create OE curves during every respective calibration path.
+- `src/unified_thermal_state.py` and `src/unified_thermal_state_cooling.py`: store per-mode OE support points and online corrections in the matching state JSON.
+- `ml_heating_underfloor/config.yaml`, translations, `config_adapter.py`, and `src/config.py`: expose scalar/curve choice through dashboard add-on settings.
+- `src/model_wrapper.py` and `src/ha_client.py`: export both heating and cooling OE values and curve support points to HA. `dashboard/components/overview.py` shows active mode, selection, curve supports, and coverage.
+- Regression tests cover curve calibration, interpolation, bounded updates, mode-specific state persistence, dashboard metadata, runtime learning gradient, and HA attributes.
+
+#### **Why**
+- A single global OE can lag behind changing outdoor-temperature conditions. Both the original scalar and the binned curve are recalibrated and retained, while the selected curve adapts locally without overwriting the calibrated baseline. Defrost and recovery samples remain excluded by the prior heating calibration and online-learning guards.
+- The model's measured-energy equilibrium path intentionally continues to use measured thermal power and HLC directly; OE affects the temperature-based equilibrium path, where no thermal-power measurement is supplied.
+
+#### **Files modified**
+- `src/outlet_effectiveness_curve.py`, `src/thermal_equilibrium_model.py`, `src/physics_calibration.py`, `src/physics_calibration_direct.py`, `src/physics_calibration_cooling.py`
+- `src/unified_thermal_state.py`, `src/unified_thermal_state_cooling.py`, `src/model_wrapper.py`, `src/ha_client.py`, `src/config.py`, `config_adapter.py`
+- `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `dashboard/data_service.py`, `dashboard/components/overview.py`
+- `tests/unit/test_outlet_effectiveness_curve.py`, `tests/unit/test_thermal_equilibrium_model.py`, `tests/unit/test_learning_stability.py`, `tests/unit/test_unified_thermal_state.py`, `tests/unit/test_unified_thermal_state_cooling.py`, `tests/unit/test_ha_client.py`, `tests/unit/test_dashboard_settings.py`, `tests/unit/test_config_adapter.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### Defrost-Aware Runtime Learning — 2026-10-18
+
+#### **What changed**
+- `src/sensor_buffer.py`: expose elapsed minutes since the latest active defrost sample.
+- `src/pre_dispatch.py`, `src/main.py`, and `src/physics_features.py`: buffer/hydrate the defrost sensor and add `minutes_since_defrost` to the feature payload.
+- `src/temperature_control.py`: include defrost state and age in online learning context.
+- `src/heat_source_channels.py` and `src/thermal_equilibrium_model.py`: skip heat-pump parameter updates during active defrost and the configured recovery interval.
+- Tests cover sensor-buffer timing, heat-source and model-gradient gating, and the updated feature set.
+
+#### **Why**
+- Negative ΔT and reverse heat flow during heating-mode defrost are valid signed observations for energy accounting, but must not teach heating parameters. Runtime learning now shares the calibration recovery guard so transient defrost behavior does not contaminate the learned heat-pump response.
+
+#### **Files modified**
+- `src/sensor_buffer.py`, `src/pre_dispatch.py`, `src/main.py`, `src/physics_features.py`, `src/temperature_control.py`
+- `src/heat_source_channels.py`, `src/thermal_equilibrium_model.py`
+- `tests/unit/test_sensor_buffer.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_learning_stability.py`, `tests/unit/test_physics_features.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
+### Heating Defrost Calibration Filters — 2026-10-18
+
+#### **What changed**
+- `src/physics_calibration.py`: retain measured supply-return ΔT in stable samples; use it for `delta_t_floor`; reject negative/low-power and post-defrost samples; exclude recent defrost from slab-tau fitting.
+- `src/physics_calibration_direct.py`: use the measured outlet sensor for slab-tau fitting, exclude active/recent defrost, and gate fireplace/TV heat-source calibration on the defrost recovery interval.
+- Regression tests cover measured ΔT versus target setpoint, negative flow heat, defrost recovery, and calibration outlet sensor selection.
+
+#### **Why**
+- The prior `delta_t_floor` estimator combined measured thermal power with a commanded outlet target, which could return a misleadingly low HP loop ΔT. Heating defrost has negative signed power and must not train heating parameters; the same signed measurement remains meaningful in energy-balance use cases.
+
+#### **Files modified**
+- `src/physics_calibration.py`, `src/physics_calibration_direct.py`
+- `tests/unit/test_physics_calibration.py`, `tests/unit/test_physics_calibration_direct.py`, `tests/unit/test_channel_calibration.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+---
+
 ### PR #95 Review Feedback — 2026-10-13
 
 #### **What changed**

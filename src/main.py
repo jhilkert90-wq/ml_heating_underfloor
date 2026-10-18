@@ -365,6 +365,7 @@ def main():
             config.OUTDOOR_TEMP_ENTITY_ID,
             config.INLET_TEMP_ENTITY_ID,
             config.FLOW_RATE_ENTITY_ID,
+            config.DEFROST_STATUS_ENTITY_ID,
         ]
 
         # Fetch raw history

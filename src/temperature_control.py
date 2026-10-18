@@ -390,6 +390,10 @@ class OnlineLearning:
                     'thermal_power': thermal_power_kw,
                     'inlet_temp': learning_features.get('inlet_temp'),
                     'delta_t': delta_t,
+                    'defrosting': learning_features.get('defrosting', 0.0),
+                    'minutes_since_defrost': learning_features.get(
+                        'minutes_since_defrost', 1_000_000.0
+                    ),
                     'living_room_temp': learning_features.get('living_room_temp'),
                     'avg_cloud_cover': learning_features.get('avg_cloud_cover', 50.0),
                     'indoor_temp_gradient': learning_features.get('indoor_temp_gradient', 0.0),
@@ -431,6 +435,10 @@ class OnlineLearning:
                     'thermal_power': thermal_power_kw,
                     'inlet_temp': learning_features.get('inlet_temp'),
                     'delta_t': delta_t,
+                    'defrosting': learning_features.get('defrosting', 0.0),
+                    'minutes_since_defrost': learning_features.get(
+                        'minutes_since_defrost', 1_000_000.0
+                    ),
                     'living_room_temp': learning_features.get('living_room_temp'),
                     'avg_cloud_cover': learning_features.get('avg_cloud_cover', 50.0),
                     'indoor_temp_gradient': learning_features.get('indoor_temp_gradient', 0.0),

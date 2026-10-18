@@ -12,6 +12,7 @@ import pytest
 import numpy as np
 import sys
 import os
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
@@ -129,6 +130,44 @@ def _runtime_signal(model, parameter_name, epsilon, climate_mode="heating"):
 # ── Dead Zone ────────────────────────────────────────────────────────
 
 class TestDeadZone:
+    def test_curve_mode_online_gradient_uses_outdoor_specific_curve(self, model, monkeypatch):
+        from src import thermal_equilibrium_model
+
+        monkeypatch.setattr(
+            thermal_equilibrium_model.config,
+            "OUTLET_EFFECTIVENESS_MODE",
+            "curve",
+            raising=False,
+        )
+        model.outlet_effectiveness_curve = [
+            {"outdoor_temp": 5.0, "outlet_effectiveness": 0.8},
+        ]
+        prediction = _make_runtime_replay_prediction("outlet_effectiveness")
+        prediction["error"] = 1.0
+
+        def predict(**kwargs):
+            value = model.get_outlet_effectiveness(5.0)
+            return {"trajectory": [value]}
+
+        with patch.object(model, "predict_thermal_trajectory", side_effect=predict):
+            gradient = model._calculate_parameter_gradient(
+                "outlet_effectiveness", 0.1, [prediction]
+            )
+
+        assert gradient == pytest.approx(-1.0)
+
+    def test_hp_parameter_gradient_skips_post_defrost_recovery(self, model):
+        prediction = _make_runtime_replay_prediction("outlet_effectiveness")
+        prediction["context"]["minutes_since_defrost"] = 20.0
+
+        with patch.object(model, "predict_thermal_trajectory") as predict:
+            gradient = model._calculate_parameter_gradient(
+                "outlet_effectiveness", 0.1, [prediction]
+            )
+
+        assert gradient == 0.0
+        predict.assert_not_called()
+
     def test_dead_zone_constant_exists(self):
         assert hasattr(PhysicsConstants, "LEARNING_DEAD_ZONE")
         assert PhysicsConstants.LEARNING_DEAD_ZONE == 0.01

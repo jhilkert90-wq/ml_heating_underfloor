@@ -41,7 +41,8 @@ PREDICTION_CONTEXT_KEYS: Set[str] = {
     # Gradient replay essentials
     "outlet_temp", "outdoor_temp", "pv_power", "fireplace_on", "tv_on",
     "current_indoor", "thermal_power", "avg_cloud_cover", "inlet_temp",
-    "delta_t", "outdoor_forecast", "pv_forecast",
+    "delta_t", "outdoor_forecast", "pv_forecast", "defrosting",
+    "minutes_since_defrost",
     # Decision-visibility readings
     "target_temp", "heat_pump_active", "indoor_temp_delta_60m",
     "living_room_temp", "indoor_temp_gradient",
@@ -74,7 +75,7 @@ CHANNEL_HISTORY_CONTEXT_KEYS: Set[str] = {
     "thermal_power", "heat_pump_active",
     # Decision-visibility readings
     "outlet_temp", "outdoor_temp", "current_indoor", "inlet_temp",
-    "target_temp", "tv_on",
+    "target_temp", "tv_on", "defrosting", "minutes_since_defrost",
 }
 
 
@@ -146,6 +147,7 @@ class ThermalStateManager:
                 ThermalParameterConfig.get_default('heat_loss_coefficient'),
                 "outlet_effectiveness":
                 ThermalParameterConfig.get_default('outlet_effectiveness'),
+                "outlet_effectiveness_curve": [],
                 "solar_lag_minutes":
                 ThermalParameterConfig.get_default('solar_lag_minutes'),
                 "slab_time_constant_hours":
@@ -180,6 +182,7 @@ class ThermalStateManager:
                     "total_conductance_delta": 0.0,
                     "heat_loss_coefficient_delta": 0.0,
                     "outlet_effectiveness_delta": 0.0,
+                    "outlet_effectiveness_curve_delta": [],
                     "thermal_time_constant_delta": 0.0,
                     "pv_heat_weight_delta": 0.0,
                     "tv_heat_weight_delta": 0.0,
@@ -450,6 +453,10 @@ class ThermalStateManager:
         if "outlet_effectiveness" in parameters:
             baseline["outlet_effectiveness"] = \
                 parameters["outlet_effectiveness"]
+        if "outlet_effectiveness_curve" in parameters:
+            baseline["outlet_effectiveness_curve"] = parameters[
+                "outlet_effectiveness_curve"
+            ]
 
         # Update heat source weights if provided
         if "pv_heat_weight" in parameters:
@@ -490,6 +497,7 @@ class ThermalStateManager:
             "total_conductance_delta": 0.0,
             "heat_loss_coefficient_delta": 0.0,
             "outlet_effectiveness_delta": 0.0,
+            "outlet_effectiveness_curve_delta": [],
             "thermal_time_constant_delta": 0.0,
             "pv_heat_weight_delta": 0.0,
             "tv_heat_weight_delta": 0.0,
@@ -526,6 +534,9 @@ class ThermalStateManager:
                                   adjustments.get("heat_loss_coefficient_delta", 0.0)),
             "outlet_effectiveness": (baseline["outlet_effectiveness"] +
                                   adjustments.get("outlet_effectiveness_delta", 0.0)),
+            "outlet_effectiveness_curve": baseline.get(
+                "outlet_effectiveness_curve", []
+            ),
             "pv_heat_weight": (baseline["pv_heat_weight"] +
                                adjustments.get("pv_heat_weight_delta", 0.0)),
             "fireplace_heat_weight": baseline["fireplace_heat_weight"],

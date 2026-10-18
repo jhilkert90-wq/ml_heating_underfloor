@@ -84,7 +84,8 @@ class EnhancedModelWrapper:
             state_manager=self._heating_state_manager
         )
         self._cooling_thermal_model = ThermalEquilibriumModel(
-            state_manager=self._cooling_state_manager
+            state_manager=self._cooling_state_manager,
+            climate_mode="cooling",
         )
 
         self.learning_enabled = True
@@ -3323,6 +3324,10 @@ class EnhancedModelWrapper:
                 "slab_time_constant_hours": thermal_metrics.get(
                     "slab_time_constant_hours", 2.0
                 ),
+                "outlet_effectiveness_mode": self.thermal_model.outlet_effectiveness_mode,
+                "outlet_effectiveness_curve": (
+                    self.thermal_model._effective_outlet_effectiveness_curve()
+                ),
                 "heat_source_channels_enabled": bool(
                     thermal_metrics.get("heat_source_channels_enabled", False)
                 ),
@@ -3402,6 +3407,20 @@ class EnhancedModelWrapper:
                 # Timestamp
                 "last_updated": datetime.now().isoformat(),
             }
+
+            for mode_name, model in (
+                ("heating", self._heating_thermal_model),
+                ("cooling", self._cooling_thermal_model),
+            ):
+                ha_metrics[f"{mode_name}_outlet_effectiveness"] = (
+                    model.outlet_effectiveness
+                )
+                ha_metrics[f"{mode_name}_outlet_effectiveness_curve"] = (
+                    model._effective_outlet_effectiveness_curve()
+                )
+                ha_metrics[f"{mode_name}_outlet_effectiveness_mode"] = (
+                    model.outlet_effectiveness_mode
+                )
 
             # Always export all channel-specific parameters
             ha_metrics.update(

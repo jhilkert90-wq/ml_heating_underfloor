@@ -137,6 +137,18 @@ def test_log_adaptive_learning_metrics(mock_set_state, ha_client):
         "fp_heat_output_kw": 6.4,
         "fp_decay_time_constant": 1.0,
         "room_spread_delay_minutes": 38.0,
+        "outlet_effectiveness_mode": "curve",
+        "outlet_effectiveness_curve": [
+            {"outdoor_temp": 0.0, "outlet_effectiveness": 0.5, "sample_count": 12}
+        ],
+        "heating_outlet_effectiveness": 0.95,
+        "heating_outlet_effectiveness_mode": "curve",
+        "heating_outlet_effectiveness_curve": [
+            {"outdoor_temp": 0.0, "outlet_effectiveness": 0.5, "sample_count": 12}
+        ],
+        "cooling_outlet_effectiveness": 0.2,
+        "cooling_outlet_effectiveness_mode": "scalar",
+        "cooling_outlet_effectiveness_curve": [],
     }
     ha_client.log_adaptive_learning_metrics(metrics)
 
@@ -151,6 +163,12 @@ def test_log_adaptive_learning_metrics(mock_set_state, ha_client):
     assert learning_attributes["fp_heat_output_kw"] == pytest.approx(6.4)
     assert learning_attributes["fp_decay_time_constant"] == pytest.approx(1.0)
     assert learning_attributes["room_spread_delay_minutes"] == pytest.approx(38.0)
+    assert learning_attributes["outlet_effectiveness_mode"] == "curve"
+    assert learning_attributes["heating_outlet_effectiveness"] == pytest.approx(0.95)
+    assert learning_attributes["heating_outlet_effectiveness_curve"][0][
+        "sample_count"
+    ] == 12
+    assert learning_attributes["cooling_outlet_effectiveness_mode"] == "scalar"
 
 
 @patch('src.ha_client.HAClient.set_state')

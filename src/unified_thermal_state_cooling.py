@@ -74,6 +74,7 @@ class CoolingThermalStateManager:
                 "total_conductance": cd['total_conductance'],
                 "heat_loss_coefficient": cd['heat_loss_coefficient'],
                 "outlet_effectiveness": cd['outlet_effectiveness'],
+                "outlet_effectiveness_curve": [],
                 "solar_lag_minutes": cd['solar_lag_minutes'],
                 "slab_time_constant_hours": cd['slab_time_constant_hours'],
                 "pv_heat_weight": cd['pv_heat_weight'],
@@ -95,6 +96,7 @@ class CoolingThermalStateManager:
                     "total_conductance_delta": 0.0,
                     "heat_loss_coefficient_delta": 0.0,
                     "outlet_effectiveness_delta": 0.0,
+                    "outlet_effectiveness_curve_delta": [],
                     "thermal_time_constant_delta": 0.0,
                     "pv_heat_weight_delta": 0.0,
                     "tv_heat_weight_delta": 0.0,
@@ -271,6 +273,7 @@ class CoolingThermalStateManager:
             "total_conductance",
             "heat_loss_coefficient",
             "outlet_effectiveness",
+            "outlet_effectiveness_curve",
             "pv_heat_weight",
             "fireplace_heat_weight",
             "tv_heat_weight",
@@ -291,7 +294,9 @@ class CoolingThermalStateManager:
 
         # Reset learning adjustments after re-calibration.
         for k in self.state["learning_state"]["parameter_adjustments"]:
-            self.state["learning_state"]["parameter_adjustments"][k] = 0.0
+            self.state["learning_state"]["parameter_adjustments"][k] = (
+                [] if k.endswith("_curve_delta") else 0.0
+            )
         self.state["learning_state"]["heat_source_channels"] = {}
 
         logging.info(
@@ -330,6 +335,9 @@ class CoolingThermalStateManager:
             "outlet_effectiveness": (
                 baseline["outlet_effectiveness"]
                 + adj.get("outlet_effectiveness_delta", 0.0)
+            ),
+            "outlet_effectiveness_curve": baseline.get(
+                "outlet_effectiveness_curve", []
             ),
             "pv_heat_weight": (
                 baseline["pv_heat_weight"]

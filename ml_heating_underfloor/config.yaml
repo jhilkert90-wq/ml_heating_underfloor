@@ -381,6 +381,8 @@ options:
   heat_loss_coefficient: 0.1245214561975565
   # Heat pump outlet efficiency (dimensionless)
   outlet_effectiveness: 0.9526723072021629
+  # Select a calibrated scalar OE or outdoor-temperature curve at runtime.
+  outlet_effectiveness_mode: "scalar"
   # Outdoor temperature influence factor
   outdoor_coupling: 0.3
   # Thermal bridging losses factor
@@ -872,6 +874,7 @@ schema:
   thermal_time_constant: "float(1.0,100.0)"
   heat_loss_coefficient: "float(0.005,1.2)"
   outlet_effectiveness: "float(0.01,2.0)"
+  outlet_effectiveness_mode: "list(scalar|curve)"
   outdoor_coupling: "float(0.1,0.8)"
   thermal_bridge_factor: "float(0.01,0.5)"
   equilibrium_ratio: "float(0.05,0.9)"

@@ -27,6 +27,7 @@ try:
     from .influx_service import InfluxService
     from .thermal_config import ThermalParameterConfig
     from .unified_thermal_state import get_thermal_state_manager
+    from .outlet_effectiveness_curve import calibrate_curve
 except ImportError:
     # Direct import fallback for standalone execution
     import config
@@ -35,6 +36,7 @@ except ImportError:
     from influx_service import InfluxService
     from thermal_config import ThermalParameterConfig
     from unified_thermal_state import get_thermal_state_manager
+    from outlet_effectiveness_curve import calibrate_curve
 
 
 def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
@@ -155,6 +157,14 @@ def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
         logging.error("❌ Parameter optimization failed")
         return None
 
+    optimized_params["outlet_effectiveness_curve"] = calibrate_curve(
+        _filter_hp_only_periods(stable_periods),
+        optimized_params["heat_loss_coefficient"],
+        optimized_params["outlet_effectiveness"],
+        ThermalParameterConfig.get_bounds("outlet_effectiveness"),
+        climate_mode="heating",
+    )
+
     logging.info(
         f"✅ Optimization completed - MAE: {optimized_params['mae']:.4f}°C"
     )
@@ -166,6 +176,9 @@ def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
     temp_model = ThermalEquilibriumModel()
     temp_model.heat_loss_coefficient = optimized_params['heat_loss_coefficient']
     temp_model.outlet_effectiveness = optimized_params['outlet_effectiveness']
+    temp_model.outlet_effectiveness_curve = optimized_params[
+        "outlet_effectiveness_curve"
+    ]
 
     # Apply weights
     temp_model.external_source_weights['pv'] = optimized_params.get(
@@ -424,6 +437,8 @@ def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
             'thermal_time_constant': optimized_params['thermal_time_constant'],
             'heat_loss_coefficient': optimized_params['heat_loss_coefficient'],
             'outlet_effectiveness': optimized_params['outlet_effectiveness'],
+            'outlet_effectiveness_curve':
+                optimized_params["outlet_effectiveness_curve"],
             'pv_heat_weight': pv_weight,
             'fireplace_heat_weight': fireplace_weight,
             'tv_heat_weight': tv_weight,
@@ -1439,6 +1454,9 @@ def filter_stable_periods(
     else:
         df['_minutes_since_defrost'] = float('inf')
 
+    defrost_recovery_minutes = max(
+        0, int(getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 0))
+    )
     stable_periods = []
     window_size = int(min_duration) // 5
 
@@ -1519,9 +1537,16 @@ def filter_stable_periods(
                     continue
 
         center_row = df.iloc[i]
+        minutes_since_defrost = center_row.get(
+            "_minutes_since_defrost", float("inf")
+        )
+        if minutes_since_defrost < defrost_recovery_minutes:
+            filter_stats["grace_period"] += 1
+            continue
 
         # Calculate thermal power if available
         thermal_power_kw = 0.0
+        measured_delta_t = None
         if (inlet_col in df.columns and flow_rate_col in df.columns and
                 outlet_col in df.columns):
             inlet_val = center_row.get(inlet_col)
@@ -1530,12 +1555,12 @@ def filter_stable_periods(
 
             if (inlet_val is not None and flow_val is not None and
                     outlet_val is not None):
-                delta_t = outlet_val - inlet_val
+                measured_delta_t = outlet_val - inlet_val
                 # Q = m * c * dt (flow in L/min -> L/s: / 60)
                 thermal_power_kw = (
                     (flow_val / 60.0) *
                     config.SPECIFIC_HEAT_CAPACITY *
-                    delta_t
+                    measured_delta_t
                 )
 
         # Extract PV history for solar lag calculation (max 3 hours = ~36 samples)
@@ -1553,9 +1578,8 @@ def filter_stable_periods(
             'fireplace_on': center_row.get(fireplace_col, 0.0),
             'tv_on': center_row.get(tv_col, 0.0),
             'thermal_power_kw': thermal_power_kw,
-            'minutes_since_defrost': center_row.get(
-                '_minutes_since_defrost', float('inf')
-            ),
+            'measured_delta_t': measured_delta_t,
+            'minutes_since_defrost': minutes_since_defrost,
             'timestamp': center_row['_time'],
             'stability_score': 1.0 / (temp_std + 0.01),
             'outlet_stability': 1.0 / (outlet_temps.std() + 0.01)
@@ -1624,6 +1648,29 @@ def check_blocking_states(df, dhw_col, defrost_col, disinfect_col, boost_col):
         blocking_detected = True
         blocking_reasons.append('boost_heater')
     return blocking_detected, blocking_reasons
+
+
+def _heating_defrost_sample_mask(df, defrost_col, recovery_grace_minutes):
+    """Return rows outside active defrost and its post-defrost recovery window."""
+    if not defrost_col or defrost_col not in df.columns:
+        return np.ones(len(df), dtype=bool)
+    try:
+        grace_minutes = max(0.0, float(recovery_grace_minutes))
+    except (TypeError, ValueError):
+        grace_minutes = 45.0
+
+    states = df[defrost_col]
+    numeric_states = pd.to_numeric(states, errors="coerce")
+    textual_active = states.astype(str).str.strip().str.lower().isin(
+        {"on", "true", "active", "yes"}
+    )
+    active = numeric_states.fillna(textual_active).astype(bool).to_numpy()
+    last_active = pd.Series(
+        np.where(active, np.arange(len(active)), np.nan)
+    ).ffill().to_numpy()
+    minutes_since = (np.arange(len(active)) - last_active) * 5.0
+    minutes_since[np.isnan(last_active)] = float("inf")
+    return (~active) & (minutes_since >= grace_minutes)
 
 
 def log_filtering_stats(stats):
@@ -2489,6 +2536,8 @@ def calculate_mae_for_params(
     test_model.outlet_effectiveness = param_dict[
         'outlet_effectiveness'
     ]
+    test_model.outlet_effectiveness_curve = []
+    test_model.outlet_effectiveness_curve_delta = []
 
     test_model.external_source_weights['pv'] = param_dict.get(
         'pv_heat_weight', current_params['pv_heat_weight']
@@ -2865,7 +2914,12 @@ def calibrate_slab_time_constant(df, delta_t_floor=None):
         return None
 
     inlet_col = config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    measured_outlet_entity = getattr(
+        config, "ACTUAL_OUTLET_TEMP_ENTITY_ID", None
+    )
+    if not isinstance(measured_outlet_entity, str) or not measured_outlet_entity:
+        measured_outlet_entity = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID
+    outlet_col = measured_outlet_entity.split(".", 1)[-1]
     flow_col = config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1]
     indoor_col = config.INDOOR_TEMP_ENTITY_ID.split(".", 1)[-1]
 
@@ -2888,7 +2942,21 @@ def calibrate_slab_time_constant(df, delta_t_floor=None):
     ).clip(lower=0.0)
 
     # Detect HP startup transitions (rising edges: off → on)
-    hp_on = thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW
+    defrost_entity = getattr(config, "DEFROST_STATUS_ENTITY_ID", "")
+    defrost_col = (
+        defrost_entity.split(".", 1)[-1]
+        if isinstance(defrost_entity, str)
+        else ""
+    )
+    defrost_valid = _heating_defrost_sample_mask(
+        df_s,
+        defrost_col,
+        getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45),
+    )
+    hp_on = (
+        (thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW)
+        & defrost_valid
+    )
     hp_on_prev = hp_on.shift(1, fill_value=False)
     startups = hp_on & ~hp_on_prev
 
@@ -3094,22 +3162,39 @@ def calibrate_room_spread_delay(spread_periods):
 def calibrate_delta_t_floor(stable_periods):
     """Calibrate delta_t_floor as percentile-10 of outlet-inlet during HP-on.
 
-    Returns delta_t_floor in °C, or None if insufficient data.
-    Filters out periods with low flow rate (< 5 L/min) where delta_t
-    is dominated by standstill heat loss and is not representative.
+    Returns delta_t_floor in °C, or None if insufficient data. Measured
+    supply-return delta-T takes precedence over commanded outlet setpoints;
+    negative/low power and post-defrost recovery samples are excluded.
     """
     logging.info("=== CALIBRATING DELTA_T_FLOOR ===")
     deltas = []
+    defrost_grace_minutes = getattr(
+        config, "DEFROST_RECOVERY_GRACE_MINUTES", 45
+    )
     for p in stable_periods:
         inlet = p.get("inlet_temp")
         outlet = p.get("outlet_temp")
         thermal_power = p.get("thermal_power_kw", 0)
-        if inlet is None or outlet is None:
+        if p.get("minutes_since_defrost", float("inf")) < defrost_grace_minutes:
             continue
-        if not isinstance(inlet, (int, float)) or not isinstance(outlet, (int, float)):
+        measured_delta_t = p.get("measured_delta_t")
+        if measured_delta_t is not None:
+            dt = measured_delta_t
+        elif inlet is not None and outlet is not None:
+            dt = outlet - inlet
+        else:
             continue
-        dt = outlet - inlet
-        if dt > 1.0 and thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW:
+        try:
+            dt = float(dt)
+            thermal_power = float(thermal_power)
+        except (TypeError, ValueError):
+            continue
+        if (
+            math.isfinite(dt)
+            and math.isfinite(thermal_power)
+            and dt > 1.0
+            and thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW
+        ):
             deltas.append(dt)
 
     if len(deltas) < 10:

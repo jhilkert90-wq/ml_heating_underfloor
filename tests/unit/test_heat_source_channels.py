@@ -412,6 +412,44 @@ def test_heat_pump_self_learning_updates_hp_owned_model_parameters():
     assert updated["delta_t_floor"] > initial["delta_t_floor"]
 
 
+def test_heat_pump_self_learning_skips_post_defrost_recovery():
+    channel = HeatPumpChannel()
+    initial = channel.get_learnable_parameters()
+    context = make_context(
+        heat_pump_active=True,
+        delta_t=4.5,
+        thermal_power=2.5,
+        minutes_since_defrost=20.0,
+    )
+
+    for _ in range(_get_min_records_for_learning() + 1):
+        channel.record_learning(1.0, context)
+
+    assert channel.get_learnable_parameters() == initial
+
+
+def test_heat_pump_channel_updates_curve_in_normal_channel_learning(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        heat_source_channels.config, "OUTLET_EFFECTIVENESS_MODE", "curve"
+    )
+    channel = HeatPumpChannel()
+    channel.outlet_effectiveness_curve = [
+        {"outdoor_temp": temp, "outlet_effectiveness": 0.5}
+        for temp in (-5.0, 0.0, 5.0)
+    ]
+    before = channel.get_state_parameters()["outlet_effectiveness_curve_delta"]
+    context = make_context(heat_pump_active=True, outdoor_temp=0.0)
+
+    for _ in range(_get_min_records_for_learning() + 1):
+        channel.record_learning(1.0, context)
+
+    after = channel.get_state_parameters()["outlet_effectiveness_curve_delta"]
+    assert after != before
+    assert after[1]["outlet_effectiveness"] > 0
+
+
 def test_solar_channel_self_learning_updates_retained_adaptive_parameters():
     from src import config
     original = getattr(config, "CLOUD_COVER_CORRECTION_ENABLED", False)

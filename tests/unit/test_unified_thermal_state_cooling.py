@@ -53,6 +53,7 @@ class TestCoolingThermalStateManager:
         assert baseline["slab_time_constant_hours"] == cd['slab_time_constant_hours']
         assert baseline["outlet_effectiveness"] == cd['outlet_effectiveness']
         assert baseline["pv_heat_weight"] == cd['pv_heat_weight']
+        assert baseline["outlet_effectiveness_curve"] == []
 
     def test_cooling_defaults_differ_from_heating(self, cooling_manager):
         """Key cooling defaults should differ from their heating counterparts."""
@@ -69,6 +70,21 @@ class TestCoolingThermalStateManager:
 
         reloaded = CoolingThermalStateManager(state_file=str(temp_state_file))
         assert reloaded.state["operational_state"]["last_indoor_temp"] == 25.0
+
+    def test_calibrated_curve_persists_in_cooling_state(self, cooling_manager):
+        curve = [
+            {"outdoor_temp": 20.0, "outlet_effectiveness": 0.3, "sample_count": 14}
+        ]
+        cooling_manager.set_calibrated_baseline(
+            {"outlet_effectiveness_curve": curve}
+        )
+
+        assert (
+            cooling_manager.state["baseline_parameters"][
+                "outlet_effectiveness_curve"
+            ]
+            == curve
+        )
 
     def test_set_calibrated_baseline(self, cooling_manager):
         params = {

@@ -73,6 +73,11 @@ def update_sensor_buffer_and_thermo(
         config.INLET_TEMP_ENTITY_ID: get_float_state(config.INLET_TEMP_ENTITY_ID),
         config.FLOW_RATE_ENTITY_ID: get_float_state(config.FLOW_RATE_ENTITY_ID),
     }
+    defrost_state = ha_client.get_state(
+        config.DEFROST_STATUS_ENTITY_ID, all_states, is_binary=True
+    )
+    if defrost_state is not None:
+        buffer_updates[config.DEFROST_STATUS_ENTITY_ID] = float(defrost_state)
 
     for entity_id, value in buffer_updates.items():
         if value is not None:
@@ -301,6 +306,10 @@ def run_online_learning(
             "current_indoor": last_indoor_temp,
             "avg_other_rooms_temp": last_avg_other_rooms_temp,
             "thermal_power": learning_features.get("thermal_power_kw", None),
+            "defrosting": learning_features.get("defrosting", 0.0),
+            "minutes_since_defrost": learning_features.get(
+                "minutes_since_defrost", float("inf")
+            ),
             "climate_mode": previous_cycle_climate_mode,
             "auxiliary_heat": learning_features.get("total_auxiliary_heat_kw", 0.0),
             "target_temp": target_indoor_temp,

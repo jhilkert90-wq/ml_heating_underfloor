@@ -12,9 +12,43 @@ from src.pre_dispatch import (
     handle_grace_period,
     initialize_loop_state,
     resolve_shadow_mode_for_cycle,
+    run_online_learning,
     update_sensor_buffer_and_thermo,
     validate_sensors_once,
 )
+
+
+def test_run_online_learning_forwards_defrost_context():
+    ha_client = MagicMock()
+    ha_client.get_state.side_effect = [40.0, 21.5]
+    wrapper = MagicMock()
+    state = {
+        "last_run_features": {
+            "outdoor_temp": 5.0,
+            "defrosting": 1.0,
+            "minutes_since_defrost": 20.0,
+        },
+        "last_indoor_temp": 21.0,
+        "last_final_temp": 40.0,
+        "last_predicted_indoor": 21.2,
+        "last_target_indoor_temp": 21.0,
+        "last_climate_mode": "heating",
+    }
+
+    run_online_learning(
+        ha_client,
+        {},
+        state,
+        effective_shadow_mode=False,
+        climate_mode="heating",
+        wrapper=wrapper,
+    )
+
+    context = wrapper.learn_from_prediction_feedback.call_args.kwargs[
+        "prediction_context"
+    ]
+    assert context["defrosting"] == 1.0
+    assert context["minutes_since_defrost"] == 20.0
 
 
 class TestUpdateSensorBufferAndThermo:

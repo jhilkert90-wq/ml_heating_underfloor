@@ -253,6 +253,22 @@ def build_physics_features(
     defrosting = ha_client.get_state(
         config.DEFROST_STATUS_ENTITY_ID, all_states, is_binary=True
     ) or False
+    minutes_since_defrost = (
+        sensor_buffer.get_minutes_since_active(config.DEFROST_STATUS_ENTITY_ID)
+        if sensor_buffer is not None
+        and hasattr(sensor_buffer, "get_minutes_since_active")
+        else None
+    )
+    if minutes_since_defrost is None:
+        minutes_since_defrost = (
+            0.0
+            if defrosting
+            else max(
+                1_000_000.0,
+                float(getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45))
+                + 1.0,
+            )
+        )
     
     # External heat sources
     # Sum all PV power sources
@@ -592,6 +608,7 @@ def build_physics_features(
         'dhw_disinfection': float(dhw_disinfection),
         'dhw_boost_heater': float(dhw_boost_heater),
         'defrosting': float(defrosting),
+        'minutes_since_defrost': minutes_since_defrost,
         # External heat sources
         'pv_now': float(pv_now),
         'pv_now_electrical': float(pv_now_electrical),

@@ -509,6 +509,10 @@ configuration:
     description: 'Efficiency of heat transfer from the outlet water to the indoor
       air. Automatically calibrated. Values near 1.0 are typical; below 0.5 indicates
       poor heat distribution. Default: ~0.95.'
+  outlet_effectiveness_mode:
+    name: '[Erweitert] OE-Modell'
+    description: 'Wählt zwischen kalibriertem OE-Skalar und der AT-abhängigen Kurve.
+      Beide Varianten werden unabhängig kalibriert und gespeichert. Standard: scalar.'
   outdoor_coupling:
     name: '[Erweitert] Außen Coupling Factor'
     description: 'How strongly outdoor temperature influences indoor temperature directly

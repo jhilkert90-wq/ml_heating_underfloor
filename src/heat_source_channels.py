@@ -42,6 +42,17 @@ try:
 except ImportError:
     from thermal_constants import PhysicsConstants
 
+try:
+    from .outlet_effectiveness_curve import (
+        normalize_curve,
+        update_curve_at_temperature,
+    )
+except ImportError:
+    from outlet_effectiveness_curve import (
+        normalize_curve,
+        update_curve_at_temperature,
+    )
+
 logger = logging.getLogger(__name__)
 
 
@@ -365,6 +376,8 @@ class HeatPumpChannel(HeatSourceChannel):
             "slab_time_constant_hours", 1.0
         )
         self.delta_t_floor = _get_parameter_default("delta_t_floor", 2.0)
+        self.outlet_effectiveness_curve: List[Dict[str, float]] = []
+        self.outlet_effectiveness_curve_delta: List[Dict[str, float]] = []
 
     def estimate_heat_contribution(self, context: Dict) -> float:
         if not _is_heat_pump_active(context):
@@ -398,6 +411,60 @@ class HeatPumpChannel(HeatSourceChannel):
             "slab_time_constant_hours": self.slab_time_constant_hours,
             "delta_t_floor": self.delta_t_floor,
         }
+
+    def get_state_parameters(self) -> Dict[str, Any]:
+        return {
+            **self.get_learnable_parameters(),
+            "outlet_effectiveness_curve_delta":
+                self.outlet_effectiveness_curve_delta,
+        }
+
+    def _update_outlet_effectiveness_curve(
+        self, outdoor_temps: List[float], adjustment: float, climate_mode: str
+    ) -> None:
+        if not self.outlet_effectiveness_curve:
+            return
+
+        bounds_getter = (
+            ThermalParameterConfig.get_cooling_bounds
+            if climate_mode == "cooling"
+            else ThermalParameterConfig.get_bounds
+        )
+        bounds = bounds_getter("outlet_effectiveness")
+        base_curve = normalize_curve(self.outlet_effectiveness_curve)
+        delta_by_temp = {
+            point["outdoor_temp"]: point["outlet_effectiveness"]
+            for point in normalize_curve(self.outlet_effectiveness_curve_delta)
+        }
+        curve = [
+            {
+                **point,
+                "outlet_effectiveness": max(
+                    bounds[0],
+                    min(
+                        bounds[1],
+                        point["outlet_effectiveness"]
+                        + delta_by_temp.get(point["outdoor_temp"], 0.0),
+                    ),
+                ),
+            }
+            for point in base_curve
+        ]
+        for outdoor_temp in outdoor_temps:
+            curve = update_curve_at_temperature(
+                curve, outdoor_temp, adjustment / len(outdoor_temps), bounds
+            )
+        self.outlet_effectiveness_curve_delta = [
+            {
+                "outdoor_temp": point["outdoor_temp"],
+                "outlet_effectiveness": (
+                    point["outlet_effectiveness"]
+                    - base_curve[index]["outlet_effectiveness"]
+                ),
+                "sample_count": point.get("sample_count", 0.0),
+            }
+            for index, point in enumerate(curve)
+        ]
 
     def apply_gradient_update(
         self, gradients: Dict[str, float], learning_rate: float
@@ -436,6 +503,28 @@ class HeatPumpChannel(HeatSourceChannel):
     def _learn_from_recent(self) -> None:
         min_records = _get_min_records_for_learning()
         recent = self.history[-min_records:]
+        recovery_grace = getattr(
+            config, "DEFROST_RECOVERY_GRACE_MINUTES", 45
+        )
+        for record in recent:
+            context = record.get("context", {})
+            minutes_since_defrost = context.get(
+                "minutes_since_defrost", float("inf")
+            )
+            try:
+                minutes_since_defrost = float(minutes_since_defrost)
+            except (TypeError, ValueError):
+                minutes_since_defrost = float("inf")
+            if (
+                _to_float(context.get("defrosting", 0.0)) > 0.5
+                or minutes_since_defrost < recovery_grace
+            ):
+                logger.debug(
+                    "♨️ HeatPumpChannel skipping self-learning during "
+                    "defrost recovery (%.1f min since defrost)",
+                    minutes_since_defrost,
+                )
+                return
         if any(_is_fireplace_active(record.get("context", {})) for record in recent):
             logger.debug(
                 "♨️ HeatPumpChannel skipping self-learning: fireplace-contaminated history"
@@ -489,7 +578,27 @@ class HeatPumpChannel(HeatSourceChannel):
             "slab_time_constant_hours": avg_error * 0.2,
             "delta_t_floor": avg_delta_t - self.delta_t_floor,
         }
-        self.apply_gradient_update(gradients, _get_channel_learning_rate())
+        learning_rate = _get_channel_learning_rate()
+        self.apply_gradient_update(gradients, learning_rate)
+        if (
+            str(getattr(config, "OUTLET_EFFECTIVENESS_MODE", "scalar")).lower()
+            == "curve"
+        ):
+            outdoor_temps = []
+            for record in recent:
+                try:
+                    outdoor_temp = float(
+                        record.get("context", {}).get("outdoor_temp")
+                    )
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(outdoor_temp):
+                    outdoor_temps.append(outdoor_temp)
+            self._update_outlet_effectiveness_curve(
+                outdoor_temps,
+                oe_gradient * learning_rate,
+                climate_mode,
+            )
         logger.debug(
             "♨️ HeatPumpChannel self-learned (%s): avg_error=%.3f, "
             "tau=%.2fh, hlc=%.3f, outlet_effectiveness=%.3f, "
@@ -1034,6 +1143,18 @@ class HeatSourceChannelOrchestrator:
         )
         heat_pump.outlet_effectiveness = parameters.get(
             "outlet_effectiveness", heat_pump.outlet_effectiveness
+        )
+        heat_pump.outlet_effectiveness_curve = normalize_curve(
+            parameters.get(
+                "outlet_effectiveness_curve",
+                heat_pump.outlet_effectiveness_curve,
+            )
+        )
+        heat_pump.outlet_effectiveness_curve_delta = normalize_curve(
+            parameters.get(
+                "outlet_effectiveness_curve_delta",
+                heat_pump.outlet_effectiveness_curve_delta,
+            )
         )
         heat_pump.slab_time_constant_hours = parameters.get(
             "slab_time_constant_hours", heat_pump.slab_time_constant_hours
@@ -1636,6 +1757,7 @@ class HeatSourceChannelOrchestrator:
         "thermal_time_constant",
         "heat_loss_coefficient",
         "outlet_effectiveness",
+        "outlet_effectiveness_curve_delta",
         "slab_time_constant_hours",
         "delta_t_floor",
         "fp_decay_time_constant",

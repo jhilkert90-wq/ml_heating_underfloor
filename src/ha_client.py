@@ -549,6 +549,30 @@ class HAClient:
             "thermal_time_constant": learning_metrics.get("thermal_time_constant", 6.0),
             "heat_loss_coefficient": learning_metrics.get("heat_loss_coefficient", 0.146),
             "outlet_effectiveness": learning_metrics.get("outlet_effectiveness", 0.936),
+            "outlet_effectiveness_mode": learning_metrics.get(
+                "outlet_effectiveness_mode", "scalar"
+            ),
+            "outlet_effectiveness_curve": learning_metrics.get(
+                "outlet_effectiveness_curve", []
+            ),
+            "heating_outlet_effectiveness": learning_metrics.get(
+                "heating_outlet_effectiveness", learning_metrics.get("outlet_effectiveness", 0.936)
+            ),
+            "heating_outlet_effectiveness_mode": learning_metrics.get(
+                "heating_outlet_effectiveness_mode", "scalar"
+            ),
+            "heating_outlet_effectiveness_curve": learning_metrics.get(
+                "heating_outlet_effectiveness_curve", []
+            ),
+            "cooling_outlet_effectiveness": learning_metrics.get(
+                "cooling_outlet_effectiveness", 0.20
+            ),
+            "cooling_outlet_effectiveness_mode": learning_metrics.get(
+                "cooling_outlet_effectiveness_mode", "scalar"
+            ),
+            "cooling_outlet_effectiveness_curve": learning_metrics.get(
+                "cooling_outlet_effectiveness_curve", []
+            ),
             "pv_heat_weight": learning_metrics.get("pv_heat_weight", 0.001),
             "fireplace_heat_weight": learning_metrics.get("fireplace_heat_weight", 0.0),
             "tv_heat_weight": learning_metrics.get("tv_heat_weight", 0.1),

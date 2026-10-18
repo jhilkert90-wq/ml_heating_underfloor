@@ -96,6 +96,7 @@ def test_filter_stable_periods_stable_data(sample_df):
         assert len(stable_periods) > 0
         for period in stable_periods:
             assert 'stability_score' in period
+            assert period['measured_delta_t'] == pytest.approx(5.0)
 
 
 def test_filter_stable_periods_unstable_temp(sample_df):
@@ -115,6 +116,17 @@ def test_filter_stable_periods_with_blocking(sample_df):
         stable_periods = physics_calibration.filter_stable_periods(sample_df)
         assert len(stable_periods) > 0
         assert len(stable_periods) < 83
+
+
+def test_filter_stable_periods_excludes_defrost_recovery(sample_df):
+    sample_df.loc[40, 'defrosting'] = 1
+    with patch('src.physics_calibration.log_filtering_stats'), \
+         patch('src.physics_calibration.json'), \
+         patch('builtins.open'):
+        stable_periods = physics_calibration.filter_stable_periods(sample_df)
+
+    assert stable_periods
+    assert all(period['minutes_since_defrost'] >= 45 for period in stable_periods)
 
 
 def test_filter_stable_periods_low_flow(sample_df):
@@ -188,6 +200,8 @@ def test_calculate_mae_for_params(stable_periods_fixture):
             params, param_names, stable_periods_fixture, current_params
         )
         assert mae == pytest.approx(0.5)
+        assert mock_model_instance.outlet_effectiveness_curve == []
+        assert mock_model_instance.outlet_effectiveness_curve_delta == []
         mock_model_instance.sync_heat_source_channels_from_model_state.assert_called_once_with()
         assert (
             mock_model_instance.predict_equilibrium_temperature.call_count == 1
@@ -802,3 +816,59 @@ def test_delta_t_floor_rejects_low_dt():
         periods.append({"outlet_temp": 30.0, "inlet_temp": 29.2, "thermal_power_kw": 2.0})
     result = physics_calibration.calibrate_delta_t_floor(periods)
     assert result is None  # All excluded by dt > 1.0 filter
+
+
+def test_delta_t_floor_uses_measured_delta_and_excludes_defrost_recovery():
+    periods = [
+        {
+            "outlet_temp": 45.0,
+            "inlet_temp": 40.0,
+            "measured_delta_t": 2.4,
+            "thermal_power_kw": 1.0,
+            "minutes_since_defrost": 60,
+        }
+        for _ in range(10)
+    ]
+    periods.extend(
+        [
+            {
+                "outlet_temp": 45.0,
+                "inlet_temp": 40.0,
+                "measured_delta_t": -4.0,
+                "thermal_power_kw": -2.0,
+                "minutes_since_defrost": 120,
+            }
+            for _ in range(10)
+        ]
+    )
+    periods.extend(
+        [
+            {
+                "outlet_temp": 45.0,
+                "inlet_temp": 40.0,
+                "measured_delta_t": 6.0,
+                "thermal_power_kw": 2.0,
+                "minutes_since_defrost": 20,
+            }
+            for _ in range(10)
+        ]
+    )
+
+    result = physics_calibration.calibrate_delta_t_floor(periods)
+
+    assert result == pytest.approx(2.4)
+
+
+def test_delta_t_floor_does_not_fall_back_to_setpoint_delta_when_measured_exists():
+    periods = [
+        {
+            "outlet_temp": 45.0,
+            "inlet_temp": 40.0,
+            "measured_delta_t": 0.8,
+            "thermal_power_kw": 2.0,
+            "minutes_since_defrost": 120,
+        }
+        for _ in range(20)
+    ]
+
+    assert physics_calibration.calibrate_delta_t_floor(periods) is None

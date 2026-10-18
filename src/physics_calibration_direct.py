@@ -64,10 +64,12 @@ try:
     from .thermal_equilibrium_model import ThermalEquilibriumModel
     from .thermal_config import ThermalParameterConfig
     from .unified_thermal_state import get_thermal_state_manager
+    from .outlet_effectiveness_curve import calibrate_curve
     from .state_manager import save_state
     from .physics_calibration import (
         fetch_historical_data_for_calibration,
         filter_stable_periods,
+        _heating_defrost_sample_mask,
         backup_existing_calibration,
         calculate_cooling_time_constant,
         calibrate_delta_t_floor,
@@ -88,10 +90,12 @@ except ImportError:
     from thermal_equilibrium_model import ThermalEquilibriumModel  # type: ignore
     from thermal_config import ThermalParameterConfig  # type: ignore
     from unified_thermal_state import get_thermal_state_manager  # type: ignore
+    from outlet_effectiveness_curve import calibrate_curve  # type: ignore
     from state_manager import save_state  # type: ignore
     from physics_calibration import (  # type: ignore
         fetch_historical_data_for_calibration,
         filter_stable_periods,
+        _heating_defrost_sample_mask,
         backup_existing_calibration,
         calculate_cooling_time_constant,
         calibrate_delta_t_floor,
@@ -176,6 +180,8 @@ def _refine_oe_scipy(
         test_model = ThermalEquilibriumModel()
         test_model.heat_loss_coefficient = hlc
         test_model.outlet_effectiveness = oe_candidate
+        test_model.outlet_effectiveness_curve = []
+        test_model.outlet_effectiveness_curve_delta = []
 
         total_error = 0.0
         count = 0
@@ -457,23 +463,31 @@ def _residual_heat_source_weight(
 
 def _filter_fp_only_periods(stable_periods):
     """HP + fireplace on, no PV (< _MIN_PV_POWER_W W), no TV."""
+    defrost_grace = getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45)
+    if not isinstance(defrost_grace, (int, float)):
+        defrost_grace = 45
     return [
         p for p in stable_periods
         if p.get("fireplace_on", 0) > 0
         and p.get("pv_power", 0) < _MIN_PV_POWER_W
         and p.get("tv_on", 0) == 0
         and p.get("thermal_power_kw", 0) >= config.HEATING_MIN_THERMAL_POWER_KW
+        and p.get("minutes_since_defrost", float("inf")) >= defrost_grace
     ]
 
 
 def _filter_tv_only_periods(stable_periods):
     """HP + TV on, no PV (< _MIN_PV_POWER_W W), no fireplace."""
+    defrost_grace = getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45)
+    if not isinstance(defrost_grace, (int, float)):
+        defrost_grace = 45
     return [
         p for p in stable_periods
         if p.get("tv_on", 0) > 0
         and p.get("pv_power", 0) < _MIN_PV_POWER_W
         and p.get("fireplace_on", 0) == 0
         and p.get("thermal_power_kw", 0) >= config.HEATING_MIN_THERMAL_POWER_KW
+        and p.get("minutes_since_defrost", float("inf")) >= defrost_grace
     ]
 
 
@@ -660,7 +674,12 @@ def _calibrate_slab_tau_grid_search(
         return None
 
     inlet_col = config.INLET_TEMP_ENTITY_ID.split(".", 1)[-1]
-    outlet_col = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID.split(".", 1)[-1]
+    measured_outlet_entity = getattr(
+        config, "ACTUAL_OUTLET_TEMP_ENTITY_ID", None
+    )
+    if not isinstance(measured_outlet_entity, str) or not measured_outlet_entity:
+        measured_outlet_entity = config.ACTUAL_TARGET_OUTLET_TEMP_ENTITY_ID
+    outlet_col = measured_outlet_entity.split(".", 1)[-1]
     flow_col = config.FLOW_RATE_ENTITY_ID.split(".", 1)[-1]
 
     for c in (inlet_col, outlet_col, flow_col):
@@ -681,7 +700,21 @@ def _calibrate_slab_tau_grid_search(
         * delta_t_vals
     ).clip(lower=0.0)
 
-    hp_on = thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW
+    defrost_entity = getattr(config, "DEFROST_STATUS_ENTITY_ID", "")
+    defrost_col = (
+        defrost_entity.split(".", 1)[-1]
+        if isinstance(defrost_entity, str)
+        else ""
+    )
+    defrost_valid = _heating_defrost_sample_mask(
+        df_s,
+        defrost_col,
+        getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45),
+    )
+    hp_on = (
+        (thermal_power >= config.HEATING_MIN_THERMAL_POWER_KW)
+        & defrost_valid
+    )
     hp_on_prev = hp_on.shift(1, fill_value=False)
     startups = hp_on & ~hp_on_prev
 
@@ -1043,6 +1076,13 @@ def calibrate_thermal_model_physics(
         logging.warning("⚠️ OE calibration failed — using %s value",
                         _fallback_source("outlet_effectiveness"))
         oe = _state_fallback("outlet_effectiveness")
+    oe_curve = calibrate_curve(
+        _filter_hp_only_periods(stable_periods),
+        hlc,
+        oe,
+        ThermalParameterConfig.get_bounds("outlet_effectiveness"),
+        climate_mode="heating",
+    )
 
     # --- Step 3: τ_room (thermal time constant) ---
     # Priority: (1) transient calibration from heating sequences (most data),
@@ -1195,6 +1235,7 @@ def calibrate_thermal_model_physics(
     calibrated_params: Dict[str, float] = {
         "heat_loss_coefficient": hlc,
         "outlet_effectiveness": oe,
+        "outlet_effectiveness_curve": oe_curve,
         "thermal_time_constant": tau,
         "pv_heat_weight": pv_weight,
         "fireplace_heat_weight": fp_weight,
@@ -1214,6 +1255,7 @@ def calibrate_thermal_model_physics(
     thermal_model.thermal_time_constant = tau
     thermal_model.heat_loss_coefficient = hlc
     thermal_model.outlet_effectiveness = oe
+    thermal_model.outlet_effectiveness_curve = oe_curve
     thermal_model.external_source_weights["pv"] = pv_weight
     thermal_model.external_source_weights["fireplace"] = fp_weight
     thermal_model.external_source_weights["tv"] = tv_weight
