@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ Address PR #96 Review Feedback — 2026-10-18
+
+**Status:** COMPLETED — Scalar calibration, heating curve eligibility, defrost context persistence, cooling bounds, and channel-owned curve learning now address all six review findings.
+
+**Files changed:** `src/thermal_equilibrium_model.py`, `src/heat_source_channels.py`, `src/unified_thermal_state.py`, `src/pre_dispatch.py`, `src/physics_calibration.py`, `src/physics_calibration_direct.py`, `src/physics_calibration_cooling.py`, `src/model_wrapper.py`, `tests/unit/test_physics_calibration.py`, `tests/unit/test_physics_calibration_direct.py`, `tests/unit/test_unified_thermal_state.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_thermal_equilibrium_model.py`, `tests/unit/test_pre_dispatch.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Temporary scalar optimization models now clear persisted curve state; both heating curve calibrators apply the HP-only filter. Defrost state and recovery age flow through production online learning and survive both history allow-lists. Cooling model instances use cooling OE bounds, and HeatPumpChannel performs bounded outdoor-local curve updates that synchronize to the model and persist in channel state. Focused regression suites passed (220 tests).
+
 ## ✅ Outdoor-Temperature OE Curve — 2026-10-18
 
 **Status:** COMPLETED — Scalar and outdoor-temperature OE variants are independently calibrated and persisted for heating and cooling, with dashboard selection, online curve corrections, and Home Assistant export.

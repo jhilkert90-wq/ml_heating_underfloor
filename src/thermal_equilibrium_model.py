@@ -41,11 +41,14 @@ class ThermalEquilibriumModel:
     and adapts its parameters based on real-world feedback.
     """
 
-    def __init__(self, state_manager=None):
+    def __init__(self, state_manager=None, climate_mode="heating"):
         # Optional injected state manager.  When provided (e.g. by the cooling
         # wrapper) this instance reads from / writes to the supplied manager
         # instead of the global heating singleton.
         self._state_manager = state_manager
+        self.climate_mode = (
+            "cooling" if climate_mode == "cooling" else "heating"
+        )
         self._defer_persistence = False
         self._deferred_channel_history_records: List[Dict] = []
         self._deferred_channel_state_dirty = False
@@ -470,6 +473,10 @@ class ThermalEquilibriumModel:
                 "fp_decay_time_constant": self.fp_decay_time_constant,
                 "room_spread_delay_minutes":
                     self.room_spread_delay_minutes,
+                "outlet_effectiveness_curve":
+                    self.outlet_effectiveness_curve,
+                "outlet_effectiveness_curve_delta":
+                    self.outlet_effectiveness_curve_delta,
             }
         )
 
@@ -506,6 +513,11 @@ class ThermalEquilibriumModel:
         self.solar_lag_minutes = parameters["solar_lag_minutes"]
         self.fireplace_heat_weight = parameters["fireplace_heat_weight"]
         self.tv_heat_weight = parameters["tv_heat_weight"]
+        heat_pump = self.orchestrator.channels.get("heat_pump")
+        if heat_pump is not None:
+            self.outlet_effectiveness_curve_delta = normalize_curve(
+                heat_pump.outlet_effectiveness_curve_delta
+            )
 
     def _persist_heat_source_channel_state(
         self, parameter_history_records: Optional[List[Dict]] = None
@@ -806,7 +818,12 @@ class ThermalEquilibriumModel:
         self.heat_loss_coefficient_bounds = ThermalParameterConfig.get_bounds(
             "heat_loss_coefficient"
         )
-        self.outlet_effectiveness_bounds = ThermalParameterConfig.get_bounds(
+        bounds_getter = (
+            ThermalParameterConfig.get_cooling_bounds
+            if self.climate_mode == "cooling"
+            else ThermalParameterConfig.get_bounds
+        )
+        self.outlet_effectiveness_bounds = bounds_getter(
             "outlet_effectiveness"
         )
         self.pv_heat_weight_bounds = ThermalParameterConfig.get_bounds(

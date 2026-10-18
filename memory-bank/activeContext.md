@@ -1,5 +1,21 @@
 # Active Context - Current Work & Decision State
 
+### PR #96 Review Feedback — 2026-10-18
+
+#### **What changed**
+- Scalar OE optimization candidates clear inherited curve supports and corrections. Heating curve calibration in both calibration paths now consumes only `_filter_hp_only_periods()` results.
+- Defrost state and recovery age are passed from previous-cycle features into production learning and retained in prediction and channel-history persistence.
+- Thermal model instances choose their own heating/cooling OE bounds, including the cooling calibration model. HeatPumpChannel performs bounded local curve updates during its channel-owned learning path; the model synchronizes and persists these deltas through channel state.
+- Regression coverage checks scalar optimization, state reload, the production online-learning context, cooling bounds, and channel-owned curve delta persistence.
+
+#### **Why**
+- Persisted curves previously made scalar objectives insensitive to scalar candidates; auxiliary heating contaminated curve inversion; missing defrost fields reopened recovery samples to learning after restart; and cooling bounds clipped valid curve knots. Channel mode also bypassed the old global curve adaptation, so the selected curve now learns through the existing heat-pump channel without duplicate global updates.
+
+#### **Files modified**
+- `src/thermal_equilibrium_model.py`, `src/heat_source_channels.py`, `src/unified_thermal_state.py`, `src/pre_dispatch.py`, `src/physics_calibration.py`, `src/physics_calibration_direct.py`, `src/physics_calibration_cooling.py`, `src/model_wrapper.py`
+- `tests/unit/test_physics_calibration.py`, `tests/unit/test_physics_calibration_direct.py`, `tests/unit/test_unified_thermal_state.py`, `tests/unit/test_heat_source_channels.py`, `tests/unit/test_thermal_equilibrium_model.py`, `tests/unit/test_pre_dispatch.py`
+- `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### Outdoor-Temperature OE Curve — 2026-10-18
 
 #### **What changed**

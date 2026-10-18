@@ -200,6 +200,8 @@ def test_calculate_mae_for_params(stable_periods_fixture):
             params, param_names, stable_periods_fixture, current_params
         )
         assert mae == pytest.approx(0.5)
+        assert mock_model_instance.outlet_effectiveness_curve == []
+        assert mock_model_instance.outlet_effectiveness_curve_delta == []
         mock_model_instance.sync_heat_source_channels_from_model_state.assert_called_once_with()
         assert (
             mock_model_instance.predict_equilibrium_temperature.call_count == 1

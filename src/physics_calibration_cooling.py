@@ -727,7 +727,7 @@ def calibrate_cooling_physics(
 
     # --- Build thermal model ---
     logging.info("Building cooling thermal model with calibrated parameters...")
-    thermal_model = ThermalEquilibriumModel()
+    thermal_model = ThermalEquilibriumModel(climate_mode="cooling")
     thermal_model.thermal_time_constant = tau
     thermal_model.heat_loss_coefficient = hlc
     thermal_model.outlet_effectiveness = oe

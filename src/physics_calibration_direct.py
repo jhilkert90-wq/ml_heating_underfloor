@@ -180,6 +180,8 @@ def _refine_oe_scipy(
         test_model = ThermalEquilibriumModel()
         test_model.heat_loss_coefficient = hlc
         test_model.outlet_effectiveness = oe_candidate
+        test_model.outlet_effectiveness_curve = []
+        test_model.outlet_effectiveness_curve_delta = []
 
         total_error = 0.0
         count = 0
@@ -1075,7 +1077,7 @@ def calibrate_thermal_model_physics(
                         _fallback_source("outlet_effectiveness"))
         oe = _state_fallback("outlet_effectiveness")
     oe_curve = calibrate_curve(
-        stable_periods,
+        _filter_hp_only_periods(stable_periods),
         hlc,
         oe,
         ThermalParameterConfig.get_bounds("outlet_effectiveness"),

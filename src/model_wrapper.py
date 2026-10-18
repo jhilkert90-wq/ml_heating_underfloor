@@ -84,7 +84,8 @@ class EnhancedModelWrapper:
             state_manager=self._heating_state_manager
         )
         self._cooling_thermal_model = ThermalEquilibriumModel(
-            state_manager=self._cooling_state_manager
+            state_manager=self._cooling_state_manager,
+            climate_mode="cooling",
         )
 
         self.learning_enabled = True

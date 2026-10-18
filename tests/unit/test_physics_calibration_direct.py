@@ -145,6 +145,43 @@ class TestAnalyticalOE:
 # Tests for _residual_heat_source_weight
 # ---------------------------------------------------------------------------
 
+def test_scipy_oe_refinement_uses_scalar_effectiveness(monkeypatch):
+    from types import SimpleNamespace
+    from src import physics_calibration_direct as direct
+
+    model = MagicMock()
+    model.outlet_effectiveness_curve = [
+        {"outdoor_temp": 0, "outlet_effectiveness": 1.2}
+    ]
+    model.outlet_effectiveness_curve_delta = [
+        {"outdoor_temp": 0, "outlet_effectiveness": 0.1}
+    ]
+    model.predict_equilibrium_temperature.return_value = 21.0
+
+    def run_objective(objective, **_kwargs):
+        assert objective(0.8) >= 0
+        assert model.outlet_effectiveness_curve == []
+        assert model.outlet_effectiveness_curve_delta == []
+        return SimpleNamespace(success=True, x=0.8, fun=0.1)
+
+    monkeypatch.setattr(direct, "ThermalEquilibriumModel", lambda: model)
+    monkeypatch.setattr(direct, "minimize_scalar", run_objective)
+    monkeypatch.setattr(
+        direct.ThermalParameterConfig,
+        "get_bounds",
+        lambda _name: (0.3, 2.0),
+    )
+
+    periods = [
+        {
+            "indoor_temp": 20.0,
+            "effective_temp": 30.0,
+            "outdoor_temp": 5.0,
+        }
+    ] * 10
+    assert direct._refine_oe_scipy(periods, 0.2, 0.7) == pytest.approx(0.8)
+
+
 class TestResidualHeatSourceWeight:
     """Unit tests for the residual heat-source weight estimator."""
 

@@ -158,7 +158,7 @@ def train_thermal_equilibrium_model(state_manager=None, method: str = "scipy"):
         return None
 
     optimized_params["outlet_effectiveness_curve"] = calibrate_curve(
-        stable_periods,
+        _filter_hp_only_periods(stable_periods),
         optimized_params["heat_loss_coefficient"],
         optimized_params["outlet_effectiveness"],
         ThermalParameterConfig.get_bounds("outlet_effectiveness"),
@@ -2536,6 +2536,8 @@ def calculate_mae_for_params(
     test_model.outlet_effectiveness = param_dict[
         'outlet_effectiveness'
     ]
+    test_model.outlet_effectiveness_curve = []
+    test_model.outlet_effectiveness_curve_delta = []
 
     test_model.external_source_weights['pv'] = param_dict.get(
         'pv_heat_weight', current_params['pv_heat_weight']

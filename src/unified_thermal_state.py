@@ -41,7 +41,8 @@ PREDICTION_CONTEXT_KEYS: Set[str] = {
     # Gradient replay essentials
     "outlet_temp", "outdoor_temp", "pv_power", "fireplace_on", "tv_on",
     "current_indoor", "thermal_power", "avg_cloud_cover", "inlet_temp",
-    "delta_t", "outdoor_forecast", "pv_forecast",
+    "delta_t", "outdoor_forecast", "pv_forecast", "defrosting",
+    "minutes_since_defrost",
     # Decision-visibility readings
     "target_temp", "heat_pump_active", "indoor_temp_delta_60m",
     "living_room_temp", "indoor_temp_gradient",
@@ -74,7 +75,7 @@ CHANNEL_HISTORY_CONTEXT_KEYS: Set[str] = {
     "thermal_power", "heat_pump_active",
     # Decision-visibility readings
     "outlet_temp", "outdoor_temp", "current_indoor", "inlet_temp",
-    "target_temp", "tv_on",
+    "target_temp", "tv_on", "defrosting", "minutes_since_defrost",
 }
 
 
