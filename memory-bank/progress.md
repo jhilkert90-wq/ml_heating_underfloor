@@ -1,12 +1,12 @@
 # ML Heating System - Current Progress
 
-## ✅ Heating OE Monotonic Calibration — 2026-10-19
+## ✅ OE Calibration Physics Alignment — 2026-10-19
 
-**Status:** COMPLETED — Heating OE support points are fit monotonically against outdoor temperature; cooling behavior is unchanged.
+**Status:** COMPLETED — OE calibration no longer treats outdoor temperature as a direct determinant of floor-loop conductance.
 
 **Files changed:** `src/outlet_effectiveness_curve.py`, `tests/unit/test_outlet_effectiveness_curve.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
-**Summary:** OE is an effective conductance ratio in the temperature-based equilibrium equation, not a material property with a universally guaranteed direct dependence on outdoor temperature. For the requested heating-domain expectation that colder-weather OE should not exceed warmer-weather OE, the calibration now applies weighted isotonic regression after existing robust binning and smoothing. Bin sample counts plus the scalar-prior pseudo-count determine weights; cooling remains unconstrained. Focused tests were added for both behaviors.
+**Summary:** The thermal model defines OE as an effective floor-loop conductance in its equilibrium equation; this is not physically required to vary monotonically with outdoor temperature. Calibration now retains the independently calibrated scalar OE at every outdoor-temperature support and still reports per-bin eligible sample counts. Heating and cooling behavior are consistent with this conductance interpretation. Regression tests cover flat support values and preserved bin coverage.
 
 ## ✅ Address PR #96 Review Feedback — 2026-10-18
 

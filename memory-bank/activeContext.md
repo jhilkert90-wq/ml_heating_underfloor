@@ -1,13 +1,13 @@
 # Active Context - Current Work & Decision State
 
-### Heating OE Monotonic Calibration — 2026-10-19
+### OE Calibration Physics Alignment — 2026-10-19
 
 #### **What changed**
-- Heating curve calibration in `src/outlet_effectiveness_curve.py` now uses sample-weighted isotonic regression after robust binning and smoothing, enforcing non-decreasing OE as outdoor temperature rises.
-- Regression tests cover the heating constraint and verify cooling curves are not subjected to the heating-specific assumption.
+- Curve calibration in `src/outlet_effectiveness_curve.py` now retains the calibrated scalar OE at every outdoor-temperature support while preserving per-bin sample counts.
+- Regression tests verify constant OE across heating and cooling supports and ensure the sample coverage remains visible.
 
 #### **Why**
-- OE is an effective conductance ratio in the temperature-based equilibrium equation, so physics alone does not establish a universal monotonic relationship with outdoor temperature; operating conditions and the heating curve also affect observed OE. The user's intended heating trend is therefore made an explicit calibration constraint, without imposing it on cooling.
+- OE is an effective floor-loop conductance in the model's equilibrium equation. Outdoor temperature affects heating demand and operating water temperatures, but does not imply a direct monotonic change in that conductance; per-temperature inversions can therefore encode operating-condition differences as false OE trends.
 
 #### **Files modified**
 - `src/outlet_effectiveness_curve.py`, `tests/unit/test_outlet_effectiveness_curve.py`

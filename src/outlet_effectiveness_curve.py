@@ -8,7 +8,6 @@ import numpy as np
 
 
 SUPPORT_TEMPERATURES = (-10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0)
-MIN_SAMPLES_PER_SUPPORT = 10
 BIN_HALF_WIDTH = 2.5
 
 
@@ -59,45 +58,6 @@ def interpolate_curve(
     )
 
 
-def _weighted_isotonic_non_decreasing(
-    values: list[float], weights: list[float]
-) -> list[float]:
-    """Project values onto a non-decreasing sequence using weighted PAVA."""
-    blocks = []
-    for index, (value, weight) in enumerate(zip(values, weights)):
-        blocks.append(
-            {
-                "start": index,
-                "end": index + 1,
-                "weight": weight,
-                "weighted_value": value * weight,
-            }
-        )
-        while len(blocks) > 1:
-            previous, current = blocks[-2:]
-            previous_mean = previous["weighted_value"] / previous["weight"]
-            current_mean = current["weighted_value"] / current["weight"]
-            if previous_mean <= current_mean:
-                break
-            blocks[-2:] = [
-                {
-                    "start": previous["start"],
-                    "end": current["end"],
-                    "weight": previous["weight"] + current["weight"],
-                    "weighted_value": (
-                        previous["weighted_value"] + current["weighted_value"]
-                    ),
-                }
-            ]
-
-    fitted = [0.0] * len(values)
-    for block in blocks:
-        mean = block["weighted_value"] / block["weight"]
-        for index in range(block["start"], block["end"]):
-            fitted[index] = mean
-    return fitted
-
-
 def calibrate_curve(
     periods: list[dict],
     heat_loss_coefficient: float,
@@ -105,7 +65,7 @@ def calibrate_curve(
     bounds: tuple[float, float],
     climate_mode: str = "heating",
 ) -> list[dict[str, float]]:
-    """Estimate robust, shrunken OE support points from stable periods."""
+    """Return scalar conductance supports with per-temperature sample counts."""
     if heat_loss_coefficient <= 0:
         return []
     points = []
@@ -140,60 +100,16 @@ def calibrate_curve(
                 estimates.append(estimate)
 
         count = len(estimates)
-        if count >= MIN_SAMPLES_PER_SUPPORT:
-            robust_estimate = float(np.median(estimates))
-            confidence = count / (count + MIN_SAMPLES_PER_SUPPORT)
-            calibrated_oe = (
-                confidence * robust_estimate + (1.0 - confidence) * scalar_oe
-            )
-        else:
-            calibrated_oe = scalar_oe
         points.append(
             {
                 "outdoor_temp": float(support_temp),
                 "outlet_effectiveness": float(
-                    np.clip(calibrated_oe, bounds[0], bounds[1])
+                    np.clip(scalar_oe, bounds[0], bounds[1])
                 ),
                 "sample_count": float(count),
             }
         )
 
-    # Smooth populated supports only; empty bins remain exactly at the scalar
-    # prior rather than inheriting a neighboring estimate.
-    values = [point["outlet_effectiveness"] for point in points]
-    for index, point in enumerate(points):
-        if point["sample_count"] < MIN_SAMPLES_PER_SUPPORT:
-            continue
-        neighbor_indexes = range(max(0, index - 1), min(len(values), index + 2))
-        weighted_values = [
-            values[i] * points[i]["sample_count"]
-            for i in neighbor_indexes
-            if points[i]["sample_count"] >= MIN_SAMPLES_PER_SUPPORT
-        ]
-        weights = [
-            points[i]["sample_count"]
-            for i in neighbor_indexes
-            if points[i]["sample_count"] >= MIN_SAMPLES_PER_SUPPORT
-        ]
-        if weights:
-            point["outlet_effectiveness"] = float(
-                np.clip(sum(weighted_values) / sum(weights), bounds[0], bounds[1])
-            )
-
-    if climate_mode != "cooling":
-        # For heating, constrain colder-weather OE to be no higher than
-        # warmer-weather OE. The scalar shrinkage above contributes the same
-        # pseudo-sample weight as MIN_SAMPLES_PER_SUPPORT.
-        weights = [
-            point["sample_count"] + MIN_SAMPLES_PER_SUPPORT for point in points
-        ]
-        fitted_values = _weighted_isotonic_non_decreasing(
-            [point["outlet_effectiveness"] for point in points], weights
-        )
-        for point, value in zip(points, fitted_values):
-            point["outlet_effectiveness"] = float(
-                np.clip(value, bounds[0], bounds[1])
-            )
     return points
 
 

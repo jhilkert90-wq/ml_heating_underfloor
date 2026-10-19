@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Heating OE curve calibration now applies sample-weighted monotonic fitting across outdoor-temperature support points; cooling calibration remains unconstrained.
+- OE curve calibration now keeps the calibrated conductance constant across outdoor-temperature supports while retaining per-bin sample counts.
 
 ## [0.2.0] - 2026-02-10
 
