@@ -59,6 +59,45 @@ def interpolate_curve(
     )
 
 
+def _weighted_isotonic_non_decreasing(
+    values: list[float], weights: list[float]
+) -> list[float]:
+    """Project values onto a non-decreasing sequence using weighted PAVA."""
+    blocks = []
+    for index, (value, weight) in enumerate(zip(values, weights)):
+        blocks.append(
+            {
+                "start": index,
+                "end": index + 1,
+                "weight": weight,
+                "weighted_value": value * weight,
+            }
+        )
+        while len(blocks) > 1:
+            previous, current = blocks[-2:]
+            previous_mean = previous["weighted_value"] / previous["weight"]
+            current_mean = current["weighted_value"] / current["weight"]
+            if previous_mean <= current_mean:
+                break
+            blocks[-2:] = [
+                {
+                    "start": previous["start"],
+                    "end": current["end"],
+                    "weight": previous["weight"] + current["weight"],
+                    "weighted_value": (
+                        previous["weighted_value"] + current["weighted_value"]
+                    ),
+                }
+            ]
+
+    fitted = [0.0] * len(values)
+    for block in blocks:
+        mean = block["weighted_value"] / block["weight"]
+        for index in range(block["start"], block["end"]):
+            fitted[index] = mean
+    return fitted
+
+
 def calibrate_curve(
     periods: list[dict],
     heat_loss_coefficient: float,
@@ -139,6 +178,21 @@ def calibrate_curve(
         if weights:
             point["outlet_effectiveness"] = float(
                 np.clip(sum(weighted_values) / sum(weights), bounds[0], bounds[1])
+            )
+
+    if climate_mode != "cooling":
+        # For heating, constrain colder-weather OE to be no higher than
+        # warmer-weather OE. The scalar shrinkage above contributes the same
+        # pseudo-sample weight as MIN_SAMPLES_PER_SUPPORT.
+        weights = [
+            point["sample_count"] + MIN_SAMPLES_PER_SUPPORT for point in points
+        ]
+        fitted_values = _weighted_isotonic_non_decreasing(
+            [point["outlet_effectiveness"] for point in points], weights
+        )
+        for point, value in zip(points, fitted_values):
+            point["outlet_effectiveness"] = float(
+                np.clip(value, bounds[0], bounds[1])
             )
     return points
 

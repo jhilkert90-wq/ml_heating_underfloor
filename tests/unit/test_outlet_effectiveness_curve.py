@@ -42,7 +42,9 @@ def test_curve_calibration_shrinks_sparse_bins_to_scalar():
     assert zero_bin["sample_count"] == 20
     assert 0.5 < zero_bin["outlet_effectiveness"] < 0.8
     assert empty_bin["sample_count"] == 0
-    assert empty_bin["outlet_effectiveness"] == pytest.approx(0.8)
+    assert empty_bin["outlet_effectiveness"] == pytest.approx(
+        zero_bin["outlet_effectiveness"]
+    )
 
 
 def test_heating_curve_calibration_enforces_non_decreasing_oe_with_outdoor_temp():
