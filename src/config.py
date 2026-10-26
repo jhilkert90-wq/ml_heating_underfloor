@@ -420,6 +420,16 @@ HEATING_CORRECTION_MODE: str = os.getenv("HEATING_CORRECTION_MODE", "legacy")
 GRACE_PERIOD_MAX_MINUTES: int = int(
     os.getenv("GRACE_PERIOD_MAX_MINUTES", "15")
 )
+# Cool-down wait is aborted when the outlet temp falls by less than
+# GRACE_STAGNATION_MIN_DROP_K within GRACE_STAGNATION_WINDOW_MINUTES (the
+# outlet is bounded by inlet + minimum spread and can never reach the target).
+# A window of 0 disables stagnation detection.
+GRACE_STAGNATION_WINDOW_MINUTES: float = float(
+    os.getenv("GRACE_STAGNATION_WINDOW_MINUTES", "4")
+)
+GRACE_STAGNATION_MIN_DROP_K: float = float(
+    os.getenv("GRACE_STAGNATION_MIN_DROP_K", "0.3")
+)
 # Extra grace period after HP defrost cycles.  Defrost steals heat from the
 # slab; the HP then re-heats the slab before the room reaches true steady
 # state.  Periods inside this window are excluded from OE / HLC calibration.

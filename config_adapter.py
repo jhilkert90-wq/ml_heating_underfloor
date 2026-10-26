@@ -252,6 +252,12 @@ def convert_addon_to_env(config):
         'GRACE_PERIOD_MAX_MINUTES': str(
             config.get('grace_period_max_minutes', 15)
         ),
+        'GRACE_STAGNATION_WINDOW_MINUTES': str(
+            config.get('grace_stagnation_window_minutes', 4.0)
+        ),
+        'GRACE_STAGNATION_MIN_DROP_K': str(
+            config.get('grace_stagnation_min_drop_k', 0.3)
+        ),
         'DEFROST_RECOVERY_GRACE_MINUTES': str(
             config.get('defrost_recovery_grace_minutes', 45)
         ),

@@ -199,6 +199,38 @@ class TestBlockingStateManager:
             mock_save.assert_called_once()
 
 
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time")
+    def test_wait_for_grace_target_stagnation_aborts(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """Outlet stuck above target ends the wait before the timeout."""
+        mock_time.side_effect = [1000 + 60 * i for i in range(30)]
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        mock_ha_client.get_state.return_value = 50.0
+
+        with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 15):
+            blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
+        # start + polls at 60..240s -> aborts at the 4 min poll
+        assert mock_sleep.call_count == 3
+
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time")
+    def test_wait_for_grace_target_slow_cooling_continues(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """Steady cooling is not treated as stagnation."""
+        mock_time.side_effect = [1000 + 60 * i for i in range(30)]
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        temps = [50.0 - 0.2 * i for i in range(60)]
+        mock_ha_client.get_state.side_effect = lambda *a, **k: temps.pop(0)
+
+        with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 6):
+            blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
+        # Not aborted at 4 min; only the 6 min timeout ends it
+        assert mock_sleep.call_count >= 5
+
+
 class TestSensorDataManager:
     @pytest.fixture
     def sensor_manager(self):

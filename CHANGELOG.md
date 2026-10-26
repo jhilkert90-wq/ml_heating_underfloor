@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Grace stagnation add-on options**: `grace_stagnation_window_minutes` and `grace_stagnation_min_drop_k` are configurable in the dashboard under Blocking
+
+### Fixed
+- **Grace-period cool-down wait**: Wait now aborts when the outlet temperature stagnates (drop < `GRACE_STAGNATION_MIN_DROP_K` within `GRACE_STAGNATION_WINDOW_MINUTES`), e.g. when inlet + minimum spread keeps the outlet above the required target after DHW/defrost
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

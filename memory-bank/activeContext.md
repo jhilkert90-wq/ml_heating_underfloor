@@ -1,5 +1,18 @@
 # Active Context - Current Work & Decision State
 
+### Grace-Period Stagnation Fix — 2026-10-26
+
+#### **What changed**
+- Cool-down wait in `BlockingStateManager._wait_for_grace_target` aborts if the outlet falls < 0.3 K over a 4 min window (env-configurable, 0 disables).
+
+- Both values are add-on options (`config.yaml`, `config_adapter.py`, en/de translations), shown in the dashboard Blocking group.
+
+#### **Why**
+- After DHW/defrost the outlet can be bounded by inlet + minimum spread above the required outlet, so `actual <= target` never became true.
+
+#### **Files modified**
+`src/heating_controller.py`, `src/config.py`, `tests/unit/test_heating_controller.py`, `CHANGELOG.md`, memory-bank files.
+
 ### Cost-Mode Log Review Fixes — 2026-10-26
 
 #### **What changed**

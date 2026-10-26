@@ -41,7 +41,7 @@ class TestSettingsMetadata:
         metadata = load_settings_metadata()
 
         _SKIPPED_KEYS = {"heating_profile", "cooling_profile"}
-        assert len(metadata.defaults) == 264
+        assert len(metadata.defaults) == 266
         assert len(metadata.fields) == len(metadata.defaults) - len(_SKIPPED_KEYS)
         assert len(metadata.field_order) == len(metadata.fields)
         assert set(metadata.defaults.keys()) - set(metadata.fields.keys()) == _SKIPPED_KEYS
@@ -54,6 +54,8 @@ class TestSettingsMetadata:
         assert metadata.fields["heating_ml_cv_enabled"].group.slug == "ml_heating"
         assert metadata.fields["trajectory_steps"].group.slug == "trajectory"
         assert metadata.fields["grace_period_max_minutes"].group.slug == "blocking"
+        assert metadata.fields["grace_stagnation_window_minutes"].group.slug == "blocking"
+        assert metadata.fields["grace_stagnation_min_drop_k"].group.slug == "blocking"
         assert metadata.fields["building_balance_method"].group.slug == "balance"
         assert metadata.fields["building_curve_enabled"].group.slug == "balance"
         assert metadata.fields["building_balance_method"].options == (

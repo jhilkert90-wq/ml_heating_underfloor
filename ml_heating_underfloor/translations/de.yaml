@@ -470,6 +470,12 @@ configuration:
     description: 'Maximum time (minutes) to wait for the outlet temperature to stabilise
       after a blocking event (DHW, defrost, etc.) ends before resuming ML control.
       Default: 15 min.'
+  grace_stagnation_window_minutes:
+    name: '[Erweitert] Grace Stagnation Window (minutes)'
+    description: 'Abort the post-blocking cool-down wait if the outlet temperature does not fall by the minimum drop within this window (outlet cannot go below inlet + minimum spread). 0 disables. Default: 4 min.'
+  grace_stagnation_min_drop_k:
+    name: '[Erweitert] Grace Stagnation Min Drop (K)'
+    description: 'Minimum outlet temperature drop within the stagnation window to keep waiting. Default: 0.3 K.'
   defrost_recovery_grace_minutes:
     name: '[Erweitert] Defrost Recovery Grace Period (minutes)'
     description: 'Additional grace period (minutes) applied specifically after a heat

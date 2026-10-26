@@ -340,6 +340,9 @@ options:
   # === Blocking Recovery ===
   # Maximum minutes to wait during grace period after blocking ends
   grace_period_max_minutes: 15
+  # Abort cool-down wait if outlet drops less than min drop (K) within window (minutes); 0 disables
+  grace_stagnation_window_minutes: 4.0
+  grace_stagnation_min_drop_k: 0.3
   # Extra grace period after HP defrost cycles (minutes)
   defrost_recovery_grace_minutes: 45
   # How often (seconds) to poll blocking entities during idle period
@@ -886,6 +889,8 @@ schema:
   debug: "bool"
   # Blocking Recovery
   grace_period_max_minutes: "int(10,120)"
+  grace_stagnation_window_minutes: "float(0.0,30.0)"
+  grace_stagnation_min_drop_k: "float(0.05,3.0)"
   defrost_recovery_grace_minutes: "int(15,120)"
   blocking_poll_interval_seconds: "int(30,300)"
   # Trajectory Tuning

@@ -381,6 +381,8 @@ class BlockingStateManager:
         max_seconds = config.GRACE_PERIOD_MAX_MINUTES * 60
         
         current_grace_target = initial_grace_target
+        stagnation_window = config.GRACE_STAGNATION_WINDOW_MINUTES * 60
+        history: List[Tuple[float, float]] = []
         
         logging.info(
             "Grace period: waiting for %s (timeout %d min).",
@@ -564,8 +566,31 @@ class BlockingStateManager:
                 )
                 break
                 
+            now = time.time()
+            elapsed = now - start_time
+
+            # Stagnation: outlet cannot drop further (e.g. inlet + minimum
+            # spread above the target), so waiting would never end.
+            if wait_for_cooling and stagnation_window > 0:
+                history.append((now, actual_outlet_temp))
+                if elapsed >= stagnation_window:
+                    ref_temp = next(
+                        t for ts, t in history if ts >= now - stagnation_window
+                    )
+                    drop = ref_temp - actual_outlet_temp
+                    if drop < config.GRACE_STAGNATION_MIN_DROP_K:
+                        logging.info(
+                            "Outlet stagnates at %.1f°C (drop %.2fK in "
+                            "%.1f min, target %.1f°C unreachable); "
+                            "resuming control.",
+                            actual_outlet_temp,
+                            drop,
+                            stagnation_window / 60.0,
+                            current_grace_target,
+                        )
+                        break
+
             # Check timeout
-            elapsed = time.time() - start_time
             if elapsed > max_seconds:
                 logging.warning(
                     "Grace period timed out after %d minutes; proceeding.",

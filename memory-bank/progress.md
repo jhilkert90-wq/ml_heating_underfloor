@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ Grace-Period Stagnation Fix — 2026-10-26
+
+**Status:** COMPLETED — `_wait_for_grace_target` ends cool-down waits when the outlet drops less than `GRACE_STAGNATION_MIN_DROP_K` (0.3 K) within `GRACE_STAGNATION_WINDOW_MINUTES` (4 min); previously an unreachable target (inlet + min spread) blocked until timeout.
+
+**Also:** options `grace_stagnation_window_minutes` / `grace_stagnation_min_drop_k` exposed as add-on options (Blocking group in dashboard).
+
+**Files changed:** `src/heating_controller.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `config_adapter.py`, translations, `tests/unit/test_dashboard_settings.py`, `tests/unit/test_heating_controller.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Cost-Mode Log Review Fixes — 2026-10-26
 
 **Status:** COMPLETED — Smart rounding uses `target_temp_adjusted`; price/prediction logs show effective level and adjusted target; idle wait log uses `config.CYCLE_INTERVAL_MINUTES`; warning when cost mode is enabled without electricity price; pre-cool horizon log cleaned up.
