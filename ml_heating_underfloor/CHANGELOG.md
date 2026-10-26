@@ -1,5 +1,13 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.100] - 2026-10-26
+
+### Added
+- **Grace stagnation add-on options**: `grace_stagnation_window_minutes` and `grace_stagnation_min_drop_k` are configurable in the dashboard under Blocking
+
+### Fixed
+- **Grace-period cool-down wait**: Stagnation checks now wait for samples spanning the full measurement window and compare against the latest sample at or before its cutoff, avoiding false aborts during cooling
+
 ## [0.2.99] - 2026-10-26
 
 ### Fixed
