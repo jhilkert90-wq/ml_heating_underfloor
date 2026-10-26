@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Grace stagnation add-on options**: `grace_stagnation_window_minutes` and `grace_stagnation_min_drop_k` are configurable in the dashboard under Blocking
+
+### Fixed
+- **Grace-period cool-down wait**: Stagnation checks now wait for samples spanning the full measurement window and compare against the latest sample at or before its cutoff, avoiding false aborts during cooling
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
