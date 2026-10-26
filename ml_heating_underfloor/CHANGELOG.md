@@ -1,5 +1,22 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.97] - 2026-10-26
+
+### Added
+- **Cost-aware price mode** (`price_cost_mode_enabled`, default off): target offset derived from effective hourly prices over a look-ahead window. Effective price blends the Tibber price with the feed-in tariff (`feed_in_tariff_eur_kwh`, default 0.079 €/kWh) by the PV share of expected HP demand, so nights are not over-heated when daytime PV is cheap, while cheap nights pre-heat when the day is expensive. Pre-heat/setback band (`price_band_up_c` 0.5 / `price_band_down_c` 0.2) is configurable in the dashboard.
+- Cost-aware price mode uses every available PV forecast hour within the look-ahead window (not only the 4–12 trajectory hours) and is available in the dashboard Profiles page (`price_cost_mode_enabled`, `price_band_up_c`, `price_band_down_c`); detailed cost-mode log line (grid price, PV share, effective prices, window, HP power source).
+- Individual monitoring sensors for cost-aware mode: `sensor.ml_heating_price_effective`, `sensor.ml_heating_cost_offset`, `sensor.ml_heating_hp_expected_power`, `sensor.ml_heating_price_window_hours`.
+- Expected HP electrical power is a rolling mean of `power_consumption` only while the HP is heating (excludes hot water, disinfection, boost heater, defrost and recovery), with a configurable fallback.
+
+### Changed
+- **Forecast-driven trajectory activation**: Mode now starts when the 1h electrical PV forecast (`pv_forecast[0]`) is at or above `PV_TRAJ_THRESHOLD_W` instead of current PV; the night stop (current PV below `PV_TRAJ_ZERO_W`) is unchanged.
+
+### Fixed
+- Cost-aware target setbacks are no longer overridden by the forecast-trajectory heating boost, and PV forecast hours are aligned with tariff clock hours.
+
+### Deprecated
+- `PV_TRAJ_FORECAST_RESCUE_ENABLED` and `PV_TRAJ_RESCUE_MIN_HOURS` no longer have any effect.
+
 ## [0.2.96] - 2026-10-18
 
 ### Added
