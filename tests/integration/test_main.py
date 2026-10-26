@@ -1,4 +1,5 @@
 
+from copy import deepcopy
 from unittest.mock import patch, MagicMock
 from src import config
 from src.state_manager import SystemState
@@ -116,6 +117,7 @@ def test_main_loop_runs_once(
         ) as mock_poll_blocking:
 
             mock_wrapper = MagicMock()
+            mock_wrapper.last_raw_climate_mode = None
             mock_get_wrapper.return_value = mock_wrapper
             mock_wrapper.predict_indoor_temp.return_value = 21.0
 
@@ -139,10 +141,9 @@ def test_main_loop_runs_once(
                     pass
 
     # Assert
-    # load_state is called at the start of each loop.
-    # 1st call: First iteration (successful)
-    # 2nd call: Second iteration (starts, then KeyboardInterrupt at get_all_states)
-    assert mock_load_state.call_count == 2
+    # State is loaded once for the completed cycle. The next iteration is
+    # interrupted while fetching HA states, before another state load.
+    assert mock_load_state.call_count == 1
     mock_simplified_outlet_prediction.assert_called_once()
     mock_create_influx_service.assert_called_once()
     assert mock_create_ha_client.call_count > 0
@@ -234,6 +235,7 @@ def test_main_online_learning_passes_previous_cycle_heat_source_context(
         mock_ha_instance.get_all_states.side_effect = [
             all_states,
             all_states,
+            all_states,
             KeyboardInterrupt("End of test loop"),
         ]
 
@@ -251,7 +253,7 @@ def test_main_online_learning_passes_previous_cycle_heat_source_context(
 
         mock_ha_instance.get_state.side_effect = get_state_side_effect
 
-        mock_load_state.return_value = SystemState(
+        persisted_state = SystemState(
             last_run_features={
                 "outdoor_temp": 10.0,
                 "pv_now": 0.0,
@@ -275,6 +277,9 @@ def test_main_online_learning_passes_previous_cycle_heat_source_context(
             last_fireplace_on=True,
             last_final_temp=34.0,
         )
+        mock_load_state.side_effect = (
+            lambda *args, **kwargs: deepcopy(persisted_state)
+        )
         mock_simplified_outlet_prediction.return_value = (
             35.0,
             0.9,
@@ -290,6 +295,7 @@ def test_main_online_learning_passes_previous_cycle_heat_source_context(
         ) as mock_poll_blocking:
 
             mock_wrapper = MagicMock()
+            mock_wrapper.last_raw_climate_mode = None
             mock_get_wrapper.return_value = mock_wrapper
             mock_wrapper.predict_indoor_temp.return_value = 21.0
             mock_wrapper.thermal_model.predict_thermal_trajectory.return_value = {
@@ -386,6 +392,7 @@ def test_main_online_learning_uses_persisted_previous_cycle_mode_and_target(
         mock_ha_instance.get_all_states.side_effect = [
             all_states,
             all_states,
+            all_states,
             KeyboardInterrupt("End of test loop"),
         ]
 
@@ -403,7 +410,7 @@ def test_main_online_learning_uses_persisted_previous_cycle_mode_and_target(
 
         mock_ha_instance.get_state.side_effect = get_state_side_effect
 
-        mock_load_state.return_value = SystemState(
+        persisted_state = SystemState(
             last_run_features={
                 "outdoor_temp": 24.0,
                 "pv_now": 0.0,
@@ -430,6 +437,9 @@ def test_main_online_learning_uses_persisted_previous_cycle_mode_and_target(
             last_climate_mode="cooling",
             last_target_indoor_temp=19.0,
         )
+        mock_load_state.side_effect = (
+            lambda *args, **kwargs: deepcopy(persisted_state)
+        )
         mock_simplified_outlet_prediction.return_value = (
             35.0,
             0.9,
@@ -444,6 +454,7 @@ def test_main_online_learning_uses_persisted_previous_cycle_mode_and_target(
             BlockingStateManager, "poll_for_blocking"
         ) as mock_poll_blocking:
             mock_wrapper = MagicMock()
+            mock_wrapper.last_raw_climate_mode = None
             mock_get_wrapper.return_value = mock_wrapper
             mock_wrapper.predict_indoor_temp.return_value = 21.0
             mock_wrapper.thermal_model.predict_thermal_trajectory.return_value = {
@@ -527,6 +538,7 @@ def test_main_dynamic_shadow_mode_suppresses_live_control_outputs(
         mock_ha_instance.get_all_states.side_effect = [
             all_states,
             all_states,
+            all_states,
             KeyboardInterrupt("End of test loop"),
         ]
 
@@ -582,6 +594,7 @@ def test_main_dynamic_shadow_mode_suppresses_live_control_outputs(
             BlockingStateManager, "poll_for_blocking"
         ) as mock_poll_blocking:
             mock_wrapper = MagicMock()
+            mock_wrapper.last_raw_climate_mode = None
             mock_get_wrapper.return_value = mock_wrapper
             mock_wrapper.predict_indoor_temp.return_value = 21.0
             mock_wrapper.thermal_model.predict_thermal_trajectory.return_value = {
@@ -676,6 +689,7 @@ def test_main_shadow_deployment_writes_shadow_output_entities(
         mock_ha_instance.get_all_states.side_effect = [
             all_states,
             all_states,
+            all_states,
             KeyboardInterrupt("End of test loop"),
         ]
 
@@ -739,6 +753,7 @@ def test_main_shadow_deployment_writes_shadow_output_entities(
             },
         ):
             mock_wrapper = MagicMock()
+            mock_wrapper.last_raw_climate_mode = None
             mock_get_wrapper.return_value = mock_wrapper
             mock_wrapper.predict_indoor_temp.return_value = 21.0
             mock_wrapper.thermal_model.predict_thermal_trajectory.return_value = {
@@ -879,6 +894,7 @@ def test_main_retries_startup_sensor_validation_after_transient_failure(
             BlockingStateManager, "poll_for_blocking"
         ) as mock_poll_blocking:
             mock_wrapper = MagicMock()
+            mock_wrapper.last_raw_climate_mode = None
             mock_get_wrapper.return_value = mock_wrapper
             mock_wrapper.predict_indoor_temp.return_value = 21.0
 

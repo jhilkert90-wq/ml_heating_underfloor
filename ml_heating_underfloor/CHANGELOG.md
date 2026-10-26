@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.98] - 2026-10-26
+
+### Fixed
+- Fixed physics calibration CLI execution and outlet-search refinement after search collapse; aligned regression tests with first-cycle learning, climate-mode restarts, and fireplace decay history.
+
 ## [0.2.97] - 2026-10-26
 
 ### Added

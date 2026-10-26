@@ -325,7 +325,6 @@ def main():
             try:
                 from .physics_calibration import (
                     backup_existing_calibration,
-                    train_thermal_equilibrium_model,
                 )
                 backup_path = backup_existing_calibration()
                 if backup_path:
