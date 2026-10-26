@@ -967,6 +967,33 @@ configuration:
     description: 'How often (minutes) prices are re-fetched from the Tibber service.
       Also refreshes after 13:00 if tomorrow''s prices are not yet available. Default:
       60 min.'
+  price_cost_mode_enabled:
+    name: '[Erweitert] Cost-Aware Price Mode'
+    description: 'Derive the target shift from effective hourly prices (Tibber price blended with the feed-in tariff by the PV share of heat pump demand) over a look-ahead window, instead of the percentile price offset. Avoids pre-heating at night when PV makes daytime energy cheap.'
+  feed_in_tariff_eur_kwh:
+    name: '[Erweitert] Feed-in Tariff (EUR/kWh)'
+    description: 'Fixed remuneration for exported PV energy; used as the opportunity cost of own PV energy. Default: 0.079.'
+  price_band_up_c:
+    name: '[Erweitert] Price Band Pre-Heat (°C)'
+    description: 'Maximum pre-heat shift of the target in the cheapest hours (cost-aware mode). Default: 0.5.'
+  price_band_down_c:
+    name: '[Erweitert] Price Band Setback (°C)'
+    description: 'Maximum setback of the target in the most expensive hours (cost-aware mode). Default: 0.2.'
+  price_cost_lookahead_hours:
+    name: '[Erweitert] Price Look-Ahead (hours)'
+    description: 'Window used to compare the current effective price with upcoming hours. Default: 24.'
+  price_cost_min_spread_eur_kwh:
+    name: '[Erweitert] Minimum Price Spread (EUR/kWh)'
+    description: 'No shift is applied if the spread between cheapest and dearest effective hour is below this value. Default: 0.02.'
+  hp_expected_power_fallback_kw:
+    name: '[Erweitert] Expected HP Power Fallback (kW)'
+    description: 'Electrical heat pump power assumed until heating samples exist. The runtime estimate is the rolling mean of power consumption while heating, excluding hot water and defrost. Default: 1.5.'
+  hp_power_window_hours:
+    name: '[Erweitert] HP Power Window (hours)'
+    description: 'Window for the rolling mean of heat pump electrical power while heating. Default: 6.'
+  hp_power_min_on_w:
+    name: '[Erweitert] HP On Threshold (W)'
+    description: 'Minimum electrical power for the heat pump to count as on. Default: 300.'
   pv_surplus_cheap_enabled:
     name: '[Erweitert] PV Surplus Cheap Override Aktivierend'
     description: When enabled, the indoor target temperature is raised by price_target_offset

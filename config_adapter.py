@@ -609,6 +609,27 @@ def convert_addon_to_env(config):
         'PRICE_CACHE_REFRESH_MINUTES': str(
             config.get('price_cache_refresh_minutes', 60)
         ),
+        'PRICE_COST_MODE_ENABLED': str(
+            config.get('price_cost_mode_enabled', False)
+        ).lower(),
+        'FEED_IN_TARIFF_EUR_KWH': str(
+            config.get('feed_in_tariff_eur_kwh', 0.079)
+        ),
+        'PRICE_BAND_UP_C': str(config.get('price_band_up_c', 0.5)),
+        'PRICE_BAND_DOWN_C': str(config.get('price_band_down_c', 0.2)),
+        'PRICE_COST_LOOKAHEAD_HOURS': str(
+            config.get('price_cost_lookahead_hours', 24)
+        ),
+        'PRICE_COST_MIN_SPREAD_EUR_KWH': str(
+            config.get('price_cost_min_spread_eur_kwh', 0.02)
+        ),
+        'HP_EXPECTED_POWER_FALLBACK_KW': str(
+            config.get('hp_expected_power_fallback_kw', 1.5)
+        ),
+        'HP_POWER_WINDOW_HOURS': str(
+            config.get('hp_power_window_hours', 6)
+        ),
+        'HP_POWER_MIN_ON_W': str(config.get('hp_power_min_on_w', 300)),
         'PV_SURPLUS_CHEAP_ENABLED': str(
             config.get('pv_surplus_cheap_enabled', False)
         ).lower(),

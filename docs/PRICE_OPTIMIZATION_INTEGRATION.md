@@ -126,6 +126,16 @@ Exports the current price classification.
 - **Attributes**: `price_level`, `cheap_threshold`, `expensive_threshold`,
   `target_offset`
 
+### Cost-aware mode sensors (`price_cost_mode_enabled`)
+Published each cycle while the cost-aware mode is active:
+
+| Sensor | State | Key attributes |
+|---|---|---|
+| `sensor.ml_heating_price_effective` | Effective price now (EUR/kWh) | `grid_price_eur_kwh`, `pv_share`, `window_mean/min/max_eur_kwh`, `feed_in_tariff_eur_kwh` |
+| `sensor.ml_heating_cost_offset` | Target offset (°C) | `band_up_c`, `band_down_c`, `min_spread_eur_kwh` |
+| `sensor.ml_heating_hp_expected_power` | Expected HP power (kW) | `source` (measured/fallback), `sample_count`, `window_hours` |
+| `sensor.ml_heating_price_window_hours` | Window length (h) | `price_hours_available`, `pv_hours_available`, `lookahead_hours` |
+
 ## Learning Safety
 
 The price integration **cannot corrupt learned parameters** because:

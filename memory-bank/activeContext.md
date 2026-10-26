@@ -1,5 +1,37 @@
 # Active Context - Current Work & Decision State
 
+### Cost-Aware Price Mode — 2026-10-26
+
+#### **What changed**
+- New `PRICE_COST_MODE_ENABLED` path: `PriceOptimizer.compute_cost_target_offset` builds effective hourly prices `p_eff=(1-f)·p_grid+f·min(p_grid, feed_in)` with `f=min(1, PV/HP demand)`; the current hour vs. look-ahead mean gives an offset (up to +band_up / −band_down). `cycle_routes._attach_cost_offset` adds it to `ctx.price_data`; `model_wrapper` uses it instead of the percentile offset.
+- HP demand from `HPPowerTracker` (HP on and heating only; excludes DHW, disinfection, boost, defrost and recovery).
+
+#### **Follow-up**
+- `physics_features.parse_hourly_pv_forecast` supplies all available PV hours (independent of trajectory mode); profile support in `src/mode_profiles.py`, `dashboard/components/profiles.py`, `config.yaml`.
+
+#### **Sensors**
+- Four single sensors via `HAClient.publish_cost_mode_sensors` (`src/ha_client.py`, `src/cycle_routes.py`, `docs/PRICE_OPTIMIZATION_INTEGRATION.md`).
+
+#### **Why**
+- Avoid over-heating at cheap night prices when daytime PV is almost free (feed-in 0.079 €/kWh), and pre-heat at night when the day is expensive.
+
+#### **Files modified**
+- `src/price_optimizer.py`, `src/cycle_routes.py`, `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `config.yaml`, translations, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_price_cost_mode.py`, docs/memory-bank files.
+
+### Forecast Trajectory Activation by 1h Forecast — 2026-10-26
+
+#### **What changed**
+- Activation now requires `pv_forecast[0] >= PV_TRAJ_THRESHOLD_W` plus sunset within the horizon; current PV only drives the night stop (`< PV_TRAJ_ZERO_W`). Rescue logic removed; `PV_TRAJ_FORECAST_RESCUE_ENABLED`/`PV_TRAJ_RESCUE_MIN_HOURS` are deprecated no-ops.
+
+#### **Why**
+- Start scaling ahead of PV ramp-up instead of waiting for current PV to cross the threshold.
+
+#### **Files modified**
+- `src/pv_trajectory.py`, `src/config.py`, `tests/unit/test_pv_trajectory.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+#### **Next**
+- Plan combining forecast-driven scaling with electricity price optimization.
+
 ### PR #96 Review Feedback — 2026-10-18
 
 #### **What changed**

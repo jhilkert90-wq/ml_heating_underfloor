@@ -58,6 +58,7 @@ _OPTIONS_PATHS: tuple[str, ...] = (
 PROFILEABLE_BOOLS: frozenset[str] = frozenset(
     {
         "ELECTRICITY_PRICE_ENABLED",
+        "PRICE_COST_MODE_ENABLED",
         "PV_SURPLUS_CHEAP_ENABLED",
         "PV_TRAJ_FORECAST_MODE_ENABLED",
         "PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE",
@@ -75,6 +76,8 @@ PROFILEABLE_FLOATS: frozenset[str] = frozenset(
     {
         "PRICE_TARGET_OFFSET",
         "PRICE_EXPENSIVE_OVERSHOOT",
+        "PRICE_BAND_UP_C",
+        "PRICE_BAND_DOWN_C",
     }
 )
 

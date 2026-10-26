@@ -366,6 +366,15 @@ Requires the Tibber integration in Home Assistant.
 | `price_target_offset` | `PRICE_TARGET_OFFSET` | float (0–1) | `0.2` | How much (°C) the indoor target shifts up during cheap and down during expensive periods. |
 | `price_expensive_overshoot` | `PRICE_EXPENSIVE_OVERSHOOT` | float (0–1) | `0.2` | Tighter future overshoot threshold (°C) during expensive periods, reducing outlet temperature earlier. |
 | `price_cache_refresh_minutes` | `PRICE_CACHE_REFRESH_MINUTES` | int (15–1440) | `60` | How often (minutes) prices are re-fetched from Tibber. Also refreshes after 13:00 for tomorrow's prices. |
+| `price_cost_mode_enabled` | `PRICE_COST_MODE_ENABLED` | bool | `false` | Cost-aware mode: target shift from effective hourly prices (Tibber blended with feed-in tariff by PV share of HP demand) instead of percentile offset. |
+| `feed_in_tariff_eur_kwh` | `FEED_IN_TARIFF_EUR_KWH` | float (0–1) | `0.079` | Fixed feed-in remuneration; opportunity cost of own PV energy. |
+| `price_band_up_c` | `PRICE_BAND_UP_C` | float (0–2) | `0.5` | Max pre-heat shift (°C) in cheapest hours. |
+| `price_band_down_c` | `PRICE_BAND_DOWN_C` | float (0–2) | `0.2` | Max setback (°C) in dearest hours. |
+| `price_cost_lookahead_hours` | `PRICE_COST_LOOKAHEAD_HOURS` | int (2–48) | `24` | Look-ahead window for the effective price comparison. |
+| `price_cost_min_spread_eur_kwh` | `PRICE_COST_MIN_SPREAD_EUR_KWH` | float (0–0.5) | `0.02` | No shift below this spread. |
+| `hp_expected_power_fallback_kw` | `HP_EXPECTED_POWER_FALLBACK_KW` | float | `1.5` | Expected HP electrical power until heating samples exist. |
+| `hp_power_window_hours` | `HP_POWER_WINDOW_HOURS` | float | `6` | Rolling window for HP power mean (only while heating; excludes DHW, disinfection, boost heater, defrost + recovery). |
+| `hp_power_min_on_w` | `HP_POWER_MIN_ON_W` | int | `300` | Minimum electrical power for HP to count as on. |
 
 ---
 

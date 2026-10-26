@@ -27,12 +27,14 @@ from settings_service import (
 
 
 # ---------------------------------------------------------------------------
-# Static metadata for the 14 profileable settings
+# Static metadata for the profileable settings
 # ---------------------------------------------------------------------------
 
 _BOOL_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("electricity_price_enabled", "Electricity Price Enabled",
      "Enable Tibber electricity price optimisation in this mode."),
+    ("price_cost_mode_enabled", "Cost-Aware Price Mode",
+     "Derive the target shift from effective hourly prices (Tibber + feed-in tariff, PV-aware) in this mode."),
     ("pv_surplus_cheap_enabled", "PV Surplus Cheap Enabled",
      "Treat excess PV production as 'cheap' energy in this mode."),
     ("pv_traj_forecast_mode_enabled", "PV Trajectory Forecast Mode",
@@ -40,7 +42,7 @@ _BOOL_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("pv_traj_disable_price_in_forecast_mode", "Disable Price in Forecast Mode",
      "Ignore price signal while PV trajectory forecast mode is active."),
     ("pv_traj_forecast_rescue_enabled", "PV Forecast Rescue",
-     "Allow the trajectory rescue logic when forecast mode is active."),
+     "Deprecated: no effect (forecast mode now starts on the 1h PV forecast)."),
     ("pv_traj_disable_overshoot_correction", "Disable Overshoot Correction",
      "Skip overshoot correction while PV trajectory forecast mode is active."),
     ("solar_correction_enabled", "Solar Correction Enabled",
@@ -57,6 +59,12 @@ _FLOAT_FIELDS: tuple[tuple[str, str, str, float, float, float], ...] = (
     ("price_target_offset", "Price Target Offset",
      "Raise the indoor setpoint by this many °C during cheap-price windows.",
      0.0, 1.0, 0.05),
+    ("price_band_up_c", "Cost Mode Pre-Heat Band",
+     "Cost-aware mode: maximum pre-heat shift (°C) in the cheapest hours.",
+     0.0, 2.0, 0.05),
+    ("price_band_down_c", "Cost Mode Setback Band",
+     "Cost-aware mode: maximum setback (°C) in the most expensive hours.",
+     0.0, 2.0, 0.05),
     ("price_expensive_overshoot", "Price Expensive Overshoot",
      "Allow the indoor temperature to exceed the setpoint by this °C during expensive windows.",
      0.0, 1.0, 0.05),
