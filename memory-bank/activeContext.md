@@ -1,5 +1,17 @@
 # Active Context - Current Work & Decision State
 
+### PR #97 Review Feedback — 2026-10-26
+
+#### **What changed**
+- Cost-mode offsets now take precedence over the fixed forecast-trajectory heating boost while leaving trajectory state and dynamic scaling active.
+- Cost offset calculation and PV forecast parsing share one captured timestamp; forecast bins start at the next tariff-timezone clock hour.
+
+#### **Why**
+- Prevent cost-mode setbacks from being reversed by the fixed forecast boost and avoid pairing hourly tariffs with rolling-hour PV averages.
+
+#### **Files modified**
+- `src/model_wrapper.py`, `src/cycle_routes.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_price_cost_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### Cost-Aware Price Mode — 2026-10-26
 
 #### **What changed**

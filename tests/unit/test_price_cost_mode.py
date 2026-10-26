@@ -159,15 +159,56 @@ class TestCycleIntegration:
             price_data={"current_price": 0.1, "today": [0.1, 0.4]},
         )
         get_hp_power_tracker()._samples.clear()
-        with _patches(), patch(
-            "src.price_optimizer.datetime"
-        ) as mock_dt:
+        with _patches(), patch("src.cycle_routes.datetime") as mock_dt:
             mock_dt.now.return_value = NOW
-            mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
             cycle_routes._attach_cost_offset(ctx, opt)
         assert "cost_target_offset" in ctx.price_data
         assert ctx.price_data["cost_target_offset"] > 0.0
         get_hp_power_tracker()._samples.clear()
+
+    def test_attach_cost_offset_aligns_pv_to_price_clock_hour(self):
+        from types import SimpleNamespace
+        from src import cycle_routes
+        from src.price_optimizer import get_hp_power_tracker
+
+        now = datetime(2026, 1, 15, 12, 45, tzinfo=UTC)
+        price_tz = timezone(timedelta(hours=2))
+        opt = PriceOptimizer()
+        price_start = datetime(2026, 1, 15, tzinfo=price_tz)
+        opt._price_entries = [
+            (price_start + timedelta(hours=h), 0.2) for h in range(48)
+        ]
+        opt._price_tz = price_tz
+        forecast_start = datetime(2026, 1, 15, 13, 0, tzinfo=UTC)
+        watts = {
+            (forecast_start + timedelta(minutes=15 * i)).isoformat():
+                1000.0 * (i // 4 + 1)
+            for i in range(16)
+        }
+        states = {"sensor.pv": {"attributes": {"watts": watts}}}
+        ctx = SimpleNamespace(
+            features_dict=dict(_feat(), pv_now_electrical=0.0),
+            all_states=states,
+            climate_mode="heating",
+            price_data={"current_price": 0.2, "today": [0.2] * 24},
+        )
+        tracker = get_hp_power_tracker()
+        tracker._samples.clear()
+        with (
+            _patches(PRICE_COST_LOOKAHEAD_HOURS=4),
+            patch.object(config, "PV_FORECAST_ENTITY_ID", "sensor.pv", create=True),
+            patch("src.cycle_routes.datetime") as mock_datetime,
+            patch("src.price_optimizer.get_hp_power_tracker", return_value=tracker),
+            patch.object(
+                opt, "compute_cost_target_offset", wraps=opt.compute_cost_target_offset
+            ) as compute_offset,
+        ):
+            mock_datetime.now.return_value = now
+            cycle_routes._attach_cost_offset(ctx, opt)
+
+        assert compute_offset.call_args.args[0] == [0.0, 1000.0, 2000.0, 3000.0]
+        assert compute_offset.call_args.kwargs["now"] == now
+        tracker._samples.clear()
 
 
 class TestPvForecastAvailability:

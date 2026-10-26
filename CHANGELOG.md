@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Forecast-driven trajectory activation**: Mode now starts when the 1h electrical PV forecast (`pv_forecast[0]`) is at or above `PV_TRAJ_THRESHOLD_W` instead of current PV; the night stop (current PV below `PV_TRAJ_ZERO_W`) is unchanged.
 
+### Fixed
+- Cost-aware target setbacks are no longer overridden by the forecast-trajectory heating boost, and PV forecast hours are aligned with tariff clock hours.
+
 ### Deprecated
 - `PV_TRAJ_FORECAST_RESCUE_ENABLED` and `PV_TRAJ_RESCUE_MIN_HOURS` no longer have any effect.
 

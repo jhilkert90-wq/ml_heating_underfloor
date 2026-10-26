@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ PR #97 Review Feedback — 2026-10-26
+
+**Status:** COMPLETED — Cost-aware price offsets retain precedence over the fixed forecast-heating boost, and PV forecast bins align to tariff clock hours using one captured timestamp.
+
+**Files changed:** `src/model_wrapper.py`, `src/cycle_routes.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_price_cost_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Added regression coverage for a cost setback with active forecast trajectory and PV-hour/tariff alignment at 12:45 UTC with a non-UTC tariff timezone. Validation: cost-mode tests (25 passed), route tests (43 passed), and model-wrapper tests (55 passed; one unrelated outlet-search assertion still fails when run alone).
+
 ## ✅ Cost-Aware Price Mode (PV / Feed-in) — 2026-10-26
 
 **Status:** COMPLETED — `PRICE_COST_MODE_ENABLED` (default off) replaces the percentile price offset with a scalar offset from effective hourly prices (grid price blended with feed-in tariff by PV share of expected HP demand), recomputed every cycle (receding horizon, no change to the bisection). Works together with forecast-driven scaling (price suppression is skipped; PV surplus override skipped).

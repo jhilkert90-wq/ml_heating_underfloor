@@ -532,6 +532,7 @@ class EnhancedModelWrapper:
             price_info = {}
             _price_sign = -1.0 if self._climate_mode == "cooling" else 1.0
             forecast_traj_state = None
+            cost_offset_applied = False
             if getattr(config, "ELECTRICITY_PRICE_ENABLED", False):
                 from .price_optimizer import PriceLevel, get_price_optimizer
 
@@ -550,6 +551,7 @@ class EnhancedModelWrapper:
                     ):
                         cost_offset = float(price_data["cost_target_offset"])
                         offset = cost_offset * _price_sign
+                        cost_offset_applied = True
                         price_info["price_target_offset"] = offset
                         price_info["price_cost_mode"] = True
                         if cost_offset > 0:
@@ -569,7 +571,7 @@ class EnhancedModelWrapper:
                 forecast_traj_state = (
                     self._get_forecast_trajectory_state_from_features(features)
                 )
-                if forecast_traj_state.active:
+                if forecast_traj_state.active and not cost_offset_applied:
                     forecast_offset = float(
                         getattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.0)
                     )

@@ -147,10 +147,13 @@ def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
     """Add the PV/feed-in aware ``cost_target_offset`` to ``ctx.price_data``."""
     from .price_optimizer import get_hp_power_tracker
 
+    now = datetime.now(timezone.utc)
     features = ctx.features_dict or {}
     tracker = get_hp_power_tracker()
-    tracker.record(features, getattr(ctx, "climate_mode", "heating"))
-    hp_kw = tracker.expected_power_kw()
+    tracker.record(
+        features, getattr(ctx, "climate_mode", "heating"), now=now
+    )
+    hp_kw = tracker.expected_power_kw(now=now)
 
     # Use every available PV forecast hour up to the look-ahead window,
     # independent of the (mode dependent) trajectory feature horizon.
@@ -158,9 +161,14 @@ def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
 
     n_hours = int(getattr(config, "PRICE_COST_LOOKAHEAD_HOURS", 24))
     pv_hourly = [float(features.get("pv_now_electrical", 0.0))]
-    pv_hourly += parse_hourly_pv_forecast(ctx.all_states, n_hours - 1)
+    forecast_start = optimizer._to_local(now).replace(
+        minute=0, second=0, microsecond=0
+    )
+    pv_hourly += parse_hourly_pv_forecast(
+        ctx.all_states, n_hours - 1, forecast_start
+    )
 
-    result = optimizer.compute_cost_target_offset(pv_hourly, hp_kw)
+    result = optimizer.compute_cost_target_offset(pv_hourly, hp_kw, now=now)
     if result is not None:
         ctx.price_data["cost_target_offset"] = result["offset"]
         ctx.price_data["cost_info"] = result
