@@ -390,11 +390,15 @@ def build_physics_features(
     if _n_fc_full > _n_fc:
         logging.debug(
             "Extending runtime forecast feature horizon: base=%dh full=%dh "
-            "(mode=%s, pre_cool_horizon=%dh)",
+            "(mode=%s, pre_cool_horizon=%s)",
             _n_fc,
             _n_fc_full,
             normalized_climate_mode,
-            _pre_cool_horizon,
+            (
+                f"{_pre_cool_horizon}h"
+                if _cooling_forecast_horizon > _n_fc
+                else "n/a"
+            ),
         )
     pv_forecasts = [0.0] * _n_fc_full
     if config.PV_FORECAST_ENTITY_ID:

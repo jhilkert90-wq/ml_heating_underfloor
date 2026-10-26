@@ -901,3 +901,53 @@ class TestHeatingVsCoolingDifferences:
         mock_heat_obs.assert_not_called()
         mock_cooling_target.assert_called_once()
         mock_pre_cool.assert_called_once()
+
+
+class TestStepUpdateHaSmartRounding:
+    """Smart rounding must target the price-adjusted indoor target."""
+
+    @pytest.mark.parametrize(
+        "adjusted, expected", [(23.1, 27.0), (None, 26.0)]
+    )
+    def test_uses_adjusted_target(self, adjusted, expected):
+        ctx = _make_ctx(
+            final_temp=26.9,
+            target_indoor_temp=22.6,
+            prediction_indoor_temp=22.7,
+            outdoor_temp=7.0,
+            fireplace_on=False,
+            features_dict={"pv_now": 0.0, "pv_power_history": []},
+            metadata=(
+                {"target_temp_adjusted": adjusted} if adjusted else {}
+            ),
+        )
+        wrapper = MagicMock()
+        # floor 26 -> 22.75, ceiling 27 -> 23.05
+        wrapper.predict_indoor_temp.side_effect = (
+            lambda outlet_temp, **kw: 22.75 if outlet_temp == 26 else 23.05
+        )
+        pcm = MagicMock()
+        pcm.get_thermal_model_params.return_value = {
+            "outdoor_temp": 7.0, "pv_power": 0.0,
+            "fireplace_on": 0.0, "tv_on": 0.0,
+        }
+        with patch(
+            "src.model_wrapper.get_enhanced_model_wrapper",
+            return_value=wrapper,
+        ), patch("src.prediction_context.prediction_context_manager", pcm):
+            cycle_routes.step_update_ha(ctx)
+        assert ctx.ha_client.set_state.call_args[0][1] == expected
+
+
+def test_cost_mode_without_price_enabled_warns(caplog):
+    ctx = _make_ctx(features_dict={})
+    cycle_routes._COST_MODE_WARNED = False
+    with patch.object(
+        cycle_routes.config, "PRICE_COST_MODE_ENABLED", True
+    ), patch.object(
+        cycle_routes.config, "ELECTRICITY_PRICE_ENABLED", False
+    ), patch.object(
+        cycle_routes.config, "PV_TRAJ_FORECAST_MODE_ENABLED", False
+    ):
+        cycle_routes.step_dynamic_trajectory(ctx)
+    assert "PRICE_COST_MODE_ENABLED has no effect" in caplog.text

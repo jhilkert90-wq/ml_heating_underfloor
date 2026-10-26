@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Cost-Mode Log Review Fixes — 2026-10-26
+
+**Status:** COMPLETED — Smart rounding uses `target_temp_adjusted`; price/prediction logs show effective level and adjusted target; idle wait log uses `config.CYCLE_INTERVAL_MINUTES`; warning when cost mode is enabled without electricity price; pre-cool horizon log cleaned up.
+
+**Files changed:** `src/cycle_routes.py`, `src/model_wrapper.py`, `src/main.py`, `src/physics_features.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Repair Existing Test Failures — 2026-10-26
 
 **Status:** COMPLETED — Fixed the physics calibration CLI scope error and outlet-search local refinement after search collapse; aligned regression fixtures with first-cycle learning and mode-restart behavior, and corrected fireplace decay history expectations.

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Smart rounding of the outlet setpoint now evaluates against the price/forecast-adjusted target, so cost-mode offsets are no longer cancelled by rounding
+- Idle wait log uses the configured `CYCLE_INTERVAL_MINUTES` instead of a hard-coded 30 min constant
+- Price log line reports the effective (cost-mode aware) price level; prediction log shows the adjusted target
+- Warn once when `PRICE_COST_MODE_ENABLED` is set without `ELECTRICITY_PRICE_ENABLED`
+- Forecast-horizon debug log no longer reports a pre-cool horizon outside cooling pre-cool
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

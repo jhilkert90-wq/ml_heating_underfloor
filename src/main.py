@@ -951,7 +951,7 @@ def main():
         # next cycle is due, or until a blocking event starts or ends.
         logging.debug(
             "💤 POLLING START: Waiting %dmin until next cycle...",
-            PhysicsConstants.CYCLE_INTERVAL_MINUTES,
+            config.CYCLE_INTERVAL_MINUTES,
         )
         blocking_manager = BlockingStateManager()
         blocking_manager.poll_for_blocking(ha_client, state, sensor_buffer)

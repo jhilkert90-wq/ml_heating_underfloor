@@ -189,6 +189,9 @@ def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
         logging.info("💰 Cost mode: no price window available → no offset")
 
 
+_COST_MODE_WARNED = False
+
+
 def step_dynamic_trajectory(ctx: CycleContext) -> None:
     """Dynamic trajectory scaling (PV-aware). Heating-specific but shared infra."""
     _pv_forecast_traj: list[float] | None = None
@@ -219,6 +222,18 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
             config.MIN_SETPOINT_HOLD_CYCLES = _forecast_state.dynamic_steps
         except Exception as _exc:
             logging.warning("Dynamic trajectory scaling failed: %s", _exc)
+
+    global _COST_MODE_WARNED
+    if (
+        getattr(config, "PRICE_COST_MODE_ENABLED", False)
+        and not getattr(config, "ELECTRICITY_PRICE_ENABLED", False)
+        and not _COST_MODE_WARNED
+    ):
+        _COST_MODE_WARNED = True
+        logging.warning(
+            "💰 PRICE_COST_MODE_ENABLED has no effect while "
+            "ELECTRICITY_PRICE_ENABLED is false – enable both."
+        )
 
     # Read electricity price
     ctx.price_data = None
@@ -507,7 +522,15 @@ def step_update_ha(ctx: CycleContext) -> None:
     else:
         smart_rounded_temp = round(ctx.final_temp, 1)
         if not ctx.effective_shadow_mode:
-            # Smart rounding
+            # Smart rounding must use the price/PV/forecast adjusted target
+            # the optimizer solved for, not the raw user target.
+            rounding_target = ctx.target_indoor_temp
+            if isinstance(ctx.metadata, dict):
+                rounding_target = float(
+                    ctx.metadata.get(
+                        "target_temp_adjusted", ctx.target_indoor_temp
+                    )
+                )
             floor_temp = np.floor(ctx.final_temp)
             ceiling_temp = np.ceil(ctx.final_temp)
 
@@ -578,10 +601,10 @@ def step_update_ha(ctx: CycleContext) -> None:
                         smart_rounded_temp = round(ctx.final_temp)
                     else:
                         floor_error = abs(
-                            floor_predicted - ctx.target_indoor_temp
+                            floor_predicted - rounding_target
                         )
                         ceiling_error = abs(
-                            ceiling_predicted - ctx.target_indoor_temp
+                            ceiling_predicted - rounding_target
                         )
                         if floor_error <= ceiling_error:
                             smart_rounded_temp = int(floor_temp)
@@ -599,7 +622,7 @@ def step_update_ha(ctx: CycleContext) -> None:
                             floor_error,
                             ceiling_predicted,
                             ceiling_error,
-                            ctx.target_indoor_temp,
+                            rounding_target,
                         )
                 except Exception as e:
                     smart_rounded_temp = round(ctx.final_temp)

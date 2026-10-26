@@ -1,5 +1,17 @@
 # Active Context - Current Work & Decision State
 
+### Cost-Mode Log Review Fixes — 2026-10-26
+
+#### **What changed**
+- `step_update_ha` smart rounding compares predictions against `metadata["target_temp_adjusted"]` (raw target as fallback), so +0.5°C cost offsets survive integer rounding.
+- Price log uses `price_info["price_level"]`; `🎯 Prediction` log shows adjusted target; idle wait log uses config interval; one-time warning for cost mode without `ELECTRICITY_PRICE_ENABLED`.
+
+#### **Why**
+- Log analysis showed rounding to 26°C instead of 27°C and inconsistent price level/cycle interval reporting.
+
+#### **Files modified**
+- `src/cycle_routes.py`, `src/model_wrapper.py`, `src/main.py`, `src/physics_features.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### Existing Test Failure Repair — 2026-10-26
 
 #### **What changed**
