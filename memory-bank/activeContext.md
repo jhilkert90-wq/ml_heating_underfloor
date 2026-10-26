@@ -1,5 +1,17 @@
 # Active Context - Current Work & Decision State
 
+### Existing Test Failure Repair — 2026-10-26
+
+#### **What changed**
+- Removed the local trainer import that shadowed the module-level physics calibration function, and widened fine outlet refinement after bisection collapses.
+- Updated main-loop regression fixtures to initialize the warm-restart sentinel correctly and preserve immutable persisted state between cycles. Fireplace decay tests now reflect the intended first-off-cycle history reset.
+
+#### **Why**
+- These fixes address the 11 reported suite failures without weakening the first-cycle online-learning guard or changing the fireplace decay policy. Full suite: 1,834 passed.
+
+#### **Files modified**
+- `src/main.py`, `src/model_wrapper.py`, `tests/integration/test_main.py`, `tests/unit/test_fp_decay_routing.py`, `tests/unit/test_main_functions.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### PR #97 Review Feedback — 2026-10-26
 
 #### **What changed**

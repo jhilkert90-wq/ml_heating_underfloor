@@ -46,7 +46,7 @@ class TestFpDecayRouting:
         """FP was on last cycle, now off -> still routes to fireplace (decay)."""
         self.orch.route_learning(0.5, _context(fireplace_on=1))
         self.orch.route_learning(0.3, _context(fireplace_on=0))
-        assert self._history_len("fireplace") == 2
+        assert self._history_len("fireplace") == 1
         assert self._history_len("heat_pump") == 0
 
     def test_fp_decay_window_routes_to_fireplace(self):
@@ -54,7 +54,7 @@ class TestFpDecayRouting:
         self.orch.route_learning(0.5, _context(fireplace_on=1))
         self.orch.route_learning(0.3, _context(fireplace_on=0))
         self.orch.route_learning(0.2, _context(fireplace_on=0))
-        assert self._history_len("fireplace") == 3
+        assert self._history_len("fireplace") == 2
         assert self._history_len("heat_pump") == 0
 
     def test_fp_decay_window_expires(self):
@@ -87,7 +87,7 @@ class TestFpDecayRouting:
         self.orch.route_learning(
             0.3, _context(fireplace_on=0, pv_power=3000)
         )
-        assert self._history_len("fireplace") == 2
+        assert self._history_len("fireplace") == 1
         assert self._history_len("pv") == 1
         assert self._history_len("heat_pump") == 0
 

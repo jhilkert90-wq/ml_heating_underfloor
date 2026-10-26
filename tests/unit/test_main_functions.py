@@ -151,6 +151,7 @@ def test_main_skips_ema_during_cooling_recovery(
 
     mock_wrapper = MagicMock()
     mock_wrapper._cooling_cycle_state = "recovery"
+    mock_wrapper.last_raw_climate_mode = None
     mock_wrapper.state_manager = MagicMock(state_file="/tmp/state.json")
     mock_get_wrapper.return_value = mock_wrapper
 
@@ -261,6 +262,7 @@ def test_online_learning_skipped_on_first_cycle(
 
     mock_wrapper = MagicMock()
     mock_wrapper.climate_mode = "heating"
+    mock_wrapper.last_raw_climate_mode = None
     mock_wrapper.state_manager = MagicMock(state_file="/tmp/state.json")
     mock_get_wrapper.return_value = mock_wrapper
 
@@ -321,6 +323,7 @@ def test_online_learning_called_after_completed_cycle(
 
     mock_wrapper = MagicMock()
     mock_wrapper.climate_mode = "heating"
+    mock_wrapper.last_raw_climate_mode = None
     mock_wrapper.state_manager = MagicMock(state_file="/tmp/state.json")
     mock_get_wrapper.return_value = mock_wrapper
 
@@ -341,4 +344,3 @@ def test_online_learning_called_after_completed_cycle(
             main.main()
 
     mock_run_ol.assert_called_once()
-
