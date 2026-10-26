@@ -205,14 +205,14 @@ class TestBlockingStateManager:
         self, mock_time, mock_sleep, blocking_manager, mock_ha_client
     ):
         """Outlet stuck above target ends the wait before the timeout."""
-        mock_time.side_effect = [1000 + 60 * i for i in range(30)]
+        mock_time.side_effect = [1000, 1000] + [1000 + 60 * i for i in range(1, 30)]
         blocking_manager.check_blocking_state = Mock(return_value=(False, []))
         mock_ha_client.get_state.return_value = 50.0
 
         with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 15):
             blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
-        # start + polls at 60..240s -> aborts at the 4 min poll
-        assert mock_sleep.call_count == 3
+        # The first sample at the start of the wait gives a full four-minute window.
+        assert mock_sleep.call_count == 4
 
     @patch("src.heating_controller.time.sleep")
     @patch("src.heating_controller.time.time")
@@ -229,6 +229,61 @@ class TestBlockingStateManager:
             blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
         # Not aborted at 4 min; only the 6 min timeout ends it
         assert mock_sleep.call_count >= 5
+
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time")
+    def test_wait_for_grace_target_long_poll_interval_uses_older_reference(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """A 300-second poll must compare against a sample before the cutoff."""
+        mock_time.side_effect = [1000, 1000, 1300, 1301, 1361] + [1361] * 10
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        outlet_temps = iter([50.0, 49.0, 49.0, 49.0])
+
+        def get_state(entity_id, *_):
+            if entity_id == config.ACTUAL_OUTLET_TEMP_ENTITY_ID:
+                return next(outlet_temps)
+            if entity_id == config.INDOOR_TEMP_ENTITY_ID:
+                return 22.0
+            if entity_id == config.TARGET_INDOOR_TEMP_ENTITY_ID:
+                return 21.0
+            return None
+
+        mock_ha_client.get_state.side_effect = get_state
+        with (
+            patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 6),
+            patch("src.heating_controller.config.BLOCKING_POLL_INTERVAL_SECONDS", 300),
+        ):
+            blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
+
+        # A 1 K drop is real cooling; only the 6-minute timeout ends the wait.
+        assert mock_sleep.call_count == 3
+
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time")
+    def test_wait_for_grace_target_timing_drift_uses_sample_before_cutoff(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """A sample just after the cutoff must not shorten the measured window."""
+        mock_time.side_effect = [1000, 1000, 1100, 1260, 1301] + [1301] * 10
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        outlet_temps = iter([50.0, 49.8, 49.6, 49.6])
+
+        def get_state(entity_id, *_):
+            if entity_id == config.ACTUAL_OUTLET_TEMP_ENTITY_ID:
+                return next(outlet_temps)
+            if entity_id == config.INDOOR_TEMP_ENTITY_ID:
+                return 22.0
+            if entity_id == config.TARGET_INDOOR_TEMP_ENTITY_ID:
+                return 21.0
+            return None
+
+        mock_ha_client.get_state.side_effect = get_state
+        with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 5):
+            blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
+
+        # The full-window drop is 0.4 K, so the 0.3 K threshold is not met.
+        assert mock_sleep.call_count == 3
 
 
 class TestSensorDataManager:

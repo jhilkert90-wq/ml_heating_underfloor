@@ -1,5 +1,17 @@
 # Active Context - Current Work & Decision State
 
+### Grace Stagnation Window Review Fix — 2026-10-26
+
+#### **What changed**
+- Stagnation detection now waits for observations spanning the configured window and chooses the latest historical sample at or before the cutoff.
+- Added regression tests for the supported 300-second polling interval and irregular polling timing.
+
+#### **Why**
+- Selecting a sample after the cutoff could measure only a short portion of the window and falsely classify ongoing cooling as stagnation.
+
+#### **Files modified**
+`src/heating_controller.py`, `tests/unit/test_heating_controller.py`, `CHANGELOG.md`, memory-bank files.
+
 ### Grace-Period Stagnation Fix — 2026-10-26
 
 #### **What changed**

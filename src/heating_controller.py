@@ -574,21 +574,29 @@ class BlockingStateManager:
             if wait_for_cooling and stagnation_window > 0:
                 history.append((now, actual_outlet_temp))
                 if elapsed >= stagnation_window:
-                    ref_temp = next(
-                        t for ts, t in history if ts >= now - stagnation_window
+                    cutoff = now - stagnation_window
+                    reference_sample = next(
+                        (
+                            (ts, temp)
+                            for ts, temp in reversed(history)
+                            if ts <= cutoff
+                        ),
+                        None,
                     )
-                    drop = ref_temp - actual_outlet_temp
-                    if drop < config.GRACE_STAGNATION_MIN_DROP_K:
-                        logging.info(
-                            "Outlet stagnates at %.1f°C (drop %.2fK in "
-                            "%.1f min, target %.1f°C unreachable); "
-                            "resuming control.",
-                            actual_outlet_temp,
-                            drop,
-                            stagnation_window / 60.0,
-                            current_grace_target,
-                        )
-                        break
+                    if reference_sample is not None:
+                        _, ref_temp = reference_sample
+                        drop = ref_temp - actual_outlet_temp
+                        if drop < config.GRACE_STAGNATION_MIN_DROP_K:
+                            logging.info(
+                                "Outlet stagnates at %.1f°C (drop %.2fK in "
+                                "%.1f min, target %.1f°C unreachable); "
+                                "resuming control.",
+                                actual_outlet_temp,
+                                drop,
+                                stagnation_window / 60.0,
+                                current_grace_target,
+                            )
+                            break
 
             # Check timeout
             if elapsed > max_seconds:

@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Grace Stagnation Window Review Fix — 2026-10-26
+
+**Status:** COMPLETED — Cool-down stagnation detection now waits until recorded outlet samples span the full window and compares with the latest sample at/before its cutoff. Added regression coverage for 300-second polling and timing drift.
+
+**Files changed:** `src/heating_controller.py`, `tests/unit/test_heating_controller.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Grace-Period Stagnation Fix — 2026-10-26
 
 **Status:** COMPLETED — `_wait_for_grace_target` ends cool-down waits when the outlet drops less than `GRACE_STAGNATION_MIN_DROP_K` (0.3 K) within `GRACE_STAGNATION_WINDOW_MINUTES` (4 min); previously an unreachable target (inlet + min spread) blocked until timeout.
