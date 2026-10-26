@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed physics calibration CLI execution and outlet-search refinement after search collapse; aligned regression tests with first-cycle learning, climate-mode restarts, and fireplace decay history.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

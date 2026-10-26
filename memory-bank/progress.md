@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ Repair Existing Test Failures — 2026-10-26
+
+**Status:** COMPLETED — Fixed the physics calibration CLI scope error and outlet-search local refinement after search collapse; aligned regression fixtures with first-cycle learning and mode-restart behavior, and corrected fireplace decay history expectations.
+
+**Files changed:** `src/main.py`, `src/model_wrapper.py`, `tests/integration/test_main.py`, `tests/unit/test_fp_decay_routing.py`, `tests/unit/test_main_functions.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** The calibration CLI no longer shadows its module-level trainer with a conditional import. Outlet search now explores a wider fine grid after a collapsed bisection, so narrow local optima are considered. Tests now model `last_raw_climate_mode=None`, defer online learning until a completed cycle, isolate persisted state between cycles, and account for fireplace history clearing on the first off cycle. Validation: full suite, 1,834 passed.
+
 ## ✅ PR #97 Review Feedback — 2026-10-26
 
 **Status:** COMPLETED — Cost-aware price offsets retain precedence over the fixed forecast-heating boost, and PV forecast bins align to tariff clock hours using one captured timestamp.

@@ -1291,7 +1291,6 @@ class EnhancedModelWrapper:
         search_lower_bound = outlet_min
         search_upper_bound = outlet_max
         best_candidate: Dict[str, Any] | None = None
-        collapsed_search = False
         converged_iteration: int | None = None
         evaluated_candidates: Dict[float, Dict[str, Any]] = {}
         invalid_candidates: set[float] = set()
@@ -1421,7 +1420,6 @@ class EnhancedModelWrapper:
                 )
                 if collapsed_candidate:
                     _consider_best(collapsed_candidate)
-                collapsed_search = True
                 logging.info(
                     "🔄 Binary search early exit after %d iterations: "
                     "range collapsed to %.3f°C",
@@ -1549,7 +1547,7 @@ class EnhancedModelWrapper:
                 active_outlet_max, max(active_outlet_min, fallback_temp)
             )
 
-        if converged_iteration is None or collapsed_search:
+        if converged_iteration is None or range_size < 0.05:
             base_outlet = float(best_candidate["outlet"])
             coarse_span = max(1.0, (search_upper_bound - search_lower_bound) * 0.2)
             coarse_low = max(search_lower_bound, base_outlet - coarse_span)
@@ -1562,8 +1560,8 @@ class EnhancedModelWrapper:
                     _consider_best(candidate)
 
             base_outlet = float(best_candidate["outlet"])
-            fine_low = max(search_lower_bound, base_outlet - 0.5)
-            fine_high = min(search_upper_bound, base_outlet + 0.5)
+            fine_low = max(search_lower_bound, base_outlet - 1.0)
+            fine_high = min(search_upper_bound, base_outlet + 1.0)
             fine_grid = np.arange(fine_low, fine_high + 1e-9, 0.1)
             for candidate_outlet in fine_grid.tolist():
                 candidate = _evaluate_outlet(candidate_outlet, "Refine(fine)")
