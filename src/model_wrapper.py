@@ -564,7 +564,8 @@ class EnhancedModelWrapper:
                     if offset != 0.0:
                         logging.info(
                             "💰 Price %s: target %.1f → %.1f°C (offset %+.1f)",
-                            level.value, target_indoor, target_adjusted, offset,
+                            price_info.get("price_level", level.value),
+                            target_indoor, target_adjusted, offset,
                         )
 
             if self._climate_mode == "heating":
@@ -3748,9 +3749,13 @@ def simplified_outlet_prediction(
 
         # Log the calculated outlet temperature - smart rounding will be
         # applied later in main.py
+        _adjusted_target = metadata.get("target_temp_adjusted", target_temp)
+        _target_txt = f"{target_temp:.1f}°C"
+        if abs(float(_adjusted_target) - float(target_temp)) > 1e-6:
+            _target_txt += f" (adjusted {float(_adjusted_target):.1f}°C)"
         logging.info(
             f"🎯 Prediction: Current {current_temp:.2f}°C → Target "
-            f"{target_temp:.1f}°C | Calculated outlet: {outlet_temp:.1f}°C "
+            f"{_target_txt} | Calculated outlet: {outlet_temp:.1f}°C "
             f"(before smart rounding) (confidence: {confidence:.3f})"
         )
 
