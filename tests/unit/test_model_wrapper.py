@@ -1119,6 +1119,39 @@ class TestForecastTrajectoryHeatingOffset:
         assert meta.get("price_target_offset") is None
         assert meta["forecast_trajectory_target_offset"] == pytest.approx(0.3)
 
+    def test_cost_offset_takes_precedence_over_forecast_heating_offset(
+        self, wrapper, monkeypatch
+    ):
+        from src.price_optimizer import PriceLevel
+
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_THRESHOLD_W", 1000.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_ZERO_W", 50.0, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MIN_STEPS", 2, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_MAX_STEPS", 4, raising=False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False, raising=False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PRICE_COST_MODE_ENABLED", True, raising=False)
+        monkeypatch.setattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.5, raising=False)
+        optimizer = MagicMock()
+        optimizer.classify_price.return_value = PriceLevel.NORMAL
+        optimizer.get_price_info.return_value = {}
+        features = self._features(1500.0)
+        features["_electricity_price"] = {
+            "current_price": 0.3,
+            "today": [0.1, 0.3],
+            "cost_target_offset": -0.2,
+        }
+
+        with patch(
+            "src.price_optimizer.get_price_optimizer", return_value=optimizer
+        ):
+            _, meta = wrapper.calculate_optimal_outlet_temp(features)
+
+        assert meta["target_temp_adjusted"] == pytest.approx(19.8)
+        assert meta["price_target_offset"] == pytest.approx(-0.2)
+        assert meta["price_cost_mode"] is True
+
     def test_target_rt_still_drives_outlet_when_overshoot_correction_disabled(
         self, wrapper, monkeypatch
     ):

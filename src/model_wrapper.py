@@ -532,6 +532,7 @@ class EnhancedModelWrapper:
             price_info = {}
             _price_sign = -1.0 if self._climate_mode == "cooling" else 1.0
             forecast_traj_state = None
+            cost_offset_applied = False
             if getattr(config, "ELECTRICITY_PRICE_ENABLED", False):
                 from .price_optimizer import PriceLevel, get_price_optimizer
 
@@ -543,8 +544,23 @@ class EnhancedModelWrapper:
                         price_data["today"],
                     )
                     offset = optimizer.get_target_offset(level) * _price_sign
-                    target_adjusted = target_indoor + offset
                     price_info = optimizer.get_price_info()
+                    if (
+                        getattr(config, "PRICE_COST_MODE_ENABLED", False)
+                        and "cost_target_offset" in price_data
+                    ):
+                        cost_offset = float(price_data["cost_target_offset"])
+                        offset = cost_offset * _price_sign
+                        cost_offset_applied = True
+                        price_info["price_target_offset"] = offset
+                        price_info["price_cost_mode"] = True
+                        if cost_offset > 0:
+                            price_info["price_level"] = "cheap"
+                        elif cost_offset < 0:
+                            price_info["price_level"] = "expensive"
+                        else:
+                            price_info["price_level"] = "normal"
+                    target_adjusted = target_indoor + offset
                     if offset != 0.0:
                         logging.info(
                             "💰 Price %s: target %.1f → %.1f°C (offset %+.1f)",
@@ -555,7 +571,7 @@ class EnhancedModelWrapper:
                 forecast_traj_state = (
                     self._get_forecast_trajectory_state_from_features(features)
                 )
-                if forecast_traj_state.active:
+                if forecast_traj_state.active and not cost_offset_applied:
                     forecast_offset = float(
                         getattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.0)
                     )
@@ -579,7 +595,12 @@ class EnhancedModelWrapper:
             # target is shifted.  In heating mode: raise target (store heat).
             # In cooling mode: lower target (cool more with free energy).
             if getattr(config, "PV_SURPLUS_CHEAP_ENABLED", False):
-                if (
+                if price_info.get("price_cost_mode"):
+                    # PV share is already part of the effective hourly prices
+                    logging.debug(
+                        "Cost mode active: PV surplus cheap offset skipped"
+                    )
+                elif (
                     self._climate_mode == "heating"
                     and forecast_traj_state is not None
                     and forecast_traj_state.active

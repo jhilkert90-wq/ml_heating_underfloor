@@ -612,6 +612,27 @@ options:
   # Cache refresh interval (minutes) for Tibber service call
   price_cache_refresh_minutes: 60
 
+  # Cost-aware mode: derive the target offset from effective hourly prices
+  # (Tibber price blended with the feed-in tariff by the PV share of the HP
+  # demand) over a look-ahead window. Replaces the percentile price offset.
+  price_cost_mode_enabled: false
+  # Fixed feed-in remuneration (EUR/kWh) = opportunity cost of own PV energy
+  feed_in_tariff_eur_kwh: 0.079
+  # Max pre-heat shift (°C) in cheap hours
+  price_band_up_c: 0.5
+  # Max setback (°C) in expensive hours
+  price_band_down_c: 0.2
+  # Look-ahead window (hours) for the effective price comparison
+  price_cost_lookahead_hours: 24
+  # Minimum spread (EUR/kWh) between cheapest and dearest hour for any shift
+  price_cost_min_spread_eur_kwh: 0.02
+  # Expected HP electrical power (kW) used until heating samples exist
+  hp_expected_power_fallback_kw: 1.5
+  # Window (hours) for the rolling mean of HP power while heating (no DHW/defrost)
+  hp_power_window_hours: 6
+  # Minimum electrical power (W) for the HP to count as "on"
+  hp_power_min_on_w: 300
+
   # === PV Surplus Optimization ===
   # When enabled, the target temperature is raised by price_target_offset
   # whenever current PV production is at or above pv_surplus_cheap_threshold_w.
@@ -694,6 +715,9 @@ options:
   # heating_profile — settings active while the HVAC is in heating mode.
   heating_profile:
     electricity_price_enabled: false
+    price_cost_mode_enabled: false
+    price_band_up_c: 0.5
+    price_band_down_c: 0.2
     pv_surplus_cheap_enabled: false
     pv_traj_forecast_mode_enabled: false
     pv_traj_disable_price_in_forecast_mode: true
@@ -710,6 +734,9 @@ options:
   # cooling_profile — settings active while the HVAC is in cooling mode.
   cooling_profile:
     electricity_price_enabled: false
+    price_cost_mode_enabled: false
+    price_band_up_c: 0.5
+    price_band_down_c: 0.2
     pv_surplus_cheap_enabled: false
     pv_traj_forecast_mode_enabled: false
     pv_traj_disable_price_in_forecast_mode: true
@@ -995,6 +1022,15 @@ schema:
   price_target_offset: "float(0.0,1.0)"
   price_expensive_overshoot: "float(0.0,1.0)"
   price_cache_refresh_minutes: "int(15,1440)"
+  price_cost_mode_enabled: "bool"
+  feed_in_tariff_eur_kwh: "float(0.0,1.0)"
+  price_band_up_c: "float(0.0,2.0)"
+  price_band_down_c: "float(0.0,2.0)"
+  price_cost_lookahead_hours: "int(2,48)"
+  price_cost_min_spread_eur_kwh: "float(0.0,0.5)"
+  hp_expected_power_fallback_kw: "float(0.1,20.0)"
+  hp_power_window_hours: "float(1.0,48.0)"
+  hp_power_min_on_w: "int(0,5000)"
   # PV Surplus Optimization
   pv_surplus_cheap_enabled: "bool"
   pv_surplus_cheap_threshold_w: "int(100,20000)"
@@ -1019,6 +1055,9 @@ schema:
   # Mode Profiles
   heating_profile:
     electricity_price_enabled: "bool?"
+    price_cost_mode_enabled: "bool?"
+    price_band_up_c: "float(0.0,2.0)?"
+    price_band_down_c: "float(0.0,2.0)?"
     pv_surplus_cheap_enabled: "bool?"
     pv_traj_forecast_mode_enabled: "bool?"
     pv_traj_disable_price_in_forecast_mode: "bool?"
@@ -1034,6 +1073,9 @@ schema:
     price_expensive_percentile: "int(50,90)?"
   cooling_profile:
     electricity_price_enabled: "bool?"
+    price_cost_mode_enabled: "bool?"
+    price_band_up_c: "float(0.0,2.0)?"
+    price_band_down_c: "float(0.0,2.0)?"
     pv_surplus_cheap_enabled: "bool?"
     pv_traj_forecast_mode_enabled: "bool?"
     pv_traj_disable_price_in_forecast_mode: "bool?"

@@ -12,6 +12,7 @@ is automatically merged to 60-minute (hourly) entries by averaging the
 prices within each clock hour.
 """
 import logging
+from collections import deque
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
@@ -291,6 +292,117 @@ class PriceOptimizer:
         return {"current_price": current, "today": today}
 
     # ------------------------------------------------------------------
+    # Cost-aware (PV / feed-in) target offset
+    # ------------------------------------------------------------------
+
+    def get_hourly_grid_prices(
+        self, hours: int, now: Optional[datetime] = None
+    ) -> List[float]:
+        """Return grid prices for the next *hours* clock hours.
+
+        Hour 0 is the current clock hour.  The list is truncated where the
+        cached price data ends (e.g. tomorrow's prices not yet published).
+        """
+        if not self._price_entries or hours <= 0:
+            return []
+        if now is None:
+            now = datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        last_ts = self._price_entries[-1][0]
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=timezone.utc)
+        data_end = last_ts + timedelta(hours=1)
+        hour_start = self._to_local(now).replace(
+            minute=0, second=0, microsecond=0
+        )
+        prices: List[float] = []
+        for h in range(hours):
+            at = hour_start + timedelta(hours=h)
+            if at >= data_end:
+                break
+            price = self.get_current_price(at)
+            if price is None:
+                break
+            prices.append(price)
+        return prices
+
+    def compute_cost_target_offset(
+        self,
+        pv_hourly_w: List[float],
+        hp_power_kw: float,
+        now: Optional[datetime] = None,
+    ) -> Optional[Dict[str, float]]:
+        """Compute a heating-direction target offset from effective prices.
+
+        The effective price of each hour blends the grid price with the
+        feed-in tariff according to the share ``f`` of the heat pump demand
+        that PV can cover::
+
+            p_eff = (1 - f) * p_grid + f * min(p_grid, feed_in)
+
+        The current hour is compared with the mean effective price of the
+        look-ahead window.  Cheaper than average → positive offset (pre-heat,
+        up to ``PRICE_BAND_UP_C``); more expensive → negative offset (up to
+        ``PRICE_BAND_DOWN_C``).  Scaling is linear between the mean and the
+        window extreme.  *pv_hourly_w* is the PV forecast [W] per hour with
+        index 0 = current hour; the window is cut to the hours for which a PV
+        forecast exists (all hours assume no PV if no forecast is given).
+
+        Returns ``None`` when no prices are available; otherwise a dict with
+        ``offset`` and diagnostics.
+        """
+        lookahead = max(
+            1, int(getattr(config, "PRICE_COST_LOOKAHEAD_HOURS", 24))
+        )
+        grid = self.get_hourly_grid_prices(lookahead, now)
+        if not grid:
+            return None
+        price_hours = len(grid)
+        if len(pv_hourly_w) > 1:
+            grid = grid[: len(pv_hourly_w)]
+        feed_in = float(getattr(config, "FEED_IN_TARIFF_EUR_KWH", 0.079))
+        demand_w = max(1.0, float(hp_power_kw) * 1000.0)
+        eff: List[float] = []
+        for h, p_grid in enumerate(grid):
+            pv_w = pv_hourly_w[h] if h < len(pv_hourly_w) else 0.0
+            f = min(1.0, max(0.0, float(pv_w)) / demand_w)
+            eff.append((1.0 - f) * p_grid + f * min(p_grid, feed_in))
+
+        p_now = eff[0]
+        p_ref = sum(eff) / len(eff)
+        p_min, p_max = min(eff), max(eff)
+        min_spread = float(
+            getattr(config, "PRICE_COST_MIN_SPREAD_EUR_KWH", 0.02)
+        )
+        band_up = float(getattr(config, "PRICE_BAND_UP_C", 0.5))
+        band_down = float(getattr(config, "PRICE_BAND_DOWN_C", 0.2))
+
+        offset = 0.0
+        if (p_max - p_min) >= min_spread:
+            if p_now < p_ref and p_ref - p_min > 1e-9:
+                offset = band_up * (p_ref - p_now) / (p_ref - p_min)
+            elif p_now > p_ref and p_max - p_ref > 1e-9:
+                offset = -band_down * (p_now - p_ref) / (p_max - p_ref)
+        return {
+            "offset": offset,
+            "p_eff_now": p_now,
+            "p_eff_mean": p_ref,
+            "p_eff_min": p_min,
+            "p_eff_max": p_max,
+            "hp_power_kw": float(hp_power_kw),
+            "hours": float(len(eff)),
+            "price_hours_available": float(price_hours),
+            "pv_hours_available": float(len(pv_hourly_w)),
+            "pv_share_now": min(
+                1.0,
+                max(0.0, float(pv_hourly_w[0] if pv_hourly_w else 0.0))
+                / demand_w,
+            ),
+            "p_grid_now": grid[0],
+        }
+
+    # ------------------------------------------------------------------
     # Timezone helper
     # ------------------------------------------------------------------
 
@@ -420,6 +532,92 @@ class PriceOptimizer:
             "price_expensive_threshold": self._last_thresholds[1],
             "price_target_offset": self.get_target_offset(self._last_level),
         }
+
+
+# ------------------------------------------------------------------
+# Expected heat pump electrical power (space heating/cooling only)
+# ------------------------------------------------------------------
+
+
+class HPPowerTracker:
+    """Rolling mean of the heat pump's electrical power while it is
+    actively heating (or cooling) the building.
+
+    Samples are rejected while hot water (DHW, disinfection, boost heater)
+    is running, during defrost and its recovery grace period, and when the
+    heat pump is not delivering thermal power in the active mode.
+    """
+
+    def __init__(self) -> None:
+        self._samples: deque = deque()
+
+    def record(
+        self,
+        features: Dict[str, object],
+        climate_mode: str = "heating",
+        now: Optional[datetime] = None,
+    ) -> bool:
+        """Record a sample if it qualifies. Returns True if accepted."""
+        try:
+            power_w = float(features.get("power_consumption", 0.0) or 0.0)
+            thermal_kw = float(features.get("thermal_power_kw", 0.0) or 0.0)
+            if (
+                features.get("dhw_heating")
+                or features.get("dhw_disinfection")
+                or features.get("dhw_boost_heater")
+                or features.get("defrosting")
+            ):
+                logger.debug("HP power sample skipped: DHW/defrost active")
+                return False
+            since_defrost = features.get("minutes_since_defrost")
+            grace = float(getattr(config, "DEFROST_RECOVERY_GRACE_MINUTES", 45))
+            if since_defrost is not None and float(since_defrost) < grace:
+                return False
+        except (TypeError, ValueError):
+            return False
+
+        if power_w < float(getattr(config, "HP_POWER_MIN_ON_W", 300.0)):
+            return False
+        if climate_mode == "cooling":
+            if thermal_kw > float(config.COOLING_MIN_THERMAL_POWER_KW):
+                return False
+        elif thermal_kw < float(config.HEATING_MIN_THERMAL_POWER_KW):
+            return False
+
+        now = now or datetime.now(timezone.utc)
+        self._samples.append((now, power_w))
+        self._prune(now)
+        return True
+
+    @property
+    def sample_count(self) -> int:
+        return len(self._samples)
+
+    def _prune(self, now: datetime) -> None:
+        window = timedelta(
+            hours=float(getattr(config, "HP_POWER_WINDOW_HOURS", 6.0))
+        )
+        while self._samples and now - self._samples[0][0] > window:
+            self._samples.popleft()
+
+    def expected_power_kw(self, now: Optional[datetime] = None) -> float:
+        """Mean qualifying power [kW]; configured fallback without samples."""
+        now = now or datetime.now(timezone.utc)
+        self._prune(now)
+        if not self._samples:
+            return float(getattr(config, "HP_EXPECTED_POWER_FALLBACK_KW", 1.5))
+        return sum(p for _, p in self._samples) / len(self._samples) / 1000.0
+
+
+_hp_tracker: Optional[HPPowerTracker] = None
+
+
+def get_hp_power_tracker() -> HPPowerTracker:
+    """Return (or create) the module-level HPPowerTracker."""
+    global _hp_tracker
+    if _hp_tracker is None:
+        _hp_tracker = HPPowerTracker()
+    return _hp_tracker
 
 
 # ------------------------------------------------------------------

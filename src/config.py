@@ -254,6 +254,37 @@ PRICE_EXPENSIVE_OVERSHOOT: float = float(
 PRICE_CACHE_REFRESH_MINUTES: int = int(
     os.getenv("PRICE_CACHE_REFRESH_MINUTES", "60")
 )
+# --- Cost-aware price optimization (PV / feed-in aware) ---
+# When enabled, the target offset is derived from effective hourly prices
+# (grid price blended with the feed-in tariff by the PV share of the heat pump
+# demand) over a look-ahead window, replacing the percentile price offset.
+PRICE_COST_MODE_ENABLED: bool = (
+    os.getenv("PRICE_COST_MODE_ENABLED", "false").lower() == "true"
+)
+# Fixed feed-in remuneration [EUR/kWh] = opportunity cost of own PV energy.
+FEED_IN_TARIFF_EUR_KWH: float = float(
+    os.getenv("FEED_IN_TARIFF_EUR_KWH", "0.079")
+)
+# Maximum pre-heat (up) / setback (down) shift [°C] of the target.
+PRICE_BAND_UP_C: float = float(os.getenv("PRICE_BAND_UP_C", "0.5"))
+PRICE_BAND_DOWN_C: float = float(os.getenv("PRICE_BAND_DOWN_C", "0.2"))
+# Look-ahead window [h] for the effective price comparison.
+PRICE_COST_LOOKAHEAD_HOURS: int = int(
+    os.getenv("PRICE_COST_LOOKAHEAD_HOURS", "24")
+)
+# Min. spread [EUR/kWh] between cheapest and dearest effective hour; below it
+# no shift is applied.
+PRICE_COST_MIN_SPREAD_EUR_KWH: float = float(
+    os.getenv("PRICE_COST_MIN_SPREAD_EUR_KWH", "0.02")
+)
+# Expected HP electrical power: rolling mean of power_consumption while the HP
+# is heating (no DHW / defrost). Fallback [kW] when no samples exist.
+HP_EXPECTED_POWER_FALLBACK_KW: float = float(
+    os.getenv("HP_EXPECTED_POWER_FALLBACK_KW", "1.5")
+)
+HP_POWER_WINDOW_HOURS: float = float(os.getenv("HP_POWER_WINDOW_HOURS", "6"))
+# Minimum electrical power [W] for the HP to count as "on".
+HP_POWER_MIN_ON_W: float = float(os.getenv("HP_POWER_MIN_ON_W", "300"))
 # PV surplus cheap override: when current PV power (W) exceeds this threshold
 # the target is shifted by +PRICE_TARGET_OFFSET (same as CHEAP price), even
 # without a Tibber price feed.  Set to -1 or 0 to disable.
@@ -291,24 +322,17 @@ PV_TRAJ_ZERO_W: float = float(os.getenv("PV_TRAJ_ZERO_W", "50.0"))
 PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE: bool = (
     os.getenv("PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE", "true").lower() == "true"
 )
-# When true (default), a temporary drop of pv_now below PV_TRAJ_THRESHOLD_W
-# (e.g. passing rain cloud) does not immediately collapse the trajectory to
-# PV_TRAJ_MIN_STEPS.  Instead, the forecast is consulted: if at least
-# PV_TRAJ_RESCUE_MIN_HOURS forecast hours remain above PV_TRAJ_THRESHOLD_W the
-# algorithm continues with normal step counting.  Set to false to require
-# current PV above the threshold at all times.
+# DEPRECATED: no effect. Forecast mode now activates on the 1h electrical PV
+# forecast (pv_forecast[0] >= PV_TRAJ_THRESHOLD_W), so no rescue path is needed.
 PV_TRAJ_FORECAST_RESCUE_ENABLED: bool = (
     os.getenv("PV_TRAJ_FORECAST_RESCUE_ENABLED", "true").lower() == "true"
 )
-# Minimum forecast hours above PV_TRAJ_THRESHOLD_W required for the forecast
-# rescue to fire.  Previously hardcoded to PV_TRAJ_MIN_STEPS, which caused the
-# rescue to fail during gradual late-afternoon PV decline.  Default: 1 — even a
-# single future hour above threshold keeps the trajectory active.
+# DEPRECATED: no effect (see PV_TRAJ_FORECAST_RESCUE_ENABLED).
 PV_TRAJ_RESCUE_MIN_HOURS: int = int(
     os.getenv("PV_TRAJ_RESCUE_MIN_HOURS", "1")
 )
 # Heating-only target-temperature offset [°C] applied while forecast-driven
-# trajectory mode is active, including rescue-driven activation. This replaces
+# trajectory mode is active. This replaces
 # the standard PV surplus cheap offset while forecast mode is active in heating.
 PV_TRAJ_HEATING_TARGET_OFFSET: float = float(
     os.getenv("PV_TRAJ_HEATING_TARGET_OFFSET", "0.2")

@@ -16,8 +16,8 @@ precision.
 """
 import logging
 import math
-from datetime import datetime
-from typing import Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -32,6 +32,48 @@ except ImportError:
     from ha_client import HAClient  # type: ignore
     from influx_service import InfluxService, INLET_HISTORY_FALLBACK_DEFAULT  # type: ignore
     from sensor_buffer import SensorBuffer  # type: ignore
+
+
+def parse_hourly_pv_forecast(
+    all_states: Optional[dict],
+    max_hours: int,
+    now: Optional[datetime] = None,
+) -> List[float]:
+    """Return raw electrical PV forecast [W] for hours 1..max_hours.
+
+    Index 0 is the hour starting one hour from *now* (same convention as
+    ``pv_forecast_{h}h``).  The list ends where the forecast entity has no
+    more data, so its length equals the number of available hours (may be
+    shorter than *max_hours*, or empty without a forecast).
+    """
+    if not config.PV_FORECAST_ENTITY_ID or not all_states or max_hours <= 0:
+        return []
+    state = all_states.get(config.PV_FORECAST_ENTITY_ID)
+    attrs = state.get("attributes") if state else None
+    if not attrs or "watts" not in attrs:
+        return []
+    now = now or datetime.now(timezone.utc)
+    series: Dict[datetime, float] = {}
+    for ts_str, watts in attrs["watts"].items():
+        try:
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            series[ts.astimezone(timezone.utc)] = float(watts)
+        except (TypeError, ValueError):
+            continue
+    if not series:
+        return []
+    last_ts = max(series)
+    hourly: List[float] = []
+    for hour in range(1, max_hours + 1):
+        start = now + timedelta(hours=hour)
+        if start > last_ts:
+            break
+        end = start + timedelta(hours=1)
+        vals = [w for t, w in series.items() if start <= t < end]
+        hourly.append(round(sum(vals) / len(vals), 1) if vals else 0.0)
+    return hourly
 
 
 def calculate_thermodynamic_metrics(

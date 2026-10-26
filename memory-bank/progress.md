@@ -1,5 +1,33 @@
 # ML Heating System - Current Progress
 
+## ✅ PR #97 Review Feedback — 2026-10-26
+
+**Status:** COMPLETED — Cost-aware price offsets retain precedence over the fixed forecast-heating boost, and PV forecast bins align to tariff clock hours using one captured timestamp.
+
+**Files changed:** `src/model_wrapper.py`, `src/cycle_routes.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_price_cost_mode.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** Added regression coverage for a cost setback with active forecast trajectory and PV-hour/tariff alignment at 12:45 UTC with a non-UTC tariff timezone. Validation: cost-mode tests (25 passed), route tests (43 passed), and model-wrapper tests (55 passed; one unrelated outlet-search assertion still fails when run alone).
+
+## ✅ Cost-Aware Price Mode (PV / Feed-in) — 2026-10-26
+
+**Status:** COMPLETED — `PRICE_COST_MODE_ENABLED` (default off) replaces the percentile price offset with a scalar offset from effective hourly prices (grid price blended with feed-in tariff by PV share of expected HP demand), recomputed every cycle (receding horizon, no change to the bisection). Works together with forecast-driven scaling (price suppression is skipped; PV surplus override skipped).
+
+**Files changed:** `src/price_optimizer.py`, `src/cycle_routes.py`, `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_price_cost_mode.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Follow-up:** PV forecast for cost mode is parsed separately (`parse_hourly_pv_forecast`) over the full look-ahead and the window is cut to available PV hours; Profiles page/`mode_profiles` support `price_cost_mode_enabled`, `price_band_up_c`, `price_band_down_c`; richer cost-mode log line.
+
+**Sensors:** `HAClient.publish_cost_mode_sensors` exports effective price, cost offset, expected HP power and price window as four separate sensors (published from `step_publish_auxiliary_sensors`).
+
+**Summary:** `HPPowerTracker` averages electrical power only for HP-on heating samples (no DHW/disinfection/boost/defrost/recovery). Offset is scaled between the window mean and extreme, bounded by the up/down band; cooling sign is mirrored. Remaining 11 failures are pre-existing.
+
+## ✅ Forecast Trajectory Activation by 1h Forecast — 2026-10-26
+
+**Status:** COMPLETED — Forecast-driven trajectory scaling activates on `pv_forecast[0] >= PV_TRAJ_THRESHOLD_W`; night stop on current PV below `PV_TRAJ_ZERO_W` is kept.
+
+**Files changed:** `src/pv_trajectory.py`, `src/config.py`, `tests/unit/test_pv_trajectory.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Summary:** `ForecastTrajectoryState` replaces `current_pv_above_threshold`/`rescue_active` with `forecast_1h_above_threshold`. The rescue path is removed; its config flags are deprecated no-ops. Pre-existing unrelated failures (11) remain. Next: combine with electricity price optimization.
+
 ## ✅ Address PR #96 Review Feedback — 2026-10-18
 
 **Status:** COMPLETED — Scalar calibration, heating curve eligibility, defrost context persistence, cooling bounds, and channel-owned curve learning now address all six review findings.

@@ -768,6 +768,77 @@ class HAClient:
             round_digits=4,
         )
 
+    def publish_cost_mode_sensors(
+        self, cost_info: Dict[str, object], hp_samples: int = 0
+    ) -> None:
+        """Publish cost-aware price mode diagnostics as individual sensors."""
+        shadow = getattr(config, "SHADOW_MODE", False)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        source = "measured" if hp_samples > 0 else "fallback"
+
+        def _publish(base_id: str, state: object, extra: Dict[str, object],
+                     digits: int) -> None:
+            entity_id = get_shadow_output_entity_id(
+                base_id, shadow_deployment=shadow
+            )
+            attrs = get_sensor_attributes(entity_id)
+            attrs.update(extra)
+            attrs["last_updated"] = now_iso
+            self.set_state(entity_id, state, attrs, round_digits=digits)
+
+        _publish(
+            "sensor.ml_heating_price_effective",
+            cost_info.get("p_eff_now"),
+            {
+                "grid_price_eur_kwh": cost_info.get("p_grid_now"),
+                "feed_in_tariff_eur_kwh": getattr(
+                    config, "FEED_IN_TARIFF_EUR_KWH", None
+                ),
+                "pv_share": cost_info.get("pv_share_now"),
+                "window_mean_eur_kwh": cost_info.get("p_eff_mean"),
+                "window_min_eur_kwh": cost_info.get("p_eff_min"),
+                "window_max_eur_kwh": cost_info.get("p_eff_max"),
+            },
+            4,
+        )
+        _publish(
+            "sensor.ml_heating_cost_offset",
+            cost_info.get("offset"),
+            {
+                "band_up_c": getattr(config, "PRICE_BAND_UP_C", None),
+                "band_down_c": getattr(config, "PRICE_BAND_DOWN_C", None),
+                "min_spread_eur_kwh": getattr(
+                    config, "PRICE_COST_MIN_SPREAD_EUR_KWH", None
+                ),
+            },
+            2,
+        )
+        _publish(
+            "sensor.ml_heating_hp_expected_power",
+            cost_info.get("hp_power_kw"),
+            {
+                "source": source,
+                "sample_count": hp_samples,
+                "window_hours": getattr(config, "HP_POWER_WINDOW_HOURS", None),
+                "fallback_kw": getattr(
+                    config, "HP_EXPECTED_POWER_FALLBACK_KW", None
+                ),
+            },
+            3,
+        )
+        _publish(
+            "sensor.ml_heating_price_window_hours",
+            cost_info.get("hours"),
+            {
+                "price_hours_available": cost_info.get("price_hours_available"),
+                "pv_hours_available": cost_info.get("pv_hours_available"),
+                "lookahead_hours": getattr(
+                    config, "PRICE_COST_LOOKAHEAD_HOURS", None
+                ),
+            },
+            0,
+        )
+
     def get_history_bulk(
         self,
         entity_ids: List[str],
@@ -939,6 +1010,31 @@ def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
             "unique_id": "ml_heating_price_level",
             "friendly_name": "ML Heating Price Level",
             "icon": "mdi:currency-eur",
+        },
+        "sensor.ml_heating_price_effective": {
+            "unique_id": "ml_heating_price_effective",
+            "friendly_name": "ML Heating Effective Price",
+            "unit_of_measurement": "EUR/kWh",
+            "icon": "mdi:cash-clock",
+        },
+        "sensor.ml_heating_cost_offset": {
+            "unique_id": "ml_heating_cost_offset",
+            "friendly_name": "ML Heating Cost Target Offset",
+            "unit_of_measurement": "°C",
+            "icon": "mdi:thermometer-plus",
+        },
+        "sensor.ml_heating_hp_expected_power": {
+            "unique_id": "ml_heating_hp_expected_power",
+            "friendly_name": "ML Heating Expected HP Power",
+            "unit_of_measurement": "kW",
+            "device_class": "power",
+            "icon": "mdi:heat-pump",
+        },
+        "sensor.ml_heating_price_window_hours": {
+            "unique_id": "ml_heating_price_window_hours",
+            "friendly_name": "ML Heating Price Window",
+            "unit_of_measurement": "h",
+            "icon": "mdi:calendar-clock",
         },
     }
 

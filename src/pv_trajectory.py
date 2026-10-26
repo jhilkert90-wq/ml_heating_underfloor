@@ -15,13 +15,14 @@ Dynamic trajectory-step scaling based on PV forecast.
 
     Activation requires **both**:
 
-    * Current PV check: ``pv_power_w >= PV_TRAJ_THRESHOLD_W``  (enough current
-      PV) **or** ``PV_TRAJ_FORECAST_RESCUE_ENABLED=true`` and at least
-      ``PV_TRAJ_RESCUE_MIN_HOURS`` forecast hours exceed
-      ``PV_TRAJ_THRESHOLD_W`` (handles passing rain clouds / short-duration
-      dips below threshold).
+    * 1h forecast check: ``pv_forecast[0] >= PV_TRAJ_THRESHOLD_W`` (the PV
+      forecast for the next hour is high enough). Current PV is not used for
+      activation, only for the night stop below.
     * At least one entry within the first ``PV_TRAJ_MAX_STEPS`` forecast slots
       is at or below ``PV_TRAJ_ZERO_W``  (sunset is within the planning horizon)
+
+    ``PV_TRAJ_FORECAST_RESCUE_ENABLED`` / ``PV_TRAJ_RESCUE_MIN_HOURS`` are
+    deprecated and no longer have any effect.
 
     In night mode (``pv_power_w < PV_TRAJ_ZERO_W``) the function returns
     ``PV_TRAJ_MIN_STEPS`` immediately.
@@ -51,8 +52,7 @@ class ForecastTrajectoryState:
 
     mode_enabled: bool
     active: bool
-    current_pv_above_threshold: bool
-    rescue_active: bool
+    forecast_1h_above_threshold: bool
     sunset_within_horizon: bool
     dynamic_steps: int
     min_steps: int
@@ -83,8 +83,7 @@ def get_forecast_trajectory_state(
         return ForecastTrajectoryState(
             mode_enabled=False,
             active=False,
-            current_pv_above_threshold=False,
-            rescue_active=False,
+            forecast_1h_above_threshold=False,
             sunset_within_horizon=False,
             dynamic_steps=static_steps,
             min_steps=min_steps,
@@ -99,30 +98,16 @@ def get_forecast_trajectory_state(
         return ForecastTrajectoryState(
             mode_enabled=True,
             active=False,
-            current_pv_above_threshold=False,
-            rescue_active=False,
+            forecast_1h_above_threshold=False,
             sunset_within_horizon=any(v <= zero_w for v in horizon),
             dynamic_steps=min_steps,
             min_steps=min_steps,
             max_steps=max_steps,
         )
 
-    current_pv_above_threshold = pv_power_w >= threshold_w
-    rescue_enabled = getattr(config, "PV_TRAJ_FORECAST_RESCUE_ENABLED", True)
-    rescue_min_hours = max(
-        1,
-        int(getattr(config, "PV_TRAJ_RESCUE_MIN_HOURS", 1)),
-    )
-    rescue_hours = sum(1 for v in horizon if v > threshold_w)
-    rescue_active = (
-        (not current_pv_above_threshold)
-        and rescue_enabled
-        and rescue_hours >= rescue_min_hours
-    )
+    forecast_1h_above_threshold = bool(horizon) and horizon[0] >= threshold_w
     sunset_within_horizon = any(v <= zero_w for v in horizon)
-    active = sunset_within_horizon and (
-        current_pv_above_threshold or rescue_active
-    )
+    active = sunset_within_horizon and forecast_1h_above_threshold
 
     if active:
         remaining_pv_hours = 0
@@ -140,8 +125,7 @@ def get_forecast_trajectory_state(
     return ForecastTrajectoryState(
         mode_enabled=True,
         active=active,
-        current_pv_above_threshold=current_pv_above_threshold,
-        rescue_active=rescue_active,
+        forecast_1h_above_threshold=forecast_1h_above_threshold,
         sunset_within_horizon=sunset_within_horizon,
         dynamic_steps=dynamic_steps,
         min_steps=min_steps,
@@ -158,15 +142,9 @@ def is_forecast_trajectory_active(
     Activation requires **all** of:
 
     1. ``PV_TRAJ_FORECAST_MODE_ENABLED=true``
-    2. Current PV or forecast rescue check (see below).
+    2. ``pv_forecast[0] >= PV_TRAJ_THRESHOLD_W`` (1h electrical PV forecast)
     3. At least one forecast slot within the first ``PV_TRAJ_MAX_STEPS`` entries
        is at or below ``PV_TRAJ_ZERO_W``  (sunset is within the planning horizon)
-
-    **Current PV check (condition 2):**
-    If ``pv_power_w >= PV_TRAJ_THRESHOLD_W`` the check passes unconditionally.
-    If ``pv_power_w < PV_TRAJ_THRESHOLD_W`` (e.g. passing rain cloud) the check
-    still passes when ``PV_TRAJ_FORECAST_RESCUE_ENABLED=true`` and at least
-    ``PV_TRAJ_RESCUE_MIN_HOURS`` forecast hours exceed ``PV_TRAJ_THRESHOLD_W``.
 
     Night mode (``pv_power_w < PV_TRAJ_ZERO_W``) is *not* considered activated
     because step count is already at the minimum.
@@ -198,13 +176,8 @@ def compute_forecast_driven_trajectory_steps(
     Special cases:
 
     * ``pv_power_w < PV_TRAJ_ZERO_W`` (night) → ``PV_TRAJ_MIN_STEPS``
-    * ``pv_power_w < PV_TRAJ_THRESHOLD_W`` (insufficient current PV):
-
-      - If ``PV_TRAJ_FORECAST_RESCUE_ENABLED=true`` (default) **and** at least
-        ``PV_TRAJ_RESCUE_MIN_HOURS`` forecast hours exceed ``PV_TRAJ_THRESHOLD_W``,
-        normal step counting continues (passing rain cloud is ignored).
-      - Otherwise → ``PV_TRAJ_MIN_STEPS``
-
+    * ``pv_forecast[0] < PV_TRAJ_THRESHOLD_W`` (1h forecast too low)
+      → ``PV_TRAJ_MIN_STEPS``
     * No sunset found within ``PV_TRAJ_MAX_STEPS`` horizon → ``PV_TRAJ_MIN_STEPS``
 
     Args:
@@ -224,11 +197,6 @@ def compute_forecast_driven_trajectory_steps(
     zero_w = float(getattr(config, "PV_TRAJ_ZERO_W", 50.0))
     threshold_w = float(getattr(config, "PV_TRAJ_THRESHOLD_W", 3000.0))
     horizon = (pv_forecast or [])[:max_steps]
-    rescue_min_hours = max(
-        1,
-        int(getattr(config, "PV_TRAJ_RESCUE_MIN_HOURS", 1)),
-    )
-    rescue_hours = sum(1 for v in horizon if v > threshold_w)
 
     # Night: current PV at or below zero threshold
     if pv_power_w < zero_w:
@@ -239,31 +207,14 @@ def compute_forecast_driven_trajectory_steps(
         )
         return state.dynamic_steps
 
-    # Insufficient current PV — optionally rescue via forecast
-    if pv_power_w < threshold_w and not state.current_pv_above_threshold:
-        if state.rescue_active:
-            logger.info(
-                "☀️ Forecast trajectory: PV=%.0fW < threshold=%.0fW but "
-                "%d forecast hours above threshold (need %d) → rescued, "
-                "continuing",
-                pv_power_w, threshold_w, rescue_hours, rescue_min_hours,
-            )
-        elif getattr(config, "PV_TRAJ_FORECAST_RESCUE_ENABLED", True):
-            logger.info(
-                "☀️ Forecast trajectory: PV=%.0fW < threshold=%.0fW, "
-                "only %d forecast hours above threshold (need %d) → "
-                "inactive, %d steps",
-                pv_power_w, threshold_w, rescue_hours, rescue_min_hours,
-                min_steps,
-            )
-            return state.dynamic_steps
-        else:
-            logger.info(
-                "☀️ Forecast trajectory: PV=%.0fW < threshold=%.0fW → "
-                "inactive (rescue disabled), %d steps",
-                pv_power_w, threshold_w, min_steps,
-            )
-            return state.dynamic_steps
+    # 1h forecast below activation threshold
+    if not state.forecast_1h_above_threshold:
+        logger.info(
+            "☀️ Forecast trajectory: 1h forecast=%.0fW < threshold=%.0fW → "
+            "inactive, %d steps",
+            float(horizon[0]) if horizon else 0.0, threshold_w, min_steps,
+        )
+        return state.dynamic_steps
 
     # Activation check: sunset must appear within the planning horizon
     if not state.sunset_within_horizon:

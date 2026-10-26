@@ -143,6 +143,52 @@ def step_build_features(ctx: CycleContext) -> bool:
     return True
 
 
+def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
+    """Add the PV/feed-in aware ``cost_target_offset`` to ``ctx.price_data``."""
+    from .price_optimizer import get_hp_power_tracker
+
+    now = datetime.now(timezone.utc)
+    features = ctx.features_dict or {}
+    tracker = get_hp_power_tracker()
+    tracker.record(
+        features, getattr(ctx, "climate_mode", "heating"), now=now
+    )
+    hp_kw = tracker.expected_power_kw(now=now)
+
+    # Use every available PV forecast hour up to the look-ahead window,
+    # independent of the (mode dependent) trajectory feature horizon.
+    from .physics_features import parse_hourly_pv_forecast
+
+    n_hours = int(getattr(config, "PRICE_COST_LOOKAHEAD_HOURS", 24))
+    pv_hourly = [float(features.get("pv_now_electrical", 0.0))]
+    forecast_start = optimizer._to_local(now).replace(
+        minute=0, second=0, microsecond=0
+    )
+    pv_hourly += parse_hourly_pv_forecast(
+        ctx.all_states, n_hours - 1, forecast_start
+    )
+
+    result = optimizer.compute_cost_target_offset(pv_hourly, hp_kw, now=now)
+    if result is not None:
+        ctx.price_data["cost_target_offset"] = result["offset"]
+        ctx.price_data["cost_info"] = result
+        logging.info(
+            "💰 Cost mode: grid=%.3f PV-share=%.0f%% p_eff now=%.3f "
+            "mean=%.3f min=%.3f max=%.3f €/kWh | window=%dh "
+            "(prices %dh, PV %dh) | HP=%.2fkW (%d samples, %s) "
+            "→ offset %+.2f°C",
+            result["p_grid_now"], result["pv_share_now"] * 100,
+            result["p_eff_now"], result["p_eff_mean"], result["p_eff_min"],
+            result["p_eff_max"], result["hours"],
+            result["price_hours_available"], result["pv_hours_available"],
+            hp_kw, tracker.sample_count,
+            "measured" if tracker.sample_count else "fallback",
+            result["offset"],
+        )
+    else:
+        logging.info("💰 Cost mode: no price window available → no offset")
+
+
 def step_dynamic_trajectory(ctx: CycleContext) -> None:
     """Dynamic trajectory scaling (PV-aware). Heating-specific but shared infra."""
     _pv_forecast_traj: list[float] | None = None
@@ -183,12 +229,18 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
             optimizer = get_price_optimizer()
             optimizer.refresh_prices_if_needed(ctx.ha_client)
             ctx.price_data = optimizer.get_price_data_for_features()
+            if ctx.price_data is not None and getattr(
+                config, "PRICE_COST_MODE_ENABLED", False
+            ):
+                _attach_cost_offset(ctx, optimizer)
         except Exception as exc:
             logging.warning("Failed to read electricity price: %s", exc)
 
-    # Suppress price in forecast trajectory mode
+    # Suppress price in forecast trajectory mode (cost mode works together
+    # with forecast scaling and is therefore not suppressed)
     if (
         ctx.price_data is not None
+        and not getattr(config, "PRICE_COST_MODE_ENABLED", False)
         and getattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
         and getattr(config, "PV_TRAJ_DISABLE_PRICE_IN_FORECAST_MODE", True)
     ):
@@ -905,6 +957,18 @@ def step_publish_auxiliary_sensors(ctx: CycleContext) -> None:
             logging.debug(
                 "Failed to publish price level sensor.", exc_info=True
             )
+        cost_info = ctx.price_data.get("cost_info")
+        if cost_info:
+            try:
+                from .price_optimizer import get_hp_power_tracker
+
+                ctx.ha_client.publish_cost_mode_sensors(
+                    cost_info, get_hp_power_tracker().sample_count
+                )
+            except Exception:
+                logging.debug(
+                    "Failed to publish cost mode sensors.", exc_info=True
+                )
 
 
 def step_publish_features(ctx: CycleContext) -> None:
