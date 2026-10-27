@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `price_cost_disable_overshoot_correction` option: in cost-aware mode (heating) overshoot outlet correction is skipped during cheap hours when PV fully covers the heat pump demand; undershoot is still corrected
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

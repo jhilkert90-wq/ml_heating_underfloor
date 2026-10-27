@@ -167,6 +167,77 @@ class TestOvershootLogic(unittest.TestCase):
         )
 
 
+class TestDisableOvershootCorrectionInCostMode(unittest.TestCase):
+    """PRICE_COST_DISABLE_OVERSHOOT_CORRECTION guard in cost mode."""
+
+    def setUp(self):
+        self.wrapper = ModelWrapper()
+        self.wrapper.thermal_model = MagicMock()
+        config.CYCLE_INTERVAL_MINUTES = 30
+        config.TRAJECTORY_STEPS = 4
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+        config.PRICE_COST_DISABLE_OVERSHOOT_CORRECTION = True
+        self.wrapper._current_features = {}
+        self.wrapper._climate_mode = "heating"
+        self.wrapper._price_info = {
+            "price_cost_mode": True,
+            "price_target_offset": 0.3,
+            "cost_pv_share_now": 1.0,
+        }
+        self.wrapper._get_forecast_conditions = MagicMock(
+            return_value=(8.6, 0, [], [])
+        )
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = {
+            "trajectory": [21.6, 21.7, 21.8, 21.9],
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        self.wrapper._calculate_physics_based_correction = MagicMock(
+            return_value=32.0
+        )
+
+    def tearDown(self):
+        config.PRICE_COST_DISABLE_OVERSHOOT_CORRECTION = False
+
+    def _call(self):
+        return self.wrapper._verify_trajectory_and_correct(
+            outlet_temp=35.0,
+            current_indoor=21.0,
+            target_indoor=21.5,
+            outdoor_temp=8.6,
+            thermal_features={"pv_power": 0, "fireplace_on": 0, "tv_on": 0},
+        )
+
+    def test_skips_when_pv_covers_hp_and_cheap(self):
+        self.assertEqual(self._call(), 35.0)
+        self.wrapper._calculate_physics_based_correction.assert_not_called()
+
+    def test_corrects_when_pv_share_below_one(self):
+        self.wrapper._price_info["cost_pv_share_now"] = 0.9
+        self.assertEqual(self._call(), 32.0)
+
+    def test_corrects_when_flag_off(self):
+        config.PRICE_COST_DISABLE_OVERSHOOT_CORRECTION = False
+        self.assertEqual(self._call(), 32.0)
+
+    def test_corrects_when_not_cheap(self):
+        self.wrapper._price_info["price_target_offset"] = -0.1
+        self.assertEqual(self._call(), 32.0)
+
+    def test_corrects_in_cooling(self):
+        self.wrapper._climate_mode = "cooling"
+        self.wrapper._price_info["price_target_offset"] = -0.3
+        self.assertEqual(self._call(), 32.0)
+
+    def test_still_corrects_predicted_undershoot(self):
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = {
+            "trajectory": [21.0, 21.1, 21.2, 21.3],
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        self.assertEqual(self._call(), 32.0)
+
+
 class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
     """Tests for PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION guard in _verify_trajectory_and_correct."""
 

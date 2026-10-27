@@ -110,11 +110,12 @@ class TestProfileKeysConstant:
 
 class TestProfilesStaticMetadata:
     def test_all_profileable_bools_covered(self):
-        """All 11 bool fields from src/mode_profiles.py must be in _BOOL_FIELDS."""
+        """All 12 bool fields from src/mode_profiles.py must be in _BOOL_FIELDS."""
         bool_keys = {key for key, _, _ in _BOOL_FIELDS}
         expected = {
             "electricity_price_enabled",
             "price_cost_mode_enabled",
+            "price_cost_disable_overshoot_correction",
             "pv_surplus_cheap_enabled",
             "pv_traj_forecast_mode_enabled",
             "pv_traj_disable_price_in_forecast_mode",
@@ -144,9 +145,9 @@ class TestProfilesStaticMetadata:
         assert len(all_keys) == len(_BOOL_FIELDS) + len(_FLOAT_FIELDS) + len(_INT_FIELDS)
 
     def test_total_field_count_matches_mode_profiles_profileable_keys(self):
-        """There should be exactly 17 profileable fields (11 bool + 4 float + 2 int)."""
+        """There should be exactly 18 profileable fields (12 bool + 4 float + 2 int)."""
         total = len(_BOOL_FIELDS) + len(_FLOAT_FIELDS) + len(_INT_FIELDS)
-        assert total == 17
+        assert total == 18
 
 
 # ---------------------------------------------------------------------------
