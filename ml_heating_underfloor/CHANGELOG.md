@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.101] - 2026-10-27
+
+### Added
+- `price_cost_disable_overshoot_correction` option: in cost-aware mode (heating) overshoot outlet correction is skipped during cheap hours when PV fully covers the heat pump demand; undershoot is still corrected
+
 ## [0.2.100] - 2026-10-26
 
 ### Added
