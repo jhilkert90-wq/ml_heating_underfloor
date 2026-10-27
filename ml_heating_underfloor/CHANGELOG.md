@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.102] - 2026-10-27
+
+### Fixed
+- Disabled overshoot correction (cost-mode / forecast-mode profile options) now blocks outlet reductions when a predicted overshoot occurs, including ML/Newton paths; undershoot-only correction remains enabled
+
 ## [0.2.101] - 2026-10-27
 
 ### Added

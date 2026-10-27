@@ -7,9 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Disabled overshoot correction (cost-mode / forecast-mode profile options) now blocks outlet reductions when a predicted overshoot occurs, including ML/Newton paths; undershoot-only correction remains enabled
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
