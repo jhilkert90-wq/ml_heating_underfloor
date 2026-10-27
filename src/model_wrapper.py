@@ -2250,6 +2250,21 @@ class EnhancedModelWrapper:
                     cycle_hours=cycle_hours,
                 )
 
+            # An undershoot may still require correction, but an overshoot
+            # flagged by the profile must not lower the outlet.
+            if (
+                _skip_forecast_overshoot_correction
+                and corrected_outlet < outlet_temp
+                and max(trajectory_temps)
+                >= target_indoor + sensor_precision_tolerance
+            ):
+                logging.info(
+                    "⏭️ Overshoot correction disabled by profile: ignoring "
+                    "outlet reduction %.1f°C → %.1f°C",
+                    outlet_temp, corrected_outlet,
+                )
+                return outlet_temp
+
             return corrected_outlet
 
         except Exception as e:

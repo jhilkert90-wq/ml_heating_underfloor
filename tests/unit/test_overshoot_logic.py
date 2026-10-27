@@ -263,7 +263,7 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
             "times": [0.5, 1.0, 1.5, 2.0],
             "reaches_target_at": None,
         }
-        self.wrapper._calculate_physics_based_correction = MagicMock(return_value=32.0)
+        self.wrapper._calculate_physics_based_correction = MagicMock(return_value=36.0)
 
     def _call(self, outlet_temp=35.0, target_indoor=21.5):
         return self.wrapper._verify_trajectory_and_correct(
@@ -287,6 +287,25 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
         self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
         self.wrapper._calculate_physics_based_correction.assert_not_called()
 
+    def test_disabled_overshoot_ignores_outlet_reduction_when_both_violated(self):
+        """A predicted overshoot is not corrected even alongside undershoot."""
+        config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PV_TRAJ_FORECAST_MODE_ENABLED = True
+        self.wrapper.thermal_model.predict_thermal_trajectory.return_value = {
+            "trajectory": [21.0, 21.1, 21.6, 21.8],
+            "times": [0.5, 1.0, 1.5, 2.0],
+            "reaches_target_at": None,
+        }
+        self.wrapper._calculate_physics_based_correction = MagicMock(
+            return_value=32.0
+        )
+        try:
+            result = self._call(outlet_temp=35.0)
+        finally:
+            config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
+            config.PV_TRAJ_FORECAST_MODE_ENABLED = False
+        self.assertEqual(result, 35.0)
+
     def test_forecast_mode_still_corrects_predicted_undershoot(self):
         """Forecast mode must not suppress correction for a predicted undershoot."""
         config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = True
@@ -301,7 +320,7 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
         finally:
             config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
             config.PV_TRAJ_FORECAST_MODE_ENABLED = False
-        self.assertEqual(result, 32.0)
+        self.assertEqual(result, 36.0)
         self.wrapper.thermal_model.predict_thermal_trajectory.assert_called_once()
         self.wrapper._calculate_physics_based_correction.assert_called_once()
 
@@ -326,7 +345,7 @@ class TestDisableOvershootCorrectionInForecastMode(unittest.TestCase):
         finally:
             config.PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION = False
             config.PV_TRAJ_FORECAST_MODE_ENABLED = False
-        self.assertEqual(result, 32.0)
+        self.assertEqual(result, 36.0)
         self.wrapper._calculate_physics_based_correction.assert_called_once()
 
     def test_forecast_mode_skips_undershoot_just_above_tolerance(self):

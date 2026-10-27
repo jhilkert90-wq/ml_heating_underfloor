@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Overshoot Skip Applies to All Correction Modes — 2026-10-27
+
+**Status:** COMPLETED — `_verify_trajectory_and_correct` now discards any outlet reduction when overshoot correction is disabled by profile (ML mode previously still lowered outlet).
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_overshoot_logic.py`, `CHANGELOG.md`, memory-bank files
+
 ## ✅ Cost-Mode Overshoot Correction Skip — 2026-10-27
 
 **Status:** COMPLETED — New option `PRICE_COST_DISABLE_OVERSHOOT_CORRECTION` skips overshoot correction in heating when cost mode offset > 0 and `pv_share_now >= 1.0`; undershoot still corrected. Also profileable per mode (heating/cooling profiles, dashboard Profiles).
