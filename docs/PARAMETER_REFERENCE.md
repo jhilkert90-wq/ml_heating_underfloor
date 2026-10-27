@@ -367,6 +367,7 @@ Requires the Tibber integration in Home Assistant.
 | `price_expensive_overshoot` | `PRICE_EXPENSIVE_OVERSHOOT` | float (0–1) | `0.2` | Tighter future overshoot threshold (°C) during expensive periods, reducing outlet temperature earlier. |
 | `price_cache_refresh_minutes` | `PRICE_CACHE_REFRESH_MINUTES` | int (15–1440) | `60` | How often (minutes) prices are re-fetched from Tibber. Also refreshes after 13:00 for tomorrow's prices. |
 | `price_cost_mode_enabled` | `PRICE_COST_MODE_ENABLED` | bool | `false` | Cost-aware mode: target shift from effective hourly prices (Tibber blended with feed-in tariff by PV share of HP demand) instead of percentile offset. |
+| `price_cost_disable_overshoot_correction` | `PRICE_COST_DISABLE_OVERSHOOT_CORRECTION` | bool | `false` | Heating only: skip overshoot outlet correction while cost mode pre-heats (cheap hour) and PV fully covers HP demand (`pv_share_now >= 1`). Undershoot is still corrected. |
 | `feed_in_tariff_eur_kwh` | `FEED_IN_TARIFF_EUR_KWH` | float (0–1) | `0.079` | Fixed feed-in remuneration; opportunity cost of own PV energy. |
 | `price_band_up_c` | `PRICE_BAND_UP_C` | float (0–2) | `0.5` | Max pre-heat shift (°C) in cheapest hours. |
 | `price_band_down_c` | `PRICE_BAND_DOWN_C` | float (0–2) | `0.2` | Max setback (°C) in dearest hours. |

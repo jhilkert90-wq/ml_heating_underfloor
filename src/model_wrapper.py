@@ -554,6 +554,11 @@ class EnhancedModelWrapper:
                         cost_offset_applied = True
                         price_info["price_target_offset"] = offset
                         price_info["price_cost_mode"] = True
+                        price_info["cost_pv_share_now"] = float(
+                            (price_data.get("cost_info") or {}).get(
+                                "pv_share_now", 0.0
+                            )
+                        )
                         if cost_offset > 0:
                             price_info["price_level"] = "cheap"
                         elif cost_offset < 0:
@@ -1903,11 +1908,24 @@ class EnhancedModelWrapper:
             _forecast_state = self._get_forecast_trajectory_state_from_features(
                 _forecast_features
             )
+            _cost_pi = getattr(self, "_price_info", None) or {}
+            # Cost mode: PV fully covers the HP demand in a cheap hour, so
+            # intentional pre-heating must not be cancelled by overshoot
+            # correction.
+            _skip_cost_overshoot_correction = (
+                getattr(
+                    config, "PRICE_COST_DISABLE_OVERSHOOT_CORRECTION", False
+                )
+                and self._climate_mode == "heating"
+                and bool(_cost_pi.get("price_cost_mode"))
+                and float(_cost_pi.get("price_target_offset", 0.0)) > 0.0
+                and float(_cost_pi.get("cost_pv_share_now", 0.0)) >= 1.0
+            )
             _skip_forecast_overshoot_correction = (
                 getattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", False)
                 and _forecast_state.active
                 and _forecast_state.dynamic_steps_above_min
-            )
+            ) or _skip_cost_overshoot_correction
 
             fireplace_on = thermal_features.get("fireplace_on", 0.0)
             fireplace_power_kw, fp_decay_kw = self._calculate_fireplace_power_kw(
@@ -2119,10 +2137,12 @@ class EnhancedModelWrapper:
                 )
                 if not predicted_undershoot:
                     logging.debug(
-                        "⏭️ Skipping overshoot correction: "
-                        "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION=true and "
-                        "forecast trajectory active and dynamic steps > "
-                        "minimum; no undershoot predicted"
+                        "⏭️ Skipping overshoot correction (%s); "
+                        "no undershoot predicted",
+                        "cost mode: cheap and PV covers HP demand"
+                        if _skip_cost_overshoot_correction
+                        else "forecast trajectory active, dynamic steps > "
+                        "minimum"
                     )
                     return outlet_temp
 

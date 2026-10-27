@@ -35,6 +35,8 @@ _BOOL_FIELDS: tuple[tuple[str, str, str], ...] = (
      "Enable Tibber electricity price optimisation in this mode."),
     ("price_cost_mode_enabled", "Cost-Aware Price Mode",
      "Derive the target shift from effective hourly prices (Tibber + feed-in tariff, PV-aware) in this mode."),
+    ("price_cost_disable_overshoot_correction", "Cost Mode: Skip Overshoot Correction",
+     "Heating: skip overshoot correction while cost mode pre-heats and PV fully covers HP demand."),
     ("pv_surplus_cheap_enabled", "PV Surplus Cheap Enabled",
      "Treat excess PV production as 'cheap' energy in this mode."),
     ("pv_traj_forecast_mode_enabled", "PV Trajectory Forecast Mode",

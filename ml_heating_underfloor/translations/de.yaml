@@ -976,6 +976,9 @@ configuration:
   price_cost_mode_enabled:
     name: '[Erweitert] Cost-Aware Price Mode'
     description: 'Derive the target shift from effective hourly prices (Tibber price blended with the feed-in tariff by the PV share of heat pump demand) over a look-ahead window, instead of the percentile price offset. Avoids pre-heating at night when PV makes daytime energy cheap.'
+  price_cost_disable_overshoot_correction:
+    name: '[Erweitert] Cost Mode: Overshoot-Korrektur aus'
+    description: 'Nur Heizen: Wenn der Cost-Mode vorheizt (günstige Stunde) und PV den Wärmepumpenbedarf voll deckt, wird die Overshoot-Korrektur übersprungen, damit PV-Überschuss gespeichert wird. Vorhergesagtes Undershoot wird weiterhin korrigiert.'
   feed_in_tariff_eur_kwh:
     name: '[Erweitert] Feed-in Tariff (EUR/kWh)'
     description: 'Fixed remuneration for exported PV energy; used as the opportunity cost of own PV energy. Default: 0.079.'

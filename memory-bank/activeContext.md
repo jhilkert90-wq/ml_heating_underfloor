@@ -1,5 +1,16 @@
 # Active Context - Current Work & Decision State
 
+### Cost-Mode Overshoot Correction Skip — 2026-10-27
+
+#### **What changed**
+- `_verify_trajectory_and_correct` skips overshoot correction when `PRICE_COST_DISABLE_OVERSHOOT_CORRECTION`, heating, cost mode, offset > 0 and PV share >= 1.0 (stored as `price_info["cost_pv_share_now"]`); undershoot still corrected.
+
+#### **Why**
+- Cost-mode pre-heating with PV surplus was cancelled by overshoot correction (same intent as the forecast-mode option).
+
+#### **Files modified**
+See progress.md.
+
 ### Grace Stagnation Window Review Fix — 2026-10-26
 
 #### **What changed**

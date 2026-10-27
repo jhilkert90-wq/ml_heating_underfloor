@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Cost-Mode Overshoot Correction Skip — 2026-10-27
+
+**Status:** COMPLETED — New option `PRICE_COST_DISABLE_OVERSHOOT_CORRECTION` skips overshoot correction in heating when cost mode offset > 0 and `pv_share_now >= 1.0`; undershoot still corrected. Also profileable per mode (heating/cooling profiles, dashboard Profiles).
+
+**Files changed:** `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, translations, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_overshoot_logic.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, memory-bank files
+
 ## ✅ Grace Stagnation Window Review Fix — 2026-10-26
 
 **Status:** COMPLETED — Cool-down stagnation detection now waits until recorded outlet samples span the full window and compares with the latest sample at/before its cutoff. Added regression coverage for 300-second polling and timing drift.

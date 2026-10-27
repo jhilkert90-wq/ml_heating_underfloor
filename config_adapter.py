@@ -618,6 +618,9 @@ def convert_addon_to_env(config):
         'PRICE_COST_MODE_ENABLED': str(
             config.get('price_cost_mode_enabled', False)
         ).lower(),
+        'PRICE_COST_DISABLE_OVERSHOOT_CORRECTION': str(
+            config.get('price_cost_disable_overshoot_correction', False)
+        ).lower(),
         'FEED_IN_TARIFF_EUR_KWH': str(
             config.get('feed_in_tariff_eur_kwh', 0.079)
         ),

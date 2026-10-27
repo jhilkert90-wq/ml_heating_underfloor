@@ -261,6 +261,13 @@ PRICE_CACHE_REFRESH_MINUTES: int = int(
 PRICE_COST_MODE_ENABLED: bool = (
     os.getenv("PRICE_COST_MODE_ENABLED", "false").lower() == "true"
 )
+# When true (heating only), skip the overshoot outlet correction while cost
+# mode is active with a positive (cheap) offset and PV fully covers the HP
+# demand (pv_share_now >= 1.0). Predicted undershoot is still corrected.
+PRICE_COST_DISABLE_OVERSHOOT_CORRECTION: bool = (
+    os.getenv("PRICE_COST_DISABLE_OVERSHOOT_CORRECTION", "false").lower()
+    == "true"
+)
 # Fixed feed-in remuneration [EUR/kWh] = opportunity cost of own PV energy.
 FEED_IN_TARIFF_EUR_KWH: float = float(
     os.getenv("FEED_IN_TARIFF_EUR_KWH", "0.079")
