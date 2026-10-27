@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### Overshoot Skip Applies to All Correction Modes — 2026-10-27
+
+- **What:** outlet reductions from physics/ML/legacy correction are ignored when `PRICE_COST_DISABLE_OVERSHOOT_CORRECTION` / `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` skip is active.
+- **Why:** log showed ML correction (Δ-0.34°C) lowering outlet despite profile disabling overshoot correction (undershoot predicted bypassed the early return).
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_overshoot_logic.py`
+
 ### Cost-Mode Overshoot Correction Skip — 2026-10-27
 
 #### **What changed**
