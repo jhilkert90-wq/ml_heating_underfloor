@@ -189,6 +189,51 @@ class TestFiniteDifferenceNewton:
             assert result > 26.3
         assert abs(result - 26.3) < 1.0
 
+    @pytest.mark.parametrize(
+        ("mode", "baseline", "temp_error"),
+        [
+            ("heating", [22.0, 23.4, 22.5], -0.9),
+            ("cooling", [23.0, 21.6, 22.5], 0.9),
+        ],
+    )
+    def test_mixed_side_violations_are_limited_per_timestep(
+        self, mode, baseline, temp_error
+    ):
+        target, outlet = 22.5, 26.3
+        sensitivity = [0.0, 1.0, 1.0]
+
+        def simulate(candidate):
+            return [
+                temp + slope * (candidate - outlet)
+                for temp, slope in zip(baseline, sensitivity)
+            ]
+
+        self.w._climate_mode = mode
+        self.w._current_features = {"inlet_temp": 23.8}
+        traj = {"trajectory": simulate(outlet)}
+        self.w._trajectory_simulator = (traj, simulate)
+        with patch(
+            "src.model_wrapper.config.get_outlet_bounds",
+            return_value=(10.0, 40.0),
+        ):
+            result = self.w._finite_difference_newton_correction(
+                outlet, traj, target, temp_error
+            )
+
+        assert result is not None
+        corrected = simulate(result)
+        if mode == "heating":
+            assert all(
+                temp >= min(target - 0.1, original) - 1e-6
+                for temp, original in zip(corrected, baseline)
+            )
+        else:
+            assert all(
+                temp <= max(target + 0.1, original) + 1e-6
+                for temp, original in zip(corrected, baseline)
+            )
+        assert abs(result - outlet) < 0.2
+
     def test_pump_off_overshoot_keeps_outlet(self):
         # Outlet below inlet: the simulator has no outlet sensitivity, so
         # lowering further cannot help.

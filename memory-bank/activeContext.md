@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### FD-Newton Per-Timestep Guard Review Fix — 2026-10-29
+
+- **What:** The opposite-side guard now applies the 0.1 K limit independently at each timestep, allowing pre-existing violations only at their original steps. Added mixed-side heating and cooling regression tests.
+- **Why:** A global trajectory minimum/maximum allowed an existing violation at one timestep to mask a new crossing at another.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ### FD-Newton Opposite-Side Guard — 2026-10-29
 
 - **What:** `_finite_difference_newton_correction` bisects the step back when the re-simulated trajectory crosses the target by more than 0.1 K on the opposite side; logs simulated end/min/max.

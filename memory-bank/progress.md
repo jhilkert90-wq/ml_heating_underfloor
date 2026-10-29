@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ FD-Newton Per-Timestep Guard Review Fix — 2026-10-29
+
+**Status:** COMPLETED — Opposite-side crossing limits now compare each corrected timestep with its own baseline, so a pre-existing violation cannot mask a new violation elsewhere. Added mixed-side heating and cooling regression tests.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ FD-Newton Opposite-Side Guard — 2026-10-29
 
 **Status:** COMPLETED — Log analysis showed the one-sided FD-Newton step hit the 2.5 K limit (26.3→23.8 °C) although the trajectory already ended on target. The corrected trajectory is now re-simulated and the step is bisected back so min (heating overshoot) / max (undershoot) stays within 0.1 K of the target; log reports simulated end/min/max. Added heating/cooling regression tests.

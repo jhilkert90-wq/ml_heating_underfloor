@@ -2556,9 +2556,9 @@ class EnhancedModelWrapper:
         the pump gate are included).  ΔT is the least-squares solution
         ΔT = Σ S_t·e_t / Σ S_t² over the whole horizon, where e_t is the
         remaining one-sided violation at step t.  A few chord iterations
-        re-simulate the corrected outlet; the result is backtracked so the
-        corrected trajectory never crosses the target by more than 0.1 K on
-        the opposite side.
+        re-simulate the corrected outlet; the result is backtracked so no
+        timestep crosses the target by more than 0.1 K on the opposite side,
+        except for violations already present at that same timestep.
 
         The simulator's evolving slab state determines when the pump gate
         activates. Its measured sensitivity therefore governs reductions;
@@ -2646,11 +2646,15 @@ class EnhancedModelWrapper:
             # residual above cannot see that, so backtrack by bisection.
             def _violates(tr):
                 if direction < 0:
-                    return min(tr) < floor
-                return max(tr) > ceil
+                    return any(
+                        temp < min(target_indoor - tol, baseline_temp)
+                        for temp, baseline_temp in zip(tr, temps0)
+                    )
+                return any(
+                    temp > max(target_indoor + tol, baseline_temp)
+                    for temp, baseline_temp in zip(tr, temps0)
+                )
 
-            floor = min(target_indoor - tol, min(temps0))
-            ceil = max(target_indoor + tol, max(temps0))
             if total != 0.0 and _violates(temps):
                 lo, hi = 0.0, total
                 best_temps = temps0
