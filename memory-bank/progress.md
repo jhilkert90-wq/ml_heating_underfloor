@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Symmetric Grace-Period Stagnation Detection — 2026-10-29
+
+**Status:** COMPLETED — Grace waits now abort on insufficient absolute outlet-temperature movement over the configured window, for both warm-up and cool-down. A rising outlet after defrost is recognized as progress rather than as a negative cooling delta.
+
+**Files changed:** `src/heating_controller.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `tests/unit/test_heating_controller.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Overshoot Skip Applies to All Correction Modes — 2026-10-27
 
 **Status:** COMPLETED — `_verify_trajectory_and_correct` now discards any outlet reduction when overshoot correction is disabled by profile (ML mode previously still lowered outlet).

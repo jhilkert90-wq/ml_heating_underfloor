@@ -569,9 +569,9 @@ class BlockingStateManager:
             now = time.time()
             elapsed = now - start_time
 
-            # Stagnation: outlet cannot drop further (e.g. inlet + minimum
-            # spread above the target), so waiting would never end.
-            if wait_for_cooling and stagnation_window > 0:
+            # Stagnation: the outlet barely moves in either direction, so
+            # waiting for the grace target would not make progress.
+            if stagnation_window > 0:
                 history.append((now, actual_outlet_temp))
                 if elapsed >= stagnation_window:
                     cutoff = now - stagnation_window
@@ -585,14 +585,14 @@ class BlockingStateManager:
                     )
                     if reference_sample is not None:
                         _, ref_temp = reference_sample
-                        drop = ref_temp - actual_outlet_temp
-                        if drop < config.GRACE_STAGNATION_MIN_DROP_K:
+                        movement = abs(actual_outlet_temp - ref_temp)
+                        if movement < config.GRACE_STAGNATION_MIN_DROP_K:
                             logging.info(
-                                "Outlet stagnates at %.1f°C (drop %.2fK in "
-                                "%.1f min, target %.1f°C unreachable); "
+                                "Outlet stagnates at %.1f°C (change %.2fK in "
+                                "%.1f min, target %.1f°C not reached); "
                                 "resuming control.",
                                 actual_outlet_temp,
-                                drop,
+                                movement,
                                 stagnation_window / 60.0,
                                 current_grace_target,
                             )

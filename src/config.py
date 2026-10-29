@@ -427,9 +427,8 @@ HEATING_CORRECTION_MODE: str = os.getenv("HEATING_CORRECTION_MODE", "legacy")
 GRACE_PERIOD_MAX_MINUTES: int = int(
     os.getenv("GRACE_PERIOD_MAX_MINUTES", "15")
 )
-# Cool-down wait is aborted when the outlet temp falls by less than
-# GRACE_STAGNATION_MIN_DROP_K within GRACE_STAGNATION_WINDOW_MINUTES (the
-# outlet is bounded by inlet + minimum spread and can never reach the target).
+# Grace-period wait is aborted when the absolute outlet-temperature change is
+# less than GRACE_STAGNATION_MIN_DROP_K within the configured window.
 # A window of 0 disables stagnation detection.
 GRACE_STAGNATION_WINDOW_MINUTES: float = float(
     os.getenv("GRACE_STAGNATION_WINDOW_MINUTES", "4")

@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### Symmetric Grace-Period Stagnation Detection — 2026-10-29
+
+- **What:** Stagnation now compares the absolute outlet-temperature movement and applies during both warm-up and cool-down waits.
+- **Why:** Defrost recovery can make the outlet rise; a signed cooling-only comparison can classify a rising outlet as stagnation instead of recognizing ongoing recovery.
+- **Files:** `src/heating_controller.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `tests/unit/test_heating_controller.py`
+
 ### Overshoot Skip Applies to All Correction Modes — 2026-10-27
 
 - **What:** outlet reductions from physics/ML/legacy correction are ignored when `PRICE_COST_DISABLE_OVERSHOOT_CORRECTION` / `PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION` skip is active.

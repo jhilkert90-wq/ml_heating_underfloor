@@ -340,7 +340,7 @@ options:
   # === Blocking Recovery ===
   # Maximum minutes to wait during grace period after blocking ends
   grace_period_max_minutes: 15
-  # Abort cool-down wait if outlet drops less than min drop (K) within window (minutes); 0 disables
+  # Abort grace wait if absolute outlet change is less than the threshold (K) within the window; 0 disables
   grace_stagnation_window_minutes: 4.0
   grace_stagnation_min_drop_k: 0.3
   # Extra grace period after HP defrost cycles (minutes)
