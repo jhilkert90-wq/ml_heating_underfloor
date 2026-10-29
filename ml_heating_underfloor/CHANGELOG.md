@@ -1,5 +1,11 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.106] - 2026-10-29
+
+### Changed
+- **Physics Newton correction now uses the trajectory simulator**: the outlet sensitivity dT/dT_outlet is measured by a one-sided finite difference on the same simulator that produced the trajectory (slab + room dynamics), and ΔT is a least-squares fit over the whole horizon instead of a single-point step with the τ/2 floor. The analytic single-zone step remains only as fallback when no simulator is available.
+- **Pump-gate sensitivity follows slab dynamics**: heating/cooling reductions use finite-difference sensitivity from the evolving trajectory rather than a fixed inlet clamp, while configured outlet bounds remain enforced; real heating and cooling trajectories cover corrections at the inlet.
+
 ## [0.2.104] - 2026-10-29
 
 ### Fixed
