@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **FD-Newton correction no longer over-corrects**: the corrected trajectory is re-simulated and the step is backtracked (bisection) so it never crosses the target by more than 0.1 K on the opposite side (e.g. overshoot correction causing a later undershoot); the log now reports the simulated end, min and max temperature.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

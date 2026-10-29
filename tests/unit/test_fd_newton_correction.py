@@ -153,6 +153,42 @@ class TestFiniteDifferenceNewton:
             trajectory["trajectory"][-1]
         )
 
+    @pytest.mark.parametrize("mode", ["heating", "cooling"])
+    def test_correction_does_not_cross_target_on_other_side(self, mode):
+        # Decaying trajectory that already ends on target: a full Newton
+        # step would undershoot (heating) / overshoot (cooling) later.
+        sign = 1.0 if mode == "heating" else -1.0
+        n, target = 24, 22.5
+
+        def simulate(outlet):
+            return [
+                target + sign * (0.9 - 0.04 * i)
+                + 0.2 * (outlet - 26.3) * (i + 1) / n
+                for i in range(n)
+            ]
+
+        self.w._climate_mode = mode
+        self.w._current_features = {"inlet_temp": 23.8}
+        traj = {"trajectory": simulate(26.3)}
+        self.w._trajectory_simulator = (traj, simulate)
+        error = -sign * 0.9
+        with patch(
+            "src.model_wrapper.config.get_outlet_bounds",
+            return_value=(10.0, 40.0),
+        ):
+            result = self.w._finite_difference_newton_correction(
+                26.3, traj, target, error
+            )
+        assert result is not None
+        temps = simulate(result)
+        if mode == "heating":
+            assert min(temps) >= target - 0.1 - 1e-6
+            assert result < 26.3
+        else:
+            assert max(temps) <= target + 0.1 + 1e-6
+            assert result > 26.3
+        assert abs(result - 26.3) < 1.0
+
     def test_pump_off_overshoot_keeps_outlet(self):
         # Outlet below inlet: the simulator has no outlet sensitivity, so
         # lowering further cannot help.

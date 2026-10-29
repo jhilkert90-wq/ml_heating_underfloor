@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### FD-Newton Opposite-Side Guard — 2026-10-29
+
+- **What:** `_finite_difference_newton_correction` bisects the step back when the re-simulated trajectory crosses the target by more than 0.1 K on the opposite side; logs simulated end/min/max.
+- **Why:** Live logs showed ΔT=-2.5 K (26.3→23.8 °C) for a trajectory already converging to target (S(H)≈0.2), which would undershoot; observed cooling rate (~-0.06..-0.09 K/h) is also far below the model's ~-0.22 K/h.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`
+
 ### PR #105 Review Fix — Evolving Pump-Gate Sensitivity — 2026-10-29
 
 - **What:** Removed the initial-inlet gate clamp from finite-difference probes and candidate corrections. The simulator's evolving slab state now determines sensitivity, and configured outlet bounds remain in force. Added real thermal-model trajectory regressions for heating and cooling at the inlet.

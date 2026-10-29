@@ -2556,7 +2556,9 @@ class EnhancedModelWrapper:
         the pump gate are included).  ΔT is the least-squares solution
         ΔT = Σ S_t·e_t / Σ S_t² over the whole horizon, where e_t is the
         remaining one-sided violation at step t.  A few chord iterations
-        re-simulate the corrected outlet.
+        re-simulate the corrected outlet; the result is backtracked so the
+        corrected trajectory never crosses the target by more than 0.1 K on
+        the opposite side.
 
         The simulator's evolving slab state determines when the pump gate
         activates. Its measured sensitivity therefore governs reductions;
@@ -2621,6 +2623,7 @@ class EnhancedModelWrapper:
                 return None
 
             max_correction = 2.5
+            tol = 0.1
             total = 0.0
             temps = temps0
             for _ in range(3):
@@ -2637,13 +2640,38 @@ class EnhancedModelWrapper:
                 if len(temps) != n:
                     return None
 
+            # Opposite-side guard: the correction must not push the corrected
+            # trajectory past the target on the other side (e.g. overshoot
+            # correction causing a later undershoot).  The one-sided
+            # residual above cannot see that, so backtrack by bisection.
+            def _violates(tr):
+                if direction < 0:
+                    return min(tr) < floor
+                return max(tr) > ceil
+
+            floor = min(target_indoor - tol, min(temps0))
+            ceil = max(target_indoor + tol, max(temps0))
+            if total != 0.0 and _violates(temps):
+                lo, hi = 0.0, total
+                best_temps = temps0
+                for _ in range(6):
+                    mid = (lo + hi) / 2.0
+                    trial = simulate(outlet_temp + mid)
+                    if len(trial) != n:
+                        return None
+                    if _violates(trial):
+                        hi = mid
+                    else:
+                        lo, best_temps = mid, trial
+                total, temps = lo, best_temps
+
             corrected = outlet_temp + total
             logging.info(
                 "🎯 [FD-Newton] S(H)=%.3f S_max=%.3f ΔT=%+.3f°C → outlet "
-                "%.1f°C (residual max %+.3f°C)",
+                "%.1f°C | simulated end %.2f°C, min %.2f°C, max %.2f°C "
+                "(target %.2f°C)",
                 sens[-1], max(sens), total, corrected,
-                max(temps, key=lambda t: abs(t - target_indoor))
-                - target_indoor,
+                temps[-1], min(temps), max(temps), target_indoor,
             )
             return corrected
         except Exception as e:
