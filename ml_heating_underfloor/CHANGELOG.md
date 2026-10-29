@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.107] - 2026-10-29
+
+### Changed
+- **FD-Newton correction no longer over-corrects**: opposite-side crossings are checked per timestep, allowing only pre-existing violations at their original steps; the log reports simulated end, min and max temperatures.
+
 ## [0.2.106] - 2026-10-29
 
 ### Changed
