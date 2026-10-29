@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from src.model_wrapper import get_enhanced_model_wrapper
+from src.thermal_equilibrium_model import ThermalEquilibriumModel
 
 
 def _sim(slope_on, inlet, base_temp=23.5, drift=-0.02, gate=True):
@@ -53,6 +54,48 @@ class TestFiniteDifferenceNewton:
         self.w._trajectory_simulator = (traj, simulate)
         return traj
 
+    def _real_traj(self, mode):
+        model = ThermalEquilibriumModel(climate_mode=mode)
+        model.orchestrator = None
+        model.thermal_time_constant = 2.0
+        model.heat_loss_coefficient = 1.2
+        model.outlet_effectiveness = 1.0
+        model.slab_time_constant_hours = 0.5
+        self.w.thermal_model = model
+        self.w._climate_mode = mode
+
+        if mode == "cooling":
+            inlet, outlet, delta_t = 20.0, 20.0, -2.0
+            current, outdoor, target, error = 22.0, 22.0, 21.8, 0.5
+            bounds = (19.5, 20.5)
+        else:
+            inlet, outlet, delta_t = 26.0, 26.0, 2.0
+            current, outdoor, target, error = 24.0, 24.0, 24.2, -0.5
+            bounds = (25.5, 26.5)
+
+        kwargs = {
+            "current_indoor": current,
+            "target_indoor": target,
+            "outdoor_temp": outdoor,
+            "time_horizon_hours": 4.0,
+            "time_step_minutes": 15,
+            "inlet_temp": inlet,
+            "delta_t_floor": delta_t,
+            "climate_mode": mode,
+        }
+
+        def simulate(candidate):
+            return model.predict_thermal_trajectory(
+                outlet_temp=candidate, **kwargs
+            )["trajectory"]
+
+        trajectory = model.predict_thermal_trajectory(
+            outlet_temp=outlet, **kwargs
+        )
+        self.w._trajectory_simulator = (trajectory, simulate)
+        self.w._current_features = {"inlet_temp": inlet}
+        return outlet, target, error, bounds, trajectory, simulate
+
     def test_no_simulator_returns_none(self):
         traj = {"trajectory": [23.0, 23.1]}
         self.w._trajectory_simulator = None
@@ -79,15 +122,36 @@ class TestFiniteDifferenceNewton:
         # Corrected outlet must remove (most of) the modelled overshoot
         assert max(simulate(result)) < max(traj["trajectory"])
 
-    def test_gate_bounds_reduction_at_inlet(self):
-        # Large overshoot would demand an outlet far below inlet; reduction
-        # is clamped at the gate (inlet).
-        simulate = _sim(0.2, 26.1, base_temp=24.5)
-        traj = self._traj(simulate, 27.0)
-        result = self.w._finite_difference_newton_correction(
-            27.0, traj, 22.6, -1.9
+    @pytest.mark.parametrize("mode", ["heating", "cooling"])
+    def test_real_trajectory_reduces_effort_past_initial_inlet(self, mode):
+        outlet, target, error, bounds, trajectory, simulate = (
+            self._real_traj(mode)
         )
-        assert result == pytest.approx(26.1, abs=1e-6)
+        with patch(
+            "src.model_wrapper.config.get_outlet_bounds",
+            return_value=bounds,
+        ):
+            result = self.w._finite_difference_newton_correction(
+                outlet, trajectory, target, error
+            )
+
+        assert result is not None
+        if mode == "heating":
+            assert result < outlet
+            assert max(simulate(result)) < max(trajectory["trajectory"])
+        else:
+            assert result > outlet
+            assert min(simulate(result)) > min(trajectory["trajectory"])
+        assert bounds[0] <= result <= bounds[1]
+        probe_trajectory = simulate(
+            outlet - 1.0 if mode == "heating" else outlet + 1.0
+        )
+        assert probe_trajectory[0] == pytest.approx(
+            trajectory["trajectory"][0]
+        )
+        assert probe_trajectory[-1] != pytest.approx(
+            trajectory["trajectory"][-1]
+        )
 
     def test_pump_off_overshoot_keeps_outlet(self):
         # Outlet below inlet: the simulator has no outlet sensitivity, so
@@ -114,31 +178,6 @@ class TestFiniteDifferenceNewton:
             30.0, traj, 22.6, 2.6
         )
         assert result == pytest.approx(32.5, abs=1e-6)
-
-    def test_cooling_gate_mirrors_heating(self):
-        self.w._climate_mode = "cooling"
-        inlet = 20.0
-
-        def simulate(outlet):
-            active = outlet < inlet
-            return [
-                22.0 + (0.5 * (outlet - 18.0) * (i + 1) / 24 if active else 0.0)
-                for i in range(24)
-            ]
-
-        traj = {"trajectory": simulate(18.0)}
-        self.w._current_features = {"inlet_temp": inlet}
-        self.w._trajectory_simulator = (traj, simulate)
-        # Overshoot in cooling = too cold -> raise outlet; bounded at inlet.
-        with patch(
-            "src.model_wrapper.config.get_outlet_bounds",
-            return_value=(10.0, 40.0),
-        ):
-            result = self.w._finite_difference_newton_correction(
-                18.0, traj, 23.5, 1.5
-            )
-        assert result is not None
-        assert result <= inlet + 1e-6
 
     def test_noise_in_pump_off_branch_does_not_raise_outlet(self):
         def simulate(outlet):

@@ -1,8 +1,14 @@
 # ML Heating System - Current Progress
 
+## ✅ PR #105 Review Fix — Evolving Pump-Gate Sensitivity — 2026-10-29
+
+**Status:** COMPLETED — Removed the initial-inlet clamp from finite-difference probes and correction candidates. Simulated trajectory sensitivity now captures pump activation as slab temperature evolves; configured outlet bounds remain enforced. Added real simulator regression coverage for heating and cooling at the initial inlet.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Finite-Difference Newton Trajectory Correction — 2026-10-29
 
-**Status:** COMPLETED — `HEATING_CORRECTION_MODE="physics"` now measures S_t = dT_t/dT_outlet on the trajectory simulator (one-sided finite difference toward the correction direction), solves ΔT = Σ S_t·e_t / Σ S_t² over the horizon (replaces the single-point τ/2-floored step) with up to 3 chord iterations, and bounds heating/cooling-effort reductions at the inlet (pump gate). With no simulated sensitivity (S_max < 0.01) a reduction keeps the outlet; the analytic step remains the fallback without simulator. Log example 16:45 (pump off, outlet 25.8 < inlet 26.1): old Δ-1.39 K, new Δ0.
+**Status:** COMPLETED — `HEATING_CORRECTION_MODE="physics"` measures S_t = dT_t/dT_outlet on the trajectory simulator (one-sided finite difference toward the correction direction), solves ΔT = Σ S_t·e_t / Σ S_t² over the horizon (replaces the single-point τ/2-floored step) with up to 3 chord iterations, and enforces configured outlet bounds. PR #105 review follow-up removed the fixed inlet limit; simulated sensitivity follows the evolving pump gate. With no simulated sensitivity (S_max < 0.01) a reduction keeps the outlet; the analytic step remains the fallback without simulator.
 
 **Files changed:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 

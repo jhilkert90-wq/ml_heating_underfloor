@@ -2558,9 +2558,9 @@ class EnhancedModelWrapper:
         remaining one-sided violation at step t.  A few chord iterations
         re-simulate the corrected outlet.
 
-        The pump gate (outlet == inlet) bounds corrections that reduce the
-        heating (cooling) effort: below it the simulator has no outlet
-        sensitivity, so going further has no modelled effect.
+        The simulator's evolving slab state determines when the pump gate
+        activates. Its measured sensitivity therefore governs reductions;
+        configured outlet bounds remain the only correction limits.
 
         Returns the corrected outlet, or None when no simulator is available
         (caller falls back to the analytic step).
@@ -2576,14 +2576,9 @@ class EnhancedModelWrapper:
                 return None
 
             direction = 1.0 if temp_error > 0 else -1.0
-            is_cooling = self._climate_mode == "cooling"
-            # Reducing effort = lowering outlet when heating, raising it when
-            # cooling.
-            reducing_effort = (direction < 0) != is_cooling
-
-            features = getattr(self, "_current_features", None) or {}
-            inlet = features.get("inlet_temp")
-            inlet = float(inlet) if inlet is not None else None
+            reducing_effort = (direction < 0) != (
+                self._climate_mode == "cooling"
+            )
             clamp_min, clamp_max = config.get_outlet_bounds(self._climate_mode)
 
             def _sign_clip(temps):
@@ -2595,17 +2590,11 @@ class EnhancedModelWrapper:
                     out.append(e if e * direction > 0 else 0.0)
                 return out
 
-            def _gate_limit(value):
-                if not reducing_effort or inlet is None:
-                    return value
-                if is_cooling:
-                    return min(value, inlet) if outlet_temp <= inlet else value
-                return max(value, inlet) if outlet_temp >= inlet else value
-
             # Probe sensitivity toward the correction direction.
-            probe = outlet_temp + direction * 1.0
-            if reducing_effort and inlet is not None:
-                probe = _gate_limit(probe)
+            probe = max(
+                clamp_min,
+                min(clamp_max, outlet_temp + direction * 1.0),
+            )
             step = probe - outlet_temp
             if abs(step) < 0.05:
                 sens = [0.0] * n
@@ -2640,8 +2629,9 @@ class EnhancedModelWrapper:
                 if abs(inc) < 0.02:
                     break
                 total = max(-max_correction, min(max_correction, total + inc))
-                candidate = _gate_limit(outlet_temp + total)
-                candidate = max(clamp_min, min(clamp_max, candidate))
+                candidate = max(
+                    clamp_min, min(clamp_max, outlet_temp + total)
+                )
                 total = candidate - outlet_temp
                 temps = simulate(candidate)
                 if len(temps) != n:
