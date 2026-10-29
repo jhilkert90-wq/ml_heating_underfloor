@@ -555,7 +555,7 @@ configuration:
       Default: 15 min.'
   grace_stagnation_window_minutes:
     name: '[Blocking] Grace Stagnation Window (minutes)'
-    description: 'End the post-blocking wait if the outlet temperature does not change enough in either direction within this window. 0 disables detection. Default: 4 min.'
+    description: 'End the post-blocking wait and immediately resume normal control if the outlet temperature does not change enough in either direction within this window. 0 disables detection. Default: 4 min.'
   grace_stagnation_min_drop_k:
     name: '[Blocking] Grace Stagnation Min Change (K)'
     description: 'Minimum absolute outlet-temperature change (rising or falling) within the stagnation window; a smaller change ends the wait. Default: 0.3 K.'

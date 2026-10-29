@@ -2,9 +2,9 @@
 
 ### Symmetric Grace-Period Stagnation Detection — 2026-10-29
 
-- **What:** Stagnation now compares the absolute outlet-temperature movement and applies during both warm-up and cool-down waits.
+- **What:** Stagnation compares absolute outlet-temperature movement during both warm-up and cool-down waits; after a stagnation abort, the normal control pipeline resumes in the same cycle.
 - **Why:** Defrost recovery can make the outlet rise; a signed cooling-only comparison can classify a rising outlet as stagnation instead of recognizing ongoing recovery.
-- **Files:** `src/heating_controller.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `tests/unit/test_heating_controller.py`
+- **Files:** `src/heating_controller.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `tests/unit/test_heating_controller.py`, `tests/unit/test_heating_controller_blocking.py`
 
 ### Overshoot Skip Applies to All Correction Modes — 2026-10-27
 

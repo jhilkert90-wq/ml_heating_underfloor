@@ -164,8 +164,9 @@ class BlockingStateManager:
             )
             return False
             
-        # Execute grace period logic
-        self._execute_grace_period(ha_client, state, age)
+        # Execute grace period logic. A stagnation abort should continue the
+        # normal control pipeline instead of skipping another cycle.
+        stagnated = self._execute_grace_period(ha_client, state, age)
         
         # Clear blocking state after grace period
         try:
@@ -174,12 +175,18 @@ class BlockingStateManager:
             logging.debug(
                 "Failed to persist cleared blocking state.", exc_info=True
             )
-            
+
+        if stagnated:
+            logging.info(
+                "Grace-period stagnation detected; resuming normal control."
+            )
+            return False
+
         return True  # Skip cycle
     
     def _execute_grace_period(
         self, ha_client: HAClient, state: SystemState, age: float
-    ):
+    ) -> bool:
         """Execute the grace period temperature restoration logic"""
         logging.info("--- Grace Period Started ---")
         logging.info(
@@ -218,7 +225,7 @@ class BlockingStateManager:
                     "No last_final_temp in persisted state; skipping "
                     "restore/wait."
                 )
-                return
+                return False
             grace_target = last_final_temp
         else:
             from .model_wrapper import get_enhanced_model_wrapper
@@ -232,7 +239,7 @@ class BlockingStateManager:
             
             if features_df is None or features_df.empty:
                 logging.warning("Could not build features for grace period.")
-                return
+                return False
 
             # Convert DataFrame row to dict for model wrapper
             features_dict = features_df.iloc[0].to_dict()
@@ -281,7 +288,7 @@ class BlockingStateManager:
             logging.warning(
                 "Cannot read actual_outlet_temp at grace start; skipping wait."
             )
-            return
+            return False
 
         # Apply gradual control to prevent overshoot.
         # This ensures that even if the model predicts a high temperature
@@ -308,7 +315,7 @@ class BlockingStateManager:
                 actual_outlet_temp_start,
                 grace_target,
             )
-            return
+            return False
             
         # Determine grace target and wait condition
         wait_for_cooling = delta0 > 0
@@ -331,7 +338,7 @@ class BlockingStateManager:
                     actual_outlet_temp_start,
                     grace_target,
                 )
-                return
+                return False
         except (ValueError, TypeError):
             logging.warning(
                 "Could not compare indoor vs target temps for grace period "
@@ -358,7 +365,7 @@ class BlockingStateManager:
         )
         
         # Wait for temperature to reach target
-        self._wait_for_grace_target(
+        stagnated = self._wait_for_grace_target(
             ha_client,
             grace_target,
             wait_for_cooling,
@@ -367,6 +374,7 @@ class BlockingStateManager:
         )
         
         logging.info("--- Grace Period Ended ---")
+        return stagnated
     
     def _wait_for_grace_target(
         self,
@@ -375,7 +383,7 @@ class BlockingStateManager:
         wait_for_cooling: bool,
         wrapper=None,
         thermal_features=None,
-    ):
+    ) -> bool:
         """Wait for outlet temperature to reach grace target"""
         start_time = time.time()
         max_seconds = config.GRACE_PERIOD_MAX_MINUTES * 60
@@ -383,6 +391,7 @@ class BlockingStateManager:
         current_grace_target = initial_grace_target
         stagnation_window = config.GRACE_STAGNATION_WINDOW_MINUTES * 60
         history: List[Tuple[float, float]] = []
+        stagnated = False
         
         logging.info(
             "Grace period: waiting for %s (timeout %d min).",
@@ -596,6 +605,7 @@ class BlockingStateManager:
                                 stagnation_window / 60.0,
                                 current_grace_target,
                             )
+                            stagnated = True
                             break
 
             # Check timeout
@@ -617,6 +627,8 @@ class BlockingStateManager:
             )
             
             time.sleep(config.BLOCKING_POLL_INTERVAL_SECONDS)
+
+        return stagnated
 
     def poll_for_blocking(
         self,

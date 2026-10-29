@@ -472,7 +472,7 @@ configuration:
       Default: 15 min.'
   grace_stagnation_window_minutes:
     name: '[Erweitert] Grace Stagnation Window (minutes)'
-    description: 'Beende die Wartephase nach DHW/Defrost, wenn sich der Vorlauf innerhalb dieses Zeitfensters in keine Richtung ausreichend ändert. 0 deaktiviert die Erkennung. Standard: 4 min.'
+    description: 'Beende die Wartephase nach DHW/Defrost, wenn sich der Vorlauf innerhalb dieses Zeitfensters in keine Richtung ausreichend ändert, und setze die normale Regelung sofort fort. 0 deaktiviert die Erkennung. Standard: 4 min.'
   grace_stagnation_min_drop_k:
     name: '[Erweitert] Grace Stagnation Min Change (K)'
     description: 'Mindestbetrag der Vorlaufänderung (steigend oder fallend) innerhalb des Stagnationszeitfensters. Bei geringerer Änderung wird die Wartephase beendet. Standard: 0,3 K.'
