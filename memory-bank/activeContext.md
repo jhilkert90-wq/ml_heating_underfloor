@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### Finite-Difference Newton Trajectory Correction — 2026-10-29
+
+- **What:** `_verify_trajectory_and_correct` stores a simulator callback (`_trajectory_simulator`, tied to the trajectory object); `_calculate_physics_newton_correction` calls `_finite_difference_newton_correction` first (FD sensitivity, LS fit over horizon, pump-gate clamp at inlet) and falls back to the analytic S(t) step.
+- **Why:** Log analysis showed the analytic single-zone S(t) with τ/2 floor over-estimates sensitivity (~0.32 vs ~0.22 with slab cascade) and ignores the pump gate (outlet < inlet → no simulated effect). The legacy/`ml` modes and the ML residual path (which calls the Newton step as baseline) are unchanged except that they now benefit from the improved baseline.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`
+
 ### Symmetric Grace-Period Stagnation Detection — 2026-10-29
 
 - **What:** Stagnation compares absolute outlet-temperature movement during both warm-up and cool-down waits; after a stagnation abort, the normal control pipeline resumes in the same cycle.

@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Finite-Difference Newton Trajectory Correction — 2026-10-29
+
+**Status:** COMPLETED — `HEATING_CORRECTION_MODE="physics"` now measures S_t = dT_t/dT_outlet on the trajectory simulator (one-sided finite difference toward the correction direction), solves ΔT = Σ S_t·e_t / Σ S_t² over the horizon (replaces the single-point τ/2-floored step) with up to 3 chord iterations, and bounds heating/cooling-effort reductions at the inlet (pump gate). With no simulated sensitivity (S_max < 0.01) a reduction keeps the outlet; the analytic step remains the fallback without simulator. Log example 16:45 (pump off, outlet 25.8 < inlet 26.1): old Δ-1.39 K, new Δ0.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ Symmetric Grace-Period Stagnation Detection — 2026-10-29
 
 **Status:** COMPLETED — Grace waits now abort on insufficient absolute outlet-temperature movement over the configured window, for both warm-up and cool-down. A rising outlet after defrost is recognized as progress, and a stagnation abort immediately resumes normal control in the same cycle.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Physics Newton correction now uses the trajectory simulator**: the outlet sensitivity dT/dT_outlet is measured by a one-sided finite difference on the same simulator that produced the trajectory (slab + room dynamics), and ΔT is a least-squares fit over the whole horizon instead of a single-point step with the τ/2 floor. The analytic single-zone step remains only as fallback when no simulator is available.
+- **Pump gate bounds the correction**: reductions of heating (cooling) effort are limited at the inlet temperature; without simulated sensitivity (pump off) the outlet is kept instead of applying an ineffective 1/S step.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

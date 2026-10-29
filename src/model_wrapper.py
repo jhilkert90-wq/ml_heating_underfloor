@@ -1943,7 +1943,7 @@ class EnhancedModelWrapper:
             # Passing pv_forecast as pv_power would seed the buffer with the
             # last forecast value (e.g. 1308 W) and replicate it for all
             # future steps — causing an immediate false overshoot.
-            trajectory = self.thermal_model.predict_thermal_trajectory(
+            _traj_kwargs = dict(
                 current_indoor=current_indoor,
                 target_indoor=target_indoor,
                 outlet_temp=outlet_temp,
@@ -1975,6 +1975,21 @@ class EnhancedModelWrapper:
                 ),
                 climate_mode=self._climate_mode,
             )
+            trajectory = self.thermal_model.predict_thermal_trajectory(
+                **_traj_kwargs
+            )
+
+            # Let the Newton correction re-simulate this exact trajectory at
+            # other outlet temperatures (finite-difference sensitivity).
+            def _simulate_outlet(
+                _outlet: float, _kw=_traj_kwargs
+            ) -> list:
+                _res = self.thermal_model.predict_thermal_trajectory(
+                    **{**_kw, "outlet_temp": float(_outlet)}
+                )
+                return list(_res.get("trajectory", []))
+
+            self._trajectory_simulator = (trajectory, _simulate_outlet)
 
             _it = (
                 self._current_features.get("inlet_temp")
@@ -2526,6 +2541,125 @@ class EnhancedModelWrapper:
             logging.error(f"Physics-based correction failed: {e}")
             return outlet_temp
 
+    def _finite_difference_newton_correction(
+        self,
+        outlet_temp: float,
+        trajectory: Dict,
+        target_indoor: float,
+        temp_error: float,
+    ) -> Optional[float]:
+        """
+        Newton correction using the trajectory simulator itself.
+
+        S_t = dT_t/dT_outlet is measured by a one-sided finite difference on
+        the same simulator that produced ``trajectory`` (so slab dynamics and
+        the pump gate are included).  ΔT is the least-squares solution
+        ΔT = Σ S_t·e_t / Σ S_t² over the whole horizon, where e_t is the
+        remaining one-sided violation at step t.  A few chord iterations
+        re-simulate the corrected outlet.
+
+        The pump gate (outlet == inlet) bounds corrections that reduce the
+        heating (cooling) effort: below it the simulator has no outlet
+        sensitivity, so going further has no modelled effect.
+
+        Returns the corrected outlet, or None when no simulator is available
+        (caller falls back to the analytic step).
+        """
+        entry = getattr(self, "_trajectory_simulator", None)
+        if not entry or entry[0] is not trajectory:
+            return None
+        simulate = entry[1]
+        try:
+            temps0 = list(trajectory.get("trajectory", []))
+            n = len(temps0)
+            if n == 0:
+                return None
+
+            direction = 1.0 if temp_error > 0 else -1.0
+            is_cooling = self._climate_mode == "cooling"
+            # Reducing effort = lowering outlet when heating, raising it when
+            # cooling.
+            reducing_effort = (direction < 0) != is_cooling
+
+            features = getattr(self, "_current_features", None) or {}
+            inlet = features.get("inlet_temp")
+            inlet = float(inlet) if inlet is not None else None
+            clamp_min, clamp_max = config.get_outlet_bounds(self._climate_mode)
+
+            def _sign_clip(temps):
+                # One-sided residuals: only points still violating in the
+                # original direction contribute.
+                out = []
+                for t in temps:
+                    e = target_indoor - t
+                    out.append(e if e * direction > 0 else 0.0)
+                return out
+
+            def _gate_limit(value):
+                if not reducing_effort or inlet is None:
+                    return value
+                if is_cooling:
+                    return min(value, inlet) if outlet_temp <= inlet else value
+                return max(value, inlet) if outlet_temp >= inlet else value
+
+            # Probe sensitivity toward the correction direction.
+            probe = outlet_temp + direction * 1.0
+            if reducing_effort and inlet is not None:
+                probe = _gate_limit(probe)
+            step = probe - outlet_temp
+            if abs(step) < 0.05:
+                sens = [0.0] * n
+            else:
+                temps_p = simulate(probe)
+                if len(temps_p) != n:
+                    return None
+                sens = [
+                    max(0.0, (tp - t0) / step)
+                    for tp, t0 in zip(temps_p, temps0)
+                ]
+            s2 = sum(s * s for s in sens)
+            # Same threshold as the analytic guard (S < 0.01 is degenerate);
+            # also rejects numerical noise in the pump-off branch.
+            if max(sens) < 0.01:
+                if reducing_effort:
+                    logging.info(
+                        "🎯 [FD-Newton] No simulated outlet sensitivity "
+                        "(pump gate): reducing the outlet has no modelled "
+                        "effect — keeping %.1f°C",
+                        outlet_temp,
+                    )
+                    return outlet_temp
+                return None
+
+            max_correction = 2.5
+            total = 0.0
+            temps = temps0
+            for _ in range(3):
+                e = _sign_clip(temps)
+                inc = sum(s * x for s, x in zip(sens, e)) / s2
+                if abs(inc) < 0.02:
+                    break
+                total = max(-max_correction, min(max_correction, total + inc))
+                candidate = _gate_limit(outlet_temp + total)
+                candidate = max(clamp_min, min(clamp_max, candidate))
+                total = candidate - outlet_temp
+                temps = simulate(candidate)
+                if len(temps) != n:
+                    return None
+
+            corrected = outlet_temp + total
+            logging.info(
+                "🎯 [FD-Newton] S(H)=%.3f S_max=%.3f ΔT=%+.3f°C → outlet "
+                "%.1f°C (residual max %+.3f°C)",
+                sens[-1], max(sens), total, corrected,
+                max(temps, key=lambda t: abs(t - target_indoor))
+                - target_indoor,
+            )
+            return corrected
+        except Exception as e:
+            logging.warning("[FD-Newton] failed (%s); using analytic step", e)
+            return None
+
     def _calculate_physics_newton_correction(
         self,
         outlet_temp: float,
@@ -2683,7 +2817,14 @@ class EnhancedModelWrapper:
             if abs(temp_error) < 1e-6:
                 return outlet_temp
 
-            # --- Physics Newton step ---
+            # --- Preferred: finite-difference Newton on the real simulator ---
+            _fd = self._finite_difference_newton_correction(
+                outlet_temp, trajectory, target_indoor, temp_error
+            )
+            if _fd is not None:
+                return _fd
+
+            # --- Fallback: analytic single-zone Newton step ---
             eta = self.thermal_model.outlet_effectiveness        # η
             u_loss = self.thermal_model.heat_loss_coefficient    # U
             tau_room = self.thermal_model.thermal_time_constant  # τ_room (h)
