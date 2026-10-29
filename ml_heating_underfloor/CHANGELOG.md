@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.103] - 2026-10-29
+
+### Fixed
+- Grace-period stagnation detection now compares the absolute outlet-temperature change and applies to both warm-up and cool-down waits, so rising temperatures after defrost are not mistaken for stagnation.
+
 ## [0.2.102] - 2026-10-27
 
 ### Fixed
