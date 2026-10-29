@@ -1,5 +1,17 @@
 # Active Context - Current Work & Decision State
 
+### PR #105 Review Fix — Evolving Pump-Gate Sensitivity — 2026-10-29
+
+- **What:** Removed the initial-inlet gate clamp from finite-difference probes and candidate corrections. The simulator's evolving slab state now determines sensitivity, and configured outlet bounds remain in force. Added real thermal-model trajectory regressions for heating and cooling at the inlet.
+- **Why:** The pump can activate later as slab temperature evolves, so a fixed initial-inlet clamp suppressed valid corrections and could force a zero probe at the inlet.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`
+
+### Finite-Difference Newton Trajectory Correction — 2026-10-29
+
+- **What:** `_verify_trajectory_and_correct` stores a simulator callback (`_trajectory_simulator`, tied to the trajectory object); `_calculate_physics_newton_correction` calls `_finite_difference_newton_correction` first (FD sensitivity, LS fit over horizon, configured outlet bounds) and falls back to the analytic S(t) step. Pump-gate sensitivity follows the evolving slab.
+- **Why:** Log analysis showed the analytic single-zone S(t) with τ/2 floor over-estimates sensitivity (~0.32 vs ~0.22 with slab cascade) and ignores the pump gate (outlet < inlet → no simulated effect). The legacy/`ml` modes and the ML residual path (which calls the Newton step as baseline) are unchanged except that they now benefit from the improved baseline.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`
+
 ### Symmetric Grace-Period Stagnation Detection — 2026-10-29
 
 - **What:** Stagnation compares absolute outlet-temperature movement during both warm-up and cool-down waits; after a stagnation abort, the normal control pipeline resumes in the same cycle.
