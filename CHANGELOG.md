@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **FD-Newton correction no longer over-corrects**: the corrected trajectory is re-simulated and the step is backtracked (bisection) so it never crosses the target by more than 0.1 K on the opposite side (e.g. overshoot correction causing a later undershoot); the log now reports the simulated end, min and max temperature.
 - **Physics Newton correction now uses the trajectory simulator**: the outlet sensitivity dT/dT_outlet is measured by a one-sided finite difference on the same simulator that produced the trajectory (slab + room dynamics), and ΔT is a least-squares fit over the whole horizon instead of a single-point step with the τ/2 floor. The analytic single-zone step remains only as fallback when no simulator is available.
 - **Pump-gate sensitivity follows slab dynamics**: heating/cooling reductions use finite-difference sensitivity from the evolving trajectory rather than a fixed inlet clamp, while configured outlet bounds remain enforced; real heating and cooling trajectories cover corrections at the inlet.
 

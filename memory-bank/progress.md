@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ FD-Newton Opposite-Side Guard — 2026-10-29
+
+**Status:** COMPLETED — Log analysis showed the one-sided FD-Newton step hit the 2.5 K limit (26.3→23.8 °C) although the trajectory already ended on target. The corrected trajectory is now re-simulated and the step is bisected back so min (heating overshoot) / max (undershoot) stays within 0.1 K of the target; log reports simulated end/min/max. Added heating/cooling regression tests.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
 ## ✅ PR #105 Review Fix — Evolving Pump-Gate Sensitivity — 2026-10-29
 
 **Status:** COMPLETED — Removed the initial-inlet clamp from finite-difference probes and correction candidates. Simulated trajectory sensitivity now captures pump activation as slab temperature evolves; configured outlet bounds remain enforced. Added real simulator regression coverage for heating and cooling at the initial inlet.
