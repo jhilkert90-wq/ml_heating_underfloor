@@ -472,10 +472,10 @@ configuration:
       Default: 15 min.'
   grace_stagnation_window_minutes:
     name: '[Erweitert] Grace Stagnation Window (minutes)'
-    description: 'Abort the post-blocking cool-down wait if the outlet temperature does not fall by the minimum drop within this window (outlet cannot go below inlet + minimum spread). 0 disables. Default: 4 min.'
+    description: 'Beende die Wartephase nach DHW/Defrost, wenn sich der Vorlauf innerhalb dieses Zeitfensters in keine Richtung ausreichend ändert. 0 deaktiviert die Erkennung. Standard: 4 min.'
   grace_stagnation_min_drop_k:
-    name: '[Erweitert] Grace Stagnation Min Drop (K)'
-    description: 'Minimum outlet temperature drop within the stagnation window to keep waiting. Default: 0.3 K.'
+    name: '[Erweitert] Grace Stagnation Min Change (K)'
+    description: 'Mindestbetrag der Vorlaufänderung (steigend oder fallend) innerhalb des Stagnationszeitfensters. Bei geringerer Änderung wird die Wartephase beendet. Standard: 0,3 K.'
   defrost_recovery_grace_minutes:
     name: '[Erweitert] Defrost Recovery Grace Period (minutes)'
     description: 'Additional grace period (minutes) applied specifically after a heat

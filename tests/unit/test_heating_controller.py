@@ -216,6 +216,37 @@ class TestBlockingStateManager:
 
     @patch("src.heating_controller.time.sleep")
     @patch("src.heating_controller.time.time")
+    def test_wait_for_grace_target_warmup_stagnation_aborts(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """A flat outlet during warm-up ends the wait after the stagnation window."""
+        mock_time.side_effect = [1000, 1000] + [1000 + 60 * i for i in range(1, 30)]
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        mock_ha_client.get_state.return_value = 50.0
+
+        with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 15):
+            blocking_manager._wait_for_grace_target(mock_ha_client, 60.0, False)
+
+        assert mock_sleep.call_count == 4
+
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time")
+    def test_wait_for_grace_target_rising_outlet_is_not_stagnation(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """A rising outlet after defrost continues warming instead of aborting."""
+        mock_time.side_effect = [1000 + 60 * i for i in range(30)]
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        temps = [50.0 + 0.2 * i for i in range(60)]
+        mock_ha_client.get_state.side_effect = lambda *a, **k: temps.pop(0)
+
+        with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 6):
+            blocking_manager._wait_for_grace_target(mock_ha_client, 60.0, False)
+
+        assert mock_sleep.call_count >= 5
+
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time")
     def test_wait_for_grace_target_slow_cooling_continues(
         self, mock_time, mock_sleep, blocking_manager, mock_ha_client
     ):

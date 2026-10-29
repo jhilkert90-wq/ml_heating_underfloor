@@ -555,10 +555,10 @@ configuration:
       Default: 15 min.'
   grace_stagnation_window_minutes:
     name: '[Blocking] Grace Stagnation Window (minutes)'
-    description: 'Abort the post-blocking cool-down wait if the outlet temperature does not fall by the minimum drop within this window (outlet cannot go below inlet + minimum spread). 0 disables. Default: 4 min.'
+    description: 'End the post-blocking wait if the outlet temperature does not change enough in either direction within this window. 0 disables detection. Default: 4 min.'
   grace_stagnation_min_drop_k:
-    name: '[Blocking] Grace Stagnation Min Drop (K)'
-    description: 'Minimum outlet temperature drop within the stagnation window to keep waiting. Default: 0.3 K.'
+    name: '[Blocking] Grace Stagnation Min Change (K)'
+    description: 'Minimum absolute outlet-temperature change (rising or falling) within the stagnation window; a smaller change ends the wait. Default: 0.3 K.'
   defrost_recovery_grace_minutes:
     name: '[Blocking] Defrost Recovery Grace Period (minutes)'
     description: 'Additional grace period (minutes) applied specifically after a heat
