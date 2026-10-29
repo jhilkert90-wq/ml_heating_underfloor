@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.104] - 2026-10-29
+
+### Fixed
+- Grace-period stagnation now compares absolute outlet-temperature movement during warm-up and cool-down; when stagnant, it exits grace dispatch and immediately resumes normal control instead of skipping another cycle.
+
 ## [0.2.103] - 2026-10-29
 
 ### Fixed
