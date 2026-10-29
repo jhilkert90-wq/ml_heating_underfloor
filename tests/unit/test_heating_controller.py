@@ -93,7 +93,10 @@ class TestBlockingStateManager:
             skip_cycle = blocking_manager.handle_grace_period(mock_ha_client, state)
         assert skip_cycle is False
 
-    @patch("src.heating_controller.BlockingStateManager._execute_grace_period")
+    @patch(
+        "src.heating_controller.BlockingStateManager._execute_grace_period",
+        return_value=False,
+    )
     @patch("src.heating_controller.time.time")
     def test_handle_grace_period_starts(
         self, mock_time, mock_execute, blocking_manager, mock_ha_client
@@ -108,6 +111,24 @@ class TestBlockingStateManager:
             assert skip is True
             mock_save.assert_any_call(last_blocking_end_time=100)
             mock_execute.assert_called_once()
+
+    @patch("src.heating_controller.time.time", return_value=100)
+    def test_stagnation_abort_resumes_normal_cycle(
+        self, mock_time, blocking_manager, mock_ha_client
+    ):
+        state = SystemState(last_is_blocking=True, last_blocking_end_time=90)
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        blocking_manager._execute_grace_period = Mock(return_value=True)
+
+        with patch("src.heating_controller.save_state") as mock_save:
+            is_grace_period = blocking_manager.handle_grace_period(
+                mock_ha_client, state, shadow_mode=False
+            )
+
+        assert is_grace_period is False
+        mock_save.assert_called_once_with(
+            last_is_blocking=False, last_blocking_end_time=None
+        )
 
     @patch("src.heating_controller.time.time", return_value=100)
     @patch("src.heating_controller.get_sensor_attributes", return_value={})
@@ -210,9 +231,12 @@ class TestBlockingStateManager:
         mock_ha_client.get_state.return_value = 50.0
 
         with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 15):
-            blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
+            stagnated = blocking_manager._wait_for_grace_target(
+                mock_ha_client, 40.0, True
+            )
         # The first sample at the start of the wait gives a full four-minute window.
         assert mock_sleep.call_count == 4
+        assert stagnated is True
 
     @patch("src.heating_controller.time.sleep")
     @patch("src.heating_controller.time.time")
@@ -225,9 +249,12 @@ class TestBlockingStateManager:
         mock_ha_client.get_state.return_value = 50.0
 
         with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 15):
-            blocking_manager._wait_for_grace_target(mock_ha_client, 60.0, False)
+            stagnated = blocking_manager._wait_for_grace_target(
+                mock_ha_client, 60.0, False
+            )
 
         assert mock_sleep.call_count == 4
+        assert stagnated is True
 
     @patch("src.heating_controller.time.sleep")
     @patch("src.heating_controller.time.time")
@@ -241,9 +268,12 @@ class TestBlockingStateManager:
         mock_ha_client.get_state.side_effect = lambda *a, **k: temps.pop(0)
 
         with patch("src.heating_controller.config.GRACE_PERIOD_MAX_MINUTES", 6):
-            blocking_manager._wait_for_grace_target(mock_ha_client, 60.0, False)
+            stagnated = blocking_manager._wait_for_grace_target(
+                mock_ha_client, 60.0, False
+            )
 
         assert mock_sleep.call_count >= 5
+        assert stagnated is False
 
     @patch("src.heating_controller.time.sleep")
     @patch("src.heating_controller.time.time")

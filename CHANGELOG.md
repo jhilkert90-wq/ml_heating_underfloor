@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Grace-period stagnation detection now compares the absolute outlet-temperature change and applies to both warm-up and cool-down waits, so rising temperatures after defrost are not mistaken for stagnation.
+- Grace-period stagnation now compares absolute outlet-temperature movement during warm-up and cool-down; when stagnant, it exits grace dispatch and immediately resumes normal control instead of skipping another cycle.
 
 ## [0.2.0] - 2026-02-10
 

@@ -41,7 +41,7 @@ class TestBlockingStateManager:
         mock_ha_client.get_state.return_value = False  # No longer blocking
 
         with patch.object(
-            blocking_manager, "_execute_grace_period"
+            blocking_manager, "_execute_grace_period", return_value=False
         ) as mock_execute_grace_period, patch(
             "src.heating_controller.save_state"
         ) as mock_save_state:

@@ -2,9 +2,9 @@
 
 ## ✅ Symmetric Grace-Period Stagnation Detection — 2026-10-29
 
-**Status:** COMPLETED — Grace waits now abort on insufficient absolute outlet-temperature movement over the configured window, for both warm-up and cool-down. A rising outlet after defrost is recognized as progress rather than as a negative cooling delta.
+**Status:** COMPLETED — Grace waits now abort on insufficient absolute outlet-temperature movement over the configured window, for both warm-up and cool-down. A rising outlet after defrost is recognized as progress, and a stagnation abort immediately resumes normal control in the same cycle.
 
-**Files changed:** `src/heating_controller.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `tests/unit/test_heating_controller.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+**Files changed:** `src/heating_controller.py`, `src/config.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{en,de}.yaml`, `tests/unit/test_heating_controller.py`, `tests/unit/test_heating_controller_blocking.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
 ## ✅ Overshoot Skip Applies to All Correction Modes — 2026-10-27
 
