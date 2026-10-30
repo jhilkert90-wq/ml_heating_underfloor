@@ -1,5 +1,13 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.109] - 2026-10-30
+
+### Added
+- Abort post-defrost or post-DHW grace waiting once outlet temperature exceeds inlet temperature by more than `DELTA_T_FLOOR`, allowing normal control to resume.
+
+### Fixed
+- Prevented repeated grace-period cycles after blocking ends from rapidly rerunning online learning and corrupting thermal parameters; all online learning now also remains paused during configured defrost recovery.
+
 ## [0.2.107] - 2026-10-29
 
 ### Changed
