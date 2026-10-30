@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Abort post-defrost grace waiting once outlet temperature exceeds inlet temperature by more than `DELTA_T_FLOOR`, allowing normal control to resume.
+
+### Fixed
+- Prevented repeated grace-period cycles after blocking ends from rapidly rerunning online learning and corrupting thermal parameters; all online learning now also remains paused during configured defrost recovery.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
