@@ -297,15 +297,18 @@ class BlockingStateManager:
             )
             return False
 
-        is_defrost_recovery = (
-            config.DEFROST_STATUS_ENTITY_ID
-            in (state.last_blocking_reasons or [])
+        requires_heating_spread = any(
+            reason in (state.last_blocking_reasons or [])
+            for reason in (
+                config.DEFROST_STATUS_ENTITY_ID,
+                config.DHW_STATUS_ENTITY_ID,
+            )
         )
-        if is_defrost_recovery and self._has_minimum_heating_spread(
+        if requires_heating_spread and self._has_minimum_heating_spread(
             ha_client, ha_client.get_all_states()
         ):
             logging.info(
-                "Defrost recovery detected outlet-inlet spread above "
+                "Blocking recovery detected outlet-inlet spread above "
                 "DELTA_T_FLOOR (%.1f K); resuming normal control.",
                 config.DELTA_T_FLOOR,
             )
@@ -392,7 +395,7 @@ class BlockingStateManager:
             wait_for_cooling,
             wrapper=wrapper,
             thermal_features=thermal_features,
-            is_defrost_recovery=is_defrost_recovery,
+            requires_heating_spread=requires_heating_spread,
         )
         
         logging.info("--- Grace Period Ended ---")
@@ -405,7 +408,7 @@ class BlockingStateManager:
         wait_for_cooling: bool,
         wrapper=None,
         thermal_features=None,
-        is_defrost_recovery: bool = False,
+        requires_heating_spread: bool = False,
     ) -> bool:
         """Wait for outlet temperature to reach grace target"""
         start_time = time.time()
@@ -457,11 +460,11 @@ class BlockingStateManager:
                 )
                 break
 
-            if is_defrost_recovery and self._has_minimum_heating_spread(
+            if requires_heating_spread and self._has_minimum_heating_spread(
                 ha_client, all_states_poll
             ):
                 logging.info(
-                    "Defrost recovery detected outlet-inlet spread above "
+                    "Blocking recovery detected outlet-inlet spread above "
                     "DELTA_T_FLOOR (%.1f K); aborting grace wait.",
                     config.DELTA_T_FLOOR,
                 )

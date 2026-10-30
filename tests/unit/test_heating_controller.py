@@ -175,13 +175,17 @@ class TestBlockingStateManager:
             )
             mock_wait.assert_called_once()
 
-    def test_defrost_spread_aborts_before_close_target_shortcut(
-        self, blocking_manager, mock_ha_client
+    @pytest.mark.parametrize(
+        "blocking_entity",
+        [config.DEFROST_STATUS_ENTITY_ID, config.DHW_STATUS_ENTITY_ID],
+    )
+    def test_heating_spread_aborts_before_close_target_shortcut(
+        self, blocking_manager, mock_ha_client, blocking_entity
     ):
-        """A returned spread resumes control even if outlet is near the target."""
+        """A returned spread resumes control after DHW or defrost."""
         state = SystemState(
             last_is_blocking=True,
-            last_blocking_reasons=[config.DEFROST_STATUS_ENTITY_ID],
+            last_blocking_reasons=[blocking_entity],
             last_final_temp=30.0,
         )
         mock_ha_client.get_all_states.return_value = {}
@@ -273,7 +277,7 @@ class TestBlockingStateManager:
 
     @patch("src.heating_controller.time.sleep")
     @patch("src.heating_controller.time.time", return_value=1000)
-    def test_defrost_grace_aborts_when_minimum_spread_returns(
+    def test_blocking_grace_aborts_when_minimum_spread_returns(
         self, mock_time, mock_sleep, blocking_manager, mock_ha_client
     ):
         """A resumed outlet/inlet spread ends a post-defrost grace wait."""
@@ -290,7 +294,7 @@ class TestBlockingStateManager:
         mock_ha_client.get_state.side_effect = get_state
 
         should_resume = blocking_manager._wait_for_grace_target(
-            mock_ha_client, 28.0, True, is_defrost_recovery=True
+            mock_ha_client, 28.0, True, requires_heating_spread=True
         )
 
         assert should_resume is True
@@ -298,7 +302,7 @@ class TestBlockingStateManager:
 
     @patch("src.heating_controller.time.sleep")
     @patch("src.heating_controller.time.time", return_value=1000)
-    def test_defrost_grace_does_not_abort_at_spread_threshold(
+    def test_blocking_grace_does_not_abort_at_spread_threshold(
         self, mock_time, mock_sleep, blocking_manager, mock_ha_client
     ):
         """A spread equal to DELTA_T_FLOOR does not satisfy the strict limit."""
@@ -315,7 +319,7 @@ class TestBlockingStateManager:
         mock_ha_client.get_state.side_effect = get_state
 
         should_resume = blocking_manager._wait_for_grace_target(
-            mock_ha_client, 30.0, True, is_defrost_recovery=True
+            mock_ha_client, 30.0, True, requires_heating_spread=True
         )
 
         assert should_resume is False

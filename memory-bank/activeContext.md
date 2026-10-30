@@ -2,7 +2,7 @@
 
 ### Defrost Grace Loop and Learning Guard — 2026-10-30
 
-- **What:** Grace completion and expiry now clear both persisted and in-memory blocking state; idle polling retains the blocking reason until recovery finishes. Online learning skips active blocking, the blocking-to-grace transition, grace passthrough samples, and the configured defrost-recovery window. Defrost grace resumes control when outlet-inlet spread is greater than `DELTA_T_FLOOR`.
+- **What:** Grace completion and expiry now clear both persisted and in-memory blocking state; idle polling retains the blocking reason until recovery finishes. Online learning skips active blocking, the blocking-to-grace transition, grace passthrough samples, and the configured defrost-recovery window. DHW and defrost grace resume control when outlet-inlet spread is greater than `DELTA_T_FLOOR`.
 - **Why:** The cycle passed a stale `last_is_blocking=True` object to idle polling after grace had already cleared it, causing poll to return immediately and re-run learning every second. Defrost recovery also needed a physical completion condition rather than waiting only for an outlet target.
 - **Files:** `src/heating_controller.py`, `src/main.py`, `tests/unit/test_heating_controller.py`, `tests/unit/test_main_functions.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
 
