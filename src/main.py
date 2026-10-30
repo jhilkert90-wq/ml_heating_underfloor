@@ -20,6 +20,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
+from typing import Any, Mapping
 
 from dotenv import load_dotenv
 
@@ -31,7 +32,7 @@ from .physics_calibration import (
     train_thermal_equilibrium_model,
     validate_thermal_model,
 )
-from .state_manager import load_state
+from .state_manager import SystemState, load_state
 from .heating_controller import (
     BlockingStateManager,
     HeatingSystemStateChecker,
@@ -50,6 +51,34 @@ def _bool_arg(parsed_args, name: str) -> bool:
 def _str_arg(parsed_args, name: str) -> str | None:
     value = getattr(parsed_args, name, None)
     return value if isinstance(value, str) else None
+
+
+def _should_skip_online_learning(
+    is_blocking: bool, state: Mapping[str, Any] | SystemState
+) -> bool:
+    """Prevent learning from blocking transitions and grace passthrough data."""
+    if is_blocking or state.get("last_is_blocking", False):
+        return True
+
+    last_run_features = state.get("last_run_features")
+    if not isinstance(last_run_features, dict):
+        return False
+    if last_run_features.get("learning_mode") == "grace_period_passthrough":
+        return True
+    try:
+        if float(last_run_features.get("defrosting", 0.0) or 0.0) > 0.5:
+            return True
+        minutes_since_defrost = last_run_features.get("minutes_since_defrost")
+        return (
+            minutes_since_defrost is not None
+            and float(minutes_since_defrost)
+            < config.DEFROST_RECOVERY_GRACE_MINUTES
+        )
+    except (TypeError, ValueError):
+        logging.warning(
+            "Skipping online learning: invalid defrost recovery feature."
+        )
+        return True
 
 
 def main():
@@ -760,7 +789,9 @@ def main():
             # `cycle_number > 1` is not sufficient because cycle 1 may have
             # exited early (e.g. network error → continue), leaving
             # last_cycle_end_time as None and persisted state stale.
-            if loop.last_cycle_end_time is not None:
+            if loop.last_cycle_end_time is not None and not (
+                _should_skip_online_learning(is_blocking, state)
+            ):
                 run_online_learning(
                     ha_client=ha_client,
                     all_states=all_states,
@@ -768,6 +799,11 @@ def main():
                     effective_shadow_mode=effective_shadow_mode,
                     climate_mode=climate_mode,
                     wrapper=loop.wrapper,
+                )
+            elif loop.last_cycle_end_time is not None:
+                logging.info(
+                    "Skipping online learning during blocking transition "
+                    "or grace-period passthrough."
                 )
             else:
                 logging.debug(

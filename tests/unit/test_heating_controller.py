@@ -111,6 +111,32 @@ class TestBlockingStateManager:
             assert skip is True
             mock_save.assert_any_call(last_blocking_end_time=100)
             mock_execute.assert_called_once()
+            assert state.last_is_blocking is False
+            assert state.last_blocking_end_time is None
+
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time")
+    def test_completed_grace_does_not_restart_blocking_during_poll(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """A cleared in-memory state prevents the next poll from restarting grace."""
+        mock_time.side_effect = [100] * 3 + [700]
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        state = SystemState(last_is_blocking=True, last_blocking_end_time=90)
+        blocking_manager._execute_grace_period = Mock(return_value=False)
+
+        with patch("src.heating_controller.save_state") as mock_save:
+            assert blocking_manager.handle_grace_period(
+                mock_ha_client, state, shadow_mode=False
+            )
+            blocking_manager.poll_for_blocking(mock_ha_client, state)
+
+        assert state.last_is_blocking is False
+        assert mock_sleep.call_count == 1
+        assert not any(
+            call.kwargs.get("last_is_blocking") is True
+            for call in mock_save.call_args_list
+        )
 
     @patch("src.heating_controller.time.time", return_value=100)
     def test_stagnation_abort_resumes_normal_cycle(
@@ -148,6 +174,36 @@ class TestBlockingStateManager:
                 round_digits=0,
             )
             mock_wait.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "blocking_entity",
+        [config.DEFROST_STATUS_ENTITY_ID, config.DHW_STATUS_ENTITY_ID],
+    )
+    def test_heating_spread_aborts_before_close_target_shortcut(
+        self, blocking_manager, mock_ha_client, blocking_entity
+    ):
+        """A returned spread resumes control after DHW or defrost."""
+        state = SystemState(
+            last_is_blocking=True,
+            last_blocking_reasons=[blocking_entity],
+            last_final_temp=30.0,
+        )
+        mock_ha_client.get_all_states.return_value = {}
+
+        def get_state(entity_id, *_args, **_kwargs):
+            if entity_id == config.ACTUAL_OUTLET_TEMP_ENTITY_ID:
+                return 30.0
+            if entity_id == config.INLET_TEMP_ENTITY_ID:
+                return 27.5
+            return None
+
+        mock_ha_client.get_state.side_effect = get_state
+
+        assert blocking_manager._execute_grace_period(
+            mock_ha_client, state, age=0
+        ) is True
+        mock_ha_client.set_state.assert_not_called()
+        mock_ha_client.get_all_states.assert_called()
 
     @patch("src.heating_controller.time.time", return_value=100)
     @patch("src.model_wrapper.get_enhanced_model_wrapper")
@@ -218,6 +274,56 @@ class TestBlockingStateManager:
             blocking_manager._wait_for_grace_target(mock_ha_client, 40.0, True)
             mock_sleep.assert_called_once()
             mock_save.assert_called_once()
+
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time", return_value=1000)
+    def test_blocking_grace_aborts_when_minimum_spread_returns(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """A resumed outlet/inlet spread ends a post-defrost grace wait."""
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        mock_ha_client.get_all_states.return_value = {}
+
+        def get_state(entity_id, *_args, **_kwargs):
+            if entity_id == config.ACTUAL_OUTLET_TEMP_ENTITY_ID:
+                return 30.0
+            if entity_id == config.INLET_TEMP_ENTITY_ID:
+                return 27.5
+            return None
+
+        mock_ha_client.get_state.side_effect = get_state
+
+        should_resume = blocking_manager._wait_for_grace_target(
+            mock_ha_client, 28.0, True, requires_heating_spread=True
+        )
+
+        assert should_resume is True
+        mock_sleep.assert_not_called()
+
+    @patch("src.heating_controller.time.sleep")
+    @patch("src.heating_controller.time.time", return_value=1000)
+    def test_blocking_grace_does_not_abort_at_spread_threshold(
+        self, mock_time, mock_sleep, blocking_manager, mock_ha_client
+    ):
+        """A spread equal to DELTA_T_FLOOR does not satisfy the strict limit."""
+        blocking_manager.check_blocking_state = Mock(return_value=(False, []))
+        mock_ha_client.get_all_states.return_value = {}
+
+        def get_state(entity_id, *_args, **_kwargs):
+            if entity_id == config.ACTUAL_OUTLET_TEMP_ENTITY_ID:
+                return 30.0
+            if entity_id == config.INLET_TEMP_ENTITY_ID:
+                return 30.0 - config.DELTA_T_FLOOR
+            return None
+
+        mock_ha_client.get_state.side_effect = get_state
+
+        should_resume = blocking_manager._wait_for_grace_target(
+            mock_ha_client, 30.0, True, requires_heating_spread=True
+        )
+
+        assert should_resume is False
+        mock_sleep.assert_not_called()
 
 
     @patch("src.heating_controller.time.sleep")

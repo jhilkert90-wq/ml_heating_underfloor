@@ -11,6 +11,45 @@ from src.loop_state import LoopState
 _MOCK_CYCLE_END_TIME: float = 1000.0
 
 
+@pytest.mark.parametrize(
+    ("is_blocking", "state", "expected"),
+    [
+        (True, {}, True),
+        (False, {"last_is_blocking": True}, True),
+        (
+            False,
+            {"last_run_features": {"learning_mode": "grace_period_passthrough"}},
+            True,
+        ),
+        (
+            False,
+            {"last_run_features": {"defrosting": 1.0, "minutes_since_defrost": 60}},
+            True,
+        ),
+        (
+            False,
+            {"last_run_features": {"defrosting": 0.0, "minutes_since_defrost": 20}},
+            True,
+        ),
+        (
+            False,
+            {
+                "last_run_features": {
+                    "defrosting": 0.0,
+                    "minutes_since_defrost": config.DEFROST_RECOVERY_GRACE_MINUTES,
+                }
+            },
+            False,
+        ),
+        (False, {"last_is_blocking": False, "last_run_features": {}}, False),
+    ],
+)
+def test_should_skip_online_learning_for_blocking_transitions(
+    is_blocking, state, expected
+):
+    assert main._should_skip_online_learning(is_blocking, state) is expected
+
+
 
 @patch("src.main.train_thermal_equilibrium_model")
 @patch("src.physics_calibration.backup_existing_calibration")

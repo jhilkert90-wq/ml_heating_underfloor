@@ -162,27 +162,34 @@ class BlockingStateManager:
                 "skipping restore/wait.",
                 age / 60.0,
             )
+            self._clear_blocking_state(state)
             return False
             
-        # Execute grace period logic. A stagnation abort should continue the
-        # normal control pipeline instead of skipping another cycle.
-        stagnated = self._execute_grace_period(ha_client, state, age)
+        # An aborted grace wait resumes normal control in this cycle.
+        resume_control = self._execute_grace_period(ha_client, state, age)
         
         # Clear blocking state after grace period
+        self._clear_blocking_state(state)
+
+        if resume_control:
+            logging.info(
+                "Grace-period wait aborted; resuming normal control."
+            )
+            return False
+
+        return True  # Skip cycle
+
+    @staticmethod
+    def _clear_blocking_state(state: SystemState) -> None:
         try:
             save_state(last_is_blocking=False, last_blocking_end_time=None)
         except Exception:
             logging.debug(
                 "Failed to persist cleared blocking state.", exc_info=True
             )
-
-        if stagnated:
-            logging.info(
-                "Grace-period stagnation detected; resuming normal control."
-            )
-            return False
-
-        return True  # Skip cycle
+        state.last_is_blocking = False
+        state.last_blocking_end_time = None
+        state.last_blocking_reasons = []
     
     def _execute_grace_period(
         self, ha_client: HAClient, state: SystemState, age: float
@@ -290,6 +297,23 @@ class BlockingStateManager:
             )
             return False
 
+        requires_heating_spread = any(
+            reason in (state.last_blocking_reasons or [])
+            for reason in (
+                config.DEFROST_STATUS_ENTITY_ID,
+                config.DHW_STATUS_ENTITY_ID,
+            )
+        )
+        if requires_heating_spread and self._has_minimum_heating_spread(
+            ha_client, ha_client.get_all_states()
+        ):
+            logging.info(
+                "Blocking recovery detected outlet-inlet spread above "
+                "DELTA_T_FLOOR (%.1f K); resuming normal control.",
+                config.DELTA_T_FLOOR,
+            )
+            return True
+
         # Apply gradual control to prevent overshoot.
         # This ensures that even if the model predicts a high temperature
         # (e.g. 65°C) after a DHW cycle, we only increase by a safe amount
@@ -371,6 +395,7 @@ class BlockingStateManager:
             wait_for_cooling,
             wrapper=wrapper,
             thermal_features=thermal_features,
+            requires_heating_spread=requires_heating_spread,
         )
         
         logging.info("--- Grace Period Ended ---")
@@ -383,6 +408,7 @@ class BlockingStateManager:
         wait_for_cooling: bool,
         wrapper=None,
         thermal_features=None,
+        requires_heating_spread: bool = False,
     ) -> bool:
         """Wait for outlet temperature to reach grace target"""
         start_time = time.time()
@@ -432,6 +458,17 @@ class BlockingStateManager:
                 logging.warning(
                     "Cannot read actual_outlet_temp, exiting grace period."
                 )
+                break
+
+            if requires_heating_spread and self._has_minimum_heating_spread(
+                ha_client, all_states_poll
+            ):
+                logging.info(
+                    "Blocking recovery detected outlet-inlet spread above "
+                    "DELTA_T_FLOOR (%.1f K); aborting grace wait.",
+                    config.DELTA_T_FLOOR,
+                )
+                stagnated = True
                 break
 
             # SAFETY CHECK: If we are underheating (current < target), we
@@ -630,6 +667,25 @@ class BlockingStateManager:
 
         return stagnated
 
+    @staticmethod
+    def _has_minimum_heating_spread(
+        ha_client: HAClient, all_states: Dict
+    ) -> bool:
+        """Return whether outlet exceeds inlet by the configured minimum."""
+        outlet_temp = ha_client.get_state(
+            config.ACTUAL_OUTLET_TEMP_ENTITY_ID, all_states
+        )
+        inlet_temp = ha_client.get_state(config.INLET_TEMP_ENTITY_ID, all_states)
+        try:
+            return (
+                outlet_temp is not None
+                and inlet_temp is not None
+                and float(outlet_temp) - float(inlet_temp)
+                > config.DELTA_T_FLOOR + 1e-6
+            )
+        except (TypeError, ValueError):
+            return False
+
     def poll_for_blocking(
         self,
         ha_client: HAClient,
@@ -713,6 +769,9 @@ class BlockingStateManager:
                         last_blocking_reasons=blocking_reasons,
                         last_blocking_end_time=None,
                     )
+                    state.last_is_blocking = True
+                    state.last_blocking_reasons = blocking_reasons
+                    state.last_blocking_end_time = None
                     logging.debug(
                         "Blocking detected during idle poll; "
                         "handling immediately."
@@ -726,12 +785,13 @@ class BlockingStateManager:
 
             # Blocking ended during idle -> persist end time so grace will run.
             if state.last_is_blocking and not is_blocking:
+                blocking_end_time = time.time()
                 try:
                     save_state(
                         last_is_blocking=True,
-                        last_blocking_end_time=time.time(),
-                        last_blocking_reasons=[],
+                        last_blocking_end_time=blocking_end_time,
                     )
+                    state.last_blocking_end_time = blocking_end_time
                     logging.debug(
                         "Blocking ended during idle poll; "
                         "will run grace on next loop."
