@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Forecast and calibration run asynchronously outside the heating-control path; both remain disabled by default.
 
+### Fixed
+- Corrected forecast isolation, time alignment, energy accounting, price handling, and partial-hour simulation.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

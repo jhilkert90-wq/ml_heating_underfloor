@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### EOS Forecast Review Fixes — 2026-11-10
+
+- **What:** Addressed all 18 review findings in the EOS heat forecast. Forecast price classification now uses an isolated persistent optimizer and date-specific bounded prices; weather and counter data are aligned to their actual time intervals; defrost, COP ageing, daily DHW, and current-hour component accounting preserve valid energy semantics. The first simulation slot advances only the remaining portion of its hour, including fireplace scenarios.
+- **Why:** The review identified shared control-state mutation and timing, missing-data, and energy-accounting errors that could make the published forecast unreliable.
+- **Files:** `src/heat_forecast.py`, `src/ha_client.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Optional EOS Connect Heating-Energy Forecast — 2026-11-10
 
 - **What:** Added a disabled-by-default hourly heating-energy forecast published as `sensor.ml_heating_wp_load_forecast`; it exports thermal heating energy and electrical heating/defrost/DHW/standby series, plus data-quality and COP diagnostics. Energy counters drive calibration and history; 10-day, one-minute power/defrost history initializes defrost event energy/fractions, while live power is reserved for current-hour estimation and counter diagnostics. An optional direct thermal-power sensor supports real-time metrics while the existing spread calculation remains the default.

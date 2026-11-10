@@ -10,7 +10,7 @@ import logging
 import math
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 import requests
@@ -313,7 +313,7 @@ class HAClient:
         return result
 
     def get_hourly_forecast_strict(
-        self, n: int
+        self, n: int, starts: Sequence[datetime] | None = None
     ) -> list[float | None]:
         """Return available outdoor forecast values without padding missing hours."""
         svc_url = f"{self.url}/api/services/weather/get_forecasts"
@@ -330,6 +330,36 @@ class HAClient:
         except (requests.RequestException, KeyError, TypeError, ValueError) as exc:
             logging.warning("Strict weather forecast request failed: %s", exc)
             return []
+
+        if starts is not None:
+            requested = [
+                (start.replace(tzinfo=timezone.utc) if start.tzinfo is None else start)
+                .astimezone(timezone.utc)
+                .replace(minute=0, second=0, microsecond=0)
+                for start in starts[: max(0, n)]
+            ]
+            aligned: list[float | None] = [None] * len(requested)
+            positions = {start: index for index, start in enumerate(requested)}
+            for entry in forecast_list:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    stamp = datetime.fromisoformat(
+                        str(entry["datetime"]).replace("Z", "+00:00")
+                    )
+                    if stamp.tzinfo is None:
+                        stamp = stamp.replace(tzinfo=timezone.utc)
+                    stamp = stamp.astimezone(timezone.utc).replace(
+                        minute=0, second=0, microsecond=0
+                    )
+                    index = positions.get(stamp)
+                    raw = entry.get("temperature")
+                    temperature = float(raw)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if index is not None and math.isfinite(temperature):
+                    aligned[index] = temperature
+            return aligned
 
         result: list[float | None] = []
         for entry in forecast_list[: max(0, n)]:

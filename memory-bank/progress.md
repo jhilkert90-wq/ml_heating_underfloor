@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ EOS Forecast Review Fixes — 2026-11-10
+
+**Status:** COMPLETED — Addressed all 18 review findings: isolated the forecast price optimizer, aligned weather and energy intervals by time, preserved missing-data semantics, corrected COP/defrost and DHW accounting, applied price-policy bounds, reconciled current-hour components, and simulated only the remaining first-hour interval (including fireplace scenarios).
+
+**Files changed:** `src/heat_forecast.py`, `src/ha_client.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Validation:** 116 focused forecast, price-optimizer, and Home Assistant client tests passed. The full suite reported 1,907 passed and 8 failures outside changed files (7 heating-controller timing tests and 1 ML holdout-isolation test). Python compilation and `git diff --check` passed.
+
 ## ✅ Optional EOS Connect Heating-Energy Forecast — 2026-11-10
 
 **Status:** IMPLEMENTED — Added an opt-in hourly heating thermal/electrical profile and separate energy-counter COP calibration, with reset-safe deltas, 10-day one-minute power-history defrost initialization, meter diagnostics and 100-cold-run-hour blending, current-hour meter/power correction, DHW/standby profiles, PV/price offsets, and fireplace scenarios. The worker runs asynchronously and does not affect the control path; cooling remains deferred.
