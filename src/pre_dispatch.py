@@ -89,13 +89,34 @@ def update_sensor_buffer_and_thermo(
         current_outlet = buffer_updates.get(config.ACTUAL_OUTLET_TEMP_ENTITY_ID)
         current_inlet = buffer_updates.get(config.INLET_TEMP_ENTITY_ID)
         current_flow = buffer_updates.get(config.FLOW_RATE_ENTITY_ID)
+        direct_thermal_power = None
+        climate_mode = "heating"
+        use_direct_thermal_power = (
+            getattr(config, "THERMAL_POWER_SOURCE", "spread") == "direct"
+        )
+        if use_direct_thermal_power:
+            if getattr(config, "THERMAL_POWER_ENTITY_ID", ""):
+                direct_thermal_power = get_float_state(
+                    config.THERMAL_POWER_ENTITY_ID
+                )
+            climate_mode = config.get_climate_mode(
+                ha_client.get_state(config.HEATING_STATUS_ENTITY_ID, all_states)
+            )
 
         if current_outlet is not None:
+            thermo_kwargs = {}
+            if use_direct_thermal_power:
+                thermo_kwargs = {
+                    "thermal_power_direct_w": direct_thermal_power,
+                    "climate_mode": climate_mode,
+                    "defrosting": bool(defrost_state),
+                }
             thermo_metrics = calculate_thermodynamic_metrics(
                 outlet_temp=current_outlet,
                 inlet_temp=current_inlet,
                 flow_rate=current_flow,
                 power_consumption=power_consumption,
+                **thermo_kwargs,
             )
 
             # Export to Home Assistant

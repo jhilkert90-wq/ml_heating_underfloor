@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Optional EOS Connect Heating-Energy Forecast — 2026-11-10
+
+- **What:** Added a disabled-by-default hourly heating-energy forecast published as `sensor.ml_heating_wp_load_forecast`; it exports thermal heating energy and electrical heating/defrost/DHW/standby series, plus data-quality and COP diagnostics. Energy counters drive calibration and history; 10-day, one-minute power/defrost history initializes defrost event energy/fractions, while live power is reserved for current-hour estimation and counter diagnostics. An optional direct thermal-power sensor supports real-time metrics while the existing spread calculation remains the default.
+- **Why:** EOS Connect needs an hourly external load profile that reflects weather, thermal PV gains, fireplace heat, temperature/price modes, and energy-counter behavior without changing the existing controller.
+- **Important behavior:** Heating electricity can include defrost electricity; gross heating thermal energy is corrected by defrost heat. `auto` checks the power integral against the heating and defrost electricity counters, initially assumes inclusion, and changes only after repeated evidence. Live defrost ratios blend in over configured cold compressor hours. Current-hour profiles retain available meter energy since the hour boundary and mark missing coverage as degraded. Cooling remains a separate follow-up.
+- **Files:** `src/heat_forecast.py`, `src/config.py`, `config_adapter.py`, `src/ha_client.py`, `src/influx_service.py`, `src/main.py`, `src/physics_features.py`, `src/pre_dispatch.py`, add-on config/translations, forecast tests, dashboard metadata test, `docs/HEAT_FORECAST_EOS_CONNECT.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Defrost Grace Loop and Learning Guard — 2026-10-30
 
 - **What:** Grace completion and expiry now clear both persisted and in-memory blocking state; idle polling retains the blocking reason until recovery finishes. Online learning skips active blocking, the blocking-to-grace transition, grace passthrough samples, and the configured defrost-recovery window. DHW and defrost grace resume control when outlet-inlet spread is greater than `DELTA_T_FLOOR`.

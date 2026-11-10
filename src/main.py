@@ -940,6 +940,21 @@ def main():
                     else:
                         run_heating_route(ctx)
 
+            try:
+                from .heat_forecast import publish_heat_forecast_async
+
+                publish_heat_forecast_async(
+                    ha_client=ha_client,
+                    states=all_states,
+                    wrapper=loop.wrapper,
+                    influx_service=influx_service,
+                )
+            except Exception:
+                logging.warning(
+                    "Could not schedule the optional heat-load forecast",
+                    exc_info=True,
+                )
+
         except Exception as e:
             logging.error("Error in main loop: %s", e, exc_info=True)
             try:

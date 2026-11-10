@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ Optional EOS Connect Heating-Energy Forecast — 2026-11-10
+
+**Status:** IMPLEMENTED — Added an opt-in hourly heating thermal/electrical profile and separate energy-counter COP calibration, with reset-safe deltas, 10-day one-minute power-history defrost initialization, meter diagnostics and 100-cold-run-hour blending, current-hour meter/power correction, DHW/standby profiles, PV/price offsets, and fireplace scenarios. The worker runs asynchronously and does not affect the control path; cooling remains deferred.
+
+**Files changed:** `src/heat_forecast.py`, `src/config.py`, `config_adapter.py`, `src/ha_client.py`, `src/influx_service.py`, `src/main.py`, `src/physics_features.py`, `src/pre_dispatch.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{de,en}.yaml`, `tests/unit/test_heat_forecast.py`, `tests/unit/test_direct_thermal_power.py`, `tests/unit/test_config_adapter.py`, `tests/unit/test_dashboard_settings.py`, `docs/HEAT_FORECAST_EOS_CONNECT.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`
+
+**Validation:** 75 focused tests passed; YAML parsing and Python compilation passed. The full suite reported 1,891 passed and 7 failures in `tests/unit/test_heating_controller.py` timing/polling tests, outside the changed files. No live HA/Influx data was available for a forecast backtest.
+
 ## ✅ Defrost Grace Loop and Learning Guard — 2026-10-30
 
 **Status:** COMPLETED — Grace completion now clears the in-memory blocking state consumed by idle polling, preventing immediate cycle restart. Online learning is skipped during active/transition blocking, grace passthrough data, and the configured defrost-recovery window. Post-DHW and post-defrost grace abort when outlet-inlet spread exceeds `DELTA_T_FLOOR`.

@@ -92,6 +92,41 @@ options:
   # A binary_sensor that is 'on' when the DHW boost heater is active
   dhw_boost_heater_entity: "binary_sensor.warmwassermodus"
 
+  # Direct thermal power is optional and does not change model features by default.
+  thermal_power_entity: "sensor.nibe_th_leistung"
+  thermal_power_source: "spread"
+
+  # === Read-only heat-pump load forecast ===
+  # Forecast/calibration are opt-in and never affect heating control.
+  heat_forecast_enabled: false
+  heat_forecast_sensor_entity: "sensor.ml_heating_wp_load_forecast"
+  heat_forecast_state_file: "/config/ml_heating/heat_forecast_state.json"
+  heat_forecast_horizon_hours: 48
+  heat_forecast_step_minutes: 15
+  heat_forecast_max_heating_kw: 8.0
+  heat_forecast_base_gain_kw: 0.3
+  heat_forecast_fireplace_duration_h: 3.5
+  heat_forecast_reuse_prices: true
+  heat_forecast_electricity_counter_entity: "sensor.stromzahler_heizen_jahr"
+  heat_forecast_thermal_counter_entity: "sensor.wmz_heizen_jahr3"
+  heat_forecast_dhw_counter_entity: "sensor.stromzahler_ww_jahr"
+  heat_forecast_standby_counter_entity: "sensor.stromzahler_standby_jahr"
+  heat_forecast_defrost_electricity_counter_entity: "sensor.energiezahler_wp_abtau_strom"
+  heat_forecast_defrost_thermal_counter_entity: "sensor.energiezahler_wp_abtau_waerme"
+  cop_calibration_enabled: false
+  cop_defrost_handling: "net"
+  cop_defrost_el_in_heating_counter: "true"
+  cop_defrost_blend_cold_run_hours: 100.0
+  defrost_default_heat_fraction: 0.08
+  defrost_default_el_fraction: 0.06
+  cop_half_life_days: 45.0
+  cop_min_hours_per_bin: 4.0
+  cop_start_intercept: 5.0
+  cop_start_slope: 0.2
+  cop_min_value: 1.5
+  cop_max_value: 10.0
+  standby_default_kw: 0.05
+
   # === ML Learning Parameters ===
   # Number of historical steps to use as features for the model
   history_steps: 6
@@ -792,6 +827,36 @@ schema:
   defrost_status_entity: "str"
   disinfection_status_entity: "str"
   dhw_boost_heater_entity: "str"
+  thermal_power_entity: "str?"
+  thermal_power_source: "list(spread|direct)"
+  heat_forecast_enabled: "bool"
+  heat_forecast_sensor_entity: "str"
+  heat_forecast_state_file: "str"
+  heat_forecast_horizon_hours: "int(24,48)"
+  heat_forecast_step_minutes: "list(10|12|15|20|30)"
+  heat_forecast_max_heating_kw: "float(1.0,20.0)"
+  heat_forecast_base_gain_kw: "float(0.0,5.0)"
+  heat_forecast_fireplace_duration_h: "float(0.0,8.0)"
+  heat_forecast_reuse_prices: "bool"
+  heat_forecast_electricity_counter_entity: "str?"
+  heat_forecast_thermal_counter_entity: "str?"
+  heat_forecast_dhw_counter_entity: "str?"
+  heat_forecast_standby_counter_entity: "str?"
+  heat_forecast_defrost_electricity_counter_entity: "str?"
+  heat_forecast_defrost_thermal_counter_entity: "str?"
+  cop_calibration_enabled: "bool"
+  cop_defrost_handling: "list(net|separate)"
+  cop_defrost_el_in_heating_counter: "list(auto|true|false)"
+  cop_defrost_blend_cold_run_hours: "float(1.0,1000.0)"
+  defrost_default_heat_fraction: "float(0.0,0.5)"
+  defrost_default_el_fraction: "float(0.0,0.5)"
+  cop_half_life_days: "float(1.0,365.0)"
+  cop_min_hours_per_bin: "float(1.0,1000.0)"
+  cop_start_intercept: "float(1.5,10.0)"
+  cop_start_slope: "float(-0.5,0.5)"
+  cop_min_value: "float(1.0,10.0)"
+  cop_max_value: "float(1.0,15.0)"
+  standby_default_kw: "float(0.0,1.0)"
   # ML Learning Parameters
   history_steps: "int(3,12)"
   history_step_minutes: "int(5,30)"
