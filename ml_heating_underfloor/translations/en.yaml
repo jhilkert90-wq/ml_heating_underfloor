@@ -1173,6 +1173,9 @@ configuration:
   price_cost_min_spread_eur_kwh:
     name: '[Advanced] Minimum Price Spread (EUR/kWh)'
     description: 'No shift is applied if the spread between cheapest and dearest effective hour is below this value. Default: 0.02.'
+  price_cost_household_power_offset_kw:
+    name: '[Advanced] Household Baseline for Cost Mode (kW)'
+    description: 'Added to expected heat pump power so PV is only counted after the household baseline load is covered. Can later be replaced by measured household consumption. Default: 0.7.'
   hp_expected_power_fallback_kw:
     name: '[Advanced] Expected HP Power Fallback (kW)'
     description: 'Electrical heat pump power assumed until heating samples exist. The runtime estimate is the rolling mean of power consumption while heating, excluding hot water and defrost. Default: 1.5.'

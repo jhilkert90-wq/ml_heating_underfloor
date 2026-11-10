@@ -716,6 +716,9 @@ def convert_addon_to_env(config):
         'PRICE_COST_MIN_SPREAD_EUR_KWH': str(
             config.get('price_cost_min_spread_eur_kwh', 0.02)
         ),
+        'PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW': str(
+            config.get('price_cost_household_power_offset_kw', 0.7)
+        ),
         'HP_EXPECTED_POWER_FALLBACK_KW': str(
             config.get('hp_expected_power_fallback_kw', 1.5)
         ),

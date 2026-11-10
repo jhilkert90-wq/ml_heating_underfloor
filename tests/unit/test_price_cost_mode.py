@@ -159,11 +159,19 @@ class TestCycleIntegration:
             price_data={"current_price": 0.1, "today": [0.1, 0.4]},
         )
         get_hp_power_tracker()._samples.clear()
-        with _patches(), patch("src.cycle_routes.datetime") as mock_dt:
+        ctx.features_dict["pv_now_electrical"] = 2000.0
+        with (
+            _patches(PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW=0.7),
+            patch("src.cycle_routes.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = NOW
             cycle_routes._attach_cost_offset(ctx, opt)
         assert "cost_target_offset" in ctx.price_data
         assert ctx.price_data["cost_target_offset"] > 0.0
+        assert ctx.price_data["cost_info"]["hp_power_kw"] == pytest.approx(2.5)
+        assert ctx.price_data["cost_info"]["pv_share_now"] == pytest.approx(0.8)
+        assert ctx.price_data["cost_info"]["hp_power_base_kw"] == pytest.approx(1.8)
+        assert ctx.price_data["cost_info"]["household_power_offset_kw"] == pytest.approx(0.7)
         get_hp_power_tracker()._samples.clear()
 
     def test_attach_cost_offset_aligns_pv_to_price_clock_hour(self):
@@ -255,7 +263,8 @@ class TestCostModeSensors:
         info = {
             "p_eff_now": 0.079, "p_grid_now": 0.3, "pv_share_now": 1.0,
             "p_eff_mean": 0.2, "p_eff_min": 0.079, "p_eff_max": 0.4,
-            "offset": 0.5, "hp_power_kw": 1.8, "hours": 24.0,
+            "offset": 0.5, "hp_power_kw": 2.5, "hp_power_base_kw": 1.8,
+            "household_power_offset_kw": 0.7, "hours": 24.0,
             "price_hours_available": 30.0, "pv_hours_available": 24.0,
         }
         client.publish_cost_mode_sensors(info, hp_samples=5)
@@ -267,4 +276,6 @@ class TestCostModeSensors:
             "sensor.ml_heating_price_window_hours",
         }
         power = next(c for c in calls if c[0].endswith("hp_expected_power"))
-        assert power[1] == 1.8 and power[2]["source"] == "measured"
+        assert power[1] == 2.5 and power[2]["source"] == "measured"
+        assert power[2]["heat_pump_power_kw"] == 1.8
+        assert power[2]["household_power_offset_kw"] == 0.7

@@ -364,6 +364,11 @@ PRICE_COST_LOOKAHEAD_HOURS: int = int(
 PRICE_COST_MIN_SPREAD_EUR_KWH: float = float(
     os.getenv("PRICE_COST_MIN_SPREAD_EUR_KWH", "0.02")
 )
+# Fixed household baseline load [kW] added to the expected HP demand when
+# calculating the PV share in cost-aware mode.
+PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
+    os.getenv("PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW", "0.7")
+)
 # Expected HP electrical power: rolling mean of power_consumption while the HP
 # is heating (no DHW / defrost). Fallback [kW] when no samples exist.
 HP_EXPECTED_POWER_FALLBACK_KW: float = float(

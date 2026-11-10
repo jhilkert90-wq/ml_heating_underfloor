@@ -373,6 +373,7 @@ Requires the Tibber integration in Home Assistant.
 | `price_band_down_c` | `PRICE_BAND_DOWN_C` | float (0–2) | `0.2` | Max setback (°C) in dearest hours. |
 | `price_cost_lookahead_hours` | `PRICE_COST_LOOKAHEAD_HOURS` | int (2–48) | `24` | Look-ahead window for the effective price comparison. |
 | `price_cost_min_spread_eur_kwh` | `PRICE_COST_MIN_SPREAD_EUR_KWH` | float (0–0.5) | `0.02` | No shift below this spread. |
+| `price_cost_household_power_offset_kw` | `PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW` | float (0–10) | `0.7` | Household baseline load added to expected HP power for PV coverage; intended to be replaced by measured household consumption when available. |
 | `hp_expected_power_fallback_kw` | `HP_EXPECTED_POWER_FALLBACK_KW` | float | `1.5` | Expected HP electrical power until heating samples exist. |
 | `hp_power_window_hours` | `HP_POWER_WINDOW_HOURS` | float | `6` | Rolling window for HP power mean (only while heating; excludes DHW, disinfection, boost heater, defrost + recovery). |
 | `hp_power_min_on_w` | `HP_POWER_MIN_ON_W` | int | `300` | Minimum electrical power for HP to count as on. |

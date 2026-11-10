@@ -2,6 +2,26 @@
 
 ### Heat Forecast Review Corrections — 2026-11-10
 
+- **What:** Post-boundary counter readings remain partial until their interval establishes boundary energy. Historical DHW/standby deltas are allocated over the auxiliary counter's measured endpoints; shared observations add unchanged-counter coverage only while bounded by observed samples. Heating smoothing now excludes the current partial-hour slot.
+- **Why:** Restarts with stale counters could skip history recovery, auxiliary readings could be carried forward indefinitely or shifted to unrelated sample intervals, and smoothing could exceed the current slot's power limit.
+- **Files:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### Cost-Aware Household Load Offset — 2026-11-10
+
+- **What:** Added configurable `PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW` (default 0.7 kW) to the expected load used in cost-aware PV share calculations, including the forecast calculation. `sensor.ml_heating_hp_expected_power` now publishes HP plus household baseline and exposes both components in attributes.
+- **Why:** PV should reduce the effective energy cost only after it can cover both expected heat-pump demand and normal household consumption, avoiding cost-aware preheating from starting too early.
+- **Future replacement:** The fixed baseline is configurable now and can later be replaced by a measured whole-house load without changing the PV-share contract.
+- **Files:** Config and adapter, cost-aware cycle and forecast calculation, HA diagnostic sensor, add-on schema/translations, parameter/integration docs, cost-mode/config tests, changelog, and memory-bank records.
+
+### Heat Forecast Current-Hour and Profile Fixes — 2026-11-10
+
+- **What:** Current-hour live power now projects only through the remaining part of the hour; recent pre-boundary counter readings are accepted as anchors. Historical DHW/standby learning uses short intervals from the shared counter observation timeline, and isolated thermal peaks are spread across six-hour blocks without changing block energy.
+- **Why:** The former projection scaled live power using modeled coverage rather than remaining time, current DHW usage could be misclassified, unchanged auxiliary counters did not accumulate profile coverage, and hourly thermal peaks overstated short-term load.
+- **Sensor behavior:** The configured shared `binary_sensor.warmwassermodus` remains a single active-DHW signal; this change does not attempt to distinguish DHW, disinfection, or boost submodes.
+- **Files:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### Heat Forecast Review Corrections — 2026-11-10
+
 - **What:** Corrected HA history identity and binary-state parsing, aligned COP counter intervals by their actual endpoints, retained sensor times in daily and hourly accounting, projected only uncovered current-hour energy, resampled sparse defrost fallback data, counted only accepted COP observations, and supplied cost evaluation with the full reused-price horizon.
 - **Why:** Review findings identified cases where absent/reordered history arrays, stale/asynchronous readings, partial anchors, sparse Recorder events, and partial lookahead data could corrupt calibration or forecast energy and pricing.
 - **Files:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
