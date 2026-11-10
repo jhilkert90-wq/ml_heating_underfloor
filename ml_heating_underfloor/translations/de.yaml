@@ -130,6 +130,96 @@ configuration:
     description: Binary sensor that is 'on' when the DHW electric boost heater is
       active. ML Heating pauses to avoid disturbing the thermal model during high-demand
       electrical events.
+  thermal_power_entity:
+    name: '[Thermik] Direkter Wärmepumpen-Leistungssensor'
+    description: Optional thermische Leistung in Watt. Wird nur bei thermal_power_source=direct verwendet.
+  thermal_power_source:
+    name: '[Thermik] Quelle der thermischen Leistung'
+    description: spread behält die bisherige Durchfluss-mal-Spreizung-Berechnung bei; direct nutzt den Leistungssensor.
+  heat_forecast_enabled:
+    name: '[Prognose] Wärmepumpen-Lastprognose aktivieren'
+    description: Aktiviert die additive, rein lesende 48-Stunden-Prognose; ändert nicht die Regelung.
+  heat_forecast_sensor_entity:
+    name: '[Prognose] Ausgabe-Entität'
+    description: Home-Assistant-Sensor mit stündlichem EOS-Connect-Profil im Attribut forecast.
+  heat_forecast_state_file:
+    name: '[Prognose] Persistenzdatei'
+    description: Atomar gespeicherter Prognose- und Kalibrierungszustand.
+  heat_forecast_horizon_hours:
+    name: '[Prognose] Horizont (Stunden)'
+    description: Stündliche Prognoselänge, maximal 48 Stunden.
+  heat_forecast_step_minutes:
+    name: '[Prognose] Simulationsschritt (Minuten)'
+    description: Zeitschritt der thermischen Energiebilanz.
+  heat_forecast_max_heating_kw:
+    name: '[Prognose] Maximale Heizleistung (kW)'
+    description: Begrenzung der simulierten thermischen Wärmepumpenleistung.
+  heat_forecast_base_gain_kw:
+    name: '[Prognose] Grundwärmegewinne (kW)'
+    description: Konfigurierbarer mittlerer Wärmegewinn ohne PV und Kamin.
+  heat_forecast_fireplace_duration_h:
+    name: '[Prognose] Kamin-Brenndauer (Stunden)'
+    description: Angenommene Restbrenndauer bei aktivem Kamin.
+  heat_forecast_reuse_prices:
+    name: '[Prognose] Letzten Preis bei Lücken wiederverwenden'
+    description: Fehlende Stundenpreise werden gekennzeichnet mit dem letzten verfügbaren Preis fortgeschrieben.
+  heat_forecast_electricity_counter_entity:
+    name: '[Prognose] Stromzähler Heizen (kWh)'
+    description: Reset-sicherer Jahreszähler; darf den Abtaustrom enthalten.
+  heat_forecast_thermal_counter_entity:
+    name: '[Prognose] Wärmezähler Heizen (kWh)'
+    description: Reset-sicherer Wärmezähler Heizen, brutto vor Abtaukorrektur.
+  heat_forecast_dhw_counter_entity:
+    name: '[Prognose] Stromzähler Warmwasser (kWh)'
+    description: Separater Stromzähler für Warmwasser.
+  heat_forecast_standby_counter_entity:
+    name: '[Prognose] Stromzähler Standby (kWh)'
+    description: Separater Standby-Stromzähler.
+  heat_forecast_defrost_electricity_counter_entity:
+    name: '[Prognose] Abtau-Stromzähler (kWh)'
+    description: Optionaler Abtau-Stromzähler für die Abtau-Kalibrierung.
+  heat_forecast_defrost_thermal_counter_entity:
+    name: '[Prognose] Abtau-Wärmezähler (kWh)'
+    description: Optionaler Abtau-Wärmezähler für die Netto-Wärmebilanz.
+  cop_calibration_enabled:
+    name: '[COP] Energiezähler-Kalibrierung aktivieren'
+    description: Lernt die COP-Kennlinie ausschließlich aus reset-sicheren Energiezählerdeltas und Influx-Historie.
+  cop_defrost_handling:
+    name: '[COP] Abtau-Behandlung'
+    description: net integriert Abtauung in die COP; separate weist sie als eigene elektrische Reihe aus.
+  cop_defrost_el_in_heating_counter:
+    name: '[COP] Abtaustrom im Heizzähler'
+    description: true passt zum Zähler; auto benötigt mehrere Abtauintervalle und nimmt anfangs true an.
+  cop_defrost_blend_cold_run_hours:
+    name: '[COP] Abtau-Lernübergang (kalte Laufstunden)'
+    description: Kalte Verdichterlaufstunden bis zur vollen Gewichtung der Abtauzähler.
+  defrost_default_heat_fraction:
+    name: '[COP] Standard-Abtauwärmeanteil'
+    description: Rückfallanteil an der Brutto-Heizwärme bei höchstens 5 °C Außentemperatur.
+  defrost_default_el_fraction:
+    name: '[COP] Standard-Abtaustromanteil'
+    description: Rückfallanteil am Heizstrom, nur für separate Abtauausgabe.
+  cop_half_life_days:
+    name: '[COP] Halbwertszeit (Tage)'
+    description: Zeitabklang der energiegewichteten COP-Kalibrierung.
+  cop_min_hours_per_bin:
+    name: '[COP] Mindestlaufzeit je Temperatur-Bin (Stunden)'
+    description: Mindestabdeckung, bevor ein Temperatur-Bin in die Kennlinie eingeht.
+  cop_start_intercept:
+    name: '[COP] Startwert Achsenabschnitt'
+    description: Fallback-COP bei 0 °C, bis ausreichend Zählerdaten vorliegen.
+  cop_start_slope:
+    name: '[COP] Startwert Steigung'
+    description: Fallback-COP-Änderung je Kelvin.
+  cop_min_value:
+    name: '[COP] Untergrenze'
+    description: Untere Plausibilitätsgrenze der COP-Kennlinie.
+  cop_max_value:
+    name: '[COP] Obergrenze'
+    description: Obere Plausibilitätsgrenze der COP-Kennlinie.
+  standby_default_kw:
+    name: '[Prognose] Standby-Rückfallwert (kW)'
+    description: Standby-Leistung bis ausreichend getrennte Zählerhistorie vorliegt.
   history_steps:
     name: '[ML] Verlaufsschritte'
     description: 'Number of historical time slices used as features for each prediction.

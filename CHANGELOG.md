@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional hourly heat-pump load forecasting for EOS Connect, including thermal heating energy, energy-counter COP calibration, one-minute-history defrost rates and event energy, DHW/standby profiles, PV/price offsets, and fireplace scenarios.
+- Direct thermal-power input option for real-time thermodynamic metrics; spread-based calculation remains the default.
+- EOS Connect setup and forecast-attribute documentation.
+
+### Changed
+- Forecast and calibration run asynchronously outside the heating-control path; both remain disabled by default.
+
+### Fixed
+- Corrected forecast isolation, time alignment, energy accounting, price handling, and partial-hour simulation.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

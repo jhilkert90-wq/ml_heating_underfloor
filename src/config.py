@@ -146,6 +146,8 @@ FLOW_RATE_ENTITY_ID: str = os.getenv(
 POWER_CONSUMPTION_ENTITY_ID: str = os.getenv(
     "POWER_CONSUMPTION_ENTITY_ID", "sensor.power_wp"
 )
+THERMAL_POWER_ENTITY_ID: str = os.getenv("THERMAL_POWER_ENTITY_ID", "")
+THERMAL_POWER_SOURCE: str = os.getenv("THERMAL_POWER_SOURCE", "spread").lower()
 SPECIFIC_HEAT_CAPACITY: float = float(
     os.getenv("SPECIFIC_HEAT_CAPACITY", "4.186")
 )
@@ -227,6 +229,78 @@ AVG_OTHER_ROOMS_TEMP_ENTITY_ID: str = os.getenv(
 FIREPLACE_STATUS_ENTITY_ID: str = os.getenv(
     "FIREPLACE_STATUS_ENTITY_ID", "binary_sensor.fireplace_active"
 )
+
+# --- Read-only heat-pump load forecast ---
+HEAT_FORECAST_ENABLED: bool = (
+    os.getenv("HEAT_FORECAST_ENABLED", "false").lower() == "true"
+)
+HEAT_FORECAST_SENSOR_ENTITY_ID: str = os.getenv(
+    "HEAT_FORECAST_SENSOR_ENTITY_ID", "sensor.ml_heating_wp_load_forecast"
+)
+HEAT_FORECAST_STATE_FILE: str = os.getenv(
+    "HEAT_FORECAST_STATE_FILE", "/config/ml_heating/heat_forecast_state.json"
+)
+HEAT_FORECAST_HORIZON_HOURS: int = int(
+    os.getenv("HEAT_FORECAST_HORIZON_HOURS", "48")
+)
+HEAT_FORECAST_STEP_MINUTES: int = int(
+    os.getenv("HEAT_FORECAST_STEP_MINUTES", "15")
+)
+HEAT_FORECAST_MAX_HEATING_KW: float = float(
+    os.getenv("HEAT_FORECAST_MAX_HEATING_KW", "8.0")
+)
+HEAT_FORECAST_BASE_GAIN_KW: float = float(
+    os.getenv("HEAT_FORECAST_BASE_GAIN_KW", "0.3")
+)
+HEAT_FORECAST_FIREPLACE_DURATION_H: float = float(
+    os.getenv("HEAT_FORECAST_FIREPLACE_DURATION_H", "3.5")
+)
+HEAT_FORECAST_REUSE_PRICES: bool = (
+    os.getenv("HEAT_FORECAST_REUSE_PRICES", "true").lower() == "true"
+)
+HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID: str = os.getenv(
+    "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID", ""
+)
+HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID: str = os.getenv(
+    "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID", ""
+)
+HEAT_FORECAST_DHW_COUNTER_ENTITY_ID: str = os.getenv(
+    "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID", ""
+)
+HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID: str = os.getenv(
+    "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID", ""
+)
+HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID: str = os.getenv(
+    "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID", ""
+)
+HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID: str = os.getenv(
+    "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID", ""
+)
+COP_CALIBRATION_ENABLED: bool = (
+    os.getenv("COP_CALIBRATION_ENABLED", "false").lower() == "true"
+)
+COP_DEFROST_HANDLING: str = os.getenv("COP_DEFROST_HANDLING", "net").lower()
+COP_DEFROST_EL_IN_HEATING_COUNTER: str = os.getenv(
+    "COP_DEFROST_EL_IN_HEATING_COUNTER", "true"
+).lower()
+COP_DEFROST_BLEND_COLD_RUN_HOURS: float = float(
+    os.getenv("COP_DEFROST_BLEND_COLD_RUN_HOURS", "100")
+)
+DEFROST_DEFAULT_HEAT_FRACTION: float = float(
+    os.getenv("DEFROST_DEFAULT_HEAT_FRACTION", "0.08")
+)
+DEFROST_DEFAULT_EL_FRACTION: float = float(
+    os.getenv("DEFROST_DEFAULT_EL_FRACTION", "0.06")
+)
+COP_HALF_LIFE_DAYS: float = float(os.getenv("COP_HALF_LIFE_DAYS", "45"))
+COP_MIN_HOURS_PER_BIN: float = float(
+    os.getenv("COP_MIN_HOURS_PER_BIN", "4")
+)
+COP_START_INTERCEPT: float = float(os.getenv("COP_START_INTERCEPT", "5.0"))
+COP_START_SLOPE: float = float(os.getenv("COP_START_SLOPE", "0.2"))
+COP_MIN_VALUE: float = float(os.getenv("COP_MIN_VALUE", "1.5"))
+COP_MAX_VALUE: float = float(os.getenv("COP_MAX_VALUE", "10.0"))
+STANDBY_DEFAULT_KW: float = float(os.getenv("STANDBY_DEFAULT_KW", "0.05"))
 
 # --- Electricity Price Integration ---
 # Prices are fetched via the tibber.get_prices HA service call (PriceOptimizer).

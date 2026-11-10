@@ -130,6 +130,96 @@ configuration:
     description: Binary sensor that is 'on' when the DHW electric boost heater is
       active. ML Heating pauses to avoid disturbing the thermal model during high-demand
       electrical events.
+  thermal_power_entity:
+    name: '[Thermal] Direct Heat-Pump Thermal Power Sensor'
+    description: Optional thermal power sensor in watts, used only with thermal_power_source=direct.
+  thermal_power_source:
+    name: '[Thermal] Thermal Power Source'
+    description: spread preserves the existing flow-times-delta-T calculation; direct uses the configured thermal power sensor.
+  heat_forecast_enabled:
+    name: '[Forecast] Enable Heat-Pump Load Forecast'
+    description: Enables the additive, read-only 48-hour forecast without changing control behavior.
+  heat_forecast_sensor_entity:
+    name: '[Forecast] Output Entity'
+    description: Home Assistant sensor exposing the hourly EOS Connect profile in its forecast attribute.
+  heat_forecast_state_file:
+    name: '[Forecast] Persistent State File'
+    description: Atomically written forecast and calibration state.
+  heat_forecast_horizon_hours:
+    name: '[Forecast] Horizon (hours)'
+    description: Hourly forecast length, up to 48 hours.
+  heat_forecast_step_minutes:
+    name: '[Forecast] Simulation Step (minutes)'
+    description: Time step for the thermal energy-balance simulation.
+  heat_forecast_max_heating_kw:
+    name: '[Forecast] Maximum Heating Power (kW)'
+    description: Upper limit for simulated thermal heat-pump output.
+  heat_forecast_base_gain_kw:
+    name: '[Forecast] Base Internal Gains (kW)'
+    description: Configurable average heat gain excluding PV and fireplace.
+  heat_forecast_fireplace_duration_h:
+    name: '[Forecast] Fireplace Burn Time (hours)'
+    description: Assumed remaining burn time while the fireplace is active.
+  heat_forecast_reuse_prices:
+    name: '[Forecast] Reuse Last Price for Gaps'
+    description: Missing hourly prices are filled from the last available price and marked in forecast metadata.
+  heat_forecast_electricity_counter_entity:
+    name: '[Forecast] Heating Electricity Counter (kWh)'
+    description: Reset-safe annual counter; may include defrost electricity.
+  heat_forecast_thermal_counter_entity:
+    name: '[Forecast] Heating Thermal Energy Counter (kWh)'
+    description: Reset-safe gross heating energy counter before defrost correction.
+  heat_forecast_dhw_counter_entity:
+    name: '[Forecast] DHW Electricity Counter (kWh)'
+    description: Separate domestic-hot-water electricity counter.
+  heat_forecast_standby_counter_entity:
+    name: '[Forecast] Standby Electricity Counter (kWh)'
+    description: Separate standby electricity counter.
+  heat_forecast_defrost_electricity_counter_entity:
+    name: '[Forecast] Defrost Electricity Counter (kWh)'
+    description: Optional defrost electricity counter used for defrost calibration.
+  heat_forecast_defrost_thermal_counter_entity:
+    name: '[Forecast] Defrost Thermal Counter (kWh)'
+    description: Optional defrost heat counter used for the net heat balance.
+  cop_calibration_enabled:
+    name: '[COP] Enable Energy-Counter Calibration'
+    description: Learns the COP curve only from reset-safe energy-counter deltas and Influx history.
+  cop_defrost_handling:
+    name: '[COP] Defrost Handling'
+    description: net includes defrost in the COP; separate publishes defrost as a distinct electrical series.
+  cop_defrost_el_in_heating_counter:
+    name: '[COP] Defrost Electricity Included in Heating Counter'
+    description: true matches the configured meter; auto needs repeated defrost intervals and initially assumes true.
+  cop_defrost_blend_cold_run_hours:
+    name: '[COP] Defrost Learning Blend (cold run hours)'
+    description: Cold compressor hours required to fully weight the live defrost counters.
+  defrost_default_heat_fraction:
+    name: '[COP] Default Defrost Heat Fraction'
+    description: Fallback fraction of gross heat while outdoor temperature is at or below 5 C.
+  defrost_default_el_fraction:
+    name: '[COP] Default Defrost Electricity Fraction'
+    description: Fallback share of heating electricity, only for separate defrost reporting.
+  cop_half_life_days:
+    name: '[COP] Half-Life (days)'
+    description: Time decay for the energy-weighted COP calibration.
+  cop_min_hours_per_bin:
+    name: '[COP] Minimum Hours per Temperature Bin'
+    description: Minimum coverage before a temperature bin contributes to the curve.
+  cop_start_intercept:
+    name: '[COP] Starting Intercept'
+    description: Fallback COP at 0 C until enough counter data is available.
+  cop_start_slope:
+    name: '[COP] Starting Slope'
+    description: Fallback COP change per kelvin.
+  cop_min_value:
+    name: '[COP] Lower Bound'
+    description: Lower plausibility bound for the COP curve.
+  cop_max_value:
+    name: '[COP] Upper Bound'
+    description: Upper plausibility bound for the COP curve.
+  standby_default_kw:
+    name: '[Forecast] Standby Fallback (kW)'
+    description: Standby power used until enough separated counter history is available.
   history_steps:
     name: '[ML] History Steps'
     description: 'Number of historical time slices used as features for each prediction.

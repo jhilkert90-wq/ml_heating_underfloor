@@ -81,6 +81,9 @@ def calculate_thermodynamic_metrics(
     inlet_temp: Optional[float],
     flow_rate: Optional[float],
     power_consumption: Optional[float],
+    thermal_power_direct_w: Optional[float] = None,
+    climate_mode: str = "heating",
+    defrosting: bool = False,
 ) -> dict:
     """
     Calculate thermodynamic metrics (COP, Power, Delta T).
@@ -99,9 +102,24 @@ def calculate_thermodynamic_metrics(
     # Q = m * c * dT
     # Flow rate L/min -> kg/s (approx / 60)
     # Specific heat capacity kJ/kg*K
-    thermal_power_kw = (
+    spread_thermal_power_kw = (
         (flow_rate_f / 60.0) * config.SPECIFIC_HEAT_CAPACITY * delta_t
     )
+    thermal_power_kw = spread_thermal_power_kw
+    thermal_power_source = "spread"
+    if (
+        getattr(config, "THERMAL_POWER_SOURCE", "spread") == "direct"
+        and thermal_power_direct_w is not None
+    ):
+        try:
+            direct_kw = float(thermal_power_direct_w) / 1000.0
+        except (TypeError, ValueError):
+            direct_kw = float("nan")
+        if math.isfinite(direct_kw):
+            thermal_power_kw = direct_kw
+            thermal_power_source = "direct"
+            if climate_mode == "heating" and not defrosting:
+                thermal_power_kw = max(0.0, thermal_power_kw)
 
     # COP
     electrical_power_kw = power_consumption_f / 1000.0
@@ -117,6 +135,7 @@ def calculate_thermodynamic_metrics(
         "delta_t": delta_t,
         "thermal_power_kw": thermal_power_kw,
         "cop_realtime": cop_realtime,
+        "thermal_power_source": thermal_power_source,
     }
 
 
@@ -191,6 +210,22 @@ def build_physics_features(
     flow_rate = ha_client.get_state(config.FLOW_RATE_ENTITY_ID, all_states)
     power_consumption = ha_client.get_state(
         config.POWER_CONSUMPTION_ENTITY_ID, all_states
+    )
+    use_direct_thermal_power = (
+        getattr(config, "THERMAL_POWER_SOURCE", "spread") == "direct"
+    )
+    thermal_power_direct = (
+        ha_client.get_state(config.THERMAL_POWER_ENTITY_ID, all_states)
+        if use_direct_thermal_power and getattr(config, "THERMAL_POWER_ENTITY_ID", "")
+        else None
+    )
+    defrosting_now = (
+        ha_client.get_state(
+            config.DEFROST_STATUS_ENTITY_ID, all_states, is_binary=True
+        )
+        or False
+        if use_direct_thermal_power
+        else False
     )
 
     flow_rate_available = flow_rate is not None
@@ -519,7 +554,10 @@ def build_physics_features(
         outlet_temp_f,
         inlet_temp,
         flow_rate,
-        power_consumption
+        power_consumption,
+        thermal_power_direct_w=thermal_power_direct,
+        climate_mode=normalized_climate_mode,
+        defrosting=bool(defrosting_now),
     )
 
     inlet_temp_f = thermo_metrics["inlet_temp"]

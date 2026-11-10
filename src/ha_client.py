@@ -7,9 +7,10 @@ centralizes all communication with Home Assistant, making the rest of the
 application cleaner and easier to manage.
 """
 import logging
+import math
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 import requests
@@ -309,6 +310,66 @@ class HAClient:
         # Pad to n if less
         while len(result) < n:
             result.append(result[-1] if result else 0.0)
+        return result
+
+    def get_hourly_forecast_strict(
+        self, n: int, starts: Sequence[datetime] | None = None
+    ) -> list[float | None]:
+        """Return available outdoor forecast values without padding missing hours."""
+        svc_url = f"{self.url}/api/services/weather/get_forecasts"
+        try:
+            resp = requests.post(
+                svc_url,
+                headers=self.headers,
+                json={"entity_id": ["weather.home"], "type": "hourly"},
+                timeout=10,
+                params={"return_response": "true"},
+            )
+            resp.raise_for_status()
+            forecast_list = resp.json()["service_response"]["weather.home"]["forecast"]
+        except (requests.RequestException, KeyError, TypeError, ValueError) as exc:
+            logging.warning("Strict weather forecast request failed: %s", exc)
+            return []
+
+        if starts is not None:
+            requested = [
+                (start.replace(tzinfo=timezone.utc) if start.tzinfo is None else start)
+                .astimezone(timezone.utc)
+                .replace(minute=0, second=0, microsecond=0)
+                for start in starts[: max(0, n)]
+            ]
+            aligned: list[float | None] = [None] * len(requested)
+            positions = {start: index for index, start in enumerate(requested)}
+            for entry in forecast_list:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    stamp = datetime.fromisoformat(
+                        str(entry["datetime"]).replace("Z", "+00:00")
+                    )
+                    if stamp.tzinfo is None:
+                        stamp = stamp.replace(tzinfo=timezone.utc)
+                    stamp = stamp.astimezone(timezone.utc).replace(
+                        minute=0, second=0, microsecond=0
+                    )
+                    index = positions.get(stamp)
+                    raw = entry.get("temperature")
+                    temperature = float(raw)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if index is not None and math.isfinite(temperature):
+                    aligned[index] = temperature
+            return aligned
+
+        result: list[float | None] = []
+        for entry in forecast_list[: max(0, n)]:
+            raw = entry.get("temperature") if isinstance(entry, dict) else None
+            try:
+                temperature = float(raw)
+            except (TypeError, ValueError):
+                result.append(None)
+                continue
+            result.append(temperature if math.isfinite(temperature) else None)
         return result
 
     def get_hourly_cloud_cover(self, n: int | None = None) -> List[float]:
@@ -984,6 +1045,14 @@ def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
             "unit_of_measurement": "kW",
             "icon": "mdi:flash",
             "device_class": "power",
+        },
+        "sensor.ml_heating_wp_load_forecast": {
+            "unique_id": "ml_heating_wp_load_forecast",
+            "friendly_name": "ML Heating WP Load Forecast",
+            "unit_of_measurement": "kWh",
+            "icon": "mdi:chart-timeline-variant",
+            "device_class": "energy",
+            "state_class": "measurement",
         },
         "sensor.ml_heating_base_outlet_curve": {
             "unique_id": "ml_heating_base_outlet_curve",

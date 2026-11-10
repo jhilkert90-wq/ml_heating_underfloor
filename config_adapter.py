@@ -98,6 +98,10 @@ def convert_addon_to_env(config):
         'POWER_CONSUMPTION_ENTITY_ID': config.get(
             'power_consumption_entity', ''
         ),
+        'THERMAL_POWER_ENTITY_ID': config.get(
+            'thermal_power_entity', ''
+        ),
+        'THERMAL_POWER_SOURCE': config.get('thermal_power_source', 'spread'),
         'SPECIFIC_HEAT_CAPACITY': str(
             config.get('specific_heat_capacity', 4.186)
         ),
@@ -238,6 +242,78 @@ def convert_addon_to_env(config):
             'unified_state_file_cooling',
             '/config/ml_heating/unified_thermal_state_cooling.json'
         ),
+        'HEAT_FORECAST_ENABLED': str(
+            config.get('heat_forecast_enabled', False)
+        ).lower(),
+        'HEAT_FORECAST_SENSOR_ENTITY_ID': config.get(
+            'heat_forecast_sensor_entity',
+            'sensor.ml_heating_wp_load_forecast'
+        ),
+        'HEAT_FORECAST_STATE_FILE': config.get(
+            'heat_forecast_state_file',
+            '/config/ml_heating/heat_forecast_state.json'
+        ),
+        'HEAT_FORECAST_HORIZON_HOURS': str(
+            config.get('heat_forecast_horizon_hours', 48)
+        ),
+        'HEAT_FORECAST_STEP_MINUTES': str(
+            config.get('heat_forecast_step_minutes', 15)
+        ),
+        'HEAT_FORECAST_MAX_HEATING_KW': str(
+            config.get('heat_forecast_max_heating_kw', 8.0)
+        ),
+        'HEAT_FORECAST_BASE_GAIN_KW': str(
+            config.get('heat_forecast_base_gain_kw', 0.3)
+        ),
+        'HEAT_FORECAST_FIREPLACE_DURATION_H': str(
+            config.get('heat_forecast_fireplace_duration_h', 3.5)
+        ),
+        'HEAT_FORECAST_REUSE_PRICES': str(
+            config.get('heat_forecast_reuse_prices', True)
+        ).lower(),
+        'HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID': config.get(
+            'heat_forecast_electricity_counter_entity', ''
+        ),
+        'HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID': config.get(
+            'heat_forecast_thermal_counter_entity', ''
+        ),
+        'HEAT_FORECAST_DHW_COUNTER_ENTITY_ID': config.get(
+            'heat_forecast_dhw_counter_entity', ''
+        ),
+        'HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID': config.get(
+            'heat_forecast_standby_counter_entity', ''
+        ),
+        'HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID': config.get(
+            'heat_forecast_defrost_electricity_counter_entity', ''
+        ),
+        'HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID': config.get(
+            'heat_forecast_defrost_thermal_counter_entity', ''
+        ),
+        'COP_CALIBRATION_ENABLED': str(
+            config.get('cop_calibration_enabled', False)
+        ).lower(),
+        'COP_DEFROST_HANDLING': config.get('cop_defrost_handling', 'net'),
+        'COP_DEFROST_EL_IN_HEATING_COUNTER': config.get(
+            'cop_defrost_el_in_heating_counter', 'true'
+        ),
+        'COP_DEFROST_BLEND_COLD_RUN_HOURS': str(
+            config.get('cop_defrost_blend_cold_run_hours', 100)
+        ),
+        'DEFROST_DEFAULT_HEAT_FRACTION': str(
+            config.get('defrost_default_heat_fraction', 0.08)
+        ),
+        'DEFROST_DEFAULT_EL_FRACTION': str(
+            config.get('defrost_default_el_fraction', 0.06)
+        ),
+        'COP_HALF_LIFE_DAYS': str(config.get('cop_half_life_days', 45)),
+        'COP_MIN_HOURS_PER_BIN': str(
+            config.get('cop_min_hours_per_bin', 4)
+        ),
+        'COP_START_INTERCEPT': str(config.get('cop_start_intercept', 5.0)),
+        'COP_START_SLOPE': str(config.get('cop_start_slope', 0.2)),
+        'COP_MIN_VALUE': str(config.get('cop_min_value', 1.5)),
+        'COP_MAX_VALUE': str(config.get('cop_max_value', 10.0)),
+        'STANDBY_DEFAULT_KW': str(config.get('standby_default_kw', 0.05)),
         'CALIBRATION_BASELINE_FILE': config.get(
             'calibration_baseline_file', '/data/calibrated_baseline.json'
         ),
