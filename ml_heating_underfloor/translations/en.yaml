@@ -163,6 +163,12 @@ configuration:
   heat_forecast_reuse_prices:
     name: '[Forecast] Reuse Last Price for Gaps'
     description: Missing hourly prices are filled from the last available price and marked in forecast metadata.
+  heat_forecast_influx_timeout_seconds:
+    name: '[Forecast] InfluxDB History Timeout (seconds)'
+    description: Timeout for heat-forecast history queries. Range 10–300 seconds; default 60.
+  heat_forecast_min_calibration_hours:
+    name: '[Forecast] Minimum Calibration Hours'
+    description: Minimum aligned heating-counter history required before accepting calibration; default 48 hours.
   heat_forecast_electricity_counter_entity:
     name: '[Forecast] Heating Electricity Counter (kWh)'
     description: Reset-safe annual counter; may include defrost electricity.
@@ -183,7 +189,7 @@ configuration:
     description: Optional defrost heat counter used for the net heat balance.
   cop_calibration_enabled:
     name: '[COP] Enable Energy-Counter Calibration'
-    description: Learns the COP curve only from reset-safe energy-counter deltas and Influx history.
+    description: Learns the COP curve from reset-safe energy-counter deltas and historical data (InfluxDB, then Home Assistant fallback). Calibration is read-only and does not change heating control; the forecast sensor is enabled separately.
   cop_defrost_handling:
     name: '[COP] Defrost Handling'
     description: net includes defrost in the COP; separate publishes defrost as a distinct electrical series.

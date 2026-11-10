@@ -163,6 +163,12 @@ configuration:
   heat_forecast_reuse_prices:
     name: '[Prognose] Letzten Preis bei Lücken wiederverwenden'
     description: Fehlende Stundenpreise werden gekennzeichnet mit dem letzten verfügbaren Preis fortgeschrieben.
+  heat_forecast_influx_timeout_seconds:
+    name: '[Prognose] InfluxDB-History-Timeout (Sekunden)'
+    description: Timeout für Prognose-Historienabfragen. Bereich 10–300 Sekunden; Standard 60.
+  heat_forecast_min_calibration_hours:
+    name: '[Prognose] Mindeststunden für Kalibrierung'
+    description: Erforderliche übereinstimmende Heiz-Zählerhistorie vor Übernahme der Kalibrierung; Standard 48 Stunden.
   heat_forecast_electricity_counter_entity:
     name: '[Prognose] Stromzähler Heizen (kWh)'
     description: Reset-sicherer Jahreszähler; darf den Abtaustrom enthalten.
@@ -183,7 +189,7 @@ configuration:
     description: Optionaler Abtau-Wärmezähler für die Netto-Wärmebilanz.
   cop_calibration_enabled:
     name: '[COP] Energiezähler-Kalibrierung aktivieren'
-    description: Lernt die COP-Kennlinie ausschließlich aus reset-sicheren Energiezählerdeltas und Influx-Historie.
+    description: Lernt die COP-Kennlinie aus reset-sicheren Energiezählerdeltas und Historie (zuerst InfluxDB, dann Home-Assistant-Fallback). Die Kalibrierung ist rein lesend und ändert nicht die Heizungsregelung; der Prognosesensor wird separat aktiviert.
   cop_defrost_handling:
     name: '[COP] Abtau-Behandlung'
     description: net integriert Abtauung in die COP; separate weist sie als eigene elektrische Reihe aus.

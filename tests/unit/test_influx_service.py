@@ -75,6 +75,36 @@ def test_fetch_history_marks_query_failure_unavailable(influx_service):
     assert influx_service.get_history_sample_count("sensor.test") == 0
 
 
+def test_forecast_counter_history_uses_isolated_timeout_and_entity_measurement(
+    influx_service, monkeypatch
+):
+    query_frame = pd.DataFrame(
+        {
+            "_time": pd.to_datetime(["2026-01-01T00:00:00Z"]),
+            "_value": [12.5],
+        }
+    )
+    query_api = MagicMock()
+    query_api.query_data_frame.return_value = query_frame
+    forecast_client = MagicMock()
+    forecast_client.query_api.return_value = query_api
+    client_factory = MagicMock(return_value=forecast_client)
+    monkeypatch.setattr("src.influx_service.InfluxDBClient", client_factory)
+
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    result = influx_service.fetch_counter_history(
+        ["sensor.heat"], start, start + pd.Timedelta(hours=1), timeout_seconds=60
+    )
+
+    assert result["sensor.heat"] == [(start, 12.5)]
+    assert client_factory.call_args.kwargs["timeout"] == 60_000
+    query = query_api.query_data_frame.call_args.args[0]
+    assert 'r["_measurement"] == "kWh"' in query
+    assert 'r["_field"] == "value"' in query
+    assert 'r["entity_id"] == "heat"' in query
+    assert "aggregateWindow(every: 1h, fn: last" in query
+
+
 def test_write_metrics(influx_service):
     """Test writing various metrics to InfluxDB."""
     influx_service.write_api.write = MagicMock()

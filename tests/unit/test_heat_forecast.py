@@ -9,6 +9,7 @@ from src.heat_forecast import (
     ForecastStateStore,
     HeatForecastEngine,
     compute_counter_delta,
+    cop_calibration_energies,
     cop_curve_from_state,
     fit_energy_weighted_cop,
     forecast_hour_starts,
@@ -50,6 +51,33 @@ def test_net_cop_adds_separate_defrost_electricity_only_when_not_in_counter():
         defrost_el_in_heating_counter=False,
     )
     assert e_total == pytest.approx(2.12)
+
+
+def test_cop_calibration_uses_only_valid_net_and_separate_energy_pairs():
+    common = {
+        "heat_kwh": 10.0,
+        "electricity_kwh": 2.0,
+        "defrost_heat_kwh": 0.8,
+        "defrost_electricity_kwh": 0.12,
+    }
+
+    net_included = cop_calibration_energies(
+        **common, defrost_el_in_heating_counter=True, defrost_handling="net"
+    )
+    separate_included = cop_calibration_energies(
+        **common, defrost_el_in_heating_counter=True, defrost_handling="separate"
+    )
+    net_excluded = cop_calibration_energies(
+        **common, defrost_el_in_heating_counter=False, defrost_handling="net"
+    )
+    separate_excluded = cop_calibration_energies(
+        **common, defrost_el_in_heating_counter=False, defrost_handling="separate"
+    )
+
+    assert net_included == pytest.approx((9.2, 2.0))
+    assert separate_included == pytest.approx((9.2, 1.88))
+    assert net_excluded == pytest.approx((9.2, 2.12))
+    assert separate_excluded == pytest.approx((9.2, 2.0))
 
 
 def test_auto_defrost_counter_diagnosis_compares_meter_and_power_integral():
@@ -296,20 +324,20 @@ def test_backfill_seeds_defrost_estimates_from_minute_history(monkeypatch, tmp_p
         "sensor.heat_el": [(start, 10.0), (now, 10.4)],
         "sensor.heat_th": [(start, 20.0), (now, 20.8)],
     }
-    minutes = [
-        (start.replace(minute=minute), 600.0) for minute in range(4)
-    ]
+    event_minutes = (1, 4, 7, 10, 13)
+    minutes = [(start + timedelta(minutes=minute), 240.0) for minute in event_minutes]
     thermal = [
-        (start.replace(minute=minute), -1200.0 if minute in (1, 2) else 0.0)
-        for minute in range(4)
+        (start + timedelta(minutes=minute), -480.0)
+        for minute in event_minutes
     ]
     states = [
-        (start.replace(minute=minute), 1.0 if minute in (1, 2) else 0.0)
-        for minute in range(4)
+        (start + timedelta(minutes=minute), 1.0) for minute in event_minutes
     ]
 
     class FakeInflux:
-        def fetch_minute_history(self, entity_ids, _start, _stop, *, agg_fn):
+        def fetch_minute_history(
+            self, entity_ids, _start, _stop, *, agg_fn, timeout_seconds
+        ):
             values = {
                 "sensor.power": minutes,
                 "sensor.thermal_power": thermal,
@@ -326,7 +354,7 @@ def test_backfill_seeds_defrost_estimates_from_minute_history(monkeypatch, tmp_p
 
     assert engine.state["defrost_heat_fraction_power"] == pytest.approx(0.05)
     assert engine.state["defrost_el_fraction_power"] == pytest.approx(0.05)
-    assert engine.state["defrost_power_history"]["event_count"] == 1
+    assert engine.state["defrost_power_history"]["event_count"] == 5
 
 
 def test_pv_surplus_offset_survives_price_service_failure(monkeypatch, tmp_path):
@@ -478,7 +506,11 @@ def test_update_publishes_hourly_thermal_and_electrical_profiles(
     assert len(attributes["forecast"]) == 3
     assert len(attributes["forecast_heat_th_kwh"]) == 3
     assert attributes["forecast_heat_th_kwh"][1] > 0
-    assert attributes["current_hour_estimate"] == "degraded_missing_counter_anchor"
+    assert attributes["calibration_source"] == "defaults"
+    assert attributes["calibration_hours"] == 0
+    assert len(attributes["price_source_per_hour"]) == 3
+    assert isinstance(attributes["degraded_reasons"], list)
+    assert attributes["current_hour_estimate"] == "degraded_partial"
     assert attributes["includes"] == ["heating", "dhw", "standby"]
     assert simulation_fractions == ([0.5, 0.5, 0.5] if fireplace_on else [0.5])
     if fireplace_on:
@@ -885,7 +917,7 @@ def test_bounded_hourly_prices_reach_explicit_reuse_policy(monkeypatch, tmp_path
         ha_client=object(),
     )
 
-    assert sources == ["tibber", "none"]
+    assert sources == ["actual", "none"]
 
 
 def test_price_offset_is_suppressed_during_active_forecast_trajectory(
@@ -1062,7 +1094,339 @@ def test_current_hour_coverage_stays_degraded_without_hour_boundary_anchor(
         remaining_hours=25.0 / 60.0,
     )
 
-    assert engine.state["current_hour_estimate"] == "degraded_missing_counter_anchor"
+    assert engine.state["current_hour_estimate"] == "degraded_partial"
+
+
+def test_explicit_defrost_counter_setting_overrides_unknown(monkeypatch, tmp_path):
+    from src import config
+
+    monkeypatch.setattr(config, "COP_DEFROST_EL_IN_HEATING_COUNTER", "true")
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine.state["defrost_el_in_heating_counter"] = "unknown"
+
+    engine._record_interval(
+        now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        states={},
+        outdoor_c=0.0,
+    )
+
+    assert engine.state["defrost_el_in_heating_counter"] == "true"
+    assert engine.state["defrost_el_in_heating_counter_source"] == "configured"
+
+
+def test_counter_snapshot_uses_sensor_update_time(monkeypatch, tmp_path):
+    from src import config
+
+    monkeypatch.setattr(
+        config, "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID", "sensor.heat_el"
+    )
+    sample_time = datetime(2026, 1, 1, 10, 27, tzinfo=timezone.utc)
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+
+    engine._record_interval(
+        now=datetime(2026, 1, 1, 10, 30, tzinfo=timezone.utc),
+        states={
+            "sensor.heat_el": {
+                "state": "12.5",
+                "last_updated": sample_time.isoformat(),
+            }
+        },
+        outdoor_c=0.0,
+    )
+
+    assert engine.state["counter_snapshots"]["heating_el"]["time_utc"] == (
+        sample_time.isoformat()
+    )
+
+
+@pytest.mark.parametrize(
+    ("partial_influx", "expected_source"),
+    [(False, "homeassistant"), (True, "mixed")],
+)
+def test_energy_counter_calibration_falls_back_to_home_assistant(
+    monkeypatch, tmp_path, partial_influx, expected_source
+):
+    from src import config
+
+    entity_values = {
+        "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID": "sensor.heat_el",
+        "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID": "sensor.heat_th",
+        "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID": "sensor.defrost_el",
+        "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID": "sensor.defrost_th",
+        "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID": "sensor.dhw",
+        "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID": "sensor.standby",
+    }
+    for key, value in entity_values.items():
+        monkeypatch.setattr(config, key, value)
+    monkeypatch.setattr(config, "COP_CALIBRATION_ENABLED", True)
+    monkeypatch.setattr(config, "HEAT_FORECAST_MIN_CALIBRATION_HOURS", 48)
+    monkeypatch.setattr(config, "HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS", 60)
+    now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    entities = list(entity_values.values()) + ["sensor.outdoor"]
+
+    class BrokenInflux:
+        calls = 0
+
+        def fetch_counter_history(self, requested, _start, _stop, **_kwargs):
+            self.calls += 1
+            if not partial_influx:
+                raise TimeoutError("Influx timeout")
+            entity = requested[0]
+            if entity not in ("sensor.heat_el", "sensor.heat_th", "sensor.outdoor"):
+                return {entity: []}
+            samples = []
+            for hour in range(49):
+                stamp = now - timedelta(hours=48 - hour)
+                base = -2.0 if entity == "sensor.outdoor" else 0.0
+                increment = (
+                    0.1
+                    if entity == "sensor.heat_el"
+                    else 0.3
+                    if entity == "sensor.heat_th"
+                    else 0.0
+                )
+                samples.append((stamp, base + hour * increment))
+            return {entity: samples}
+
+    class HistoryHA:
+        def get_history_bulk(self, requested, start, stop):
+            response = []
+            for entity in requested:
+                index = entities.index(entity) if entity in entities else -1
+                records = []
+                if index >= 0:
+                    for hour in range(49):
+                        stamp = now - timedelta(hours=48 - hour)
+                        if start <= stamp <= stop:
+                            base = 0.0 if entity != "sensor.outdoor" else -2.0
+                            increment = (
+                                0.1
+                                if entity == "sensor.heat_el"
+                                else 0.3
+                                if entity == "sensor.heat_th"
+                                else 0.0
+                            )
+                            records.append(
+                                {
+                                    "state": str(base + hour * increment),
+                                    "last_changed": stamp.isoformat(),
+                                }
+                            )
+                response.append(records)
+            return response
+
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine._backfill(
+        now=now,
+        influx_service=BrokenInflux(),
+        outdoor_entity_id="sensor.outdoor",
+        ha_client=HistoryHA(),
+    )
+
+    assert engine.state["calibration_source"] == expected_source
+    assert engine.state["calibration_hours"] >= 48
+    assert engine.state["cop_bins"]
+    assert engine.state["last_backfill_at"]
+    assert engine.state["hour_anchor"]["energy_coverage"]["heating_el"] is True
+    engine.state["defrost_power_history_attempted_at"] = now.isoformat()
+    engine.store.save(engine.state)
+    queries_before_restart = engine.state["backfill_attempt_count"]
+    restarted = HeatForecastEngine(str(tmp_path / "state.json"))
+    influx_queries = BrokenInflux()
+    restarted._backfill(
+        now=now + timedelta(hours=1),
+        influx_service=influx_queries,
+        outdoor_entity_id="sensor.outdoor",
+        ha_client=HistoryHA(),
+    )
+    assert restarted.state["last_backfill_at"] == engine.state["last_backfill_at"]
+    assert restarted.state["backfill_attempt_count"] == queries_before_restart
+    assert restarted.state["cop_bins"] == engine.state["cop_bins"]
+    assert influx_queries.calls == 0
+
+
+def test_failed_history_backfill_retries_with_backoff_and_does_not_mark_success(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "COP_CALIBRATION_ENABLED", True)
+    monkeypatch.setattr(config, "HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS", 60)
+    for key in (
+        "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID",
+    ):
+        monkeypatch.setattr(config, key, f"sensor.{key.lower()}")
+
+    class EmptyInflux:
+        calls = 0
+
+        def fetch_counter_history(self, entities, _start, _stop, **_kwargs):
+            self.calls += 1
+            return {entity: [] for entity in entities}
+
+    class EmptyHA:
+        def get_history_bulk(self, entities, _start, _stop):
+            return [[] for _ in entities]
+
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    influx = EmptyInflux()
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for attempt_time in (now, now + timedelta(minutes=4), now + timedelta(minutes=6)):
+        engine._backfill(
+            now=attempt_time,
+            influx_service=influx,
+            outdoor_entity_id="sensor.outdoor",
+            ha_client=EmptyHA(),
+        )
+
+    assert engine.state["backfill_attempt_count"] == 2
+    assert engine.state["backfill_last_error"]
+    assert engine.state["last_backfill_at"] is None
+
+
+def test_price_profile_reuses_same_hour_today_until_tomorrow_updates(
+    monkeypatch, tmp_path
+):
+    from src import config, price_optimizer, pv_trajectory
+
+    monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", True)
+    monkeypatch.setattr(config, "PRICE_COST_MODE_ENABLED", False)
+    monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+    monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False)
+    monkeypatch.setattr(
+        price_optimizer.PriceOptimizer, "refresh_prices_if_needed", lambda *_: None
+    )
+    monkeypatch.setattr(
+        pv_trajectory,
+        "get_forecast_trajectory_state",
+        lambda *_args: SimpleNamespace(active=False),
+    )
+    start = datetime(2026, 1, 1, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+    optimizer = price_optimizer.PriceOptimizer()
+    optimizer._price_tz = ZoneInfo("Europe/Berlin")
+    optimizer._price_entries = [
+        (start + timedelta(hours=hour), 0.05 + hour * 0.01)
+        for hour in range(24)
+    ]
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine._price_optimizer = optimizer
+    forecast_starts = [start + timedelta(hours=22 + hour) for hour in range(7)]
+
+    _, first_sources = engine._target_offsets(
+        starts=forecast_starts,
+        pv_electrical=[0.0] * len(forecast_starts),
+        ha_client=object(),
+    )
+    assert engine._price_source_per_hour[:2] == ["actual", "actual"]
+    assert engine._price_source_per_hour[2:] == ["reused_today"] * 5
+    assert first_sources[2:] == ["reused_today"] * 5
+    assert engine._prices_reused_hours == 5
+
+    optimizer._price_entries.extend(
+        (start + timedelta(days=1, hours=hour), 0.2)
+        for hour in range(24)
+    )
+    _, updated_sources = engine._target_offsets(
+        starts=forecast_starts,
+        pv_electrical=[0.0] * len(forecast_starts),
+        ha_client=object(),
+    )
+    assert engine._price_source_per_hour == ["actual"] * 7
+    assert updated_sources == ["actual"] * 7
+
+
+def test_missing_prices_use_neutral_offsets_and_none_source(monkeypatch, tmp_path):
+    from src import config, price_optimizer, pv_trajectory
+
+    monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", True)
+    monkeypatch.setattr(config, "PRICE_COST_MODE_ENABLED", False)
+    monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+    monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False)
+    monkeypatch.setattr(
+        price_optimizer.PriceOptimizer, "refresh_prices_if_needed", lambda *_: None
+    )
+    monkeypatch.setattr(
+        pv_trajectory,
+        "get_forecast_trajectory_state",
+        lambda *_args: SimpleNamespace(active=False),
+    )
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+
+    offsets, sources = engine._target_offsets(
+        starts=[start, start + timedelta(hours=1)],
+        pv_electrical=[0.0, 0.0],
+        ha_client=object(),
+    )
+
+    assert offsets == [0.0, 0.0]
+    assert sources == ["none", "none"]
+    assert engine._price_source_per_hour == ["none", "none"]
+
+
+def test_async_forecast_dispatch_does_not_wait_for_history_timeout(monkeypatch):
+    import threading
+    import time
+    from src import config, heat_forecast
+
+    monkeypatch.setattr(config, "HEAT_FORECAST_ENABLED", True)
+    monkeypatch.setattr(config, "COP_CALIBRATION_ENABLED", False)
+    gate = threading.Event()
+
+    class SlowEngine:
+        def update_and_publish(self, **_kwargs):
+            gate.wait(60)
+
+    executor = None
+    monkeypatch.setattr(heat_forecast, "_forecast_engine", SlowEngine())
+    monkeypatch.setattr(heat_forecast, "_forecast_executor", None)
+    monkeypatch.setattr(heat_forecast, "_forecast_future", None)
+    started = time.monotonic()
+    heat_forecast.publish_heat_forecast_async(
+        ha_client=object(),
+        states={},
+        wrapper=object(),
+    )
+    elapsed = time.monotonic() - started
+    future = heat_forecast._forecast_future
+    executor = heat_forecast._forecast_executor
+    gate.set()
+    assert future is not None
+    future.result(timeout=2)
+    executor.shutdown(wait=True)
+    assert elapsed < 5
+
+
+def test_state_store_migrates_v1_and_recovers_corrupt_primary_from_backup(tmp_path):
+    import json
+
+    path = tmp_path / "forecast.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "counter_snapshots": {},
+                "cop_bins": {},
+                "daily_energy": {},
+                "last_backfill_at": "2026-01-01T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = ForecastStateStore(str(path))
+    migrated = store.load()
+    assert migrated["schema_version"] == 2
+    assert migrated["calibration_source"] == "defaults"
+    assert migrated["last_backfill_at"] is None
+
+    store.save(migrated)
+    path.write_text("{", encoding="utf-8")
+    assert store.load()["schema_version"] == 2
 
 
 def test_first_forecast_hour_advances_only_its_remaining_fraction():

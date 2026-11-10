@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Heat Forecast Calibration Bootstrap Fixes — 2026-11-10
+
+- **What:** Added configurable InfluxDB history timeouts and smaller per-entity/block queries, Home Assistant REST history fallback, bounded bootstrap retries, schema-v1 migration and backup recovery, validated defrost event learning, explicit COP energy pairings, same-hour price reuse, and persisted counter anchors. Forecast attributes now expose calibration source/hours, reused-price sources, current-hour quality, and degraded reasons.
+- **Why:** Startup history timeouts were treated as completed bootstraps, leaving the COP curve and defrost fractions empty; forecast prices and current-hour counter coverage were also lost during missing data or restarts.
+- **Setting meaning:** `[COP] Enable Energy-Counter Calibration` (`cop_calibration_enabled`) turns on a read-only COP learner using counter deltas/history. It does not activate the forecast sensor (that is `heat_forecast_enabled`) or change control behavior.
+- **Files:** `src/heat_forecast.py`, `src/influx_service.py`, `src/ha_client.py`, `src/config.py`, `config_adapter.py`, add-on config/translations, `docs/HEAT_FORECAST_EOS_CONNECT.md`, forecast and Influx tests, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### EOS Forecast Review Fixes — 2026-11-10
 
 - **What:** Addressed all 18 review findings in the EOS heat forecast. Forecast price classification now uses an isolated persistent optimizer and date-specific bounded prices; weather and counter data are aligned to their actual time intervals; defrost, COP ageing, daily DHW, and current-hour component accounting preserve valid energy semantics. The first simulation slot advances only the remaining portion of its hour, including fireplace scenarios.

@@ -12,6 +12,8 @@ import numpy as np
 import logging
 import atexit
 import re
+import warnings
+import threading
 from influxdb_client import InfluxDBClient, QueryApi, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
@@ -32,6 +34,11 @@ class InfluxService:
 
     def __init__(self, url, token, org):
         """Initializes the InfluxDB client."""
+        self._url = url
+        self._token = token
+        self._org = org
+        self._forecast_clients: Dict[int, InfluxDBClient] = {}
+        self._forecast_client_lock = threading.Lock()
         self.client = InfluxDBClient(url=url, token=token, org=org)
         self.query_api: QueryApi = self.client.query_api()
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
@@ -51,12 +58,50 @@ class InfluxService:
 
     def close(self):
         """Closes the InfluxDB client connection."""
+        for client in self._forecast_clients.values():
+            client.close()
+        self._forecast_clients.clear()
         if hasattr(self, 'client') and self.client:
             try:
                 self.client.close()
             except Exception:
                 pass
             self.client = None
+
+    def _forecast_query_data_frame(self, query: str, timeout_seconds: int):
+        from influxdb_client.client.warnings import MissingPivotFunction
+
+        timeout_ms = max(10, min(300, int(timeout_seconds))) * 1000
+        with self._forecast_client_lock:
+            client = self._forecast_clients.get(timeout_ms)
+            if client is None:
+                client = InfluxDBClient(
+                    url=self._url,
+                    token=self._token,
+                    org=self._org,
+                    timeout=timeout_ms,
+                )
+                self._forecast_clients[timeout_ms] = client
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=MissingPivotFunction,
+            )
+            return client.query_api().query_data_frame(query)
+
+    @staticmethod
+    def _forecast_measurement(entity_id: str) -> str:
+        """Resolve the Home Assistant unit measurement for forecast sensors."""
+        if entity_id == config.DEFROST_STATUS_ENTITY_ID:
+            return "state"
+        if entity_id in (
+            config.POWER_CONSUMPTION_ENTITY_ID,
+            getattr(config, "THERMAL_POWER_ENTITY_ID", ""),
+        ):
+            return "W"
+        if entity_id == config.OUTDOOR_TEMP_ENTITY_ID:
+            return "°C"
+        return "kWh"
 
     def check_write_permission(self, bucket: Optional[str] = None) -> bool:
         """Check if we can write to the features bucket.
@@ -261,6 +306,8 @@ class InfluxService:
         entity_ids: List[str],
         start: datetime,
         stop: datetime,
+        *,
+        timeout_seconds: int = 60,
     ) -> Dict[str, List[Tuple[datetime, float]]]:
         """Fetch hourly last values for configured energy counters and sensors."""
         result: Dict[str, List[Tuple[datetime, float]]] = {
@@ -271,42 +318,50 @@ class InfluxService:
             return result
         start_utc = start.astimezone(timezone.utc).isoformat()
         stop_utc = stop.astimezone(timezone.utc).isoformat()
-        id_list = ", ".join(f'"{item}"' for item in short_ids)
-        flux_query = f"""
+        for entity_id, short_id in zip(entity_ids, short_ids):
+            entity_result: List[Tuple[datetime, float]] = []
+            measurement = self._forecast_measurement(entity_id)
+            flux_query = f"""
         from(bucket: "{config.INFLUX_BUCKET}")
           |> range(start: time(v: "{start_utc}"), stop: time(v: "{stop_utc}"))
-          |> filter(fn: (r) => contains(value: r["entity_id"], set: [{id_list}]))
+          |> filter(fn: (r) => r["_measurement"] == "{measurement}")
+          |> filter(fn: (r) => r["entity_id"] == "{short_id}")
           |> filter(fn: (r) => r["_field"] == "value")
           |> aggregateWindow(every: 1h, fn: last, createEmpty: false)
           |> keep(columns: ["_time", "_value", "entity_id"])
           |> sort(columns: ["_time"])
         """
-        try:
-            frames = self.query_api.query_data_frame(flux_query)
-            frame = (
-                pd.concat(frames, ignore_index=True)
-                if isinstance(frames, list)
-                else frames
-            )
-            if frame.empty or not {"_time", "_value", "entity_id"}.issubset(frame):
-                return result
-            reverse_ids = dict(zip(short_ids, entity_ids))
-            for row in frame[["_time", "_value", "entity_id"]].itertuples(
-                index=False, name=None
-            ):
-                timestamp, raw_value, short_id = row
-                try:
-                    value = float(raw_value)
-                    moment = pd.Timestamp(timestamp).to_pydatetime()
-                    entity_id = reverse_ids.get(str(short_id))
-                except (TypeError, ValueError):
+            try:
+                frames = self._forecast_query_data_frame(
+                    flux_query, timeout_seconds
+                )
+                frame = (
+                    pd.concat(frames, ignore_index=True)
+                    if isinstance(frames, list)
+                    else frames
+                )
+                if frame.empty or not {"_time", "_value"}.issubset(frame):
                     continue
-                if entity_id and np.isfinite(value):
-                    result[entity_id].append(
-                        (moment.astimezone(timezone.utc), value)
-                    )
-        except Exception as exc:
-            logging.warning("Could not fetch hourly heat-forecast history: %s", exc)
+                for row in frame[["_time", "_value"]].itertuples(
+                    index=False, name=None
+                ):
+                    timestamp, raw_value = row
+                    try:
+                        value = float(raw_value)
+                        moment = pd.Timestamp(timestamp).to_pydatetime()
+                    except (TypeError, ValueError):
+                        continue
+                    if np.isfinite(value):
+                        entity_result.append(
+                            (moment.astimezone(timezone.utc), value)
+                        )
+                result[entity_id] = entity_result
+            except Exception as exc:
+                logging.warning(
+                    "Could not fetch hourly heat-forecast history for %s: %s",
+                    entity_id,
+                    exc,
+                )
         return result
 
     def fetch_minute_history(
@@ -316,56 +371,60 @@ class InfluxService:
         stop: datetime,
         *,
         agg_fn: str = "last",
+        timeout_seconds: int = 60,
     ) -> Dict[str, List[Tuple[datetime, float]]]:
         """Fetch timestamped one-minute sensor history for defrost initialization."""
         result: Dict[str, List[Tuple[datetime, float]]] = {
             entity_id: [] for entity_id in entity_ids
         }
-        short_ids = [entity_id.split(".", 1)[-1] for entity_id in entity_ids]
-        if not short_ids or any(
-            not re.fullmatch(r"[A-Za-z0-9_]+", item) for item in short_ids
-        ):
-            return result
         if agg_fn not in ("last", "max", "mean"):
             agg_fn = "last"
         start_utc = start.astimezone(timezone.utc).isoformat()
         stop_utc = stop.astimezone(timezone.utc).isoformat()
-        id_list = ", ".join(f'"{item}"' for item in short_ids)
-        flux_query = f"""
+        for entity_id in entity_ids:
+            short_id = entity_id.split(".", 1)[-1]
+            if not re.fullmatch(r"[A-Za-z0-9_]+", short_id):
+                continue
+            measurement = self._forecast_measurement(entity_id)
+            flux_query = f"""
         from(bucket: "{config.INFLUX_BUCKET}")
           |> range(start: time(v: "{start_utc}"), stop: time(v: "{stop_utc}"))
-          |> filter(fn: (r) => contains(value: r["entity_id"], set: [{id_list}]))
+          |> filter(fn: (r) => r["_measurement"] == "{measurement}")
+          |> filter(fn: (r) => r["entity_id"] == "{short_id}")
           |> filter(fn: (r) => r["_field"] == "value")
           |> aggregateWindow(every: 1m, fn: {agg_fn}, createEmpty: false)
-          |> keep(columns: ["_time", "_value", "entity_id"])
+          |> keep(columns: ["_time", "_value"])
           |> sort(columns: ["_time"])
         """
-        try:
-            frames = self.query_api.query_data_frame(flux_query)
-            frame = (
-                pd.concat(frames, ignore_index=True)
-                if isinstance(frames, list)
-                else frames
-            )
-            if frame.empty or not {"_time", "_value", "entity_id"}.issubset(frame):
-                return result
-            reverse_ids = dict(zip(short_ids, entity_ids))
-            for row in frame[["_time", "_value", "entity_id"]].itertuples(
-                index=False, name=None
-            ):
-                timestamp, raw_value, short_id = row
-                try:
-                    value = float(raw_value)
-                    moment = pd.Timestamp(timestamp).to_pydatetime()
-                    entity_id = reverse_ids.get(str(short_id))
-                except (TypeError, ValueError):
+            try:
+                frames = self._forecast_query_data_frame(
+                    flux_query, timeout_seconds
+                )
+                frame = (
+                    pd.concat(frames, ignore_index=True)
+                    if isinstance(frames, list)
+                    else frames
+                )
+                if frame.empty or not {"_time", "_value"}.issubset(frame):
                     continue
-                if entity_id and np.isfinite(value):
-                    result[entity_id].append(
-                        (moment.astimezone(timezone.utc), value)
-                    )
-        except Exception as exc:
-            logging.warning("Could not fetch minute heat-forecast history: %s", exc)
+                samples = []
+                for timestamp, raw_value in frame[["_time", "_value"]].itertuples(
+                    index=False, name=None
+                ):
+                    try:
+                        value = float(raw_value)
+                        moment = pd.Timestamp(timestamp).to_pydatetime()
+                    except (TypeError, ValueError):
+                        continue
+                    if np.isfinite(value):
+                        samples.append((moment.astimezone(timezone.utc), value))
+                result[entity_id] = samples
+            except Exception as exc:
+                logging.warning(
+                    "Could not fetch minute heat-forecast history for %s: %s",
+                    entity_id,
+                    exc,
+                )
         return result
 
     def get_history_sample_count(self, entity_id: str) -> int:

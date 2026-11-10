@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Hardened heat-forecast calibration with bounded InfluxDB history queries, Home Assistant history fallback, retry backoff, current-hour counter anchors, reset-safe COP energy pairings, and same-hour price reuse.
+- Exposed forecast calibration quality and price-source diagnostics, and migrated/recovered forecast state safely.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

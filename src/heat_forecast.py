@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -20,7 +21,7 @@ LOGGER = logging.getLogger(__name__)
 class ForecastStateStore:
     """Load and atomically persist compact forecast learning state."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self, path: str):
         self.path = Path(path)
@@ -44,23 +45,76 @@ class ForecastStateStore:
             "defrost_el_counter_kwh": 0.0,
             "defrost_el_reference_kwh": 0.0,
             "last_backfill_at": None,
+            "backfill_last_attempt_at": None,
+            "backfill_attempt_count": 0,
+            "backfill_last_error": None,
+            "defrost_power_history_last_attempt_at": None,
+            "defrost_power_history_attempt_count": 0,
+            "defrost_power_history_last_error": None,
+            "calibration_source": "defaults",
+            "calibration_hours": 0.0,
         }
 
     def load(self) -> dict[str, Any]:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict) or data.get("schema_version") != self.VERSION:
+            if not isinstance(data, dict):
+                raise ValueError("Unsupported forecast-state schema")
+            version = data.get("schema_version", 1)
+            if version not in (1, self.VERSION):
                 raise ValueError("Unsupported forecast-state schema")
             state = self.empty()
             state.update(data)
+            if version == 1:
+                state["schema_version"] = self.VERSION
+                if not state["cop_bins"]:
+                    state["last_backfill_at"] = None
+                power_history = state.get("defrost_power_history", {})
+                if (
+                    not isinstance(power_history, Mapping)
+                    or int(power_history.get("event_count", 0)) < 5
+                ):
+                    state["defrost_power_history_attempted_at"] = None
             for key in ("counter_snapshots", "cop_bins", "daily_energy"):
                 if not isinstance(state.get(key), dict):
                     raise ValueError(f"Invalid forecast state field: {key}")
             return state
         except FileNotFoundError:
-            return self.empty()
+            return self._load_backup()
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
             LOGGER.warning("Ignoring invalid heat-forecast state %s: %s", self.path, exc)
+            return self._load_backup()
+
+    def _load_backup(self) -> dict[str, Any]:
+        backup = self.path.with_suffix(self.path.suffix + ".bak")
+        try:
+            data = json.loads(backup.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or data.get("schema_version") not in (
+                1,
+                self.VERSION,
+            ):
+                raise ValueError("Unsupported forecast-state backup schema")
+            state = self.empty()
+            state.update(data)
+            if data.get("schema_version") == 1:
+                if not state["cop_bins"]:
+                    state["last_backfill_at"] = None
+                power_history = state.get("defrost_power_history", {})
+                if (
+                    not isinstance(power_history, Mapping)
+                    or int(power_history.get("event_count", 0)) < 5
+                ):
+                    state["defrost_power_history_attempted_at"] = None
+            state["schema_version"] = self.VERSION
+            for key in ("counter_snapshots", "cop_bins", "daily_energy"):
+                if not isinstance(state.get(key), dict):
+                    raise ValueError(f"Invalid forecast state field: {key}")
+            LOGGER.warning("Recovered heat-forecast state from backup %s", backup)
+            return state
+        except FileNotFoundError:
+            return self.empty()
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            LOGGER.warning("Ignoring invalid heat-forecast backup %s: %s", backup, exc)
             return self.empty()
 
     def save(self, state: Mapping[str, Any]) -> None:
@@ -98,6 +152,195 @@ def _entity_value(states: Mapping[str, Any], entity_id: str) -> float | None:
     except (TypeError, ValueError):
         return None
     return value if math.isfinite(value) and value >= 0 else None
+
+
+def _entity_timestamp(
+    states: Mapping[str, Any], entity_id: str, fallback: datetime
+) -> datetime:
+    entity = states.get(entity_id)
+    if isinstance(entity, Mapping):
+        for field in ("last_updated", "last_changed"):
+            raw = entity.get(field)
+            if raw:
+                try:
+                    value = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+                except ValueError:
+                    continue
+    return fallback
+
+
+def _time_blocks(
+    start: datetime, stop: datetime, *, days: int
+) -> list[datetime]:
+    result = []
+    cursor = start
+    while cursor < stop:
+        result.append(cursor)
+        cursor += timedelta(days=days)
+    return result
+
+
+def _fetch_influx_history_in_blocks(
+    influx_service: Any,
+    method_name: str,
+    entity_ids: Sequence[str],
+    start: datetime,
+    stop: datetime,
+    *,
+    block_days: int,
+    timeout_seconds: int,
+    agg_fn: str | None = None,
+) -> dict[str, list[tuple[datetime, float]]]:
+    result: dict[str, list[tuple[datetime, float]]] = {
+        entity: [] for entity in entity_ids
+    }
+    method = getattr(influx_service, method_name, None)
+    if not callable(method):
+        return result
+    tasks = [
+        (entity, block_start, min(stop, block_start + timedelta(days=block_days)))
+        for entity in entity_ids
+        for block_start in _time_blocks(start, stop, days=block_days)
+    ]
+
+    def fetch(task):
+        entity, block_start, block_end = task
+        kwargs = {"timeout_seconds": timeout_seconds}
+        if agg_fn is not None:
+            kwargs["agg_fn"] = agg_fn
+        try:
+            return entity, method([entity], block_start, block_end, **kwargs).get(
+                entity, []
+            )
+        except Exception as exc:
+            LOGGER.info(
+                "Influx forecast history failed for %s: %s", entity, exc
+            )
+            return entity, []
+
+    if len(tasks) == 1:
+        fetched = [fetch(tasks[0])]
+    else:
+        with ThreadPoolExecutor(
+            max_workers=min(8, len(tasks)), thread_name_prefix="forecast-history"
+        ) as executor:
+            fetched = list(executor.map(fetch, tasks))
+    for entity, samples in fetched:
+        result[entity].extend(samples)
+    return {
+        entity: _merge_samples([], samples)
+        for entity, samples in result.items()
+    }
+
+
+def _merge_samples(
+    first: Sequence[tuple[datetime, float]],
+    second: Sequence[tuple[datetime, float]],
+) -> list[tuple[datetime, float]]:
+    merged = {stamp.astimezone(timezone.utc): value for stamp, value in first}
+    merged.update(
+        {stamp.astimezone(timezone.utc): value for stamp, value in second}
+    )
+    return sorted(merged.items())
+
+
+def _fetch_ha_history(
+    ha_client: Any,
+    entity_ids: Sequence[str],
+    start: datetime,
+    stop: datetime,
+) -> dict[str, list[tuple[datetime, float]]]:
+    history: dict[str, list[tuple[datetime, float]]] = {
+        entity: [] for entity in entity_ids
+    }
+    if not entity_ids or not callable(getattr(ha_client, "get_history_bulk", None)):
+        return history
+
+    def fetch(block_start: datetime):
+        block_end = min(stop, block_start + timedelta(days=3))
+        try:
+            response = ha_client.get_history_bulk(
+                list(entity_ids), block_start, block_end
+            )
+        except Exception as exc:
+            LOGGER.info("Home Assistant forecast history failed: %s", exc)
+            return {}
+        block_history = {entity: [] for entity in entity_ids}
+        if not isinstance(response, list):
+            return block_history
+        for entity_id, records in zip(entity_ids, response):
+            for record in records if isinstance(records, list) else ():
+                if not isinstance(record, Mapping):
+                    continue
+                try:
+                    value = float(record.get("state"))
+                    raw_time = record.get("last_changed") or record.get("last_updated")
+                    stamp = datetime.fromisoformat(
+                        str(raw_time).replace("Z", "+00:00")
+                    )
+                    if stamp.tzinfo is None:
+                        stamp = stamp.replace(tzinfo=timezone.utc)
+                    if math.isfinite(value):
+                        block_history[entity_id].append(
+                            (stamp.astimezone(timezone.utc), value)
+                        )
+                except (TypeError, ValueError):
+                    continue
+        return block_history
+
+    blocks = _time_blocks(start, stop, days=3)
+    if len(blocks) > 1:
+        with ThreadPoolExecutor(
+            max_workers=min(4, len(blocks)), thread_name_prefix="forecast-ha-history"
+        ) as executor:
+            block_histories = list(executor.map(fetch, blocks))
+    else:
+        block_histories = [fetch(blocks[0])] if blocks else []
+    for block_history in block_histories:
+        for entity_id, samples in block_history.items():
+            history[entity_id].extend(samples)
+    for entity_id, samples in history.items():
+        history[entity_id] = _merge_samples([], samples)
+    return history
+
+
+def _calibration_hours(
+    history: Mapping[str, Sequence[tuple[datetime, float]]],
+    heat_id: str,
+    electricity_id: str,
+    outdoor_id: str,
+) -> float:
+    if not all(history.get(entity) for entity in (heat_id, electricity_id, outdoor_id)):
+        return 0.0
+    indexed = {
+        entity: {
+            stamp.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0): value
+            for stamp, value in history[entity]
+        }
+        for entity in (heat_id, electricity_id, outdoor_id)
+    }
+    times = sorted(set(indexed[heat_id]) & set(indexed[electricity_id]) & set(indexed[outdoor_id]))
+    return sum(
+        (current - previous).total_seconds() / 3600.0
+        for previous, current in zip(times, times[1:])
+        if 0 < (current - previous).total_seconds() / 3600.0 <= 2.0
+    )
+
+
+def _retry_ready(state: Mapping[str, Any], prefix: str, now: datetime) -> bool:
+    attempt = state.get(f"{prefix}_last_attempt_at")
+    if not attempt:
+        return True
+    try:
+        last_attempt = datetime.fromisoformat(str(attempt))
+        elapsed = (now.astimezone(timezone.utc) - last_attempt).total_seconds()
+    except (TypeError, ValueError):
+        return True
+    count = int(state.get(f"{prefix}_attempt_count", 0))
+    delays = (5, 15, 60, 360, 360)
+    delay_minutes = delays[min(max(0, count - 1), len(delays) - 1)]
+    return elapsed >= delay_minutes * 60
 
 
 def _defrost_fraction(
@@ -556,7 +799,7 @@ class HeatForecastEngine:
                 self.state,
                 name,
                 reading,
-                now,
+                _entity_timestamp(states, entity_id, now),
                 max_delta_kwh=max_deltas[name],
             )
             deltas[name] = delta
@@ -613,6 +856,11 @@ class HeatForecastEngine:
                         self.state["defrost_el_in_heating_counter_source"] = (
                             "power_integral_diagnostic"
                         )
+        elif config.COP_DEFROST_EL_IN_HEATING_COUNTER in ("true", "false"):
+            self.state["defrost_el_in_heating_counter"] = (
+                config.COP_DEFROST_EL_IN_HEATING_COUNTER
+            )
+            self.state["defrost_el_in_heating_counter_source"] = "configured"
 
         heater_interval = elapsed.get("heating_th")
         electricity_interval = elapsed.get("heating_el")
@@ -722,19 +970,16 @@ class HeatForecastEngine:
                     if live_electricity
                     else electricity * el_fraction_start
                 )
-            heat_net, electric_total = net_cop_energies(
+            heat_net, electric_total = cop_calibration_energies(
                 heat_kwh=heat,
                 electricity_kwh=electricity,
                 defrost_heat_kwh=defrost_heat,
                 defrost_electricity_kwh=defrost_electricity,
                 defrost_el_in_heating_counter=(
-                    True
-                    if config.COP_DEFROST_HANDLING == "separate"
-                    else el_in_counter
+                    el_in_counter
                 ),
+                defrost_handling=config.COP_DEFROST_HANDLING,
             )
-            if config.COP_DEFROST_HANDLING == "separate" and el_in_counter:
-                electric_total = max(0.0, electricity - defrost_electricity)
             heat_fraction_live = self.state.get("defrost_heat_fraction_live")
             el_fraction_live = self.state.get("defrost_el_fraction_live")
             self.state["defrost_heat_fraction_forecast"] = (
@@ -860,18 +1105,26 @@ class HeatForecastEngine:
         now: datetime,
         influx_service: Any,
         outdoor_entity_id: str,
+        ha_client: Any = None,
     ) -> None:
         from . import config
 
-        if self._backfill_attempted or influx_service is None:
+        if not _retry_ready(self.state, "backfill", now):
             return
         if self.state.get("last_backfill_at"):
             self._backfill_defrost_power_history(
                 now=now,
                 influx_service=influx_service,
+                ha_client=ha_client,
             )
             self._backfill_attempted = True
             return
+        self.state["backfill_last_attempt_at"] = now.astimezone(
+            timezone.utc
+        ).isoformat()
+        self.state["backfill_attempt_count"] = int(
+            self.state.get("backfill_attempt_count", 0)
+        ) + 1
         ids = [
             config.HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID,
             config.HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID,
@@ -882,27 +1135,120 @@ class HeatForecastEngine:
             outdoor_entity_id,
         ]
         ids = list(dict.fromkeys(entity for entity in ids if entity))
-        try:
-            history = influx_service.fetch_counter_history(
-                ids, now - timedelta(days=90), now
+        start = now - timedelta(days=90)
+        history: dict[str, list[tuple[datetime, float]]] = {
+            entity: [] for entity in ids
+        }
+        source = "defaults"
+        if influx_service is not None:
+            history = _fetch_influx_history_in_blocks(
+                influx_service,
+                "fetch_counter_history",
+                ids,
+                start,
+                now,
+                block_days=14,
+                timeout_seconds=config.HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS,
             )
-        except Exception:
-            LOGGER.warning("Heat forecast counter history backfill failed", exc_info=True)
+            if any(history.values()):
+                source = "influx"
+        heat_id = config.HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID
+        el_id = config.HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID
+        outdoor_id = outdoor_entity_id
+        min_hours = int(getattr(config, "HEAT_FORECAST_MIN_CALIBRATION_HOURS", 48))
+        current_calibration_hours = _calibration_hours(
+            history, heat_id, el_id, outdoor_id
+        )
+        needs_history_fallback = current_calibration_hours < min_hours or any(
+            len(history.get(entity, [])) < 2 for entity in ids
+        )
+        if needs_history_fallback and ha_client is not None:
+            ha_history = _fetch_ha_history(
+                ha_client,
+                ids,
+                max(start, now - timedelta(days=10)),
+                now,
+            )
+            has_influx_history = any(history.values())
+            added_ha_history = False
+            for entity in ids:
+                influx_samples = history.get(entity, [])
+                ha_samples = ha_history.get(entity, [])
+                history[entity] = _merge_samples(influx_samples, ha_samples)
+                added_ha_history = added_ha_history or (
+                    len(history[entity]) > len(influx_samples)
+                )
+            fallback_hours = _calibration_hours(history, heat_id, el_id, outdoor_id)
+            if added_ha_history:
+                source = "mixed" if has_influx_history else "homeassistant"
+            current_calibration_hours = fallback_hours
+
+        if not any(history.values()):
+            self.state["backfill_last_error"] = (
+                "No counter history from InfluxDB or Home Assistant"
+            )
+            self.state["calibration_source"] = "defaults"
+            self.store.save(self.state)
             return
-        self._backfill_attempted = True
+        self.state["backfill_last_error"] = None
         self._backfill_daily_energy(history, now)
         self._backfill_defrost_power_history(
             now=now,
             influx_service=influx_service,
+            ha_client=ha_client,
             counter_history=history,
         )
-        heat_id = config.HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID
-        el_id = config.HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID
-        outdoor_id = outdoor_entity_id
-        if not config.COP_CALIBRATION_ENABLED or not all(
-            history.get(entity) for entity in (heat_id, el_id, outdoor_id)
+        hour_start = now.astimezone(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        anchor_readings = {}
+        anchor_coverage = {}
+        for name, entity_id in (
+            ("heating_el", el_id),
+            ("heating_th", heat_id),
+            ("dhw_el", config.HEAT_FORECAST_DHW_COUNTER_ENTITY_ID),
+            ("standby_el", config.HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID),
+            ("defrost_el", config.HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID),
+            ("defrost_th", config.HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID),
         ):
-            self.state["last_backfill_at"] = now.astimezone(timezone.utc).isoformat()
+            samples = history.get(entity_id, []) if entity_id else []
+            candidates = [
+                (stamp.astimezone(timezone.utc), value)
+                for stamp, value in samples
+                if stamp.astimezone(timezone.utc) <= hour_start
+            ]
+            sample = max(candidates, default=None, key=lambda item: item[0])
+            if sample and hour_start - sample[0] <= timedelta(hours=1):
+                anchor_readings[name] = sample[1]
+                anchor_coverage[name] = True
+            else:
+                anchor_readings[name] = None
+                anchor_coverage[name] = False
+        if anchor_readings.get("heating_el") is not None:
+            self.state["hour_anchor"] = {
+                "hour_utc": hour_start.isoformat(),
+                "sample_time_utc": hour_start.isoformat(),
+                "readings": anchor_readings,
+                "energy_so_far": {key: 0.0 for key in anchor_readings},
+                "energy_coverage": anchor_coverage,
+                "coverage": "counter_anchor",
+            }
+        if not config.COP_CALIBRATION_ENABLED:
+            self.state["last_backfill_at"] = now.astimezone(
+                timezone.utc
+            ).isoformat()
+            self.state["backfill_last_error"] = None
+            self.state["calibration_source"] = source
+            self.state["calibration_hours"] = current_calibration_hours
+            self.store.save(self.state)
+            return
+        if current_calibration_hours < min_hours:
+            self.state["backfill_last_error"] = (
+                f"Only {current_calibration_hours:.1f} calibration hours available"
+            )
+            self.state["calibration_source"] = source if current_calibration_hours else "defaults"
+            self.state["calibration_hours"] = current_calibration_hours
+            self.store.save(self.state)
             return
         indexed = {
             entity: {timestamp.replace(minute=0, second=0, microsecond=0): value
@@ -910,6 +1256,7 @@ class HeatForecastEngine:
             for entity, entries in history.items()
         }
         times = sorted(set(indexed[heat_id]) & set(indexed[el_id]) & set(indexed[outdoor_id]))
+        processed_intervals = 0
         for previous, current in zip(times, times[1:]):
             elapsed = (current - previous).total_seconds() / 3600.0
             heat = compute_counter_delta(
@@ -948,24 +1295,17 @@ class HeatForecastEngine:
                 max_delta_kwh=3.0,
             ) or 0.0
             el_in_counter = (
-                config.COP_DEFROST_EL_IN_HEATING_COUNTER != "false"
+                config.COP_DEFROST_EL_IN_HEATING_COUNTER == "true"
                 if config.COP_DEFROST_EL_IN_HEATING_COUNTER != "auto"
                 else self.state.get("defrost_el_in_heating_counter") != "false"
             )
-            if config.COP_DEFROST_HANDLING == "separate" and el_in_counter:
-                electric_for_cop = max(0.0, electric - defrost_electricity)
-            else:
-                electric_for_cop = electric
-            heat_net, total_electric = net_cop_energies(
+            heat_net, total_electric = cop_calibration_energies(
                 heat_kwh=heat,
-                electricity_kwh=electric_for_cop,
+                electricity_kwh=electric,
                 defrost_heat_kwh=float(defrost_heat or 0.0),
                 defrost_electricity_kwh=defrost_electricity,
-                defrost_el_in_heating_counter=(
-                    True
-                    if config.COP_DEFROST_HANDLING == "separate"
-                    else el_in_counter
-                ),
+                defrost_el_in_heating_counter=el_in_counter,
+                defrost_handling=config.COP_DEFROST_HANDLING,
             )
             add_cop_observation(
                 self.state,
@@ -976,7 +1316,20 @@ class HeatForecastEngine:
                 timestamp=current,
                 half_life_days=config.COP_HALF_LIFE_DAYS,
             )
+            processed_intervals += 1
+        if processed_intervals == 0:
+            self.state["backfill_last_error"] = (
+                "No plausible aligned heating-counter intervals"
+            )
+            self.state["calibration_source"] = "defaults"
+            self.state["calibration_hours"] = 0.0
+            self.store.save(self.state)
+            return
         self.state["last_backfill_at"] = now.astimezone(timezone.utc).isoformat()
+        self.state["backfill_last_error"] = None
+        self.state["calibration_source"] = source
+        self.state["calibration_hours"] = current_calibration_hours
+        self.store.save(self.state)
         LOGGER.info(
             "Heat forecast history backfill processed %d hourly intervals",
             max(0, len(times) - 1),
@@ -987,15 +1340,22 @@ class HeatForecastEngine:
         *,
         now: datetime,
         influx_service: Any,
+        ha_client: Any = None,
         counter_history: Mapping[str, Sequence[tuple[datetime, float]]] | None = None,
     ) -> None:
         from . import config
 
         if self.state.get("defrost_power_history_attempted_at"):
             return
-        fetch_minute_history = getattr(influx_service, "fetch_minute_history", None)
-        if not callable(fetch_minute_history):
+        if not _retry_ready(self.state, "defrost_power_history", now):
             return
+        self.state["defrost_power_history_last_attempt_at"] = now.astimezone(
+            timezone.utc
+        ).isoformat()
+        self.state["defrost_power_history_attempt_count"] = int(
+            self.state.get("defrost_power_history_attempt_count", 0)
+        ) + 1
+        fetch_minute_history = getattr(influx_service, "fetch_minute_history", None)
 
         start = now - timedelta(days=10)
         counter_ids = [
@@ -1009,7 +1369,10 @@ class HeatForecastEngine:
         if counter_history is None:
             try:
                 counter_history = influx_service.fetch_counter_history(
-                    counter_ids, start, now
+                    counter_ids,
+                    start,
+                    now,
+                    timeout_seconds=config.HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS,
                 )
             except Exception:
                 LOGGER.warning(
@@ -1026,18 +1389,46 @@ class HeatForecastEngine:
             )
             if entity
         ]
-        try:
-            power_history = fetch_minute_history(
-                power_entities, start, now, agg_fn="mean"
+        power_history: dict[str, list[tuple[datetime, float]]] = {
+            entity: [] for entity in power_entities
+        }
+        defrost_history: dict[str, list[tuple[datetime, float]]] = {
+            config.DEFROST_STATUS_ENTITY_ID: []
+        }
+        if callable(fetch_minute_history):
+            power_history = _fetch_influx_history_in_blocks(
+                influx_service,
+                "fetch_minute_history",
+                power_entities,
+                start,
+                now,
+                block_days=3,
+                timeout_seconds=config.HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS,
+                agg_fn="mean",
             )
-            defrost_history = fetch_minute_history(
-                [config.DEFROST_STATUS_ENTITY_ID], start, now, agg_fn="max"
+            defrost_history = _fetch_influx_history_in_blocks(
+                influx_service,
+                "fetch_minute_history",
+                [config.DEFROST_STATUS_ENTITY_ID],
+                start,
+                now,
+                block_days=3,
+                timeout_seconds=config.HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS,
+                agg_fn="max",
             )
-        except Exception:
-            LOGGER.warning(
-                "Defrost power-history initialization failed", exc_info=True
+        if (not any(power_history.values()) or not defrost_history.get(
+            config.DEFROST_STATUS_ENTITY_ID
+        )) and ha_client is not None:
+            fallback = _fetch_ha_history(
+                ha_client, power_entities + [config.DEFROST_STATUS_ENTITY_ID], start, now
             )
-            return
+            for entity in power_entities:
+                if not power_history.get(entity):
+                    power_history[entity] = fallback.get(entity, [])
+            if not defrost_history.get(config.DEFROST_STATUS_ENTITY_ID):
+                defrost_history[config.DEFROST_STATUS_ENTITY_ID] = fallback.get(
+                    config.DEFROST_STATUS_ENTITY_ID, []
+                )
 
         def recent_total(entity_id: str, max_delta_kwh: float) -> float:
             samples = sorted(
@@ -1085,6 +1476,14 @@ class HeatForecastEngine:
             heating_electricity_kwh=recent_total(electricity_entity, 3.0),
             heating_heat_kwh=recent_total(heat_entity, 10.0),
         )
+        if estimate["event_count"] < 5:
+            self.state["defrost_power_history_last_error"] = (
+                f"Only {estimate['event_count']} plausible defrost events"
+            )
+            self.state["defrost_power_history"] = estimate
+            self.store.save(self.state)
+            return
+        self.state["defrost_power_history_last_error"] = None
         if (
             config.COP_DEFROST_EL_IN_HEATING_COUNTER == "false"
             and estimate["electricity_fraction"] is not None
@@ -1258,15 +1657,16 @@ class HeatForecastEngine:
         mode = config.get_climate_mode(
             ha_client.get_state(config.HEATING_STATUS_ENTITY_ID, states)
         )
-        self._backfill(
-            now=now,
-            influx_service=influx_service,
-            outdoor_entity_id=config.OUTDOOR_TEMP_ENTITY_ID,
-        )
         deltas = self._record_interval(
             now=now, states=states, outdoor_c=outdoor_now
         )
         if not config.HEAT_FORECAST_ENABLED:
+            self._backfill(
+                now=now,
+                influx_service=influx_service,
+                outdoor_entity_id=config.OUTDOOR_TEMP_ENTITY_ID,
+                ha_client=ha_client,
+            )
             self.store.save(self.state)
             return True
 
@@ -1661,9 +2061,37 @@ class HeatForecastEngine:
             **auxiliary_stats,
             "data_quality": per_hour,
             "current_hour_estimate": self.state.get(
-                "current_hour_estimate", "counter_plus_power_projection"
+                "current_hour_estimate", "degraded_partial"
+            ),
+            "calibration_source": self.state.get(
+                "calibration_source", "defaults"
+            ),
+            "calibration_hours": float(
+                self.state.get("calibration_hours", 0.0)
+            ),
+            "prices_reused_hours": int(
+                getattr(self, "_prices_reused_hours", 0)
+            ),
+            "price_source_per_hour": list(
+                getattr(self, "_price_source_per_hour", ["none"] * horizon)
             ),
         }
+        degraded_reasons = []
+        if attrs["calibration_source"] == "defaults":
+            degraded_reasons.append("calibration_history_unavailable")
+        elif attrs["calibration_hours"] < int(
+            getattr(config, "HEAT_FORECAST_MIN_CALIBRATION_HOURS", 48)
+        ):
+            degraded_reasons.append("insufficient_calibration_history")
+        if attrs["current_hour_estimate"] in (
+            "degraded_partial",
+            "degraded_missing_counter_anchor",
+            "degraded_counter_only",
+        ):
+            degraded_reasons.append("current_hour_counter_anchor_unavailable")
+        if any(source == "none" for source in attrs["price_source_per_hour"]):
+            degraded_reasons.append("price_data_unavailable")
+        attrs["degraded_reasons"] = degraded_reasons
         if config.COP_DEFROST_HANDLING != "separate":
             attrs.pop("forecast_defrost_el_kwh", None)
         attrs["unit_of_measurement"] = "kWh"
@@ -1671,7 +2099,7 @@ class HeatForecastEngine:
         attrs["state_class"] = "measurement"
         attrs["friendly_name"] = "ML Heating WP Load Forecast"
         self.store.save(self.state)
-        return bool(
+        published = bool(
             ha_client.set_state(
                 config.HEAT_FORECAST_SENSOR_ENTITY_ID,
                 float(electrical["forecast_total_el_kwh"][0]),
@@ -1679,6 +2107,13 @@ class HeatForecastEngine:
                 round_digits=4,
             )
         )
+        self._backfill(
+            now=now,
+            influx_service=influx_service,
+            outdoor_entity_id=config.OUTDOOR_TEMP_ENTITY_ID,
+            ha_client=ha_client,
+        )
+        return published
 
     def _target_offsets(
         self,
@@ -1692,6 +2127,8 @@ class HeatForecastEngine:
 
         offsets = [0.0] * len(starts)
         sources = ["none"] * len(starts)
+        self._prices_reused_hours = 0
+        self._price_source_per_hour = ["none"] * len(starts)
         if not any(
             (
                 config.ELECTRICITY_PRICE_ENABLED,
@@ -1718,8 +2155,18 @@ class HeatForecastEngine:
                 LOGGER.warning("Could not refresh forecast prices: %s", exc)
                 optimizer = None
 
-        prev_price = None
+        today_profile: dict[int, float] = {}
+        if optimizer is not None:
+            today = optimizer._to_local(starts[0]).date()
+            today_profile = {
+                optimizer._to_local(stamp).hour: price
+                for stamp, price in optimizer._price_entries
+                if optimizer._to_local(stamp).date() == today
+            }
         daily_prices: dict[Any, list[float]] = {}
+        price_sources = ["none"] * len(starts)
+        reused_hours = 0
+        missing_price_dates = set()
         for index, start in enumerate(starts):
             price = None
             source = "none"
@@ -1732,22 +2179,37 @@ class HeatForecastEngine:
                         if index < len(hourly_prices)
                         else None
                     )
-                    source = "tibber" if price is not None else "none"
+                    source = "actual" if price is not None else "none"
+                    local_start = optimizer._to_local(start)
                     if (
                         price is None
                         and config.HEAT_FORECAST_REUSE_PRICES
-                        and prev_price is not None
+                        and local_start.date() > optimizer._to_local(starts[0]).date()
                     ):
-                        price = prev_price
-                        source = "reused"
-                    if price is not None:
-                        prev_price = price
+                        price = today_profile.get(local_start.hour)
+                        if price is not None:
+                            source = "reused_today"
+                            reused_hours += 1
                     if config.PRICE_COST_MODE_ENABLED and price is not None:
-                        cost = optimizer.compute_cost_target_offset(
-                            list(pv_electrical[index:]),
-                            float(config.HP_EXPECTED_POWER_FALLBACK_KW),
-                            now=start,
-                        )
+                        original_entries = optimizer._price_entries
+                        if source == "reused_today":
+                            synthetic = [
+                                (
+                                    local_start.replace(minute=0, second=0, microsecond=0),
+                                    price,
+                                )
+                            ]
+                            optimizer._price_entries = sorted(
+                                original_entries + synthetic, key=lambda item: item[0]
+                            )
+                        try:
+                            cost = optimizer.compute_cost_target_offset(
+                                list(pv_electrical[index:]),
+                                float(config.HP_EXPECTED_POWER_FALLBACK_KW),
+                                now=start,
+                            )
+                        finally:
+                            optimizer._price_entries = original_entries
                         if cost is not None:
                             offset = float(cost.get("offset", 0.0))
                             cost_applied = True
@@ -1758,13 +2220,23 @@ class HeatForecastEngine:
                     ):
                         local_date = optimizer._to_local(start).date()
                         if local_date not in daily_prices:
-                            daily_prices[local_date] = optimizer.get_today_prices(
-                                start
+                            daily_prices[local_date] = (
+                                optimizer.get_today_prices(start)
+                                or (
+                                    optimizer.get_today_prices(starts[0])
+                                    if source == "reused_today"
+                                    else []
+                                )
                             )
                         level = optimizer.classify_price(
                             price, daily_prices[local_date]
                         )
-                        offset = float(optimizer.get_target_offset(level))
+                        if daily_prices[local_date]:
+                            offset = float(optimizer.get_target_offset(level))
+                        else:
+                            source = "none"
+                            price = None
+                            missing_price_dates.add(local_date)
                 except Exception as exc:
                     LOGGER.warning(
                         "Could not resolve forecast price at %s: %s",
@@ -1772,6 +2244,7 @@ class HeatForecastEngine:
                         exc,
                     )
 
+            price_source = source
             state = get_forecast_trajectory_state(
                 float(pv_electrical[index]),
                 list(pv_electrical[index + 1 :]),
@@ -1806,6 +2279,20 @@ class HeatForecastEngine:
                 source = "pv_forecast" if source == "none" else source
             offsets[index] = offset
             sources[index] = source
+            price_sources[index] = (
+                "reused_today"
+                if price is not None and price_source == "reused_today"
+                else "actual"
+                if price is not None
+                else "none"
+            )
+        if missing_price_dates:
+            LOGGER.info(
+                "Forecast has no daily price profile for %s; using neutral offsets",
+                ", ".join(sorted(day.isoformat() for day in missing_price_dates)),
+            )
+        self._prices_reused_hours = reused_hours
+        self._price_source_per_hour = price_sources
         return offsets, sources
 
     def _correct_current_slot(
@@ -1823,6 +2310,9 @@ class HeatForecastEngine:
         from . import config
 
         anchor = self.state.get("hour_anchor")
+        historical_counter_anchor = (
+            isinstance(anchor, dict) and anchor.get("coverage") == "counter_anchor"
+        )
         readings = anchor.get("readings", {}) if isinstance(anchor, dict) else {}
         initial_energy = (
             anchor.get("energy_so_far", {}) if isinstance(anchor, dict) else {}
@@ -1836,7 +2326,7 @@ class HeatForecastEngine:
         standby_so_far = float(initial_energy.get("standby_el", 0.0))
         defrost_el_so_far = float(initial_energy.get("defrost_el", 0.0))
         defrost_th_so_far = float(initial_energy.get("defrost_th", 0.0))
-        self.state["current_hour_estimate"] = "degraded_missing_counter_anchor"
+        self.state["current_hour_estimate"] = "degraded_partial"
         heating_counter_delta_valid = bool(energy_coverage.get("heating_el", False))
         if isinstance(anchor, dict):
             try:
@@ -1874,7 +2364,9 @@ class HeatForecastEngine:
                         current,
                         elapsed_hours=max(1e-6, elapsed),
                         max_gap_hours=1.1,
-                        max_delta_kwh=10.0,
+                        max_delta_kwh=(
+                            10.0 if key in ("heating_th", "defrost_th") else 3.0
+                        ),
                     )
                     if past is not None:
                         if field == "heating_el":
@@ -1890,7 +2382,7 @@ class HeatForecastEngine:
                         elif field == "defrost_th":
                             defrost_th_so_far += past
                 if heating_counter_delta_valid:
-                    self.state["current_hour_estimate"] = "counter_only_pending_power"
+                    self.state["current_hour_estimate"] = "counter_anchor"
             except (KeyError, TypeError, ValueError):
                 self.state["current_hour_estimate"] = "degraded_missing_counter_anchor"
         from . import config
@@ -1936,12 +2428,29 @@ class HeatForecastEngine:
         current_power_w = self._number(
             ha_client, states, config.POWER_CONSUMPTION_ENTITY_ID
         )
+        elapsed_hours = max(0.0, 1.0 - remaining_hours)
         if current_power_w is None:
-            self.state["current_hour_estimate"] = "degraded_counter_only"
-            projected = modeled_remainder
+            self.state["current_hour_estimate"] = (
+                "counter_anchor" if heating_counter_delta_valid else "degraded_partial"
+            )
+            projected = (
+                modeled_remainder
+                if heating_counter_delta_valid
+                else modeled_remainder / max(remaining_hours, 1e-6)
+            )
         else:
-            projected = max(0.0, current_power_w) / 1000.0 * remaining_hours
-            if self.state["current_hour_estimate"] != "degraded_missing_counter_anchor":
+            projected_hours = (
+                remaining_hours
+                if heating_counter_delta_valid
+                else min(1.0, elapsed_hours + remaining_hours)
+            )
+            projected = max(0.0, current_power_w) / 1000.0 * projected_hours
+            if historical_counter_anchor:
+                self.state["current_hour_estimate"] = "counter_anchor"
+            elif self.state["current_hour_estimate"] not in (
+                "degraded_partial",
+                "degraded_missing_counter_anchor",
+            ):
                 self.state["current_hour_estimate"] = "counter_plus_power_projection"
         if modeled_remainder > 0:
             scale = projected / modeled_remainder
@@ -2066,6 +2575,41 @@ def net_cop_energies(
     electricity_total = float(electricity_kwh)
     if not defrost_el_in_heating_counter:
         electricity_total += float(defrost_electricity_kwh)
+    return heat_net, electricity_total
+
+
+def cop_calibration_energies(
+    *,
+    heat_kwh: float,
+    electricity_kwh: float,
+    defrost_heat_kwh: float,
+    defrost_electricity_kwh: float,
+    defrost_el_in_heating_counter: bool,
+    defrost_handling: str,
+) -> tuple[float, float]:
+    """Return one of the valid net or separate COP energy pairings."""
+    heat_net = max(0.0, float(heat_kwh) - float(defrost_heat_kwh))
+    electricity = float(electricity_kwh)
+    defrost_electricity = float(defrost_electricity_kwh)
+    if not all(
+        math.isfinite(value) and value >= 0
+        for value in (heat_kwh, electricity, defrost_heat_kwh, defrost_electricity)
+    ):
+        raise ValueError("Energy values must be finite and non-negative")
+    if defrost_handling == "separate":
+        electricity_total = (
+            max(0.0, electricity - defrost_electricity)
+            if defrost_el_in_heating_counter
+            else electricity
+        )
+    elif defrost_handling == "net":
+        electricity_total = (
+            electricity
+            if defrost_el_in_heating_counter
+            else electricity + defrost_electricity
+        )
+    else:
+        raise ValueError("Defrost handling must be 'net' or 'separate'")
     return heat_net, electricity_total
 
 
