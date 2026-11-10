@@ -670,6 +670,8 @@ options:
   price_cost_lookahead_hours: 24
   # Minimum spread (EUR/kWh) between cheapest and dearest hour for any shift
   price_cost_min_spread_eur_kwh: 0.02
+  # Standard household demand added to HP demand for cost-mode PV coverage
+  price_cost_household_power_offset_kw: 0.7
   # Expected HP electrical power (kW) used until heating samples exist
   hp_expected_power_fallback_kw: 1.5
   # Window (hours) for the rolling mean of HP power while heating (no DHW/defrost)
@@ -1109,6 +1111,7 @@ schema:
   price_band_down_c: "float(0.0,2.0)"
   price_cost_lookahead_hours: "int(2,48)"
   price_cost_min_spread_eur_kwh: "float(0.0,0.5)"
+  price_cost_household_power_offset_kw: "float(0.0,10.0)"
   hp_expected_power_fallback_kw: "float(0.1,20.0)"
   hp_power_window_hours: "float(1.0,48.0)"
   hp_power_min_on_w: "int(0,5000)"

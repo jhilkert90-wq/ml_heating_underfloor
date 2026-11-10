@@ -19,6 +19,12 @@ def test_convert_addon_to_env_maps_learning_threshold_options():
     assert env["OUTLET_EFFECTIVENESS_MODE"] == "curve"
 
 
+def test_convert_addon_to_env_maps_cost_mode_household_power_offset():
+    env = convert_addon_to_env({"price_cost_household_power_offset_kw": 0.7})
+
+    assert env["PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW"] == "0.7"
+
+
 def test_convert_addon_to_env_maps_forecast_and_direct_power_options():
     env = convert_addon_to_env(
         {

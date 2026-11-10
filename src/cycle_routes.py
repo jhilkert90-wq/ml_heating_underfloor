@@ -154,6 +154,13 @@ def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
         features, getattr(ctx, "climate_mode", "heating"), now=now
     )
     hp_kw = tracker.expected_power_kw(now=now)
+    household_offset_kw = max(
+        0.0,
+        float(
+            getattr(config, "PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW", 0.7)
+        ),
+    )
+    expected_load_kw = hp_kw + household_offset_kw
 
     # Use every available PV forecast hour up to the look-ahead window,
     # independent of the (mode dependent) trajectory feature horizon.
@@ -168,20 +175,25 @@ def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
         ctx.all_states, n_hours - 1, forecast_start
     )
 
-    result = optimizer.compute_cost_target_offset(pv_hourly, hp_kw, now=now)
+    result = optimizer.compute_cost_target_offset(
+        pv_hourly, expected_load_kw, now=now
+    )
     if result is not None:
+        result["hp_power_base_kw"] = hp_kw
+        result["household_power_offset_kw"] = household_offset_kw
         ctx.price_data["cost_target_offset"] = result["offset"]
         ctx.price_data["cost_info"] = result
         logging.info(
             "💰 Cost mode: grid=%.3f PV-share=%.0f%% p_eff now=%.3f "
             "mean=%.3f min=%.3f max=%.3f €/kWh | window=%dh "
-            "(prices %dh, PV %dh) | HP=%.2fkW (%d samples, %s) "
+            "(prices %dh, PV %dh) | load=%.2fkW "
+            "(HP %.2f + household %.2f; %d samples, %s) "
             "→ offset %+.2f°C",
             result["p_grid_now"], result["pv_share_now"] * 100,
             result["p_eff_now"], result["p_eff_mean"], result["p_eff_min"],
             result["p_eff_max"], result["hours"],
             result["price_hours_available"], result["pv_hours_available"],
-            hp_kw, tracker.sample_count,
+            expected_load_kw, hp_kw, household_offset_kw, tracker.sample_count,
             "measured" if tracker.sample_count else "fallback",
             result["offset"],
         )

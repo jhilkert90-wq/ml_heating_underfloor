@@ -1,5 +1,21 @@
 # ML Heating System - Current Progress
 
+## ✅ Cost-Aware Household Load Offset — 2026-11-10
+
+**Status:** COMPLETED — Added a configurable 0.7 kW household baseline to the expected heat-pump load used for cost-aware PV share calculations. The expected-power sensor now reports the combined load and exposes its heat-pump and household components.
+
+**Files changed:** `src/config.py`, `config_adapter.py`, `src/cycle_routes.py`, `src/ha_client.py`, `src/heat_forecast.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{de,en}.yaml`, `docs/PARAMETER_REFERENCE.md`, `docs/PRICE_OPTIMIZATION_INTEGRATION.md`, `tests/unit/test_price_cost_mode.py`, `tests/unit/test_config_adapter.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+**Validation:** 84 focused cost-mode, config-adapter, and heat-forecast unit tests passed; Python compilation and `git diff --check` passed.
+
+## ✅ Heat Forecast Current-Hour and Profile Fixes — 2026-11-10
+
+**Status:** COMPLETED — Current power is projected only across the time left in the hour and routed to DHW when the shared warm-water sensor is active; recent counter samples remain usable as anchors. DHW/standby profiles now count unchanged counters over short intervals observed on the shared counter timeline, reject long gaps, and smooth thermal peaks per six-hour block while preserving each block's total.
+
+**Files changed:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+**Validation:** All 56 `tests/unit/test_heat_forecast.py` tests passed; `git diff --check` passed.
+
 ## ✅ Heat Forecast Review Corrections — 2026-11-10
 
 **Status:** COMPLETED — Home Assistant history is mapped by entity and parses binary defrost states; COP learning requires aligned counter intervals, daily/anchor accounting uses sensor timestamps, partial-hour projection excludes measured coverage, sparse defrost histories are resampled, empty calibration backfills remain retryable, and cost mode evaluates the complete reused-price horizon.

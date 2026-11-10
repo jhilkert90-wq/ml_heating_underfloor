@@ -133,7 +133,7 @@ Published each cycle while the cost-aware mode is active:
 |---|---|---|
 | `sensor.ml_heating_price_effective` | Effective price now (EUR/kWh) | `grid_price_eur_kwh`, `pv_share`, `window_mean/min/max_eur_kwh`, `feed_in_tariff_eur_kwh` |
 | `sensor.ml_heating_cost_offset` | Target offset (°C) | `band_up_c`, `band_down_c`, `min_spread_eur_kwh` |
-| `sensor.ml_heating_hp_expected_power` | Expected HP power (kW) | `source` (measured/fallback), `sample_count`, `window_hours` |
+| `sensor.ml_heating_hp_expected_power` | Expected HP plus household baseline power (kW) | `heat_pump_power_kw`, `household_power_offset_kw`, `source` (measured/fallback), `sample_count`, `window_hours` |
 | `sensor.ml_heating_price_window_hours` | Window length (h) | `price_hours_available`, `pv_hours_available`, `lookahead_hours` |
 
 ## Learning Safety

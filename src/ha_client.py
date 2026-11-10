@@ -879,6 +879,11 @@ class HAClient:
             cost_info.get("hp_power_kw"),
             {
                 "source": source,
+                "heat_pump_power_kw": cost_info.get("hp_power_base_kw"),
+                "household_power_offset_kw": cost_info.get(
+                    "household_power_offset_kw",
+                    getattr(config, "PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW", 0.7),
+                ),
                 "sample_count": hp_samples,
                 "window_hours": getattr(config, "HP_POWER_WINDOW_HOURS", None),
                 "fallback_kw": getattr(
@@ -1097,7 +1102,7 @@ def get_sensor_attributes(entity_id: str) -> Dict[str, Any]:
         },
         "sensor.ml_heating_hp_expected_power": {
             "unique_id": "ml_heating_hp_expected_power",
-            "friendly_name": "ML Heating Expected HP Power",
+            "friendly_name": "ML Heating Expected HP + Household Power",
             "unit_of_measurement": "kW",
             "device_class": "power",
             "icon": "mdi:heat-pump",

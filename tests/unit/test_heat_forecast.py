@@ -595,7 +595,7 @@ def test_update_publishes_hourly_thermal_and_electrical_profiles(
     assert attributes["calibration_hours"] == 0
     assert len(attributes["price_source_per_hour"]) == 3
     assert isinstance(attributes["degraded_reasons"], list)
-    assert attributes["current_hour_estimate"] == "degraded_partial"
+    assert attributes["current_hour_estimate"] == "counter_anchor"
     assert attributes["includes"] == ["heating", "dhw", "standby"]
     assert simulation_fractions == ([0.5, 0.5, 0.5] if fireplace_on else [0.5])
     if fireplace_on:
@@ -875,6 +875,7 @@ def test_daily_counter_interval_is_split_at_local_midnight_live_and_backfill(
 
     monkeypatch.setattr(config, "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID", "dhw")
     monkeypatch.setattr(config, "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID", "standby")
+    monkeypatch.setattr(config, "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID", "heating")
     engine = HeatForecastEngine(str(tmp_path / "state.json"))
     previous = datetime(2026, 1, 1, 22, 30, tzinfo=timezone.utc)
     current = datetime(2026, 1, 1, 23, 30, tzinfo=timezone.utc)
@@ -909,6 +910,44 @@ def test_daily_counter_interval_is_split_at_local_midnight_live_and_backfill(
     assert backfill.state["daily_energy"]["2026-01-02"]["dhw"][0] == pytest.approx(
         0.3
     )
+
+
+def test_backfill_counts_unchanged_daily_counters_on_observed_short_intervals(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID", "dhw")
+    monkeypatch.setattr(config, "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID", "standby")
+    monkeypatch.setattr(config, "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID", "heating")
+    start = datetime(2026, 1, 1, 23, tzinfo=timezone.utc)
+    heat_samples = [
+        (start + timedelta(hours=hour), float(hour)) for hour in range(25)
+    ]
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+
+    engine._backfill_daily_energy(
+        {
+            "heating": heat_samples,
+            "dhw": [(start, 2.0), (start + timedelta(hours=24), 2.0)],
+            "standby": [(start, 1.0), (start + timedelta(hours=24), 1.0)],
+        },
+        start + timedelta(days=2),
+    )
+
+    daily = engine.state["daily_energy"]["2026-01-02"]
+    assert daily["dhw_coverage_h"] == pytest.approx(24.0)
+    assert daily["standby_coverage_h"] == pytest.approx(24.0)
+
+    gap = HeatForecastEngine(str(tmp_path / "gap.json"))
+    gap._backfill_daily_energy(
+        {
+            "dhw": [(start, 2.0), (start + timedelta(hours=24), 2.0)],
+            "standby": [(start, 1.0), (start + timedelta(hours=24), 1.0)],
+        },
+        start + timedelta(days=2),
+    )
+    assert gap.state["daily_energy"] == {}
 
 
 def test_live_daily_allocation_ends_at_counter_sample_time(monkeypatch, tmp_path):
@@ -961,6 +1000,17 @@ def test_dhw_daily_budget_caps_every_forecast_slot_today(monkeypatch, tmp_path):
     dhw, _, _ = engine._dhw_and_standby_profiles(starts)
 
     assert dhw == pytest.approx([0.0, 0.0, 0.0])
+
+
+def test_heating_energy_smoothing_preserves_each_six_hour_total():
+    from src.heat_forecast import _smooth_heating_energy
+
+    original = [1.0, 1.0, 1.0, 8.0, 1.0, 1.0, 2.0]
+    smoothed = _smooth_heating_energy(original)
+
+    assert sum(smoothed[:6]) == pytest.approx(sum(original[:6]))
+    assert max(smoothed[:6]) < max(original[:6])
+    assert smoothed[6] == original[6]
 
 
 def test_price_forecast_uses_isolated_optimizer_and_per_day_thresholds(
@@ -1276,7 +1326,58 @@ def test_partial_counter_coverage_projects_only_uncovered_hour(monkeypatch, tmp_
         remaining_hours=0.25,
     )
 
-    assert electrical["forecast_heat_el_kwh"][0] == pytest.approx(1.0)
+    assert electrical["forecast_heat_el_kwh"][0] == pytest.approx(0.5)
+
+
+def test_power_projection_uses_only_remaining_time_and_assigns_active_dhw(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "COP_DEFROST_HANDLING", "net")
+    monkeypatch.setattr(config, "COP_DEFROST_EL_IN_HEATING_COUNTER", "true")
+    monkeypatch.setattr(config, "POWER_CONSUMPTION_ENTITY_ID", "power")
+    monkeypatch.setattr(config, "DHW_STATUS_ENTITY_ID", "dhw_mode")
+    entities = {
+        "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID": "el",
+        "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID": "th",
+        "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID": "dhw",
+        "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID": "standby",
+        "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID": "defrost_el",
+        "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID": "defrost_th",
+    }
+    for key, entity in entities.items():
+        monkeypatch.setattr(config, key, entity)
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    electrical = {
+        "forecast": [{"value": 0.3}],
+        "forecast_total_el_kwh": [0.3],
+        "forecast_heat_th_kwh": [0.0],
+        "forecast_heat_el_kwh": [0.1],
+        "forecast_dhw_el_kwh": [0.1],
+        "forecast_standby_el_kwh": [0.1],
+    }
+
+    engine._correct_current_slot(
+        now=datetime(2026, 1, 1, 12, 58, tzinfo=timezone.utc),
+        states={"power": {"state": "1694"}, "dhw_mode": {"state": "on"}},
+        ha_client=SimpleNamespace(
+            get_state=lambda entity, current: current[entity]["state"]
+        ),
+        deltas={},
+        electrical=electrical,
+        heat_result={"heat_kwh": [0.0]},
+        outdoor=[0.0],
+        remaining_hours=2.0 / 60.0,
+    )
+
+    assert electrical["forecast_total_el_kwh"][0] == pytest.approx(
+        1.694 * 2.0 / 60.0, abs=0.0001
+    )
+    assert electrical["forecast_dhw_el_kwh"][0] > electrical[
+        "forecast_standby_el_kwh"
+    ][0]
+    assert electrical["forecast_heat_el_kwh"][0] == 0.0
 
 
 def test_explicit_defrost_counter_setting_overrides_unknown(monkeypatch, tmp_path):
@@ -1425,10 +1526,14 @@ def test_energy_counter_calibration_falls_back_to_home_assistant(
     assert restarted.state["last_backfill_at"] == engine.state["last_backfill_at"]
     assert restarted.state["backfill_attempt_count"] == queries_before_restart
     assert restarted.state["cop_bins"] == engine.state["cop_bins"]
-    assert influx_queries.calls == 0
+    assert influx_queries.calls > 0
+    assert restarted.state["hour_anchor"]["hour_utc"] == (
+        (now + timedelta(hours=1)).isoformat()
+    )
+    assert restarted.state["hour_anchor"]["coverage"] == "counter_anchor"
 
 
-def test_backfill_keeps_pre_boundary_counter_anchor_partial(monkeypatch, tmp_path):
+def test_backfill_uses_recent_pre_boundary_counter_anchor(monkeypatch, tmp_path):
     from src import config
 
     entities = {
@@ -1467,7 +1572,7 @@ def test_backfill_keeps_pre_boundary_counter_anchor_partial(monkeypatch, tmp_pat
         history_times[-1].isoformat()
     )
     assert engine.state["hour_anchor"]["energy_coverage"]["heating_el"] is False
-    assert engine.state["hour_anchor"]["coverage"] == "partial"
+    assert engine.state["hour_anchor"]["coverage"] == "counter_anchor"
 
 
 def test_empty_cop_backfill_is_not_marked_successful(monkeypatch, tmp_path):
