@@ -1,5 +1,12 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.111] - 2026-11-10
+
+### Fixed
+- Hardened heat-forecast calibration with bounded InfluxDB history queries, Home Assistant history fallback, retry backoff, current-hour counter anchors, reset-safe COP energy pairings, and same-hour price reuse.
+- Corrected Home Assistant history mapping and defrost resampling, aligned counter intervals and hourly coverage, avoided empty COP backfill success, and evaluated complete reused-price lookaheads.
+- Exposed forecast calibration quality and price-source diagnostics, and migrated/recovered forecast state safely.
+
 ## [0.2.110] - 2026-11-10
 
 ### Added
