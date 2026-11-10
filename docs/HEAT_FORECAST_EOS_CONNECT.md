@@ -8,9 +8,19 @@ heating controller or configure EOS Connect itself.
 
 Enable `heat_forecast_enabled` to publish the forecast. Enable
 `cop_calibration_enabled` separately to learn the electrical COP from energy
-counters. Both options are off by default. Configure cumulative kWh counters
-for space-heating electricity and heat, domestic-hot-water electricity,
-standby electricity, and (where available) defrost electricity and heat.
+counters. This setting is read-only and does not change heating control; it
+does not enable the forecast sensor by itself. Both options are off by default.
+Configure cumulative kWh counters for space-heating electricity and heat,
+domestic-hot-water electricity, standby electricity, and (where available)
+defrost electricity and heat.
+
+History is loaded from InfluxDB first and falls back to Home Assistant Recorder
+history when InfluxDB is unavailable or has too few aligned samples. Forecast
+history queries use `heat_forecast_influx_timeout_seconds` (default 60 seconds,
+range 10–300). Calibration waits for at least 48 aligned heating hours by
+default; failed or insufficient bootstraps retry with backoff rather than
+being marked complete. While the first bootstrap runs, the forecast can be
+published with defaults and reports its data source and coverage.
 
 The heating electricity counter may include defrost electricity. The default
 `cop_defrost_el_in_heating_counter: true` matches that setup. The thermal
@@ -30,12 +40,13 @@ defrost-counter diagnostic, not as a normal calibration source. Missing
 counters or invalid gaps are excluded; the current-hour estimate reports a
 degraded status when meter coverage is incomplete.
 
-At startup, available one-minute Influx history for the defrost signal,
-electrical power, and direct thermal power is used once to estimate average
-defrost electrical/thermal rates, energy per event, and initial defrost
-fractions. These power-derived values seed the forecast only; COP calibration
-still uses energy-counter deltas. Counter-derived defrost fractions blend in
-over the configured cold compressor hours.
+At startup, available one-minute history for the defrost signal, electrical
+power, and direct thermal power is loaded from InfluxDB, then Home Assistant
+history, to estimate defrost rates, energy per event, and initial fractions.
+Power-derived fractions are accepted only with at least five plausible events;
+these values seed the forecast only, while COP calibration still uses
+energy-counter deltas. Counter-derived defrost fractions blend in over the
+configured cold compressor hours.
 
 ## Published entity
 
@@ -50,8 +61,15 @@ and parallel arrays:
   `forecast_dhw_el_kwh`, `forecast_standby_el_kwh`: electrical breakdown.
 - `data_quality`: weather/PV source, missing-data padding, COP extrapolation,
   active climate mode, and fireplace state for each hour.
-- `cop_curve`, defrost diagnostics, learning coverage, and current-hour
-  estimate status.
+- `calibration_source`/`calibration_hours`, `price_source_per_hour`/
+  `prices_reused_hours`, defrost diagnostics, `current_hour_estimate`, and
+  `degraded_reasons`.
+
+When tomorrow's prices are not yet published, the forecast reuses today's price
+for the same clock hour and labels it `reused_today`; it reclassifies prices
+automatically after the next cache refresh. At restart, historical counter
+values can anchor the current hour; otherwise the hour is marked partial and
+estimated from available power.
 
 The space-heating simulation uses outdoor temperature, the thermal PV gain
 weight, building/slab parameters, fireplace contribution and residual heat,

@@ -1,5 +1,21 @@
 # ML Heating System - Current Progress
 
+## ✅ Heat Forecast Review Corrections — 2026-11-10
+
+**Status:** COMPLETED — Home Assistant history is mapped by entity and parses binary defrost states; COP learning requires aligned counter intervals, daily/anchor accounting uses sensor timestamps, partial-hour projection excludes measured coverage, sparse defrost histories are resampled, empty calibration backfills remain retryable, and cost mode evaluates the complete reused-price horizon.
+
+**Files changed:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+**Validation:** 53 focused heat-forecast unit tests passed; the full suite reported 1,925 passed and 9 failures in unrelated dashboard-settings, heating-controller timing, and ML holdout tests. Python compilation and `git diff --check` passed.
+
+## ✅ Heat Forecast Calibration and Bootstrap Reliability — 2026-11-10
+
+**Status:** COMPLETED — Forecast history now uses per-entity, time-bounded InfluxDB queries with an independent timeout and Home Assistant fallback. Failed or implausible bootstraps retry with backoff; successful state is migrated/backed up, explicit defrost-counter settings win over unknown auto-detection, and COP energy pairs, price reuse, and current-hour anchors are reported.
+
+**Files changed:** `src/heat_forecast.py`, `src/influx_service.py`, `src/ha_client.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{de,en}.yaml`, `docs/HEAT_FORECAST_EOS_CONNECT.md`, `tests/unit/test_heat_forecast.py`, `tests/unit/test_influx_service.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+**Validation:** 59 focused forecast, Influx, and config-adapter tests passed; Python compilation, YAML parsing, and `git diff --check` passed.
+
 ## ✅ EOS Forecast Review Fixes — 2026-11-10
 
 **Status:** COMPLETED — Addressed all 18 review findings: isolated the forecast price optimizer, aligned weather and energy intervals by time, preserved missing-data semantics, corrected COP/defrost and DHW accounting, applied price-policy bounds, reconciled current-hour components, and simulated only the remaining first-hour interval (including fireplace scenarios).

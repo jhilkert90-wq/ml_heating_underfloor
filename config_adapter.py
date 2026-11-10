@@ -271,6 +271,14 @@ def convert_addon_to_env(config):
         'HEAT_FORECAST_REUSE_PRICES': str(
             config.get('heat_forecast_reuse_prices', True)
         ).lower(),
+        'HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS': str(
+            max(10, min(300, int(config.get(
+                'heat_forecast_influx_timeout_seconds', 60
+            ))))
+        ),
+        'HEAT_FORECAST_MIN_CALIBRATION_HOURS': str(
+            max(1, int(config.get('heat_forecast_min_calibration_hours', 48)))
+        ),
         'HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID': config.get(
             'heat_forecast_electricity_counter_entity', ''
         ),

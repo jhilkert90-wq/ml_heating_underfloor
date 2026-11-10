@@ -910,7 +910,9 @@ class HAClient:
         Fetch historical state data for multiple entities from HA REST API.
 
         Calls ``/api/history/period/{start}`` with ``filter_entity_id``,
-        ``minimal_response`` and ``no_attributes`` for efficiency.
+        ``minimal_response``, ``no_attributes`` and
+        ``significant_changes_only=false`` so unchanged counter values remain
+        available for historical anchors.
 
         Args:
             entity_ids: List of full entity IDs to fetch.
@@ -929,6 +931,7 @@ class HAClient:
             "filter_entity_id": ",".join(entity_ids),
             "minimal_response": "",
             "no_attributes": "",
+            "significant_changes_only": "false",
         }
         if end_time is not None:
             params["end_time"] = end_time.isoformat()
