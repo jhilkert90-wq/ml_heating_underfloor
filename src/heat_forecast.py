@@ -8,7 +8,7 @@ import logging
 import os
 import shutil
 import tempfile
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -547,6 +547,12 @@ def _smooth_heating_energy(values: Sequence[float]) -> list[float]:
         if max(block) >= max(average * 1.8, average + 1.0):
             result[start:stop] = [average] * len(block)
     return result
+
+
+def _smooth_future_heating_energy(values: Sequence[float]) -> list[float]:
+    if not values:
+        return []
+    return [float(values[0]), *_smooth_heating_energy(values[1:])]
 
 
 def infer_defrost_counter_inclusion(
@@ -1230,7 +1236,13 @@ class HeatForecastEngine:
                         reading_times["heating_el"]
                     ).astimezone(timezone.utc)
                     usable_counter_anchor = (
-                        hour_start - timedelta(hours=1) <= anchor_time <= now_utc
+                        hour_start - timedelta(hours=1)
+                        <= anchor_time
+                        <= hour_start
+                        or (
+                            hour_start < anchor_time <= now_utc
+                            and energy_coverage.get("heating_el", False)
+                        )
                     )
                 except (KeyError, TypeError, ValueError):
                     LOGGER.info("Ignoring malformed heating counter anchor timestamp")
@@ -1941,16 +1953,13 @@ class HeatForecastEngine:
                 key=lambda item: item[0],
             )
             sample_times = [stamp for stamp, _ in ordered]
-            for previous_time, current_time in zip(timeline, timeline[1:]):
+            measured_intervals: list[tuple[datetime, datetime]] = []
+            for (previous_time, previous), (current_time, current) in zip(
+                ordered, ordered[1:]
+            ):
                 elapsed = (current_time - previous_time).total_seconds() / 3600.0
                 if elapsed <= 0 or elapsed > 2.0:
                     continue
-                previous_index = bisect_right(sample_times, previous_time) - 1
-                current_index = bisect_right(sample_times, current_time) - 1
-                if previous_index < 0 or current_index < 0:
-                    continue
-                previous = ordered[previous_index][1]
-                current = ordered[current_index][1]
                 delta = compute_counter_delta(
                     previous,
                     current,
@@ -1959,11 +1968,38 @@ class HeatForecastEngine:
                 )
                 if delta is None:
                     continue
+                measured_intervals.append((previous_time, current_time))
                 _add_daily_energy_interval(
                     days,
                     previous_time=previous_time,
                     current_time=current_time,
                     delta=delta,
+                    field=field,
+                )
+            measured_interval_ends = [
+                interval_end for _, interval_end in measured_intervals
+            ]
+            for previous_time, current_time in zip(timeline, timeline[1:]):
+                elapsed = (current_time - previous_time).total_seconds() / 3600.0
+                if elapsed <= 0 or elapsed > 2.0:
+                    continue
+                previous_index = bisect_right(sample_times, previous_time) - 1
+                current_index = bisect_left(sample_times, current_time)
+                if previous_index < 0 or current_index >= len(ordered):
+                    continue
+                measured_index = bisect_left(measured_interval_ends, current_time)
+                if (
+                    measured_index < len(measured_intervals)
+                    and measured_intervals[measured_index][0] <= previous_time
+                ):
+                    continue
+                if ordered[previous_index][1] != ordered[current_index][1]:
+                    continue
+                _add_daily_energy_interval(
+                    days,
+                    previous_time=previous_time,
+                    current_time=current_time,
+                    delta=0.0,
                     field=field,
                 )
         if days:
@@ -2291,7 +2327,7 @@ class HeatForecastEngine:
         if mode != "heating":
             heat_result["heat_kwh"] = [0.0] * horizon
         else:
-            heat_result["heat_kwh"] = _smooth_heating_energy(
+            heat_result["heat_kwh"] = _smooth_future_heating_energy(
                 heat_result["heat_kwh"]
             )
 

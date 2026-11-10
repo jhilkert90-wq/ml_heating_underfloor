@@ -595,7 +595,7 @@ def test_update_publishes_hourly_thermal_and_electrical_profiles(
     assert attributes["calibration_hours"] == 0
     assert len(attributes["price_source_per_hour"]) == 3
     assert isinstance(attributes["degraded_reasons"], list)
-    assert attributes["current_hour_estimate"] == "counter_anchor"
+    assert attributes["current_hour_estimate"] == "degraded_partial"
     assert attributes["includes"] == ["heating", "dhw", "standby"]
     assert simulation_fractions == ([0.5, 0.5, 0.5] if fireplace_on else [0.5])
     if fireplace_on:
@@ -901,6 +901,11 @@ def test_daily_counter_interval_is_split_at_local_midnight_live_and_backfill(
         {
             "dhw": [(previous, 2.0), (current, 2.6)],
             "standby": [(previous, 1.0), (current, 1.2)],
+            "heating": [
+                (previous, 10.0),
+                (previous + timedelta(minutes=30), 10.1),
+                (current, 10.2),
+            ],
         },
         current,
     )
@@ -938,6 +943,17 @@ def test_backfill_counts_unchanged_daily_counters_on_observed_short_intervals(
     daily = engine.state["daily_energy"]["2026-01-02"]
     assert daily["dhw_coverage_h"] == pytest.approx(24.0)
     assert daily["standby_coverage_h"] == pytest.approx(24.0)
+
+    stale = HeatForecastEngine(str(tmp_path / "stale.json"))
+    stale._backfill_daily_energy(
+        {
+            "heating": heat_samples[:5],
+            "dhw": [(start, 2.0)],
+            "standby": [(start, 1.0)],
+        },
+        start + timedelta(days=2),
+    )
+    assert stale.state["daily_energy"] == {}
 
     gap = HeatForecastEngine(str(tmp_path / "gap.json"))
     gap._backfill_daily_energy(
@@ -1003,7 +1019,7 @@ def test_dhw_daily_budget_caps_every_forecast_slot_today(monkeypatch, tmp_path):
 
 
 def test_heating_energy_smoothing_preserves_each_six_hour_total():
-    from src.heat_forecast import _smooth_heating_energy
+    from src.heat_forecast import _smooth_heating_energy, _smooth_future_heating_energy
 
     original = [1.0, 1.0, 1.0, 8.0, 1.0, 1.0, 2.0]
     smoothed = _smooth_heating_energy(original)
@@ -1012,6 +1028,41 @@ def test_heating_energy_smoothing_preserves_each_six_hour_total():
     assert max(smoothed[:6]) < max(original[:6])
     assert smoothed[6] == original[6]
 
+    current_slot = _smooth_future_heating_energy([0.1, 1.0, 1.0, 8.0, 1.0, 1.0])
+    assert current_slot[0] == 0.1
+    assert current_slot[1:] == pytest.approx([2.4] * 5)
+
+
+def test_post_boundary_reading_without_boundary_energy_is_a_partial_anchor(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID", "heating")
+    for key in (
+        "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID",
+    ):
+        monkeypatch.setattr(config, key, "")
+    now = datetime(2026, 1, 1, 10, 30, tzinfo=timezone.utc)
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine.state["counter_snapshots"] = {
+        "heating_el": {
+            "value_kwh": 10.0,
+            "time_utc": (now - timedelta(hours=3)).isoformat(),
+        }
+    }
+
+    engine._record_interval(
+        now=now,
+        states={"heating": {"state": "10.2"}},
+        outdoor_c=0.0,
+    )
+
+    assert engine.state["hour_anchor"]["coverage"] == "partial"
 
 def test_price_forecast_uses_isolated_optimizer_and_per_day_thresholds(
     monkeypatch, tmp_path

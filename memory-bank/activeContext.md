@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### Heat Forecast Review Corrections — 2026-11-10
+
+- **What:** Post-boundary counter readings remain partial until their interval establishes boundary energy. Historical DHW/standby deltas are allocated over the auxiliary counter's measured endpoints; shared observations add unchanged-counter coverage only while bounded by observed samples. Heating smoothing now excludes the current partial-hour slot.
+- **Why:** Restarts with stale counters could skip history recovery, auxiliary readings could be carried forward indefinitely or shifted to unrelated sample intervals, and smoothing could exceed the current slot's power limit.
+- **Files:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Cost-Aware Household Load Offset — 2026-11-10
 
 - **What:** Added configurable `PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW` (default 0.7 kW) to the expected load used in cost-aware PV share calculations, including the forecast calculation. `sensor.ml_heating_hp_expected_power` now publishes HP plus household baseline and exposes both components in attributes.

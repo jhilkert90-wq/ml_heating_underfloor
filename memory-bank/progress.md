@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ Heat Forecast Review Corrections — 2026-11-10
+
+**Status:** COMPLETED — Post-boundary readings no longer masquerade as usable hourly anchors without boundary energy; auxiliary energy retains its measurement endpoints, stale readings cannot extend coverage, and smoothing leaves the current partial-hour slot untouched.
+
+**Files changed:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+**Validation:** 57 heat-forecast and 25 price-cost unit tests passed; Python compilation and `git diff --check` passed.
+
 ## ✅ Cost-Aware Household Load Offset — 2026-11-10
 
 **Status:** COMPLETED — Added a configurable 0.7 kW household baseline to the expected heat-pump load used for cost-aware PV share calculations. The expected-power sensor now reports the combined load and exposes its heat-pump and household components.
