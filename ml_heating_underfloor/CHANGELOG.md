@@ -1,5 +1,14 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.112] - 2026-11-10
+
+### Added
+- Added a configurable 0.7 kW household baseline to cost-aware PV demand calculations and the expected-power diagnostic sensor, preventing PV from being treated as available before the household load is covered.
+
+### Fixed
+- Corrected current-hour energy projection to cover only the remaining minutes, route active shared warm-water sensor usage to DHW, and retain recent counter anchors; DHW/standby profiles now learn from short observed counter intervals, and thermal peaks are smoothed over six-hour blocks without changing their energy totals.
+- Kept post-boundary restart anchors partial without known boundary energy, bounded auxiliary-counter coverage by observed samples, allocated auxiliary energy over its measured interval, and excluded the current partial-hour slot from smoothing.
+
 ## [0.2.111] - 2026-11-10
 
 ### Fixed
