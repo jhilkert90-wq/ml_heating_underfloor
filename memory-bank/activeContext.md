@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### Heat Forecast Review Corrections — 2026-11-10
+
+- **What:** Corrected HA history identity and binary-state parsing, aligned COP counter intervals by their actual endpoints, retained sensor times in daily and hourly accounting, projected only uncovered current-hour energy, resampled sparse defrost fallback data, counted only accepted COP observations, and supplied cost evaluation with the full reused-price horizon.
+- **Why:** Review findings identified cases where absent/reordered history arrays, stale/asynchronous readings, partial anchors, sparse Recorder events, and partial lookahead data could corrupt calibration or forecast energy and pricing.
+- **Files:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Heat Forecast Calibration Bootstrap Fixes — 2026-11-10
 
 - **What:** Added configurable InfluxDB history timeouts and smaller per-entity/block queries, Home Assistant REST history fallback, bounded bootstrap retries, schema-v1 migration and backup recovery, validated defrost event learning, explicit COP energy pairings, same-hour price reuse, and persisted counter anchors. Forecast attributes now expose calibration source/hours, reused-price sources, current-hour quality, and degraded reasons.
