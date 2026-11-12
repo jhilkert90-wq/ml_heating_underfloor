@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### Forecast docs + dashboard category — 2026-11-12
+
+- **What:** own dashboard group for forecast/start-estimate options; open items documented. Files: see progress.md.
+
 ### PR 5 rest + near gate fix — 2026-11-12
 
 - **What:** see progress.md (log replay showed outlet−inlet 1.5 K < floor 2.59 despite 2.2 kW measured → gate relaxed).

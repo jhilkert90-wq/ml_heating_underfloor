@@ -102,6 +102,7 @@ class TestSettingsMetadata:
             "ml_cooling_correction",
             "hlc",
             "balance",
+            "wp_forecast",
             "price_pv",
             "shadow",
             "outlet",
@@ -229,3 +230,19 @@ class TestSettingsComponentHelpers:
         assert _coerce_bool("1") is True
         assert _coerce_bool("false") is False
         assert _coerce_bool("0") is False
+
+
+def test_wp_forecast_options_have_own_dashboard_group():
+    metadata = load_settings_metadata()
+    assert "wp_forecast" in GROUP_DEFINITIONS
+    for key in (
+        "heat_forecast_enabled",
+        "heat_forecast_near_controller_enabled",
+        "heat_forecast_electricity_counter_entity",
+        "cop_calibration_enabled",
+        "hp_start_estimate_enabled",
+        "hp_start_estimate_heating_entity_id",
+        "hp_start_estimate_use_for_grace",
+    ):
+        assert metadata.fields[key].group.slug == "wp_forecast", key
+    assert metadata.fields["price_cost_max_overshoot_k"].group.slug == "price_pv"

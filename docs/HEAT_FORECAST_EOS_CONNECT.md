@@ -91,3 +91,79 @@ Use the `forecast` time series as the external heat-pump load profile in EOS
 Connect. The thermal-energy array is available for analysis and is not the
 electrical load profile. EOS Connect's own profile/entity integration must be
 configured separately.
+
+
+## Forecast behaviour (since the 2026-11 overhaul)
+
+- **Lookahead controller:** the simulation applies, per step, the smallest
+  constant thermal power that keeps the room above `target - 0.1 K` for
+  `heat_forecast_lookahead_hours` (default 3 h). `heat_forecast_max_ramp_kw_per_step`
+  limits power changes per step. Hourly smoothing is opt-in
+  (`heat_forecast_smoothing_enabled`, default off).
+- **Current hour:** thermal energy of the current hour is derived from the
+  electrical remainder so `forecast_heat_th_kwh` and `forecast_heat_el_kwh`
+  stay consistent.
+- **PV gaps:** with `heat_forecast_pv_gap_mode: daily_profile` a missing PV hour
+  reuses the value from 24 h earlier; `none` contributes zero.
+- **COP cap:** outside the calibrated outdoor-temperature range the COP is capped
+  at the best observed COP plus `heat_forecast_cop_extrapolation_margin`
+  (default 0.3, negative disables). Attribute `cop_extrapolated_hours`.
+- **Accuracy:** attribute `accuracy` contains bias, MAE, MAPE, missed-start and
+  false-start rate per lead time (1 h, 6 h, 24 h) over 24 h and 7 d, measured
+  against the hourly counter energy.
+- **Near-range controller (optional, default off):**
+  `heat_forecast_near_controller_enabled` uses the live outlet setpoint for the
+  first `heat_forecast_near_hours` (power = scale x outlet effectiveness x
+  (outlet - room), blended out over `heat_forecast_near_blend_hours`). The
+  dimensionless scale (0.5-2.0) is learned against the measured thermal power
+  (`thermal_power_entity_id`). Active only in heating mode, outside DHW, with a
+  snapshot younger than 30 min and either outlet - inlet >= `delta_t_floor` or
+  measured thermal power >= 0.5 kW.
+- **Start estimate (optional):** an external HA sensor can provide the minutes
+  until the heat pump starts and its runtime (attribute `hp_start_estimate`).
+  See below.
+
+## Dashboard
+
+All options of this feature are in the dashboard category
+**"WP Load Forecast & Start Estimate"** (forecast, COP calibration, counters,
+near-range controller and start-estimate options). Entity IDs are free-text
+fields, switches are checkboxes. Price/cost-mode options
+(`price_cost_*`, `hp_power_*`) stay in "Price & PV Optimization".
+
+## Start-estimate sensors in Home Assistant (optional)
+
+The add-on can read up to two template sensors you create in Home Assistant, one
+for heating and one for cooling:
+
+| Sensor | Purpose |
+|---|---|
+| `sensor.wp_minuten_bis_start_heizen` | minutes until the heat pump starts in heating mode |
+| `sensor.wp_minuten_bis_start_kuehlen` | same for cooling mode (can be left empty) |
+
+State contract: minutes to start (0 = running, `unknown` = no start expected).
+Attributes: `status` (`idle`/`starting_soon`/`running`/`blocked`/`unknown`),
+`mode`, `method` (`degree_minutes`/`hysteresis`/`learned`),
+`expected_runtime_min`, `runtime_unbounded`, `confidence`, `updated_at`.
+
+Setup in short (full YAML and background in
+[HA_WP_START_ESTIMATE_GUIDE.md](HA_WP_START_ESTIMATE_GUIDE.md)):
+
+1. Find your heat pump entities (degree minutes, actual supply temperature,
+   calculated target supply temperature, compressor frequency) in
+   *Developer tools -> States* (guide, section 2).
+2. Create the threshold helpers `input_number` (guide, section 3).
+3. Add the heating template sensor (guide, section 4); for cooling use section 5,
+   or variant B for pure hysteresis heat pumps (section 5b).
+4. *Developer tools -> YAML -> Check configuration*, reload template entities
+   (guide, section 6).
+5. Verify the values against real starts before using them (guide, section 7).
+6. In the dashboard category "WP Load Forecast & Start Estimate" set
+   `hp_start_estimate_enabled`, the heating/cooling entity IDs and, one by one,
+   the `hp_start_estimate_use_for_*` switches (all off by default). With the
+   switches off or the sensor missing, stale or of low confidence the add-on
+   behaves exactly as without it.
+
+## Known gaps and open items
+
+See [HEAT_FORECAST_OPEN_ITEMS.md](HEAT_FORECAST_OPEN_ITEMS.md).

@@ -460,7 +460,7 @@ Prüfe an einem echten Kühllauf, ob deine WP die Hysterese in dieser Richtung a
 
 ## 8. Schritt 6: Anbindung an das Add-on
 
-Das Add-on enthält den Reader (`src/hp_start_estimate.py`, Optionen `hp_start_estimate_*`, Schritt 4a-1: nur Diagnose, kein Regelverhalten). Die Nutzung in Prognose, Vorlaufsuche, Lernen, Kostenmodus und Wartezeiten folgt in den weiteren Schritten von PR 4a und ist je Verwendung einzeln schaltbar (`hp_start_estimate_use_for_*`, Standard aus). Dann in den Add-on-Optionen eintragen:
+Das Add-on enthält den Reader (`src/hp_start_estimate.py`, Optionen `hp_start_estimate_*`, Schritt 4a-1: nur Diagnose, kein Regelverhalten). Die Nutzung in Prognose, Vorlaufsuche, Lernen, Kostenmodus und Wartezeiten folgt in den weiteren Schritten von PR 4a und ist je Verwendung einzeln schaltbar (`hp_start_estimate_use_for_*`, Standard aus). Dann in den Add-on-Optionen (Dashboard-Kategorie **"WP Load Forecast & Start Estimate"**) eintragen:
 - Aktivieren: `HP_START_ESTIMATE_ENABLED = true`
 - Heizen: `sensor.wp_minuten_bis_start_heizen`
 - Kühlen: `sensor.wp_minuten_bis_start_kuehlen`

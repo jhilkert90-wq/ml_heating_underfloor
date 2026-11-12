@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sensor.ml_heating_price_level` exposes `grid_price_level` and `effective_price_level` (cost-mode/PV adjusted) separately.
 
 ### Added
+- Dashboard category "WP Load Forecast & Start Estimate" for all forecast, COP calibration, counter, near-range and start-estimate options.
+- Docs: forecast behaviour, start-estimate sensor setup and `docs/HEAT_FORECAST_OPEN_ITEMS.md` (not yet implemented items).
 - Optional near-range controller snapshot for the WP load forecast (`heat_forecast_near_controller_enabled`, default off): the first hours use the live outlet setpoint with a learned power scale (EMA vs. measured thermal power) and blend into the lookahead controller.
 - Forecast accuracy tracking (`src/forecast_accuracy.py`): predictions at lead 1/6/24 h are compared with measured hourly counter energy; sensor attribute `accuracy` (bias, MAE, MAPE, missed/false-start rate over 24 h and 7 d).
 - COP extrapolation cap (`heat_forecast_cop_extrapolation_margin`, default 0.3) outside the calibrated temperature range; attribute `cop_extrapolated_hours`.

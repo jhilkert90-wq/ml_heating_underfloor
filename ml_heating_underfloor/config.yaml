@@ -685,6 +685,14 @@ options:
   # Expected HP electrical power (kW) used until heating samples exist
   hp_expected_power_fallback_kw: 1.5
   hp_power_min_samples: 6
+  # Window (hours) for the rolling mean of HP power while heating (no DHW/defrost)
+  hp_power_window_hours: 6
+  # Minimum electrical power (W) for the HP to count as "on"
+  hp_power_min_on_w: 300
+
+  # === WP Start Estimate (external HA sensor) ===
+  # Optional template sensors that report minutes until the heat pump starts.
+  # See docs/HA_WP_START_ESTIMATE_GUIDE.md. Empty/disabled = previous behaviour.
   hp_start_estimate_enabled: false
   hp_start_estimate_heating_entity_id: ""
   hp_start_estimate_cooling_entity_id: ""
@@ -696,10 +704,6 @@ options:
   hp_start_estimate_use_for_learning: false
   hp_start_estimate_use_for_cost_mode: false
   hp_start_estimate_use_for_grace: false
-  # Window (hours) for the rolling mean of HP power while heating (no DHW/defrost)
-  hp_power_window_hours: 6
-  # Minimum electrical power (W) for the HP to count as "on"
-  hp_power_min_on_w: 300
 
   # === PV Surplus Optimization ===
   # When enabled, the target temperature is raised by price_target_offset

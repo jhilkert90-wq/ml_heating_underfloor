@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Forecast docs + dashboard category — 2026-11-12
+
+**Status:** COMPLETED — group `wp_forecast` in `dashboard/config_schema.py`, new section header in config.yaml, docs incl. open items.
+
+**Files changed:** `dashboard/config_schema.py`, config.yaml, `docs/HEAT_FORECAST_EOS_CONNECT.md`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, guide, tests, CHANGELOG.
+
 ## ✅ PR 5 rest + near gate fix — 2026-11-12
 
 **Status:** COMPLETED — price label split, feature-importance history guard, near-controller gate uses measured power.
