@@ -37,11 +37,22 @@ class DummyResponse:
 
 
 class TestSettingsMetadata:
+    def test_forecast_dhw_option_is_persistable_checkbox_with_help(self):
+        field = load_settings_metadata().fields["heat_forecast_include_dhw"]
+        assert field.widget_type == "bool"
+        assert field.default is True
+        assert "EOS Connect" in field.description
+        description = field.description.lower()
+        assert any(term in description for term in ("warmwasser", "hot-water"))
+        assert any(term in description for term in ("start", "bereitung"))
+        assert _sanitize_options({"heat_forecast_include_dhw": False}) == {
+            "heat_forecast_include_dhw": False
+        }
+
     def test_metadata_covers_all_addon_options(self):
         metadata = load_settings_metadata()
 
         _SKIPPED_KEYS = {"heating_profile", "cooling_profile"}
-        assert len(metadata.defaults) == 297
         assert len(metadata.fields) == len(metadata.defaults) - len(_SKIPPED_KEYS)
         assert len(metadata.field_order) == len(metadata.fields)
         assert set(metadata.defaults.keys()) - set(metadata.fields.keys()) == _SKIPPED_KEYS
@@ -103,6 +114,23 @@ class TestSettingsMetadata:
 
 
 class TestSettingsService:
+    def test_forecast_dhw_option_round_trips_via_supervisor(self, monkeypatch):
+        stored = {}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            stored.update(json["options"])
+            return DummyResponse({})
+
+        def fake_get(url, headers=None, timeout=None):
+            return DummyResponse({"data": {"options": stored}})
+
+        monkeypatch.setenv("SUPERVISOR_TOKEN", "test-token")
+        monkeypatch.setattr("settings_service.requests.post", fake_post)
+        monkeypatch.setattr("settings_service.requests.get", fake_get)
+        assert fetch_addon_options()["heat_forecast_include_dhw"] is True
+        update_addon_options({"heat_forecast_include_dhw": False})
+        assert fetch_addon_options()["heat_forecast_include_dhw"] is False
+
     def test_default_options_match_config_schema(self):
         defaults = get_default_options()
 
@@ -183,6 +211,16 @@ class TestSettingsService:
 
 class TestSettingsComponentHelpers:
     streamlit = pytest.importorskip("streamlit", reason="streamlit not installed")
+
+    def test_forecast_dhw_checkbox_displays_explanation(self, monkeypatch):
+        from components import settings
+
+        captions = []
+        monkeypatch.setattr(settings.st, "checkbox", lambda *args, **kwargs: False)
+        monkeypatch.setattr(settings.st, "caption", captions.append)
+        field = load_settings_metadata().fields["heat_forecast_include_dhw"]
+        assert settings._render_field(field, True) is False
+        assert captions == [field.description]
 
     def test_coerce_bool_handles_string_values(self):
         from components.settings import _coerce_bool

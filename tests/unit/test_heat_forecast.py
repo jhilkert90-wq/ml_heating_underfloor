@@ -481,8 +481,11 @@ def test_pv_surplus_offset_survives_price_service_failure(monkeypatch, tmp_path)
 
 @pytest.mark.parametrize("missing_indoor_and_target", [False, True])
 @pytest.mark.parametrize("fireplace_on", [False, True])
+@pytest.mark.parametrize("include_dhw", [False, True])
+@pytest.mark.parametrize("defrost_handling", ["net", "separate"])
 def test_update_publishes_hourly_thermal_and_electrical_profiles(
-    monkeypatch, tmp_path, missing_indoor_and_target, fireplace_on
+    monkeypatch, tmp_path, missing_indoor_and_target, fireplace_on, include_dhw,
+    defrost_handling,
 ):
     from src import config, ha_client, heat_forecast
 
@@ -509,8 +512,10 @@ def test_update_publishes_hourly_thermal_and_electrical_profiles(
         monkeypatch.setattr(config, key, value)
     for key, value in {
         "HEAT_FORECAST_ENABLED": True,
+        "HEAT_FORECAST_INCLUDE_DHW": include_dhw,
         "HEAT_FORECAST_HORIZON_HOURS": 3,
         "COP_CALIBRATION_ENABLED": False,
+        "COP_DEFROST_HANDLING": defrost_handling,
         "BUILDING_BALANCE_CAPACITY_MODE": "manual",
         "HEAT_FORECAST_BASE_GAIN_KW": 0.0,
         "HEAT_FORECAST_STEP_MINUTES": 15,
@@ -518,6 +523,7 @@ def test_update_publishes_hourly_thermal_and_electrical_profiles(
         "PRICE_COST_MODE_ENABLED": False,
         "PV_TRAJ_FORECAST_MODE_ENABLED": False,
         "PV_SURPLUS_CHEAP_ENABLED": False,
+        "DHW_STATUS_ENTITY_ID": "binary_sensor.dhw",
     }.items():
         monkeypatch.setattr(config, key, value)
     monkeypatch.setattr(ha_client, "get_sensor_attributes", lambda _entity: {})
@@ -562,6 +568,7 @@ def test_update_publishes_hourly_thermal_and_electrical_profiles(
         "sensor.heating_el": {"state": "10"},
         "sensor.heating_th": {"state": "20"},
         "sensor.dhw": {"state": "3"},
+        "binary_sensor.dhw": {"state": "on"},
         "sensor.standby": {"state": "1"},
         "sensor.defrost_el": {"state": "0"},
         "sensor.defrost_th": {"state": "0"},
@@ -578,6 +585,19 @@ def test_update_publishes_hourly_thermal_and_electrical_profiles(
         return original_simulate(*args, **kwargs)
 
     monkeypatch.setattr(heat_forecast, "simulate_heating_energy", record_simulation)
+    scenario_dhw = []
+    original_electrical = heat_forecast.hourly_electrical_forecast
+
+    def record_electrical(*args, **kwargs):
+        scenario_dhw.append(list(kwargs["dhw_el_kwh"]))
+        return original_electrical(*args, **kwargs)
+
+    monkeypatch.setattr(heat_forecast, "hourly_electrical_forecast", record_electrical)
+    monkeypatch.setattr(
+        HeatForecastEngine,
+        "_dhw_and_standby_profiles",
+        lambda self, starts: ([0.2] * len(starts), [0.01] * len(starts), {}),
+    )
     result = HeatForecastEngine(str(tmp_path / "state.json")).update_and_publish(
         ha_client=client,
         states=states,
@@ -596,10 +616,32 @@ def test_update_publishes_hourly_thermal_and_electrical_profiles(
     assert len(attributes["price_source_per_hour"]) == 3
     assert isinstance(attributes["degraded_reasons"], list)
     assert attributes["current_hour_estimate"] == "degraded_partial"
-    assert attributes["includes"] == ["heating", "dhw", "standby"]
+    assert attributes["includes"] == (
+        ["heating", "dhw", "standby"] if include_dhw else ["heating", "standby"]
+    )
+    dhw = attributes["forecast_dhw_el_kwh"]
+    if include_dhw:
+        assert dhw[0] > 0
+        assert any(value > 0 for value in dhw[1:])
+    else:
+        assert all(value == 0 for value in dhw)
+    assert attributes["forecast_heat_el_kwh"][0] == 0
+    for index, row in enumerate(attributes["forecast"]):
+        assert row["value"] == pytest.approx(
+            attributes["forecast_heat_el_kwh"][index]
+            + dhw[index]
+            + attributes["forecast_standby_el_kwh"][index]
+            + attributes.get("forecast_defrost_el_kwh", [0.0] * 3)[index],
+            abs=0.0002,
+        )
     assert simulation_fractions == ([0.5, 0.5, 0.5] if fireplace_on else [0.5])
     if fireplace_on:
         assert set(attributes["forecast_fireplace_scenarios"]) == {"3h", "4h"}
+        assert all(
+            (any(value > 0 for value in profile) if include_dhw
+             else all(value == 0 for value in profile))
+            for profile in scenario_dhw[1:]
+        )
 
 
 def test_cop_curve_decays_stale_bins_for_confidence_and_fit_weight():

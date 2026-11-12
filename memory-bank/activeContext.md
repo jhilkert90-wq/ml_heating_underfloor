@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### Optional Warmwasser Forecast Inclusion — 2026-11-12
+
+- **What:** Added the enabled-by-default `heat_forecast_include_dhw` dashboard setting; disabling it removes DHW from all forecast totals and scenarios, not from preparation or history collection.
+- **Why:** EOS Connect can manage this load and start hot-water preparation itself, avoiding double counting.
+- **Files:** `src/config.py`, `src/heat_forecast.py`, `config_adapter.py`, `dashboard/components/settings.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{de,en}.yaml`, `docs/HEAT_FORECAST_EOS_CONNECT.md`, `tests/unit/test_heat_forecast.py`, `tests/unit/test_config_adapter.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Heat Forecast Review Corrections — 2026-11-10
 
 - **What:** Post-boundary counter readings remain partial until their interval establishes boundary energy. Historical DHW/standby deltas are allocated over the auxiliary counter's measured endpoints; shared observations add unchanged-counter coverage only while bounded by observed samples. Heating smoothing now excludes the current partial-hour slot.

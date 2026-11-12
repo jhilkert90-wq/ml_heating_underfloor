@@ -60,12 +60,15 @@ def _refresh_current_options() -> None:
 def _render_field(field: FieldMetadata, value: Any) -> Any:
     widget_key = f"settings_field_{field.key}"
     if field.widget_type == "bool":
-        return st.checkbox(
+        result = st.checkbox(
             field.label,
             value=_coerce_bool(value if value is not None else field.default),
             help=field.description,
             key=widget_key,
         )
+        if field.key == "heat_forecast_include_dhw":
+            st.caption(field.description)
+        return result
     if field.widget_type == "select":
         options = list(field.options)
         selected = value if value in options else field.default

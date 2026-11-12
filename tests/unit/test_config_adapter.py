@@ -45,3 +45,10 @@ def test_convert_addon_to_env_maps_forecast_and_direct_power_options():
     assert env["COP_DEFROST_EL_IN_HEATING_COUNTER"] == "auto"
     assert env["THERMAL_POWER_ENTITY_ID"] == "sensor.heat_power"
     assert env["THERMAL_POWER_SOURCE"] == "direct"
+
+
+def test_forecast_dhw_option_defaults_on_and_maps_disabled():
+    assert convert_addon_to_env({})["HEAT_FORECAST_INCLUDE_DHW"] == "true"
+    assert convert_addon_to_env({"heat_forecast_include_dhw": False})[
+        "HEAT_FORECAST_INCLUDE_DHW"
+    ] == "false"

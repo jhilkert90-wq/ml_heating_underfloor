@@ -139,6 +139,9 @@ configuration:
   heat_forecast_enabled:
     name: '[Forecast] Enable Heat-Pump Load Forecast'
     description: Enables the additive, read-only 48-hour forecast without changing control behavior.
+  heat_forecast_include_dhw:
+    name: '[Forecast] Include hot-water demand in load forecast'
+    description: EOS Connect can manage this load and start hot-water preparation itself. This setting only changes the forecast; it does not affect hot-water preparation.
   heat_forecast_sensor_entity:
     name: '[Forecast] Output Entity'
     description: Home Assistant sensor exposing the hourly EOS Connect profile in its forecast attribute.

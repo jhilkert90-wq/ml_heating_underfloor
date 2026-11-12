@@ -139,6 +139,9 @@ configuration:
   heat_forecast_enabled:
     name: '[Prognose] Wärmepumpen-Lastprognose aktivieren'
     description: Aktiviert die additive, rein lesende 48-Stunden-Prognose; ändert nicht die Regelung.
+  heat_forecast_include_dhw:
+    name: '[Prognose] Warmwasser in Lastprognose einbeziehen'
+    description: EOS Connect kann diese Last selbst verwalten und die Warmwasserbereitung starten. Diese Einstellung ändert nur die Prognose, nicht die Warmwasserbereitung.
   heat_forecast_sensor_entity:
     name: '[Prognose] Ausgabe-Entität'
     description: Home-Assistant-Sensor mit stündlichem EOS-Connect-Profil im Attribut forecast.

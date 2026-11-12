@@ -2389,6 +2389,13 @@ class HeatForecastEngine:
             outdoor=outdoor,
             remaining_hours=remaining_hours,
         )
+        if not config.HEAT_FORECAST_INCLUDE_DHW:
+            for index, value in enumerate(electrical["forecast_dhw_el_kwh"]):
+                total = round(electrical["forecast_total_el_kwh"][index] - value, 4)
+                electrical["forecast_total_el_kwh"][index] = total
+                electrical["forecast"][index]["value"] = total
+            electrical["forecast_dhw_el_kwh"] = [0.0] * horizon
+            dhw = [0.0] * horizon
 
         scenarios = {}
         if fireplace_on:
@@ -2460,7 +2467,11 @@ class HeatForecastEngine:
             "generated_at": now.astimezone(timezone.utc).isoformat(),
             "horizon_hours": horizon,
             "scenario": "configured_fireplace_duration",
-            "includes": ["heating", "dhw", "standby"],
+            "includes": (
+                ["heating", "dhw", "standby"]
+                if config.HEAT_FORECAST_INCLUDE_DHW
+                else ["heating", "standby"]
+            ),
             "climate_mode_assumed": mode,
             "cooling_forecast": False,
             "cop_source": "learned_energy_counters" if curve["calibrated"] else "configured_start_curve",

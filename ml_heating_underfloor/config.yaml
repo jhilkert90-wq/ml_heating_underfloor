@@ -99,6 +99,7 @@ options:
   # === Read-only heat-pump load forecast ===
   # Forecast/calibration are opt-in and never affect heating control.
   heat_forecast_enabled: false
+  heat_forecast_include_dhw: true
   heat_forecast_sensor_entity: "sensor.ml_heating_wp_load_forecast"
   heat_forecast_state_file: "/config/ml_heating/heat_forecast_state.json"
   heat_forecast_horizon_hours: 48
@@ -834,6 +835,7 @@ schema:
   thermal_power_entity: "str?"
   thermal_power_source: "list(spread|direct)"
   heat_forecast_enabled: "bool"
+  heat_forecast_include_dhw: "bool"
   heat_forecast_sensor_entity: "str"
   heat_forecast_state_file: "str"
   heat_forecast_horizon_hours: "int(24,48)"
