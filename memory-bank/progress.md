@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ WP Load Forecast Controller & Cost-Mode Overshoot Limit — 2026-11-12
+
+**Status:** PARTIAL — Implemented plan PR 1 (current-hour th/el consistency, PV gap fallback, HP min samples), PR 2 (receding-horizon forecast controller, opt-in smoothing) and the PR 5 overshoot limit. Not yet done: COP extrapolation cap, accuracy tracking (PR 3), near-term controller snapshot (PR 4), price-label split, feature_importance guard.
+
+**Files changed:** `src/heat_forecast.py`, `src/config.py`, `src/price_optimizer.py`, `src/model_wrapper.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{de,en}.yaml`, `docs/PARAMETER_REFERENCE.md`, tests (`test_heat_forecast.py`, `test_price_cost_mode.py`, `test_overshoot_logic.py`), `CHANGELOG.md`.
+
+**Validation:** full suite 1953 passed; 7 pre-existing `test_heating_controller.py` failures in full-suite order.
+
 ## ✅ Optional Warmwasser Forecast Inclusion — 2026-11-12
 
 **Status:** COMPLETED — Added an enabled-by-default dashboard setting to include or exclude hot-water electricity in the EOS load forecast, including the current hour and fireplace scenarios, without changing actual hot-water preparation.

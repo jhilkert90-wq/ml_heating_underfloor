@@ -106,6 +106,10 @@ options:
   heat_forecast_step_minutes: 15
   heat_forecast_max_heating_kw: 8.0
   heat_forecast_base_gain_kw: 0.3
+  heat_forecast_lookahead_hours: 3.0
+  heat_forecast_max_ramp_kw_per_step: 1.5
+  heat_forecast_smoothing_enabled: false
+  heat_forecast_pv_gap_mode: daily_profile
   heat_forecast_fireplace_duration_h: 3.5
   heat_forecast_reuse_prices: true
   heat_forecast_influx_timeout_seconds: 60
@@ -672,9 +676,11 @@ options:
   # Minimum spread (EUR/kWh) between cheapest and dearest hour for any shift
   price_cost_min_spread_eur_kwh: 0.02
   # Standard household demand added to HP demand for cost-mode PV coverage
+  price_cost_max_overshoot_k: 0.3
   price_cost_household_power_offset_kw: 0.7
   # Expected HP electrical power (kW) used until heating samples exist
   hp_expected_power_fallback_kw: 1.5
+  hp_power_min_samples: 6
   # Window (hours) for the rolling mean of HP power while heating (no DHW/defrost)
   hp_power_window_hours: 6
   # Minimum electrical power (W) for the HP to count as "on"
@@ -842,6 +848,10 @@ schema:
   heat_forecast_step_minutes: "list(10|12|15|20|30)"
   heat_forecast_max_heating_kw: "float(1.0,20.0)"
   heat_forecast_base_gain_kw: "float(0.0,5.0)"
+  heat_forecast_lookahead_hours: "float(0.25,12.0)"
+  heat_forecast_max_ramp_kw_per_step: "float(0.0,20.0)"
+  heat_forecast_smoothing_enabled: "bool"
+  heat_forecast_pv_gap_mode: "list(daily_profile|none)"
   heat_forecast_fireplace_duration_h: "float(0.0,8.0)"
   heat_forecast_reuse_prices: "bool"
   heat_forecast_influx_timeout_seconds: "int(10,300)"
@@ -1113,8 +1123,10 @@ schema:
   price_band_down_c: "float(0.0,2.0)"
   price_cost_lookahead_hours: "int(2,48)"
   price_cost_min_spread_eur_kwh: "float(0.0,0.5)"
+  price_cost_max_overshoot_k: "float(0.0,5.0)"
   price_cost_household_power_offset_kw: "float(0.0,10.0)"
   hp_expected_power_fallback_kw: "float(0.1,20.0)"
+  hp_power_min_samples: "int(1,100)"
   hp_power_window_hours: "float(1.0,48.0)"
   hp_power_min_on_w: "int(0,5000)"
   # PV Surplus Optimization

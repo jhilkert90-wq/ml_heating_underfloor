@@ -2158,6 +2158,15 @@ class HeatForecastEngine:
             if index - 1 < len(pv_future):
                 pv_electrical.append(max(0.0, float(pv_future[index - 1])))
                 pv_flags.append({"source": "pv_forecast", "padded": False})
+            elif (
+                getattr(config, "HEAT_FORECAST_PV_GAP_MODE", "daily_profile")
+                == "daily_profile"
+                and index - 24 >= 1
+            ):
+                pv_electrical.append(pv_electrical[index - 24])
+                pv_flags.append(
+                    {"source": "daily_profile_fallback", "padded": True}
+                )
             else:
                 pv_electrical.append(0.0)
                 pv_flags.append({"source": "missing_zero", "padded": True})
@@ -2323,10 +2332,12 @@ class HeatForecastEngine:
             step_minutes=config.HEAT_FORECAST_STEP_MINUTES,
             base_gain_kw=config.HEAT_FORECAST_BASE_GAIN_KW,
             first_hour_fraction=remaining_hours,
+            lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
+            max_ramp_kw_per_step=config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP,
         )
         if mode != "heating":
             heat_result["heat_kwh"] = [0.0] * horizon
-        else:
+        elif config.HEAT_FORECAST_SMOOTHING_ENABLED:
             heat_result["heat_kwh"] = _smooth_future_heating_energy(
                 heat_result["heat_kwh"]
             )
@@ -2415,6 +2426,10 @@ class HeatForecastEngine:
                     step_minutes=config.HEAT_FORECAST_STEP_MINUTES,
                     base_gain_kw=config.HEAT_FORECAST_BASE_GAIN_KW,
                     first_hour_fraction=remaining_hours,
+                    lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
+                    max_ramp_kw_per_step=(
+                        config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP
+                    ),
                 )
                 scenario_electric = hourly_electrical_forecast(
                     starts=starts,
@@ -2997,11 +3012,33 @@ class HeatForecastEngine:
         total = round(sum(component_totals), 4)
         electrical["forecast_total_el_kwh"][0] = total
         electrical["forecast"][0]["value"] = total
-        electrical["forecast_heat_th_kwh"][0] = round(
-            max(0.0, heat_th_so_far - defrost_th_so_far)
-            + float(heat_result["heat_kwh"][0]),
-            4,
-        )
+        # Derive the remaining thermal energy from the (power-projected)
+        # electrical remainder so that thermal and electrical stay consistent.
+        modeled_th = max(0.0, float(heat_result["heat_kwh"][0]))
+        th_so_far = max(0.0, heat_th_so_far - defrost_th_so_far)
+        if heat_full > 1e-9 and modeled_th > 0.0:
+            modeled_cop = min(max(modeled_th / heat_full, 1.0), 8.0)
+            th_remainder = heat_remainder * modeled_cop
+        elif heat_remainder > 0.0:
+            th_remainder = heat_remainder * max(
+                1.0, float(getattr(config, "COP_MIN_VALUE", 1.0))
+            )
+        else:
+            th_remainder = 0.0
+        electrical["forecast_heat_th_kwh"][0] = round(th_so_far + th_remainder, 4)
+        el_so_far = max(0.0, heat_el_component_so_far)
+        if el_so_far > 0.02 and not 1.0 <= th_so_far / el_so_far <= 8.0:
+            LOGGER.info(
+                "Current-hour thermal/electrical counters inconsistent "
+                "(th=%.3f el=%.3f kWh)",
+                th_so_far,
+                el_so_far,
+            )
+            electrical["forecast_heat_th_kwh"][0] = round(
+                el_so_far * min(max(modeled_th / max(heat_full, 1e-9), 1.0), 8.0)
+                + th_remainder,
+                4,
+            )
 
 
 _forecast_engine: HeatForecastEngine | None = None
@@ -3217,8 +3254,17 @@ def simulate_heating_energy(
     target_band_k: float = 0.1,
     base_gain_kw: float = 0.0,
     first_hour_fraction: float = 1.0,
+    lookahead_hours: float = 2.0,
+    max_ramp_kw_per_step: float | None = None,
 ) -> dict[str, Any]:
-    """Simulate a two-node room/slab balance and meet the lower comfort band."""
+    """Simulate a two-node room/slab balance with a receding-horizon controller.
+
+    Heat reaches the room only through the slow slab, so a one-step check makes
+    the heat pump chatter between zero and maximum power. Each step instead
+    applies the smallest constant power that keeps the room at or above the
+    lower comfort band over the whole lookahead window. Only the first step is
+    applied, and the power change per step can be rate limited.
+    """
     length = len(outdoor_c)
     if not length or any(
         len(series) != length
@@ -3241,57 +3287,88 @@ def simulate_heating_energy(
         or not 0.0 <= first_hour_fraction <= 1.0
     ):
         raise ValueError("first_hour_fraction must be between zero and one")
+    if not math.isfinite(lookahead_hours) or lookahead_hours < 0:
+        raise ValueError("lookahead_hours must be finite and non-negative")
+    if max_ramp_kw_per_step is not None and (
+        not math.isfinite(max_ramp_kw_per_step) or max_ramp_kw_per_step < 0
+    ):
+        raise ValueError("max_ramp_kw_per_step must be finite and non-negative")
 
     step_hours = step_minutes / 60.0
+    ramp_limit = (
+        float(max_ramp_kw_per_step)
+        if max_ramp_kw_per_step is not None and max_ramp_kw_per_step > 0
+        else None
+    )
+    lookahead_steps = max(1, int(round(lookahead_hours / step_hours)))
     room = float(room_c)
     slab = float(slab_c)
-    heat_kwh: list[float] = []
-    hourly_max_kw: list[float] = []
+    heat_kwh: list[float] = [0.0] * length
+    hourly_max_kw: list[float] = [0.0] * length
 
-    def advance(
-        q_hp: float, outdoor: float, gains: float, dt_hours: float
-    ) -> tuple[float, float]:
-        slab_midpoint = slab + dt_hours * q_hp / (2.0 * slab_capacity_kwh_k)
-        transfer_kw = slab_to_room_kw_k * (slab_midpoint - room)
-        next_room = room + dt_hours * (
-            transfer_kw + gains - heat_loss_kw_k * (room - outdoor)
-        ) / room_capacity_kwh_k
-        next_slab = slab + dt_hours * (q_hp - transfer_kw) / slab_capacity_kwh_k
-        return next_room, next_slab
-
+    # Flatten the horizon into (outdoor, gains, floor, dt, hour) steps.
+    steps: list[tuple[float, float, float, float, int]] = []
     for hour in range(length):
-        energy = 0.0
-        max_kw_this_hour = 0.0
         remaining = first_hour_fraction if hour == 0 else 1.0
+        gains = float(pv_gain_kw[hour]) + float(fireplace_kw[hour]) + base_gain_kw
+        floor = float(target_c[hour]) - target_band_k
         while remaining > 1e-12:
             dt = min(step_hours, remaining)
-            target_floor = float(target_c[hour]) - target_band_k
-            gains = float(pv_gain_kw[hour]) + float(fireplace_kw[hour]) + base_gain_kw
-
-            def projected_room(q_hp: float) -> float:
-                next_room, _ = advance(q_hp, float(outdoor_c[hour]), gains, dt)
-                return next_room
-
-            if projected_room(0.0) >= target_floor:
-                q_hp = 0.0
-            elif projected_room(max_hp_kw) < target_floor:
-                q_hp = max_hp_kw
-            else:
-                lower, upper = 0.0, max_hp_kw
-                for _iteration in range(24):
-                    middle = (lower + upper) / 2.0
-                    if projected_room(middle) >= target_floor:
-                        upper = middle
-                    else:
-                        lower = middle
-                q_hp = upper
-
-            room, slab = advance(q_hp, float(outdoor_c[hour]), gains, dt)
-            energy += q_hp * dt
-            max_kw_this_hour = max(max_kw_this_hour, q_hp)
+            steps.append((float(outdoor_c[hour]), gains, floor, dt, hour))
             remaining -= dt
-        heat_kwh.append(energy)
-        hourly_max_kw.append(max_kw_this_hour)
+
+    def advance(
+        room_c_: float, slab_c_: float, q_hp: float,
+        outdoor: float, gains: float, dt_hours: float,
+    ) -> tuple[float, float]:
+        slab_midpoint = slab_c_ + dt_hours * q_hp / (2.0 * slab_capacity_kwh_k)
+        transfer_kw = slab_to_room_kw_k * (slab_midpoint - room_c_)
+        next_room = room_c_ + dt_hours * (
+            transfer_kw + gains - heat_loss_kw_k * (room_c_ - outdoor)
+        ) / room_capacity_kwh_k
+        next_slab = slab_c_ + dt_hours * (q_hp - transfer_kw) / slab_capacity_kwh_k
+        return next_room, next_slab
+
+    previous_q: float | None = None
+    last_index = len(steps) - 1
+    for index, (outdoor, gains, _floor, dt, hour) in enumerate(steps):
+        window = [
+            steps[min(index + offset, last_index)]
+            for offset in range(lookahead_steps)
+        ]
+
+        def worst_margin(q_hp: float) -> float:
+            room_i, slab_i = room, slab
+            margin = math.inf
+            for w_outdoor, w_gains, w_floor, w_dt, _ in window:
+                room_i, slab_i = advance(
+                    room_i, slab_i, q_hp, w_outdoor, w_gains, w_dt
+                )
+                margin = min(margin, room_i - w_floor)
+            return margin
+
+        lower, upper = 0.0, float(max_hp_kw)
+        if ramp_limit is not None and previous_q is not None:
+            lower = max(lower, previous_q - ramp_limit)
+            upper = min(upper, previous_q + ramp_limit)
+        if worst_margin(lower) >= 0.0:
+            q_hp = lower
+        elif worst_margin(upper) < 0.0:
+            q_hp = upper
+        else:
+            low, high = lower, upper
+            for _iteration in range(24):
+                middle = (low + high) / 2.0
+                if worst_margin(middle) >= 0.0:
+                    high = middle
+                else:
+                    low = middle
+            q_hp = high
+
+        room, slab = advance(room, slab, q_hp, outdoor, gains, dt)
+        heat_kwh[hour] += q_hp * dt
+        hourly_max_kw[hour] = max(hourly_max_kw[hour], q_hp)
+        previous_q = q_hp
 
     return {
         "heat_kwh": heat_kwh,

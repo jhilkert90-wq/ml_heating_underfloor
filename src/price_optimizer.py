@@ -604,7 +604,8 @@ class HPPowerTracker:
         """Mean qualifying power [kW]; configured fallback without samples."""
         now = now or datetime.now(timezone.utc)
         self._prune(now)
-        if not self._samples:
+        minimum = int(getattr(config, "HP_POWER_MIN_SAMPLES", 6))
+        if len(self._samples) < max(1, minimum):
             return float(getattr(config, "HP_EXPECTED_POWER_FALLBACK_KW", 1.5))
         return sum(p for _, p in self._samples) / len(self._samples) / 1000.0
 

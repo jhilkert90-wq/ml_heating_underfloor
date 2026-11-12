@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### WP Load Forecast Controller — 2026-11-12
+
+- **What:** Forecast simulation now uses a lookahead controller with ramp limit (smoothing opt-in); current-hour thermal derived from electrical remainder; PV gaps use 24 h profile; HP expected power needs `HP_POWER_MIN_SAMPLES`; cost-mode overshoot skip limited by `PRICE_COST_MAX_OVERSHOOT_K`.
+- **Why:** Forecast showed standby although the heat pump was about to start; 0/8 kW chatter; implausible COP in the current hour; overly wide overshoot skip.
+- **Files:** see progress.md entry of the same date. Remaining: PR 3/4 and rest of PR 5.
+
 ### Optional Warmwasser Forecast Inclusion — 2026-11-12
 
 - **What:** Added the enabled-by-default `heat_forecast_include_dhw` dashboard setting; disabling it removes DHW from all forecast totals and scenarios, not from preparation or history collection.

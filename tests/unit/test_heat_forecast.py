@@ -681,8 +681,9 @@ def test_cop_curve_decays_stale_bins_for_confidence_and_fit_weight():
 
 
 def test_heating_energy_is_zero_when_room_is_already_above_target():
+    # Mild weather: the room stays above the band for the whole lookahead.
     result = simulate_heating_energy(
-        outdoor_c=[0.0],
+        outdoor_c=[18.0],
         pv_gain_kw=[0.0],
         fireplace_kw=[0.0],
         target_c=[21.0],
@@ -1977,3 +1978,53 @@ def test_first_forecast_hour_advances_only_its_remaining_fraction():
     assert partial["heat_kwh"][0] == pytest.approx(full["heat_kwh"][0] * 0.25)
     assert partial["room_end_c"] != pytest.approx(full["room_end_c"])
     assert partial["slab_end_c"] != pytest.approx(full["slab_end_c"])
+
+
+def _steady_sim(**overrides):
+    loss, conductance = 0.1312, 0.7047
+    steady_kw = loss * (22.7 - 5.0)
+    params = dict(
+        outdoor_c=[5.0] * 48,
+        pv_gain_kw=[0.0] * 48,
+        fireplace_kw=[0.0] * 48,
+        target_c=[22.7] * 48,
+        room_c=22.7,
+        slab_c=22.7 + steady_kw / conductance,
+        room_capacity_kwh_k=5.846,
+        slab_capacity_kwh_k=3.912,
+        heat_loss_kw_k=loss,
+        slab_to_room_kw_k=conductance,
+    )
+    params.update(overrides)
+    return steady_kw, simulate_heating_energy(**params)["heat_kwh"]
+
+
+def test_lookahead_controller_settles_without_on_off_chatter():
+    steady_kw, heat = _steady_sim()
+    assert all(abs(v - steady_kw) < 0.1 * steady_kw for v in heat[8:])
+    assert max(heat[8:]) < 8.0 * 0.5
+
+
+def test_lookahead_controller_keeps_room_above_band():
+    _, heat = _steady_sim(outdoor_c=[-5.0] * 48)
+    assert min(heat[6:]) > 1.0
+    assert sum(heat) > 0.0
+
+
+def test_ramp_limit_bounds_step_to_step_power_change():
+    result = simulate_heating_energy(
+        outdoor_c=[5.0] * 6,
+        pv_gain_kw=[0.0] * 6,
+        fireplace_kw=[0.0] * 6,
+        target_c=[22.7] * 6,
+        room_c=22.7,
+        slab_c=22.7,
+        room_capacity_kwh_k=5.846,
+        slab_capacity_kwh_k=3.912,
+        heat_loss_kw_k=0.1312,
+        slab_to_room_kw_k=0.7047,
+        step_minutes=60,
+        max_ramp_kw_per_step=1.0,
+    )
+    heat = result["heat_kwh"]
+    assert all(abs(b - a) <= 1.0 + 1e-6 for a, b in zip(heat, heat[1:]))

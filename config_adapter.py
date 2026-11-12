@@ -268,6 +268,18 @@ def convert_addon_to_env(config):
         'HEAT_FORECAST_BASE_GAIN_KW': str(
             config.get('heat_forecast_base_gain_kw', 0.3)
         ),
+        'HEAT_FORECAST_LOOKAHEAD_HOURS': str(
+            config.get('heat_forecast_lookahead_hours', 3.0)
+        ),
+        'HEAT_FORECAST_MAX_RAMP_KW_PER_STEP': str(
+            config.get('heat_forecast_max_ramp_kw_per_step', 1.5)
+        ),
+        'HEAT_FORECAST_SMOOTHING_ENABLED': str(
+            config.get('heat_forecast_smoothing_enabled', False)
+        ).lower(),
+        'HEAT_FORECAST_PV_GAP_MODE': str(
+            config.get('heat_forecast_pv_gap_mode', 'daily_profile')
+        ),
         'HEAT_FORECAST_FIREPLACE_DURATION_H': str(
             config.get('heat_forecast_fireplace_duration_h', 3.5)
         ),
@@ -719,8 +731,14 @@ def convert_addon_to_env(config):
         'PRICE_COST_MIN_SPREAD_EUR_KWH': str(
             config.get('price_cost_min_spread_eur_kwh', 0.02)
         ),
+        'PRICE_COST_MAX_OVERSHOOT_K': str(
+            config.get('price_cost_max_overshoot_k', 0.3)
+        ),
         'PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW': str(
             config.get('price_cost_household_power_offset_kw', 0.7)
+        ),
+        'HP_POWER_MIN_SAMPLES': str(
+            config.get('hp_power_min_samples', 6)
         ),
         'HP_EXPECTED_POWER_FALLBACK_KW': str(
             config.get('hp_expected_power_fallback_kw', 1.5)

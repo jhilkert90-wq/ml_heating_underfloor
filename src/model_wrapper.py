@@ -1921,11 +1921,14 @@ class EnhancedModelWrapper:
                 and float(_cost_pi.get("price_target_offset", 0.0)) > 0.0
                 and float(_cost_pi.get("cost_pv_share_now", 0.0)) >= 1.0
             )
-            _skip_forecast_overshoot_correction = (
+            _skip_traj_overshoot = bool(
                 getattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", False)
                 and _forecast_state.active
                 and _forecast_state.dynamic_steps_above_min
-            ) or _skip_cost_overshoot_correction
+            )
+            _skip_forecast_overshoot_correction = (
+                _skip_traj_overshoot or _skip_cost_overshoot_correction
+            )
 
             fireplace_on = thermal_features.get("fireplace_on", 0.0)
             fireplace_power_kw, fp_decay_kw = self._calculate_fireplace_power_kw(
@@ -2143,6 +2146,24 @@ class EnhancedModelWrapper:
                     )
             else:
                 temp_boundary_violation = False
+
+            _max_cost_overshoot = float(
+                getattr(config, "PRICE_COST_MAX_OVERSHOOT_K", 0.0)
+            )
+            if (
+                _skip_cost_overshoot_correction
+                and not _skip_traj_overshoot
+                and _max_cost_overshoot > 0.0
+                and max_temp - target_indoor > _max_cost_overshoot
+            ):
+                logging.info(
+                    "Cost-mode overshoot skip disabled: predicted overshoot "
+                    "%.2f K exceeds limit %.2f K",
+                    max_temp - target_indoor,
+                    _max_cost_overshoot,
+                )
+                _skip_cost_overshoot_correction = False
+                _skip_forecast_overshoot_correction = False
 
             if _skip_forecast_overshoot_correction:
                 predicted_undershoot = _trajectory_has_undershoot(

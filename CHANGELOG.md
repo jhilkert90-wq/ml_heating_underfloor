@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- WP load forecast: options `heat_forecast_lookahead_hours`, `heat_forecast_max_ramp_kw_per_step`, `heat_forecast_smoothing_enabled` and `heat_forecast_pv_gap_mode`.
+- `price_cost_max_overshoot_k` (default 0.3 K) limits the cost-mode overshoot-correction skip; `hp_power_min_samples` (default 6) sets the minimum samples for the measured HP power.
+
+### Changed
+- WP load forecast simulation uses a receding-horizon controller instead of a one-step on/off decision, removing 0/8 kW chatter; 6 h block smoothing is now opt-in.
+- Current-hour thermal forecast is derived from the electrical remainder (consistent COP); PV forecast gaps repeat the value from 24 h earlier.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

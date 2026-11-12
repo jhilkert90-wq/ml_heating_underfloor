@@ -177,6 +177,7 @@ class TestDisableOvershootCorrectionInCostMode(unittest.TestCase):
         config.TRAJECTORY_STEPS = 4
         config.PV_TRAJ_FORECAST_MODE_ENABLED = False
         config.PRICE_COST_DISABLE_OVERSHOOT_CORRECTION = True
+        config.PRICE_COST_MAX_OVERSHOOT_K = 0.5
         self.wrapper._current_features = {}
         self.wrapper._climate_mode = "heating"
         self.wrapper._price_info = {
@@ -198,6 +199,7 @@ class TestDisableOvershootCorrectionInCostMode(unittest.TestCase):
 
     def tearDown(self):
         config.PRICE_COST_DISABLE_OVERSHOOT_CORRECTION = False
+        config.PRICE_COST_MAX_OVERSHOOT_K = 0.3
 
     def _call(self):
         return self.wrapper._verify_trajectory_and_correct(
@@ -211,6 +213,11 @@ class TestDisableOvershootCorrectionInCostMode(unittest.TestCase):
     def test_skips_when_pv_covers_hp_and_cheap(self):
         self.assertEqual(self._call(), 35.0)
         self.wrapper._calculate_physics_based_correction.assert_not_called()
+
+    def test_corrects_when_overshoot_exceeds_cost_limit(self):
+        config.PRICE_COST_MAX_OVERSHOOT_K = 0.3  # predicted overshoot 0.4 K
+        self._call()
+        self.wrapper._calculate_physics_based_correction.assert_called()
 
     def test_corrects_when_pv_share_below_one(self):
         self.wrapper._price_info["cost_pv_share_now"] = 0.9

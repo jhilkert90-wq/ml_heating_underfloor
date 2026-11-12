@@ -255,6 +255,24 @@ HEAT_FORECAST_MAX_HEATING_KW: float = float(
 HEAT_FORECAST_BASE_GAIN_KW: float = float(
     os.getenv("HEAT_FORECAST_BASE_GAIN_KW", "0.3")
 )
+# Receding-horizon controller of the forecast simulation: the heat pump power
+# must keep the room above the comfort band for this many hours ahead.
+HEAT_FORECAST_LOOKAHEAD_HOURS: float = float(
+    os.getenv("HEAT_FORECAST_LOOKAHEAD_HOURS", "3.0")
+)
+# Max. change of simulated thermal power per simulation step [kW]; 0 = off.
+HEAT_FORECAST_MAX_RAMP_KW_PER_STEP: float = float(
+    os.getenv("HEAT_FORECAST_MAX_RAMP_KW_PER_STEP", "1.5")
+)
+# Redistribute heating energy over 6 h blocks (legacy behaviour).
+HEAT_FORECAST_SMOOTHING_ENABLED: bool = (
+    os.getenv("HEAT_FORECAST_SMOOTHING_ENABLED", "false").lower() == "true"
+)
+# PV forecast gap handling beyond the provider horizon: "daily_profile" repeats
+# the value from 24 h earlier, "none" assumes no PV.
+HEAT_FORECAST_PV_GAP_MODE: str = os.getenv(
+    "HEAT_FORECAST_PV_GAP_MODE", "daily_profile"
+)
 HEAT_FORECAST_FIREPLACE_DURATION_H: float = float(
     os.getenv("HEAT_FORECAST_FIREPLACE_DURATION_H", "3.5")
 )
@@ -369,6 +387,11 @@ PRICE_COST_MIN_SPREAD_EUR_KWH: float = float(
 )
 # Fixed household baseline load [kW] added to the expected HP demand when
 # calculating the PV share in cost-aware mode.
+# Cost mode keeps skipping overshoot correction only while the predicted
+# overshoot stays within this limit [K]; 0 disables the limit.
+PRICE_COST_MAX_OVERSHOOT_K: float = float(
+    os.getenv("PRICE_COST_MAX_OVERSHOOT_K", "0.3")
+)
 PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
     os.getenv("PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW", "0.7")
 )
@@ -377,6 +400,8 @@ PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
 HP_EXPECTED_POWER_FALLBACK_KW: float = float(
     os.getenv("HP_EXPECTED_POWER_FALLBACK_KW", "1.5")
 )
+# Minimum samples before the measured mean replaces the fallback power.
+HP_POWER_MIN_SAMPLES: int = int(os.getenv("HP_POWER_MIN_SAMPLES", "6"))
 HP_POWER_WINDOW_HOURS: float = float(os.getenv("HP_POWER_WINDOW_HOURS", "6"))
 # Minimum electrical power [W] for the HP to count as "on".
 HP_POWER_MIN_ON_W: float = float(os.getenv("HP_POWER_MIN_ON_W", "300"))
