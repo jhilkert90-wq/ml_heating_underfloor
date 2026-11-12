@@ -1,5 +1,21 @@
 # ML Heating System - Current Progress
 
+## ✅ PR 113 review fixes — 2026-11-12
+
+**Status:** IMPLEMENTED — candidate-delay reference, controller-model fallback, runtime-sensor precedence, and initial verification window corrected. Syntax compilation and diff checks pass; pytest could not run because the sandbox lacks pytest and the project runtime dependencies.
+
+**Implementation summary:** Candidate adjustment now references required supply minus the configured offset and is disabled without that value. Controller-model power remains available for start-estimate forecasts even when near-range simulation is off, without enabling that simulation. A valid runtime sensor takes precedence over an invalid attribute, and initial verification uses the same candidate-specific delay as subsequent simulations.
+
+**Files changed:** `src/cycle_routes.py`, `src/heat_forecast.py`, `src/hp_start_estimate.py`, `src/model_wrapper.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_heat_forecast.py`, `tests/unit/test_hp_start_estimate.py`, `tests/unit/test_model_wrapper.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## ✅ PR 112 deviations resolved — 2026-11-12
+
+**Status:** COMPLETED — defaults restored to previous behaviour, sensor forecast path no longer uses the baseline, optional runtime sensor, per-candidate start window, idle learning weight, circuit-breaker re-lock.
+
+**Implementation summary:** `PRICE_COST_MAX_OVERSHOOT_K=0` and `HP_POWER_MIN_SAMPLES=1`; `sensor_window_power_kw` uses measured thermal power, else the controller model; `simulate_heating_energy(initial_power_kw)` behind `heat_forecast_ramp_start_from_measured`; optional runtime-sensor entity ids; `candidate_window` shortens the start delay for higher outlet candidates (degree minutes); `learning_weight` gives idle cycles the running share; breaker resets after each pause. New tests incl. 12.11. case and "unchanged without sensor". Full suite: only the 7 known order-dependent heating-controller failures remain (pass alone, fail on baseline too).
+
+**Files changed:** `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, translations (en/de), `src/heat_forecast.py`, `src/hp_start_estimate.py`, `src/model_wrapper.py`, `src/cycle_routes.py`, `docs/PARAMETER_REFERENCE.md`, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, tests, `CHANGELOG.md`, `ml_heating_underfloor/CHANGELOG.md`.
+
 ## ✅ PR 112 review fixes — 2026-11-12
 
 **Status:** COMPLETED — all nine review findings addressed with regression coverage.

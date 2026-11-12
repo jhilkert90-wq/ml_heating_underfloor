@@ -138,6 +138,7 @@ class TestHPPowerTracker:
         assert not t.record(_feat(thermal_power_kw=3.0), "cooling", NOW)
         assert t.record(_feat(thermal_power_kw=-3.0), "cooling", NOW)
 
+    @patch.object(config, "HP_POWER_MIN_SAMPLES", 6, create=True)
     def test_fallback_until_minimum_samples(self):
         t = HPPowerTracker()
         t.record(_feat(power_consumption=4000.0), "heating", NOW)

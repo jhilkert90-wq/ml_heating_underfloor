@@ -35,6 +35,7 @@ class HPStartEstimate:
     confidence: float
     age_min: float
     attributes: Mapping[str, Any]
+    runtime_source: str = "attribute"
 
     @property
     def known_method(self) -> bool:
@@ -74,6 +75,31 @@ def _number(raw: Any) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return value if math.isfinite(value) else None
+
+
+def _runtime_sensor_minutes(
+    states: Mapping[str, Any], mode: str, cfg: Any
+) -> Optional[float]:
+    """Minutes from the optional separate runtime sensor, else ``None``.
+
+    Unavailable, unknown or invalid values fall back to the start sensor's
+    ``expected_runtime_min`` attribute. Freshness follows the start sensor
+    because a state-only sensor does not update while its value is unchanged.
+    """
+    entity_id = getattr(
+        cfg,
+        "HP_START_ESTIMATE_HEATING_RUNTIME_ENTITY_ID"
+        if mode == "heating"
+        else "HP_START_ESTIMATE_COOLING_RUNTIME_ENTITY_ID",
+        "",
+    )
+    if not entity_id:
+        return None
+    entity = states.get(entity_id)
+    if not isinstance(entity, Mapping):
+        return None
+    value = _number(entity.get("state"))
+    return value if value is not None and value >= 0 else None
 
 
 def read_hp_start_estimate(
@@ -138,8 +164,13 @@ def read_hp_start_estimate(
             return fallback("invalid_state")
         if minutes is None and status in ("starting_soon", "running"):
             return fallback("inconsistent")
+        sensor_runtime = _runtime_sensor_minutes(states, mode, cfg)
         runtime = _number(attrs.get("expected_runtime_min"))
-        if runtime is not None and runtime < 0:
+        runtime_source = "attribute"
+        if sensor_runtime is not None:
+            runtime = sensor_runtime
+            runtime_source = "sensor"
+        elif runtime is not None and runtime < 0:
             return fallback("invalid_runtime")
         _failures = 0
         _last_reason[mode] = ""
@@ -149,14 +180,18 @@ def read_hp_start_estimate(
             method=str(attrs.get("method", "")),
             minutes_to_start=minutes,
             expected_runtime_min=runtime,
-            runtime_unbounded=bool(attrs.get("runtime_unbounded", False)),
+            runtime_unbounded=(
+                bool(attrs.get("runtime_unbounded", False))
+                and runtime_source == "attribute"
+            ),
+            runtime_source=runtime_source,
             confidence=confidence,
             age_min=age_min,
             attributes=dict(attrs),
         )
     except Exception as exc:  # reader must never break a control cycle
         _failures += 1
-        if _failures == _CIRCUIT_BREAKER_LIMIT:
+        if _failures >= _CIRCUIT_BREAKER_LIMIT:
             _paused_until = (
                 (now or datetime.now(timezone.utc)).timestamp()
                 + _CIRCUIT_BREAKER_PAUSE_S
@@ -165,6 +200,7 @@ def read_hp_start_estimate(
                 "HP start estimate reader paused after %d errors: %s",
                 _failures, exc,
             )
+            _failures = 0
         return fallback("error")
 
 
@@ -185,22 +221,71 @@ def trajectory_window(estimate: Optional[HPStartEstimate]) -> Optional[dict]:
     return {"delay_h": estimate.minutes_to_start / 60.0, "runtime_h": runtime_h}
 
 
+def candidate_window(
+    estimate: Optional[HPStartEstimate],
+    window: Optional[dict],
+    *,
+    candidate_outlet: float,
+    reference_outlet: Optional[float],
+    mode: str,
+) -> Optional[dict]:
+    """Start window for one outlet candidate (degree-minutes method only).
+
+    The degree-minute deficit grows with the calculated supply setpoint, which
+    follows the outlet one to one. A candidate ``d`` K above (heating) or below
+    (cooling) the reference outlet raises the deficit rate from ``need`` to
+    ``need + d`` and shortens the delay proportionally. The sensor's delay is
+    an upper bound; everything else keeps the sensor window unchanged.
+    """
+    if (
+        estimate is None
+        or not isinstance(window, dict)
+        or reference_outlet is None
+        or estimate.method != "degree_minutes"
+        or estimate.status not in ("idle", "starting_soon")
+        or not estimate.minutes_to_start
+        or estimate.minutes_to_start <= 0
+    ):
+        return window
+    required = _number(estimate.attributes.get("required_supply_c"))
+    supply = _number(estimate.attributes.get("supply_actual_c"))
+    if required is None or supply is None:
+        return window
+    need = (required - supply) if mode == "heating" else (supply - required)
+    shift = (
+        candidate_outlet - reference_outlet
+        if mode == "heating"
+        else reference_outlet - candidate_outlet
+    )
+    if need <= 0.05 or need + shift <= need:
+        return window
+    return {
+        **window,
+        "delay_h": min(window["delay_h"], window["delay_h"] * need / (need + shift)),
+    }
+
+
 def learning_weight(
     estimate: Optional[HPStartEstimate], cycle_minutes: float
 ) -> Optional[float]:
     """Weight [0, 1] of a cycle for HP learning; None = no sensor info.
 
-    Blocked cycles (DHW/defrost) get 0; if the HP starts inside the cycle only
-    the running share counts; running or idle cycles keep weight 1.
+    Blocked cycles (DHW/defrost) get 0; running cycles keep weight 1. For
+    idle/starting_soon only the share after the expected start counts, so a
+    cycle without a start inside it gets 0. ``unknown`` carries no information.
     """
     if estimate is None or not estimate.known_method:
         return None
     if estimate.status == "blocked":
         return 0.0
+    if estimate.status == "unknown":
+        return None
+    if estimate.status == "running":
+        return 1.0
     minutes = estimate.minutes_to_start
-    if estimate.status == "starting_soon" and minutes and cycle_minutes > 0:
-        return max(0.0, min(1.0, (cycle_minutes - minutes) / cycle_minutes))
-    return 1.0
+    if minutes is None or cycle_minutes <= 0:
+        return 0.0
+    return max(0.0, min(1.0, (cycle_minutes - minutes) / cycle_minutes))
 
 
 def cost_skip_allowed(
@@ -232,6 +317,7 @@ def diagnostics(
                 "method": estimate.method,
                 "minutes_to_start": estimate.minutes_to_start,
                 "age_min": round(estimate.age_min, 1),
+                "runtime_source": estimate.runtime_source,
             }
             if estimate
             else {

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional separate remaining-runtime sensors `hp_start_estimate_heating_runtime_entity_id` / `hp_start_estimate_cooling_runtime_entity_id`; a valid value takes precedence over the start sensor's `expected_runtime_min` attribute, otherwise the attribute is used.
+- Option `heat_forecast_ramp_start_from_measured` (default off) seeds the forecast ramp limiter with the measured thermal power.
+- With a start-estimate sensor the trajectory search re-derives the start delay per outlet candidate (degree-minutes method); the sensor delay stays the upper bound.
+
+### Changed
+- `PRICE_COST_MAX_OVERSHOOT_K` (now 0) and `HP_POWER_MIN_SAMPLES` (now 1) default to the previous behaviour; both remain opt-in.
+- The forecast sensor path uses the measured thermal power or the live controller model inside the run window instead of the baseline, which is 0 when solar gain covers the load.
+- `learning_weight` returns 0 for idle cycles without a start inside the cycle and the running share otherwise; `unknown` carries no information.
+
+### Fixed
+- The start-estimate reader's circuit breaker locks again after each pause once five further errors occur.
+- Candidate delay uses required supply and its configured offset; controller-model fallback remains available when near-range simulation is disabled; valid runtime sensors override invalid attributes; verification starts with the candidate-specific window.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

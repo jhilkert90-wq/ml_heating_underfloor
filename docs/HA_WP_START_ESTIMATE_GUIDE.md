@@ -465,6 +465,7 @@ Das Add-on enthält den Reader (`src/hp_start_estimate.py`, Optionen `hp_start_e
 - Heizen: `sensor.wp_minuten_bis_start_heizen`
 - Kühlen: `sensor.wp_minuten_bis_start_kuehlen`
 - Maximalalter 5 min (veraltete Werte ignoriert das Add-on).
+- Restlaufzeit: Der zweite Sensor ist optional. Das Add-on liest die Restlaufzeit standardmäßig aus dem Attribut `expected_runtime_min` des Start-Sensors. Trage `sensor.wp_laufzeit_heizen` bzw. `sensor.wp_laufzeit_kuehlen` unter `hp_start_estimate_heating_runtime_entity_id` / `hp_start_estimate_cooling_runtime_entity_id` ein, hat dessen Wert Vorrang. Ist er `unknown`, `unavailable` oder ungültig, gilt das Attribut. Die Aktualität richtet sich nach dem Start-Sensor.
 
 Bis dahin laufen die Sensoren harmlos mit und sammeln Verlauf zum Gegenprüfen.
 

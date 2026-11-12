@@ -510,11 +510,29 @@ class EnhancedModelWrapper:
             self._get_pv_forecast_electrical(features),
         )
 
-    def _hp_start_window_kwargs(self) -> Dict[str, Any]:
-        """Trajectory kwargs for the external HP start/runtime window."""
+    def _hp_start_window_kwargs(
+        self, outlet: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Trajectory kwargs for the external HP start/runtime window.
+
+        With ``outlet`` the sensor's start delay is re-derived for that
+        candidate (never later than the sensor's own delay).
+        """
         window = getattr(self, "_hp_start_window", None)
         if not isinstance(window, dict):
             return {}
+        estimate = getattr(self, "_hp_start_estimate", None)
+        reference = getattr(self, "_hp_start_reference_outlet", None)
+        if outlet is not None and estimate is not None:
+            from .hp_start_estimate import candidate_window
+
+            window = candidate_window(
+                estimate,
+                window,
+                candidate_outlet=float(outlet),
+                reference_outlet=reference,
+                mode=self._climate_mode,
+            )
         return {
             "hp_start_delay_h": window["delay_h"],
             "hp_runtime_h": window["runtime_h"],
@@ -1364,7 +1382,7 @@ class EnhancedModelWrapper:
                     delta_t_floor=_dtf,
                     indoor_temp_delta_60m=_trend_60m,
                     climate_mode=self._climate_mode,
-                    **self._hp_start_window_kwargs(),
+                    **self._hp_start_window_kwargs(outlet_candidate),
                 )
             except Exception as e:
                 logging.error(
@@ -1992,7 +2010,7 @@ class EnhancedModelWrapper:
                     else 0.0
                 ),
                 climate_mode=self._climate_mode,
-                **self._hp_start_window_kwargs(),
+                **self._hp_start_window_kwargs(float(outlet_temp)),
             )
             trajectory = self.thermal_model.predict_thermal_trajectory(
                 **_traj_kwargs
@@ -2004,7 +2022,11 @@ class EnhancedModelWrapper:
                 _outlet: float, _kw=_traj_kwargs
             ) -> list:
                 _res = self.thermal_model.predict_thermal_trajectory(
-                    **{**_kw, "outlet_temp": float(_outlet)}
+                    **{
+                        **_kw,
+                        "outlet_temp": float(_outlet),
+                        **self._hp_start_window_kwargs(float(_outlet)),
+                    }
                 )
                 return list(_res.get("trajectory", []))
 

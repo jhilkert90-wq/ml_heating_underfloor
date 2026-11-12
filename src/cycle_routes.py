@@ -12,6 +12,7 @@ full control over execution order.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from datetime import datetime, timezone
 
@@ -198,6 +199,7 @@ def _attach_hp_start_window(ctx: CycleContext) -> None:
     ):
         if ctx.wrapper is not None:
             ctx.wrapper._hp_start_window = None
+            ctx.wrapper._hp_start_estimate = None
         return
     try:
         from .hp_start_estimate import read_hp_start_estimate, trajectory_window
@@ -207,9 +209,21 @@ def _attach_hp_start_window(ctx: CycleContext) -> None:
         window = trajectory_window(estimate)
     except Exception as exc:
         logging.warning("HP start estimate unavailable: %s", exc)
+        estimate = None
         window = None
     if ctx.wrapper is not None:
         ctx.wrapper._hp_start_window = window
+        ctx.wrapper._hp_start_estimate = estimate
+        try:
+            required = float(estimate.attributes["required_supply_c"])
+            reference = required - float(
+                config.HP_START_ESTIMATE_REQUIRED_OFFSET_K
+            )
+            ctx.wrapper._hp_start_reference_outlet = (
+                reference if math.isfinite(reference) else None
+            )
+        except (AttributeError, KeyError, TypeError, ValueError):
+            ctx.wrapper._hp_start_reference_outlet = None
 
 
 def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:

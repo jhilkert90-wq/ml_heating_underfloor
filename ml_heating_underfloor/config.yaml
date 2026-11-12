@@ -680,11 +680,11 @@ options:
   # Minimum spread (EUR/kWh) between cheapest and dearest hour for any shift
   price_cost_min_spread_eur_kwh: 0.02
   # Standard household demand added to HP demand for cost-mode PV coverage
-  price_cost_max_overshoot_k: 0.3
+  price_cost_max_overshoot_k: 0.0
   price_cost_household_power_offset_kw: 0.7
   # Expected HP electrical power (kW) used until heating samples exist
   hp_expected_power_fallback_kw: 1.5
-  hp_power_min_samples: 6
+  hp_power_min_samples: 1
   # Window (hours) for the rolling mean of HP power while heating (no DHW/defrost)
   hp_power_window_hours: 6
   # Minimum electrical power (W) for the HP to count as "on"
@@ -696,6 +696,9 @@ options:
   hp_start_estimate_enabled: false
   hp_start_estimate_heating_entity_id: ""
   hp_start_estimate_cooling_entity_id: ""
+  # Optional separate remaining-runtime sensors (state = minutes)
+  hp_start_estimate_heating_runtime_entity_id: ""
+  hp_start_estimate_cooling_runtime_entity_id: ""
   hp_start_estimate_max_age_min: 5
   hp_start_estimate_min_confidence: 0.3
   hp_start_estimate_required_offset_k: 0.0
@@ -704,6 +707,8 @@ options:
   hp_start_estimate_use_for_learning: false
   hp_start_estimate_use_for_cost_mode: false
   hp_start_estimate_use_for_grace: false
+  # Start the forecast ramp limiter from the measured HP power (opt-in)
+  heat_forecast_ramp_start_from_measured: false
 
   # === PV Surplus Optimization ===
   # When enabled, the target temperature is raised by price_target_offset
@@ -1153,6 +1158,8 @@ schema:
   hp_start_estimate_enabled: "bool"
   hp_start_estimate_heating_entity_id: "str?"
   hp_start_estimate_cooling_entity_id: "str?"
+  hp_start_estimate_heating_runtime_entity_id: "str?"
+  hp_start_estimate_cooling_runtime_entity_id: "str?"
   hp_start_estimate_max_age_min: "float(1,60)"
   hp_start_estimate_min_confidence: "float(0,1)"
   hp_start_estimate_required_offset_k: "float(-10,10)"
@@ -1161,6 +1168,7 @@ schema:
   hp_start_estimate_use_for_learning: "bool"
   hp_start_estimate_use_for_cost_mode: "bool"
   hp_start_estimate_use_for_grace: "bool"
+  heat_forecast_ramp_start_from_measured: "bool"
   hp_power_window_hours: "float(1.0,48.0)"
   hp_power_min_on_w: "int(0,5000)"
   # PV Surplus Optimization

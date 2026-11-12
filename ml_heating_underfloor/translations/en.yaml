@@ -1202,7 +1202,7 @@ configuration:
     description: 'No shift is applied if the spread between cheapest and dearest effective hour is below this value. Default: 0.02.'
   price_cost_max_overshoot_k:
     name: '[Advanced] Cost Mode Max. Overshoot (K)'
-    description: 'Cost mode only skips overshoot correction while the predicted overshoot stays within this limit; 0 disables the limit. Default: 0.3.'
+    description: 'Cost mode only skips overshoot correction while the predicted overshoot stays within this limit; 0 disables the limit (previous behaviour). Default: 0.'
   price_cost_household_power_offset_kw:
     name: '[Advanced] Household Baseline for Cost Mode (kW)'
     description: 'Added to expected heat pump power so PV is only counted after the household baseline load is covered. Can later be replaced by measured household consumption. Default: 0.7.'
@@ -1211,7 +1211,7 @@ configuration:
     description: 'Electrical heat pump power assumed until heating samples exist. The runtime estimate is the rolling mean of power consumption while heating, excluding hot water and defrost. Default: 1.5.'
   hp_power_min_samples:
     name: '[Advanced] HP Power Min. Samples'
-    description: 'Minimum heating samples before the measured mean replaces the fallback power. Default: 6.'
+    description: 'Minimum heating samples before the measured mean replaces the fallback power. Default: 1.'
   hp_start_estimate_enabled:
     name: '[Advanced] HP Start Estimate: Enable'
     description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
@@ -1221,6 +1221,12 @@ configuration:
   hp_start_estimate_cooling_entity_id:
     name: '[Advanced] HP Start Estimate: Cooling Entity'
     description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_heating_runtime_entity_id:
+    name: '[Advanced] HP Start Estimate: Heating runtime sensor'
+    description: 'Optional separate remaining-runtime sensor (minutes) for heating; takes precedence over the start sensor attribute. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_cooling_runtime_entity_id:
+    name: '[Advanced] HP Start Estimate: Cooling runtime sensor'
+    description: 'Optional separate remaining-runtime sensor (minutes) for cooling; takes precedence over the start sensor attribute. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
   hp_start_estimate_max_age_min:
     name: '[Advanced] HP Start Estimate: Max. Age (min)'
     description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
@@ -1245,6 +1251,9 @@ configuration:
   hp_start_estimate_use_for_grace:
     name: '[Advanced] HP Start Estimate: Use for grace'
     description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  heat_forecast_ramp_start_from_measured:
+    name: '[Advanced] Forecast ramp starts from measured HP power'
+    description: 'Optional; off by default. Initialises the forecast ramp limiter with the measured electrical HP power instead of zero.'
   hp_power_window_hours:
     name: '[Advanced] HP Power Window (hours)'
     description: 'Window for the rolling mean of heat pump electrical power while heating. Default: 6.'

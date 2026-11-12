@@ -23,7 +23,7 @@
 - Step 4a-2: with `hp_start_estimate_use_for_forecast` the WP load forecast raises heating energy inside the sensor's start/runtime window; attribute `hp_start_estimate` shows source and fallback reason. Off by default.
 - Optional HP start/runtime estimate sensor reader (`src/hp_start_estimate.py`, options `hp_start_estimate_*`, all off by default, diagnostic only) and the Home Assistant build guide `docs/HA_WP_START_ESTIMATE_GUIDE.md` (degree-minutes and hysteresis heat pumps, heating and cooling).
 - WP load forecast: options `heat_forecast_lookahead_hours`, `heat_forecast_max_ramp_kw_per_step`, `heat_forecast_smoothing_enabled` and `heat_forecast_pv_gap_mode`.
-- `price_cost_max_overshoot_k` (default 0.3 K) limits the cost-mode overshoot-correction skip; `hp_power_min_samples` (default 6) sets the minimum samples for the measured HP power.
+- `price_cost_max_overshoot_k` (default 0, off) limits the cost-mode overshoot-correction skip; `hp_power_min_samples` (default 1) sets the minimum samples for the measured HP power.
 
 ### Changed
 - WP load forecast simulation uses a receding-horizon controller instead of a one-step on/off decision, removing 0/8 kW chatter; 6 h block smoothing is now opt-in.
