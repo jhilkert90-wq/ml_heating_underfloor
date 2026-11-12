@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### Forecast Accuracy Tracking — 2026-11-12
+
+- **What:** new accuracy store in forecast state (`forecast_accuracy`), exposed as attribute `accuracy`. **Files:** see progress.md.
+
 ### COP Extrapolation Cap — 2026-11-12
 
 - **What:** COP outside calibrated range capped at observed max + margin. **Files:** see progress.md.

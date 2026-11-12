@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Forecast Accuracy Tracking (PR 3) — 2026-11-12
+
+**Status:** COMPLETED — first-write-wins predictions per (hour, lead), actuals from consecutive exact hour anchors, `accuracy` attribute.
+
+**Files changed:** `src/forecast_accuracy.py` (new), `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, CHANGELOG.
+
 ## ✅ COP Extrapolation Cap (PR 1 rest) — 2026-11-12
 
 **Status:** COMPLETED — `hourly_electrical_forecast(cop_extrapolation_margin)`, attribute `cop_extrapolated_hours`, config option.

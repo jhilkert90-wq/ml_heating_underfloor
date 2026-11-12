@@ -2076,3 +2076,51 @@ def test_cop_extrapolation_cap_outside_calibrated_range():
     assert capped["forecast_heat_el_kwh"][0] == free["forecast_heat_el_kwh"][0]
     assert capped["forecast_heat_el_kwh"][1] == pytest.approx(1 / 4.3, abs=1e-4)
     assert free["forecast_heat_el_kwh"][1] < capped["forecast_heat_el_kwh"][1]
+
+
+def test_forecast_accuracy_tracks_lead_and_metrics():
+    from datetime import datetime, timedelta, timezone
+
+    from src import forecast_accuracy as fa
+
+    now = datetime(2026, 11, 12, 9, 5, tzinfo=timezone.utc)
+    starts = [now.replace(minute=0) + timedelta(hours=i) for i in range(25)]
+    state = {}
+    fa.record_predictions(
+        state, now=now, starts=starts,
+        el_kwh=[0.0] * 25, th_kwh=[0.0] * 25,
+    )
+    # first write wins
+    fa.record_predictions(
+        state, now=now, starts=starts,
+        el_kwh=[9.0] * 25, th_kwh=[9.0] * 25,
+    )
+    pending = state["forecast_accuracy"]["pending"]
+    assert len(pending) == 3
+    assert all(v["el"] == 0.0 for v in pending.values())
+
+    hour = starts[1]
+    old = {
+        "hour_utc": hour.isoformat(), "coverage": "counter_anchor",
+        "reading_times_utc": {"heating_el": hour.isoformat()},
+        "readings": {"heating_el": 100.0, "heating_th": 300.0},
+    }
+    new = {
+        "hour_utc": (hour + timedelta(hours=1)).isoformat(),
+        "coverage": "counter_anchor",
+        "reading_times_utc": {
+            "heating_el": (hour + timedelta(hours=1)).isoformat()
+        },
+        "readings": {"heating_el": 100.5, "heating_th": 302.0},
+    }
+    actual = fa.actual_from_anchors(old, new)
+    assert actual == (hour, 0.5, 2.0)
+    fa.record_actual(state, *actual)
+    summary = fa.summary(state, hour + timedelta(hours=2))
+    el = summary["lead_1h"]["24h"]["el"]
+    assert el["n"] == 1 and el["bias_kwh"] == -0.5
+    assert el["missed_start_rate"] == 1.0
+    assert summary["lead_6h"]["24h"]["el"] == {"n": 0}
+
+    new["readings"]["heating_el"] = 99.0  # counter reset
+    assert fa.actual_from_anchors(old, new) is None

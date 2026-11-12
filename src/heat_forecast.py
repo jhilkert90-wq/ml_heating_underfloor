@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
+from . import forecast_accuracy
+
 BERLIN = ZoneInfo("Europe/Berlin")
 LOGGER = logging.getLogger(__name__)
 
@@ -1266,6 +1268,7 @@ class HeatForecastEngine:
                     )
                 except (KeyError, TypeError, ValueError):
                     LOGGER.info("Ignoring malformed heating counter anchor timestamp")
+            previous_anchor = self.state.get("hour_anchor")
             self.state["hour_anchor"] = {
                 "hour_utc": hour_key,
                 "sample_time_utc": now_utc.isoformat(),
@@ -1278,6 +1281,11 @@ class HeatForecastEngine:
                     "counter_anchor" if usable_counter_anchor else "partial"
                 ),
             }
+            actual = forecast_accuracy.actual_from_anchors(
+                previous_anchor, self.state["hour_anchor"]
+            )
+            if actual:
+                forecast_accuracy.record_actual(self.state, *actual)
         return deltas
 
     def _record_daily_energy(
@@ -2623,6 +2631,14 @@ class HeatForecastEngine:
         attrs["degraded_reasons"] = degraded_reasons
         if config.COP_DEFROST_HANDLING != "separate":
             attrs.pop("forecast_defrost_el_kwh", None)
+        forecast_accuracy.record_predictions(
+            self.state,
+            now=now,
+            starts=starts,
+            el_kwh=electrical["forecast_heat_el_kwh"],
+            th_kwh=electrical["forecast_heat_th_kwh"],
+        )
+        attrs["accuracy"] = forecast_accuracy.summary(self.state, now)
         attrs["unit_of_measurement"] = "kWh"
         attrs["device_class"] = "energy"
         attrs["state_class"] = "measurement"
