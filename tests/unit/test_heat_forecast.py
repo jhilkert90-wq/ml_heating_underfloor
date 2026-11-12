@@ -2028,3 +2028,29 @@ def test_ramp_limit_bounds_step_to_step_power_change():
     )
     heat = result["heat_kwh"]
     assert all(abs(b - a) <= 1.0 + 1e-6 for a, b in zip(heat, heat[1:]))
+
+
+def test_start_estimate_window_raises_energy_only_inside_window():
+    from src.heat_forecast import apply_start_estimate
+
+    sim = [0.0] * 6
+    power = [2.0] * 6
+    out = apply_start_estimate(
+        sim, power, minutes_to_start=45, runtime_min=120, first_hour_fraction=0.5
+    )
+    assert out[0] == 0.0  # hour 0 ends before the start
+    assert out[1] == pytest.approx(1.5)  # window covers 0.75 h of hour 1
+    assert out[2] == pytest.approx(2.0)
+    assert out[3] == pytest.approx(0.5)
+    assert out[4] == 0.0
+
+
+def test_start_estimate_without_window_is_identity():
+    from src.heat_forecast import apply_start_estimate
+
+    sim = [0.3, 1.0, 0.0]
+    for minutes, runtime in ((None, 100), (0, None), (0, 0)):
+        assert apply_start_estimate(
+            sim, [2.0] * 3, minutes_to_start=minutes,
+            runtime_min=runtime, first_hour_fraction=1.0,
+        ) == sim

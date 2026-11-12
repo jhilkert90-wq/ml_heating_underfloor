@@ -2408,6 +2408,29 @@ class HeatForecastEngine:
             electrical["forecast_dhw_el_kwh"] = [0.0] * horizon
             dhw = [0.0] * horizon
 
+        start_estimate_diag: dict[str, Any] | None = None
+        if getattr(config, "HP_START_ESTIMATE_ENABLED", False):
+            from .hp_start_estimate import diagnostics, read_hp_start_estimate
+
+            start_estimate_diag = diagnostics(states, now=now)
+            estimate = (
+                read_hp_start_estimate(states, "heating", now=now)
+                if config.HP_START_ESTIMATE_USE_FOR_FORECAST
+                and mode == "heating"
+                else None
+            )
+            if estimate is not None and estimate.known_method:
+                power = [
+                    min(config.HEAT_FORECAST_MAX_HEATING_KW, value)
+                    for value in baseline
+                ]
+                heat_result["heat_kwh"] = apply_start_estimate(
+                    heat_result["heat_kwh"],
+                    power,
+                    minutes_to_start=estimate.minutes_to_start,
+                    runtime_min=estimate.expected_runtime_min,
+                    first_hour_fraction=remaining_hours,
+                )
         scenarios = {}
         if fireplace_on:
             for duration in (3.0, 4.0):
@@ -2540,6 +2563,11 @@ class HeatForecastEngine:
             "learned": bool(curve["calibrated"]),
             **auxiliary_stats,
             "data_quality": per_hour,
+            **(
+                {"hp_start_estimate": start_estimate_diag}
+                if start_estimate_diag is not None
+                else {}
+            ),
             "current_hour_estimate": self.state.get(
                 "current_hour_estimate", "degraded_partial"
             ),
@@ -3235,6 +3263,36 @@ def forecast_hour_starts(now: datetime, hours: int) -> list[datetime]:
         (hour + timedelta(hours=index)).astimezone(BERLIN)
         for index in range(max(0, int(hours)))
     ]
+
+
+def apply_start_estimate(
+    heat_kwh: Sequence[float],
+    power_kw: Sequence[float],
+    *,
+    minutes_to_start: float | None,
+    runtime_min: float | None,
+    first_hour_fraction: float,
+) -> list[float]:
+    """Raise the thermal energy inside the sensor's start/run window.
+
+    Hour 0 only covers its remaining fraction. Inside the window the energy is
+    at least power x overlap; outside it the simulation is left untouched.
+    """
+    result = [float(v) for v in heat_kwh]
+    if minutes_to_start is None or not runtime_min or runtime_min <= 0:
+        return result
+    start_h = max(0.0, float(minutes_to_start)) / 60.0
+    end_h = start_h + float(runtime_min) / 60.0
+    hour_begin = 0.0
+    for index in range(len(result)):
+        length = first_hour_fraction if index == 0 else 1.0
+        overlap = max(
+            0.0, min(end_h, hour_begin + length) - max(start_h, hour_begin)
+        )
+        if overlap > 0.0:
+            result[index] = max(result[index], float(power_kw[index]) * overlap)
+        hour_begin += length
+    return result
 
 
 def simulate_heating_energy(

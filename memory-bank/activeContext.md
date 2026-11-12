@@ -1,5 +1,10 @@
 # Active Context - Current Work & Decision State
 
+### HP Start Estimate in Forecast — 2026-11-12
+
+- **What:** Forecast uses sensor start/runtime window (heating only, cooling forecast still open); energy counted once via current-hour counter logic.
+- **Why:** Imminent starts were missed. **Files:** `src/heat_forecast.py`, tests, CHANGELOG, progress.
+
 ### HP Start Estimate Reader — 2026-11-12
 
 - **What:** New updated plan adds PR 4a (external start/runtime sensor). Implemented step 4a-1 (reader + config, diagnostic only) and copied the HA guide into `docs/HA_WP_START_ESTIMATE_GUIDE.md`.

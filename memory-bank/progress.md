@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ HP Start Estimate in Forecast (PR 4a-2) — 2026-11-12
+
+**Status:** COMPLETED — `apply_start_estimate` in `src/heat_forecast.py`, gated by `HP_START_ESTIMATE_USE_FOR_FORECAST`; power = steady-state baseline; sensor absent = unchanged output.
+
+**Files changed:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`.
+
 ## ✅ HP Start Estimate Reader (PR 4a-1) — 2026-11-12
 
 **Status:** COMPLETED for step 4a-1 — decoupled, default-off reader with validation (mode, age, confidence, status), circuit breaker and diagnostics; HA build guide added to docs. Consumers (4a-2…4a-6), PR 3, PR 4 and COP cap remain open.
