@@ -143,6 +143,29 @@ def step_build_features(ctx: CycleContext) -> bool:
     return True
 
 
+def _attach_hp_cost_skip_hint(ctx: CycleContext) -> None:
+    """Tell the wrapper whether the cost-mode overshoot skip is still useful."""
+    if ctx.wrapper is None:
+        return
+    ctx.wrapper._hp_cost_skip_allowed = True
+    if not (
+        getattr(config, "HP_START_ESTIMATE_ENABLED", False)
+        and getattr(config, "HP_START_ESTIMATE_USE_FOR_COST_MODE", False)
+    ):
+        return
+    try:
+        from .hp_start_estimate import cost_skip_allowed, read_hp_start_estimate
+
+        ctx.wrapper._hp_cost_skip_allowed = cost_skip_allowed(
+            read_hp_start_estimate(
+                ctx.all_states or {}, getattr(ctx, "climate_mode", "heating")
+            ),
+            float(config.CYCLE_INTERVAL_MINUTES) * 4,
+        )
+    except Exception as exc:
+        logging.warning("HP cost-mode hint unavailable: %s", exc)
+
+
 def _attach_hp_learning_weight(ctx: CycleContext) -> None:
     """Feature ``hp_run_weight`` for HP learning (opt-in, sensor required)."""
     if not (
@@ -311,6 +334,7 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
 
     _attach_hp_start_window(ctx)
     _attach_hp_learning_weight(ctx)
+    _attach_hp_cost_skip_hint(ctx)
 
     # Suppress price in forecast trajectory mode (cost mode works together
     # with forecast scaling and is therefore not suppressed)

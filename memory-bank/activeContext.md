@@ -1,5 +1,10 @@
 # Active Context - Current Work & Decision State
 
+### HP Start Estimate in Cost Mode — 2026-11-12
+
+- **What:** Overshoot skip in cost mode requires sensor-expected HP run within 4 cycles (when enabled). Grace (4a-6) deferred.
+- **Files:** see progress.md.
+
 ### HP Start Estimate in Learning — 2026-11-12
 
 - **What:** HP learning weight from sensor (blocked=0, partial run share); no sensor = weight absent = unchanged.

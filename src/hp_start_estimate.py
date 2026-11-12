@@ -203,6 +203,21 @@ def learning_weight(
     return 1.0
 
 
+def cost_skip_allowed(
+    estimate: Optional[HPStartEstimate], horizon_min: float
+) -> bool:
+    """False if the sensor says the HP will not run within ``horizon_min``.
+
+    Without usable sensor information the existing cost-mode skip applies.
+    """
+    if estimate is None or not estimate.known_method:
+        return True
+    if estimate.status in ("blocked", "unknown", "running"):
+        return True
+    minutes = estimate.minutes_to_start
+    return minutes is not None and minutes <= horizon_min
+
+
 def diagnostics(
     states: Mapping[str, Any], *, now: Optional[datetime] = None, cfg: Any = None
 ) -> dict[str, Any]:

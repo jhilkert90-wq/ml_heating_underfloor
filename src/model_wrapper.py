@@ -1931,6 +1931,7 @@ class EnhancedModelWrapper:
                 and bool(_cost_pi.get("price_cost_mode"))
                 and float(_cost_pi.get("price_target_offset", 0.0)) > 0.0
                 and float(_cost_pi.get("cost_pv_share_now", 0.0)) >= 1.0
+                and getattr(self, "_hp_cost_skip_allowed", True)
             )
             _skip_traj_overshoot = bool(
                 getattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", False)

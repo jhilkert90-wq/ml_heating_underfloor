@@ -157,3 +157,14 @@ def test_hp_channel_skips_blocked_cycle_and_scales_rate():
 
     assert run(0.0) == 0.0
     assert abs(run(0.5)) <= abs(run(None)) + 1e-12
+
+
+def test_cost_skip_allowed():
+    def est(state, **kw):
+        return hse.read_hp_start_estimate(_states(state, **kw), "heating", now=NOW, cfg=_cfg())
+
+    assert hse.cost_skip_allowed(None, 120)
+    assert hse.cost_skip_allowed(est("0", status="running"), 120)
+    assert hse.cost_skip_allowed(est("60", status="starting_soon"), 120)
+    assert not hse.cost_skip_allowed(est("300"), 120)
+    assert not hse.cost_skip_allowed(est("unknown"), 120)

@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ HP Start Estimate in Cost Mode (PR 4a-5, partial) — 2026-11-12
+
+**Status:** PARTIAL — part (a) only (`cost_skip_allowed`, `_hp_cost_skip_allowed` on wrapper). 4a-5 (b)/(c) and 4a-6 (grace) open: the grace wait loop has no access to states.
+
+**Files changed:** `src/hp_start_estimate.py`, `src/cycle_routes.py`, `src/model_wrapper.py`, tests, `CHANGELOG.md`.
+
 ## ✅ HP Start Estimate in Learning (PR 4a-4) — 2026-11-12
 
 **Status:** COMPLETED — `learning_weight` in `src/hp_start_estimate.py`, feature `hp_run_weight` (cycle_routes), context in `pre_dispatch.py`, applied in `HeatPumpChannel._learn_from_recent`. Gated by `HP_START_ESTIMATE_USE_FOR_LEARNING`.
