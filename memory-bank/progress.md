@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ PR 5 rest + near gate fix — 2026-11-12
+
+**Status:** COMPLETED — price label split, feature-importance history guard, near-controller gate uses measured power.
+
+**Files changed:** `src/forecast_near_controller.py`, `src/model_wrapper.py`, `src/ha_client.py`, `src/thermal_equilibrium_model.py`, tests, CHANGELOG.
+
 ## ✅ Near-Range Controller Snapshot (PR 4) — 2026-11-12
 
 **Status:** COMPLETED (default off) — `simulate_heating_energy(near_*)`, `src/forecast_near_controller.py`, snapshot saved in `step_save_state`.

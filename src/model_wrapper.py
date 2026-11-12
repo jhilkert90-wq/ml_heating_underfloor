@@ -555,6 +555,9 @@ class EnhancedModelWrapper:
                     )
                     offset = optimizer.get_target_offset(level) * _price_sign
                     price_info = optimizer.get_price_info()
+                    price_info["grid_price_level"] = price_info.get(
+                        "price_level", level.value
+                    )
                     if (
                         getattr(config, "PRICE_COST_MODE_ENABLED", False)
                         and "cost_target_offset" in price_data

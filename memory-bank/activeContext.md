@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### PR 5 rest + near gate fix — 2026-11-12
+
+- **What:** see progress.md (log replay showed outlet−inlet 1.5 K < floor 2.59 despite 2.2 kW measured → gate relaxed).
+
 ### Near-Range Controller Snapshot — 2026-11-12
 
 - **What:** forecast near range uses live outlet setpoint (power = scale x eff x (outlet - room)); scale persisted in forecast state. Not yet using sensor `t_start`/runtime. **Files:** see progress.md.

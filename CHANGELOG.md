@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Near-range forecast controller gate also accepts measured thermal power ≥ 0.5 kW when outlet − inlet is below `delta_t_floor`.
+- `sensor.ml_feature_importance` ignores PV/fireplace/TV sources with fewer than 50 learning samples.
+- `sensor.ml_heating_price_level` exposes `grid_price_level` and `effective_price_level` (cost-mode/PV adjusted) separately.
+
 ### Added
 - Optional near-range controller snapshot for the WP load forecast (`heat_forecast_near_controller_enabled`, default off): the first hours use the live outlet setpoint with a learned power scale (EMA vs. measured thermal power) and blend into the lookahead controller.
 - Forecast accuracy tracking (`src/forecast_accuracy.py`): predictions at lead 1/6/24 h are compared with measured hourly counter energy; sensor attribute `accuracy` (bias, MAE, MAPE, missed/false-start rate over 24 h and 7 d).

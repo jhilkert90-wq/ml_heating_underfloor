@@ -35,6 +35,8 @@ except ImportError:
     )
 
 
+FEATURE_IMPORTANCE_MIN_HISTORY = 50
+
 class ThermalEquilibriumModel:
     """
     A physics-based thermal model that predicts indoor temperature equilibrium
@@ -2734,10 +2736,23 @@ class ThermalEquilibriumModel:
         Acts as a compatibility layer for the legacy feature importance metric.
         """
         # Normalize weights to sum to 1.0 for relative importance
+        # Sources without enough learning history keep their default weight
+        # and must not appear as influential.
+        channels = getattr(
+            getattr(self, "orchestrator", None), "channels", None
+        )
+
+        def source_weight(source: str) -> float:
+            if channels is not None and source in channels:
+                history = getattr(channels[source], "history", [])
+                if len(history) < FEATURE_IMPORTANCE_MIN_HISTORY:
+                    return 0.0
+            return self.external_source_weights.get(source, 0.0)
+
         weights = {
-            "pv_power": self.external_source_weights.get("pv", 0.0),
-            "fireplace": self.external_source_weights.get("fireplace", 0.0),
-            "tv_power": self.external_source_weights.get("tv", 0.0),
+            "pv_power": source_weight("pv"),
+            "fireplace": source_weight("fireplace"),
+            "tv_power": source_weight("tv"),
             # Proxy for outdoor influence
             "outdoor_temp": self.heat_loss_coefficient,
             # Proxy for target influence

@@ -1128,3 +1128,21 @@ class TestIndoorTrendBias:
         assert baseline["trajectory"] == with_tiny_trend["trajectory"], (
             "Trend below 0.01 gate should have zero effect"
         )
+
+
+def test_feature_importance_ignores_sources_without_history():
+    from types import SimpleNamespace
+
+    from src.thermal_equilibrium_model import ThermalEquilibriumModel
+
+    model = ThermalEquilibriumModel()
+    model.external_source_weights = {"pv": 0.1, "fireplace": 0.9, "tv": 0.5}
+    model.orchestrator = SimpleNamespace(channels={
+        "pv": SimpleNamespace(history=[0] * 100),
+        "fireplace": SimpleNamespace(history=[0] * 26),
+        "tv": SimpleNamespace(history=[]),
+    })
+    importance = model.get_feature_importance()
+    assert importance["fireplace"] == 0.0
+    assert importance["tv_power"] == 0.0
+    assert importance["pv_power"] > 0.0
