@@ -7,9 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Dashboard option to exclude domestic hot-water demand from the heat-pump load forecast when EOS Connect manages it; actual hot-water preparation is unaffected.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added

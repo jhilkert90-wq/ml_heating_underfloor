@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.113] - 2026-11-12
+
+### Added
+- Dashboard option to exclude domestic hot-water demand from the heat-pump load forecast when EOS Connect manages it; actual hot-water preparation is unaffected.
+
 ## [0.2.112] - 2026-11-10
 
 ### Added
