@@ -14,6 +14,13 @@ Configure cumulative kWh counters for space-heating electricity and heat,
 domestic-hot-water electricity, standby electricity, and (where available)
 defrost electricity and heat.
 
+The dashboard setting `heat_forecast_include_dhw` includes domestic hot-water
+electricity by default. Turn it off when EOS Connect manages that load and
+starts hot-water preparation itself. This only changes the published forecast,
+including the current hour and fireplace scenarios; it does not disable or
+control actual hot-water preparation. The DHW breakdown is then zero and
+`includes` omits `dhw`; counter history is still collected.
+
 History is loaded from InfluxDB first and falls back to Home Assistant Recorder
 history when InfluxDB is unavailable or has too few aligned samples. Forecast
 history queries use `heat_forecast_influx_timeout_seconds` (default 60 seconds,

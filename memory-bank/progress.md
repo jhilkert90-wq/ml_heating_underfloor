@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ Optional Warmwasser Forecast Inclusion — 2026-11-12
+
+**Status:** COMPLETED — Added an enabled-by-default dashboard setting to include or exclude hot-water electricity in the EOS load forecast, including the current hour and fireplace scenarios, without changing actual hot-water preparation.
+
+**Files changed:** `src/config.py`, `src/heat_forecast.py`, `config_adapter.py`, `dashboard/components/settings.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{de,en}.yaml`, `docs/HEAT_FORECAST_EOS_CONNECT.md`, `tests/unit/test_heat_forecast.py`, `tests/unit/test_config_adapter.py`, `tests/unit/test_dashboard_settings.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+**Validation:** 86 forecast, config-adapter and dashboard-settings tests passed; `git diff --check` passed.
+
 ## ✅ Heat Forecast Review Corrections — 2026-11-10
 
 **Status:** COMPLETED — Post-boundary readings no longer masquerade as usable hourly anchors without boundary energy; auxiliary energy retains its measurement endpoints, stale readings cannot extend coverage, and smoothing leaves the current partial-hour slot untouched.

@@ -245,6 +245,9 @@ def convert_addon_to_env(config):
         'HEAT_FORECAST_ENABLED': str(
             config.get('heat_forecast_enabled', False)
         ).lower(),
+        'HEAT_FORECAST_INCLUDE_DHW': str(
+            config.get('heat_forecast_include_dhw', True)
+        ).lower(),
         'HEAT_FORECAST_SENSOR_ENTITY_ID': config.get(
             'heat_forecast_sensor_entity',
             'sensor.ml_heating_wp_load_forecast'

@@ -234,6 +234,9 @@ FIREPLACE_STATUS_ENTITY_ID: str = os.getenv(
 HEAT_FORECAST_ENABLED: bool = (
     os.getenv("HEAT_FORECAST_ENABLED", "false").lower() == "true"
 )
+HEAT_FORECAST_INCLUDE_DHW: bool = (
+    os.getenv("HEAT_FORECAST_INCLUDE_DHW", "true").lower() == "true"
+)
 HEAT_FORECAST_SENSOR_ENTITY_ID: str = os.getenv(
     "HEAT_FORECAST_SENSOR_ENTITY_ID", "sensor.ml_heating_wp_load_forecast"
 )
