@@ -591,6 +591,7 @@ def step_update_ha(ctx: CycleContext) -> None:
     from .model_wrapper import get_enhanced_model_wrapper
     from .prediction_context import prediction_context_manager
 
+    ctx.applied_outlet_temp = None
     target_output_entity_id = get_shadow_output_entity_id(
         config.TARGET_OUTLET_TEMP_ENTITY_ID
     )
@@ -731,6 +732,8 @@ def step_update_ha(ctx: CycleContext) -> None:
             get_sensor_attributes(target_output_entity_id),
             round_digits=None,
         )
+        if not ctx.effective_shadow_mode:
+            ctx.applied_outlet_temp = float(smart_rounded_temp)
 
 
 def step_log_metrics(ctx: CycleContext) -> None:
@@ -869,7 +872,11 @@ def step_save_state(ctx: CycleContext) -> None:
         active = ctx.climate_mode in (None, "heating") and not ctx.is_blocking
         save_snapshot(
             ctx.wrapper,
-            outlet=ctx.final_temp if active else None,
+            outlet=(
+                ctx.applied_outlet_temp
+                if active and not ctx.effective_shadow_mode
+                else None
+            ),
             indoor=ctx.actual_indoor,
         )
 

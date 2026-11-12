@@ -1,5 +1,10 @@
 # Active Context - Current Work & Decision State
 
+### PR 112 review fixes — 2026-11-12
+
+- **What:** Corrected all nine review findings covering near-range snapshots and units, start-estimate forecast/runtime, HP learning weights, overshoot limits, forecast-accuracy alignment/defrost normalization, and manual sensor validation. Affected tests pass.
+- **Files:** see the PR 112 review-fix milestone in `progress.md`.
+
 ### Forecast docs + dashboard category — 2026-11-12
 
 - **What:** own dashboard group for forecast/start-estimate options; open items documented. Files: see progress.md.

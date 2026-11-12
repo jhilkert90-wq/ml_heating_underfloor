@@ -179,7 +179,7 @@ def trajectory_window(estimate: Optional[HPStartEstimate]) -> Optional[dict]:
     if estimate.status in ("blocked", "unknown"):
         return None
     runtime = estimate.expected_runtime_min
-    runtime_h = runtime / 60.0 if runtime and runtime > 0 else None
+    runtime_h = runtime / 60.0 if runtime is not None else None
     if estimate.minutes_to_start is None:
         return {"delay_h": 1e6, "runtime_h": runtime_h}
     return {"delay_h": estimate.minutes_to_start / 60.0, "runtime_h": runtime_h}

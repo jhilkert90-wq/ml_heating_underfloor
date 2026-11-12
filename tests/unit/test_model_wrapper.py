@@ -876,6 +876,53 @@ class TestProjectedTempOvershootGate:
         # max wins → exp-decay projected ≈ 22.08 < 22.1 → skip
         assert result == 28.0
 
+    def test_cost_overshoot_limit_blocks_quick_target_early_return(
+        self, wrapper, monkeypatch
+    ):
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(config, "PRICE_COST_DISABLE_OVERSHOOT_CORRECTION", True)
+        monkeypatch.setattr(config, "PRICE_COST_MAX_OVERSHOOT_K", 0.3)
+        wrapper._climate_mode = "heating"
+        wrapper._price_info = {
+            "price_cost_mode": True,
+            "price_target_offset": 0.1,
+            "cost_pv_share_now": 1.0,
+            "price_level": "normal",
+        }
+        monkeypatch.setattr(
+            wrapper,
+            "_get_forecast_trajectory_state_from_features",
+            lambda _features: SimpleNamespace(
+                active=False, dynamic_steps_above_min=False
+            ),
+        )
+        wrapper.thermal_model.predict_thermal_trajectory = lambda **_kwargs: {
+            "trajectory": [22.0, 22.4],
+            "times": [0.25, 0.5],
+            "reaches_target_at": 0.25,
+        }
+        corrections = []
+        monkeypatch.setattr(
+            wrapper,
+            "_calculate_physics_based_correction",
+            lambda **kwargs: corrections.append(kwargs) or kwargs["outlet_temp"] - 1,
+        )
+
+        result = wrapper._verify_trajectory_and_correct(
+            outlet_temp=28.0,
+            current_indoor=21.0,
+            target_indoor=22.0,
+            outdoor_temp=5.0,
+            thermal_features={},
+            outdoor_forecast=[5.0],
+            pv_forecast=[0.0],
+            pv_history_for_buffer=[0.0],
+        )
+
+        assert result == 27.0
+        assert corrections
+
 
 # ---------------------------------------------------------------------------
 # Drift detection regression coverage

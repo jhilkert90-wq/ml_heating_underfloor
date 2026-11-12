@@ -130,6 +130,20 @@ def test_trajectory_window_helper():
     assert hse.trajectory_window(blocked) is None
 
 
+def test_trajectory_window_preserves_zero_runtime():
+    estimate = hse.read_hp_start_estimate(
+        _states("0", status="running", expected_runtime_min=0),
+        "heating",
+        now=NOW,
+        cfg=_cfg(),
+    )
+
+    assert hse.trajectory_window(estimate) == {
+        "delay_h": 0.0,
+        "runtime_h": 0.0,
+    }
+
+
 def test_learning_weight():
     def est(state, **kw):
         return hse.read_hp_start_estimate(_states(state, **kw), "heating", now=NOW, cfg=_cfg())

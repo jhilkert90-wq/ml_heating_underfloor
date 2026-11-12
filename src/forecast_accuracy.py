@@ -7,6 +7,7 @@ bounded history from which bias/MAE/MAPE and start-detection rates derive.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
@@ -14,7 +15,6 @@ LEADS = (1, 6, 24)
 HISTORY_DAYS = 7
 MISSED_PRED_MAX = 0.1
 MISSED_ACTUAL_MIN = 0.2
-ANCHOR_TOLERANCE = timedelta(minutes=20)
 
 
 def _section(state: dict[str, Any]) -> dict[str, Any]:
@@ -60,9 +60,13 @@ def record_predictions(
 
 
 def actual_from_anchors(
-    old: Mapping[str, Any] | None, new: Mapping[str, Any] | None
+    old: Mapping[str, Any] | None,
+    new: Mapping[str, Any] | None,
+    *,
+    defrost_handling: str = "net",
+    defrost_el_in_heating_counter: bool = True,
 ) -> tuple[datetime, float, float] | None:
-    """Return (hour, el, th) when two consecutive hour anchors are exact."""
+    """Return aligned, defrost-normalized actuals for one hour."""
     if not isinstance(old, Mapping) or not isinstance(new, Mapping):
         return None
     try:
@@ -70,23 +74,73 @@ def actual_from_anchors(
         new_hour = datetime.fromisoformat(new["hour_utc"])
         if new_hour - old_hour != timedelta(hours=1):
             return None
+        old_boundary = old_hour.astimezone(timezone.utc)
+        new_boundary = new_hour.astimezone(timezone.utc)
+        if any(
+            boundary != boundary.replace(minute=0, second=0, microsecond=0)
+            for boundary in (old_boundary, new_boundary)
+        ):
+            return None
         if old.get("coverage") != "counter_anchor" or new.get(
             "coverage"
         ) != "counter_anchor":
             return None
-        for anchor, boundary in ((old, old_hour), (new, new_hour)):
-            stamp = datetime.fromisoformat(anchor["reading_times_utc"]["heating_el"])
-            if abs(stamp - boundary) > ANCHOR_TOLERANCE:
+        readings = (old["readings"], new["readings"])
+        reading_times = (old["reading_times_utc"], new["reading_times_utc"])
+        for name, old_boundary, new_boundary in (
+            ("heating_el", old_boundary, new_boundary),
+            ("heating_th", old_boundary, new_boundary),
+        ):
+            for times, boundary in (
+                (reading_times[0], old_boundary),
+                (reading_times[1], new_boundary),
+            ):
+                if datetime.fromisoformat(times[name]).astimezone(
+                    timezone.utc
+                ) != boundary:
+                    return None
+
+        def delta(name: str, *, optional: bool = False) -> float | None:
+            start = readings[0].get(name)
+            end = readings[1].get(name)
+            if start is None or end is None:
+                return 0.0 if optional and start is None and end is None else None
+            start_value, end_value = float(start), float(end)
+            if (
+                not math.isfinite(start_value)
+                or not math.isfinite(end_value)
+                or end_value < start_value
+            ):
                 return None
-        values = []
-        for name in ("heating_el", "heating_th"):
-            start = old["readings"].get(name)
-            end = new["readings"].get(name)
-            if start is None or end is None or end < start:
-                return None
-            values.append(float(end) - float(start))
-        return old_hour, values[0], values[1]
-    except (KeyError, TypeError, ValueError, AttributeError):
+            if optional:
+                for times, boundary in (
+                    (reading_times[0], old_boundary),
+                    (reading_times[1], new_boundary),
+                ):
+                    if datetime.fromisoformat(times[name]).astimezone(
+                        timezone.utc
+                    ) != boundary:
+                        return None
+            return end_value - start_value
+
+        electricity = delta("heating_el")
+        heat = delta("heating_th")
+        defrost_electricity = delta("defrost_el", optional=True)
+        defrost_heat = delta("defrost_th", optional=True)
+        if None in (electricity, heat, defrost_electricity, defrost_heat):
+            return None
+        from .heat_forecast import cop_calibration_energies
+
+        normalized_heat, normalized_electricity = cop_calibration_energies(
+            heat_kwh=heat,
+            electricity_kwh=electricity,
+            defrost_heat_kwh=defrost_heat,
+            defrost_electricity_kwh=defrost_electricity,
+            defrost_el_in_heating_counter=defrost_el_in_heating_counter,
+            defrost_handling=defrost_handling,
+        )
+        return old_boundary, normalized_electricity, normalized_heat
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
         return None
 
 

@@ -472,7 +472,7 @@ Bis dahin laufen die Sensoren harmlos mit und sammeln Verlauf zum Gegenprüfen.
 - Die Einträge sind optional. Bleibt ein Feld leer oder ist der Schalter aus, arbeitet das Add-on genau wie vorher.
 - Heizen und Kühlen sind getrennt, du kannst nur einen Modus anbinden oder pro Modus eine andere Variante (A oder B) nutzen.
 - Jede Verwendung (Prognose, Vorlaufsuche, Lernen, Kostenmodus, Wartezeiten) lässt sich einzeln abschalten, falls ein Bereich nicht überzeugt.
-- Das Add-on wertet `method` und `confidence` aus. Hysterese-Sensoren (Variante B) gelten als weniger genau und werden erst nach einigen verglichenen Starts in die Regelung einbezogen, vorher nur als Anzeige im Schattenbetrieb.
+- Hysterese-Sensoren (Variante B) werden nicht automatisch gegen reale WP-Starts kalibriert. Prüfe Start- und Stoppschätzungen über mehrere echte Zyklen manuell, bevor du einzelne Verbraucher aktivierst.
 
 ## 9. Stolpersteine
 

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Near-range forecast controller gate also accepts measured thermal power ≥ 0.5 kW when outlet − inlet is below `delta_t_floor`.
 - `sensor.ml_feature_importance` ignores PV/fireplace/TV sources with fewer than 50 learning samples.
 - `sensor.ml_heating_price_level` exposes `grid_price_level` and `effective_price_level` (cost-mode/PV adjusted) separately.
+- Near-range snapshots use the applied outlet target; thermal-power readings are converted from watts to kW, start-estimate energy survives current-hour reconciliation, and zero runtime remains finite.
+- Heat-pump learning excludes zero-weight records and treats missing weights as 1; cost-mode overshoot limits also govern quick-target boundaries.
+- Forecast accuracy requires aligned hourly counter readings and normalizes measured energy using the configured defrost policy.
+- Start-estimate guide requires manual validation before enabling consuming features.
 
 ### Added
 - Dashboard category "WP Load Forecast & Start Estimate" for all forecast, COP calibration, counter, near-range and start-estimate options.

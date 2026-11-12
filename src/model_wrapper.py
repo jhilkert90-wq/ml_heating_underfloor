@@ -2040,6 +2040,15 @@ class EnhancedModelWrapper:
             sensor_precision_tolerance = (
                 _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C
             )
+            _max_cost_overshoot = float(
+                getattr(config, "PRICE_COST_MAX_OVERSHOOT_K", 0.0)
+            )
+            cost_overshoot_limit = (
+                _max_cost_overshoot
+                if _skip_cost_overshoot_correction
+                and _max_cost_overshoot > 0.0
+                else None
+            )
 
             # Price-aware future overshoot threshold.  During expensive
             # electricity periods a tighter limit catches overshoot earlier,
@@ -2053,6 +2062,18 @@ class EnhancedModelWrapper:
                 future_overshoot_tolerance = _expensive_overshoot
             else:
                 future_overshoot_tolerance = 0.5  # existing default
+            strict_overshoot_tolerance = sensor_precision_tolerance
+            quick_overshoot_tolerance = 0.3
+            if cost_overshoot_limit is not None:
+                future_overshoot_tolerance = min(
+                    future_overshoot_tolerance, cost_overshoot_limit
+                )
+                strict_overshoot_tolerance = min(
+                    strict_overshoot_tolerance, cost_overshoot_limit
+                )
+                quick_overshoot_tolerance = min(
+                    quick_overshoot_tolerance, cost_overshoot_limit
+                )
 
             # DEBUG: Log trajectory details for diagnosis
             trajectory_temps = trajectory.get("trajectory", [])
@@ -2112,7 +2133,7 @@ class EnhancedModelWrapper:
                 ):
                     if (
                         trajectory_temps[0]
-                        > target_indoor + sensor_precision_tolerance
+                        > target_indoor + strict_overshoot_tolerance
                     ):
                         immediate_overshoot = True
                 else:
@@ -2120,7 +2141,7 @@ class EnhancedModelWrapper:
                     # future
                     if (
                         trajectory_temps[0]
-                        > target_indoor + sensor_precision_tolerance
+                        > target_indoor + strict_overshoot_tolerance
                     ):
                         immediate_overshoot = True
 
@@ -2158,14 +2179,11 @@ class EnhancedModelWrapper:
                             target_indoor,
                             sensor_precision_tolerance,
                         )
-                        or max_temp >= target_indoor + sensor_precision_tolerance
+                        or max_temp >= target_indoor + strict_overshoot_tolerance
                     )
             else:
                 temp_boundary_violation = False
 
-            _max_cost_overshoot = float(
-                getattr(config, "PRICE_COST_MAX_OVERSHOOT_K", 0.0)
-            )
             if (
                 _skip_cost_overshoot_correction
                 and not _skip_traj_overshoot
@@ -2223,7 +2241,8 @@ class EnhancedModelWrapper:
                                 target_indoor,
                                 sensor_precision_tolerance,
                             )
-                            or max_temp >= target_indoor + 0.3  # Relaxed overshoot only
+                            or max_temp
+                            >= target_indoor + quick_overshoot_tolerance
                         )
                         if not relaxed_boundary_violation:
                             logging.info(

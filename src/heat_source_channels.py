@@ -420,9 +420,17 @@ class HeatPumpChannel(HeatSourceChannel):
         }
 
     def _update_outlet_effectiveness_curve(
-        self, outdoor_temps: List[float], adjustment: float, climate_mode: str
+        self,
+        outdoor_temps: List[float],
+        adjustment: float,
+        climate_mode: str,
+        weights: List[float] | None = None,
     ) -> None:
         if not self.outlet_effectiveness_curve:
+            return
+        weights = weights or [1.0] * len(outdoor_temps)
+        weight_total = sum(weights)
+        if weight_total <= 0.0:
             return
 
         bounds_getter = (
@@ -450,9 +458,12 @@ class HeatPumpChannel(HeatSourceChannel):
             }
             for point in base_curve
         ]
-        for outdoor_temp in outdoor_temps:
+        for outdoor_temp, weight in zip(outdoor_temps, weights):
             curve = update_curve_at_temperature(
-                curve, outdoor_temp, adjustment / len(outdoor_temps), bounds
+                curve,
+                outdoor_temp,
+                adjustment * weight / weight_total,
+                bounds,
             )
         self.outlet_effectiveness_curve_delta = [
             {
@@ -503,10 +514,27 @@ class HeatPumpChannel(HeatSourceChannel):
     def _learn_from_recent(self) -> None:
         min_records = _get_min_records_for_learning()
         recent = self.history[-min_records:]
+        if len(recent) < min_records:
+            return
+        learning_records: list[tuple[Dict, float]] = []
+        for record in recent:
+            context = record.get("context", {})
+            try:
+                weight = float(context.get("hp_run_weight", 1.0))
+            except (TypeError, ValueError):
+                weight = 1.0
+            if not math.isfinite(weight):
+                weight = 1.0
+            if weight > 0.0:
+                learning_records.append((record, weight))
+        if not learning_records:
+            logger.debug("HeatPumpChannel skipping learning: blocked cycle")
+            return
+
         recovery_grace = getattr(
             config, "DEFROST_RECOVERY_GRACE_MINUTES", 45
         )
-        for record in recent:
+        for record, _weight in learning_records:
             context = record.get("context", {})
             minutes_since_defrost = context.get(
                 "minutes_since_defrost", float("inf")
@@ -525,52 +553,63 @@ class HeatPumpChannel(HeatSourceChannel):
                     minutes_since_defrost,
                 )
                 return
-        if any(_is_fireplace_active(record.get("context", {})) for record in recent):
+        if any(
+            _is_fireplace_active(record.get("context", {}))
+            for record, _weight in learning_records
+        ):
             logger.debug(
                 "♨️ HeatPumpChannel skipping self-learning: fireplace-contaminated history"
             )
             return
 
-        run_weights = [
-            float(w)
-            for w in (r.get("context", {}).get("hp_run_weight") for r in recent)
-            if isinstance(w, (int, float)) and math.isfinite(w)
-        ]
-        run_weight = (
-            sum(run_weights) / len(run_weights) if run_weights else 1.0
-        )
-        if run_weight <= 0.0:
-            logger.debug("HeatPumpChannel skipping learning: blocked cycle")
-            return
-
-        avg_error = _average_recent_error(self.history)
-        raw_avg = _average_recent_raw_error(self.history)
-        if avg_error is None or raw_avg is None or abs(raw_avg) < _get_learning_dead_zone():
+        weight_total = sum(weight for _record, weight in learning_records)
+        run_weight = weight_total / len(learning_records)
+        avg_error = sum(
+            float(record["error"]) * weight
+            for record, weight in learning_records
+        ) / weight_total
+        raw_avg = sum(
+            float(
+                record.get("context", {}).get(
+                    "raw_prediction_error", record["error"]
+                )
+            )
+            * weight
+            for record, weight in learning_records
+        ) / weight_total
+        if abs(raw_avg) < _get_learning_dead_zone():
             return
 
         # Determine operating mode from the most recent record.
         climate_mode = (
-            recent[-1].get("context", {}).get("climate_mode", "heating")
-            if recent
-            else "heating"
+            learning_records[-1][0].get("context", {}).get(
+                "climate_mode", "heating"
+            )
         )
 
         # Mode-aware delta_t filter: outlet > inlet in heating (positive
         # delta_t), outlet < inlet in cooling (negative delta_t).
         if climate_mode == "cooling":
             delta_t_samples = [
-                abs(_to_float(record.get("context", {}).get("delta_t", 0.0)))
-                for record in recent
+                (
+                    abs(_to_float(record.get("context", {}).get("delta_t", 0.0))),
+                    weight,
+                )
+                for record, weight in learning_records
                 if _to_float(record.get("context", {}).get("delta_t", 0.0)) < -0.5
             ]
         else:
             delta_t_samples = [
-                _to_float(record.get("context", {}).get("delta_t", 0.0))
-                for record in recent
+                (
+                    _to_float(record.get("context", {}).get("delta_t", 0.0)),
+                    weight,
+                )
+                for record, weight in learning_records
                 if _to_float(record.get("context", {}).get("delta_t", 0.0)) > 0.5
             ]
         avg_delta_t = (
-            sum(delta_t_samples) / len(delta_t_samples)
+            sum(value * weight for value, weight in delta_t_samples)
+            / sum(weight for _value, weight in delta_t_samples)
             if delta_t_samples
             else self.delta_t_floor
         )
@@ -597,7 +636,8 @@ class HeatPumpChannel(HeatSourceChannel):
             == "curve"
         ):
             outdoor_temps = []
-            for record in recent:
+            outdoor_weights = []
+            for record, weight in learning_records:
                 try:
                     outdoor_temp = float(
                         record.get("context", {}).get("outdoor_temp")
@@ -606,10 +646,12 @@ class HeatPumpChannel(HeatSourceChannel):
                     continue
                 if math.isfinite(outdoor_temp):
                     outdoor_temps.append(outdoor_temp)
+                    outdoor_weights.append(weight)
             self._update_outlet_effectiveness_curve(
                 outdoor_temps,
                 oe_gradient * learning_rate,
                 climate_mode,
+                weights=outdoor_weights,
             )
         logger.debug(
             "♨️ HeatPumpChannel self-learned (%s): avg_error=%.3f, "

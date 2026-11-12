@@ -1,4 +1,5 @@
 import math
+import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -2102,14 +2103,17 @@ def test_forecast_accuracy_tracks_lead_and_metrics():
     hour = starts[1]
     old = {
         "hour_utc": hour.isoformat(), "coverage": "counter_anchor",
-        "reading_times_utc": {"heating_el": hour.isoformat()},
+        "reading_times_utc": {
+            "heating_el": hour.isoformat(), "heating_th": hour.isoformat()
+        },
         "readings": {"heating_el": 100.0, "heating_th": 300.0},
     }
     new = {
         "hour_utc": (hour + timedelta(hours=1)).isoformat(),
         "coverage": "counter_anchor",
         "reading_times_utc": {
-            "heating_el": (hour + timedelta(hours=1)).isoformat()
+            "heating_el": (hour + timedelta(hours=1)).isoformat(),
+            "heating_th": (hour + timedelta(hours=1)).isoformat(),
         },
         "readings": {"heating_el": 100.5, "heating_th": 302.0},
     }
@@ -2124,6 +2128,274 @@ def test_forecast_accuracy_tracks_lead_and_metrics():
 
     new["readings"]["heating_el"] = 99.0  # counter reset
     assert fa.actual_from_anchors(old, new) is None
+
+
+def test_forecast_accuracy_rejects_unaligned_thermal_anchors_and_normalizes_defrost():
+    from datetime import datetime, timedelta, timezone
+
+    from src.forecast_accuracy import actual_from_anchors
+
+    hour = datetime(2026, 11, 12, 9, tzinfo=timezone.utc)
+
+    def anchor(at, readings):
+        return {
+            "hour_utc": at.isoformat(),
+            "coverage": "counter_anchor",
+            "reading_times_utc": {
+                name: at.isoformat()
+                for name in (
+                    "heating_el",
+                    "heating_th",
+                    "defrost_el",
+                    "defrost_th",
+                )
+            },
+            "readings": readings,
+        }
+
+    old = anchor(
+        hour,
+        {
+            "heating_el": 100.0,
+            "heating_th": 300.0,
+            "defrost_el": 10.0,
+            "defrost_th": 20.0,
+        },
+    )
+    new = anchor(
+        hour + timedelta(hours=1),
+        {
+            "heating_el": 100.5,
+            "heating_th": 302.0,
+            "defrost_el": 10.1,
+            "defrost_th": 20.2,
+        },
+    )
+
+    assert actual_from_anchors(
+        old,
+        new,
+        defrost_handling="net",
+        defrost_el_in_heating_counter=False,
+    ) == (hour, pytest.approx(0.6), pytest.approx(1.8))
+    assert actual_from_anchors(
+        old,
+        new,
+        defrost_handling="separate",
+        defrost_el_in_heating_counter=True,
+    ) == (hour, pytest.approx(0.4), pytest.approx(1.8))
+
+    new["reading_times_utc"]["heating_th"] = (
+        hour + timedelta(hours=1, minutes=-10)
+    ).isoformat()
+    assert actual_from_anchors(old, new) is None
+
+
+def test_near_controller_converts_measured_thermal_watts_to_kw(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "HEAT_FORECAST_NEAR_CONTROLLER_ENABLED", True)
+    monkeypatch.setattr(config, "DHW_STATUS_ENTITY_ID", "dhw")
+    monkeypatch.setattr(config, "THERMAL_POWER_ENTITY_ID", "thermal_power")
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    wrapper = SimpleNamespace(
+        _forecast_control_snapshot={
+            "outlet_c": 25.0,
+            "indoor_c": 22.78,
+            "time": time.time(),
+        }
+    )
+    ha_client = SimpleNamespace(
+        get_state=lambda entity, _states: {
+            "dhw": "off",
+            "thermal_power": "100",
+        }[entity]
+    )
+
+    kwargs = engine._near_kwargs(
+        wrapper=wrapper,
+        ha_client=ha_client,
+        states={},
+        inlet=24.0,
+        mode="heating",
+        eff=0.72,
+    )
+
+    assert kwargs == {}
+
+
+def test_current_slot_keeps_start_estimate_energy_separate_from_measured_energy(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "COP_DEFROST_HANDLING", "net")
+    monkeypatch.setattr(config, "COP_DEFROST_EL_IN_HEATING_COUNTER", "true")
+    monkeypatch.setattr(config, "POWER_CONSUMPTION_ENTITY_ID", "power")
+    monkeypatch.setattr(config, "DHW_STATUS_ENTITY_ID", "dhw")
+    for key in (
+        "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID",
+    ):
+        monkeypatch.setattr(config, key, "")
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine.state["hour_anchor"] = {
+        "hour_utc": "2026-01-01T12:00:00+00:00",
+        "sample_time_utc": "2026-01-01T12:30:00+00:00",
+        "readings": {},
+        "energy_so_far": {"heating_el": 0.1, "heating_th": 0.4},
+        "energy_coverage": {},
+    }
+    electrical = {
+        "forecast": [{"value": 0.2}],
+        "forecast_total_el_kwh": [0.2],
+        "forecast_heat_th_kwh": [0.6],
+        "forecast_heat_el_kwh": [0.2],
+        "forecast_defrost_el_kwh": [0.0],
+        "forecast_dhw_el_kwh": [0.0],
+        "forecast_standby_el_kwh": [0.0],
+    }
+
+    engine._correct_current_slot(
+        now=datetime(2026, 1, 1, 12, 30, tzinfo=timezone.utc),
+        states={"power": {"state": "100"}, "dhw": {"state": "off"}},
+        ha_client=SimpleNamespace(
+            get_state=lambda entity, states: states[entity]["state"]
+        ),
+        deltas={},
+        electrical=electrical,
+        heat_result={"heat_kwh": [0.6]},
+        outdoor=[0.0],
+        remaining_hours=0.5,
+        preserve_heat_forecast=True,
+    )
+
+    assert electrical["forecast_heat_el_kwh"][0] == pytest.approx(0.3)
+    assert electrical["forecast_heat_th_kwh"][0] == pytest.approx(1.0)
+
+
+def test_start_estimate_is_applied_before_electrical_forecast(
+    monkeypatch, tmp_path
+):
+    from src import building_capacity, config, ha_client, heat_forecast, physics_features
+
+    now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    for key, value in {
+        "HEAT_FORECAST_ENABLED": True,
+        "HEAT_FORECAST_HORIZON_HOURS": 1,
+        "HEAT_FORECAST_SMOOTHING_ENABLED": False,
+        "HEAT_FORECAST_MAX_HEATING_KW": 8.0,
+        "HEAT_FORECAST_INCLUDE_DHW": False,
+        "HP_START_ESTIMATE_ENABLED": True,
+        "HP_START_ESTIMATE_USE_FOR_FORECAST": True,
+        "HP_START_ESTIMATE_HEATING_ENTITY_ID": "sensor.start",
+        "HP_START_ESTIMATE_COOLING_ENTITY_ID": "",
+        "HP_START_ESTIMATE_MAX_AGE_MIN": 5.0,
+        "HP_START_ESTIMATE_MIN_CONFIDENCE": 0.3,
+    }.items():
+        monkeypatch.setattr(config, key, value)
+    monkeypatch.setattr(config, "get_climate_mode", lambda _state: "heating")
+    monkeypatch.setattr(
+        building_capacity,
+        "resolve_capacities",
+        lambda *_args, **_kwargs: {"room": 3.0, "slab": 20.0},
+    )
+    monkeypatch.setattr(physics_features, "parse_hourly_pv_forecast", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        heat_forecast,
+        "simulate_heating_energy",
+        lambda **_kwargs: {"heat_kwh": [0.0]},
+    )
+    monkeypatch.setattr(
+        heat_forecast,
+        "cop_curve_from_state",
+        lambda *_args, **_kwargs: {
+            "intercept": 3.0,
+            "slope": 0.0,
+            "calibrated": False,
+        },
+    )
+    monkeypatch.setattr(
+        heat_forecast,
+        "_defrost_fraction",
+        lambda *_args, default, **_kwargs: default,
+    )
+    monkeypatch.setattr(
+        ha_client, "get_sensor_attributes", lambda _entity: {}
+    )
+    thermal_input = []
+    convert = heat_forecast.hourly_electrical_forecast
+
+    def observe_conversion(**kwargs):
+        thermal_input.append(list(kwargs["heat_th_kwh"]))
+        return convert(**kwargs)
+
+    monkeypatch.setattr(
+        heat_forecast, "hourly_electrical_forecast", observe_conversion
+    )
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine._record_interval = lambda **_kwargs: {}
+    engine._target_offsets = lambda **_kwargs: ([0.0], ["none"])
+    engine._dhw_and_standby_profiles = lambda _starts: ([0.0], [0.0], {})
+    reconciled_heat = []
+    engine._correct_current_slot = lambda **kwargs: reconciled_heat.append(
+        list(kwargs["heat_result"]["heat_kwh"])
+    )
+
+    class HA:
+        def get_state(self, entity, states, is_binary=False):
+            value = states.get(entity)
+            if isinstance(value, dict):
+                value = value.get("state")
+            return str(value).lower() in ("on", "true", "1") if is_binary else value
+
+        def get_hourly_forecast_strict(self, *_args, **_kwargs):
+            return []
+
+        def set_state(self, *_args, **_kwargs):
+            return True
+
+    states = {
+        config.OUTDOOR_TEMP_ENTITY_ID: "10",
+        config.INDOOR_TEMP_ENTITY_ID: "21",
+        config.TARGET_INDOOR_TEMP_ENTITY_ID: "22",
+        config.HEATING_STATUS_ENTITY_ID: "on",
+        config.FIREPLACE_STATUS_ENTITY_ID: "off",
+        "sensor.start": {
+            "state": "0",
+            "attributes": {
+                "status": "running",
+                "mode": "heating",
+                "method": "degree_minutes",
+                "expected_runtime_min": 30,
+                "confidence": 0.8,
+                "updated_at": (now - timedelta(minutes=1)).isoformat(),
+            },
+        },
+    }
+    wrapper = SimpleNamespace(
+        thermal_model=SimpleNamespace(
+            heat_loss_coefficient=0.131,
+            outlet_effectiveness=0.2,
+            slab_time_constant_hours=2.0,
+            solar_decay_tau_hours=0.5,
+            external_source_weights={},
+            orchestrator=None,
+        )
+    )
+
+    assert engine.update_and_publish(
+        ha_client=HA(), states=states, wrapper=wrapper, now=now
+    )
+
+    assert thermal_input[0][0] > 0.0
+    assert reconciled_heat[0] == thermal_input[0]
 
 
 def test_near_range_uses_live_outlet_and_blends_out():

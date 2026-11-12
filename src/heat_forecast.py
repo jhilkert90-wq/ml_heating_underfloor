@@ -919,13 +919,18 @@ class HeatForecastEngine:
             dhw = str(ha_client.get_state(config.DHW_STATUS_ENTITY_ID, states))
         except Exception:
             pass
+        measured_power_w = self._number(
+            ha_client, states, config.THERMAL_POWER_ENTITY_ID
+        )
         params = near_parameters(
             wrapper,
             self.state,
             eff=eff,
             inlet=inlet,
-            measured_kw=self._number(
-                ha_client, states, config.THERMAL_POWER_ENTITY_ID
+            measured_kw=(
+                measured_power_w / 1000.0
+                if measured_power_w is not None
+                else None
             ),
             dhw_active=dhw.lower() in ("on", "true", "heating"),
             delta_t_floor=config.DELTA_T_FLOOR,
@@ -1311,7 +1316,17 @@ class HeatForecastEngine:
                 ),
             }
             actual = forecast_accuracy.actual_from_anchors(
-                previous_anchor, self.state["hour_anchor"]
+                previous_anchor,
+                self.state["hour_anchor"],
+                defrost_handling=config.COP_DEFROST_HANDLING,
+                defrost_el_in_heating_counter=(
+                    config.COP_DEFROST_EL_IN_HEATING_COUNTER == "true"
+                    or (
+                        config.COP_DEFROST_EL_IN_HEATING_COUNTER == "auto"
+                        and self.state.get("defrost_el_in_heating_counter")
+                        != "false"
+                    )
+                ),
             )
             if actual:
                 forecast_accuracy.record_actual(self.state, *actual)
@@ -2415,6 +2430,31 @@ class HeatForecastEngine:
             else 0.0
             for index in range(horizon)
         ]
+        start_estimate_diag: dict[str, Any] | None = None
+        start_estimate_applied = False
+        if getattr(config, "HP_START_ESTIMATE_ENABLED", False):
+            from .hp_start_estimate import diagnostics, read_hp_start_estimate
+
+            start_estimate_diag = diagnostics(states, now=now)
+            estimate = (
+                read_hp_start_estimate(states, "heating", now=now)
+                if config.HP_START_ESTIMATE_USE_FOR_FORECAST
+                and mode == "heating"
+                else None
+            )
+            if estimate is not None and estimate.known_method:
+                power = [
+                    min(config.HEAT_FORECAST_MAX_HEATING_KW, value)
+                    for value in baseline
+                ]
+                heat_result["heat_kwh"] = apply_start_estimate(
+                    heat_result["heat_kwh"],
+                    power,
+                    minutes_to_start=estimate.minutes_to_start,
+                    runtime_min=estimate.expected_runtime_min,
+                    first_hour_fraction=remaining_hours,
+                )
+                start_estimate_applied = True
         dhw, standby, auxiliary_stats = self._dhw_and_standby_profiles(starts)
         curve = cop_curve_from_state(
             self.state,
@@ -2461,6 +2501,7 @@ class HeatForecastEngine:
             heat_result=heat_result,
             outdoor=outdoor,
             remaining_hours=remaining_hours,
+            preserve_heat_forecast=start_estimate_applied,
         )
         if not config.HEAT_FORECAST_INCLUDE_DHW:
             for index, value in enumerate(electrical["forecast_dhw_el_kwh"]):
@@ -2470,29 +2511,6 @@ class HeatForecastEngine:
             electrical["forecast_dhw_el_kwh"] = [0.0] * horizon
             dhw = [0.0] * horizon
 
-        start_estimate_diag: dict[str, Any] | None = None
-        if getattr(config, "HP_START_ESTIMATE_ENABLED", False):
-            from .hp_start_estimate import diagnostics, read_hp_start_estimate
-
-            start_estimate_diag = diagnostics(states, now=now)
-            estimate = (
-                read_hp_start_estimate(states, "heating", now=now)
-                if config.HP_START_ESTIMATE_USE_FOR_FORECAST
-                and mode == "heating"
-                else None
-            )
-            if estimate is not None and estimate.known_method:
-                power = [
-                    min(config.HEAT_FORECAST_MAX_HEATING_KW, value)
-                    for value in baseline
-                ]
-                heat_result["heat_kwh"] = apply_start_estimate(
-                    heat_result["heat_kwh"],
-                    power,
-                    minutes_to_start=estimate.minutes_to_start,
-                    runtime_min=estimate.expected_runtime_min,
-                    first_hour_fraction=remaining_hours,
-                )
         scenarios = {}
         if fireplace_on:
             for duration in (3.0, 4.0):
@@ -2895,6 +2913,7 @@ class HeatForecastEngine:
         heat_result: dict[str, Any],
         outdoor: Sequence[float],
         remaining_hours: float,
+        preserve_heat_forecast: bool = False,
     ) -> None:
         from . import config
 
@@ -3087,6 +3106,8 @@ class HeatForecastEngine:
                 else:
                     heat_remainder = active_projection
                     defrost_remainder = 0.0
+                if preserve_heat_forecast:
+                    heat_remainder = max(heat_remainder, heat_full)
             if historical_counter_anchor:
                 self.state["current_hour_estimate"] = "counter_anchor"
             elif self.state["current_hour_estimate"] not in (

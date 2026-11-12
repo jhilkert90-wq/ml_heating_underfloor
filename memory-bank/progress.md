@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ PR 112 review fixes — 2026-11-12
+
+**Status:** COMPLETED — all nine review findings addressed with regression coverage.
+
+**Implementation summary:** Near-range snapshots use applied targets and thermal watts convert to kW; start-estimate forecasts reach electrical conversion and current-hour reconciliation, zero runtime stays finite; HP learning applies weights consistently; cost-mode overshoot limits govern early-return boundaries; accuracy requires exact hourly readings and normalizes defrost energy; guide requires manual validation. All affected test files pass; the full suite's 7 failures are isolated to the unchanged heating-controller tests, which pass when run alone.
+
+**Files changed:** `src/cycle_context.py`, `src/cycle_routes.py`, `src/forecast_accuracy.py`, `src/heat_forecast.py`, `src/heat_source_channels.py`, `src/hp_start_estimate.py`, `src/model_wrapper.py`, corresponding unit tests, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## ✅ Forecast docs + dashboard category — 2026-11-12
 
 **Status:** COMPLETED — group `wp_forecast` in `dashboard/config_schema.py`, new section header in config.yaml, docs incl. open items.
