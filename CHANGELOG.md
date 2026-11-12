@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- COP extrapolation cap (`heat_forecast_cop_extrapolation_margin`, default 0.3) outside the calibrated temperature range; attribute `cop_extrapolated_hours`.
 - Step 4a-5 (partial): with `hp_start_estimate_use_for_cost_mode` the cost-mode overshoot skip is dropped when the sensor expects no heat-pump start within four cycles. Start-time shifting and short-run protection are not implemented. Off by default.
 - Step 4a-4: with `hp_start_estimate_use_for_learning` HP-channel learning skips blocked (DHW/defrost) cycles and scales the learning rate by the share of the cycle the heat pump runs. Off by default.
 - Step 4a-3: with `hp_start_estimate_use_for_trajectory` the binary search and trajectory verification let the heat pump contribute only inside the sensor's start/runtime window (instead of the ΔT heuristic). Off by default; without a valid sensor unchanged.

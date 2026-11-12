@@ -273,6 +273,13 @@ HEAT_FORECAST_SMOOTHING_ENABLED: bool = (
 HEAT_FORECAST_PV_GAP_MODE: str = os.getenv(
     "HEAT_FORECAST_PV_GAP_MODE", "daily_profile"
 )
+# Max. COP above the best observed value when the forecast outdoor
+# temperature lies outside the calibrated range; negative = no cap.
+HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN: float | None = (
+    float(os.getenv("HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN", "0.3"))
+    if float(os.getenv("HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN", "0.3")) >= 0
+    else None
+)
 HEAT_FORECAST_FIREPLACE_DURATION_H: float = float(
     os.getenv("HEAT_FORECAST_FIREPLACE_DURATION_H", "3.5")
 )

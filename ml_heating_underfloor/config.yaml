@@ -109,6 +109,7 @@ options:
   heat_forecast_lookahead_hours: 3.0
   heat_forecast_max_ramp_kw_per_step: 1.5
   heat_forecast_smoothing_enabled: false
+  heat_forecast_cop_extrapolation_margin: 0.3
   heat_forecast_pv_gap_mode: daily_profile
   heat_forecast_fireplace_duration_h: 3.5
   heat_forecast_reuse_prices: true
@@ -862,6 +863,7 @@ schema:
   heat_forecast_lookahead_hours: "float(0.25,12.0)"
   heat_forecast_max_ramp_kw_per_step: "float(0.0,20.0)"
   heat_forecast_smoothing_enabled: "bool"
+  heat_forecast_cop_extrapolation_margin: "float(-1,5)"
   heat_forecast_pv_gap_mode: "list(daily_profile|none)"
   heat_forecast_fireplace_duration_h: "float(0.0,8.0)"
   heat_forecast_reuse_prices: "bool"

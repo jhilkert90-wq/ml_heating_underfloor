@@ -280,6 +280,9 @@ def convert_addon_to_env(config):
         'HEAT_FORECAST_PV_GAP_MODE': str(
             config.get('heat_forecast_pv_gap_mode', 'daily_profile')
         ),
+        'HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN': str(
+            config.get('heat_forecast_cop_extrapolation_margin', 0.3)
+        ),
         'HEAT_FORECAST_FIREPLACE_DURATION_H': str(
             config.get('heat_forecast_fireplace_duration_h', 3.5)
         ),

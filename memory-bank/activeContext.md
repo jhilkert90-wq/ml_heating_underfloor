@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### COP Extrapolation Cap — 2026-11-12
+
+- **What:** COP outside calibrated range capped at observed max + margin. **Files:** see progress.md.
+
 ### HP Start Estimate in Cost Mode — 2026-11-12
 
 - **What:** Overshoot skip in cost mode requires sensor-expected HP run within 4 cycles (when enabled). Grace (4a-6) deferred.

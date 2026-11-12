@@ -382,6 +382,7 @@ Requires the Tibber integration in Home Assistant.
 | `hp_start_estimate_use_for_forecast` / `_trajectory` / `_learning` / `_cost_mode` / `_grace` | `HP_START_ESTIMATE_USE_FOR_*` | bool | `false` | Per-use switches (consumers follow in later steps; the reader alone is diagnostic). |
 | `hp_power_min_samples` | `HP_POWER_MIN_SAMPLES` | int (1–100) | `6` | Minimum heating samples before the measured mean replaces the fallback power. |
 | `price_cost_max_overshoot_k` | `PRICE_COST_MAX_OVERSHOOT_K` | float (0–5) | `0.3` | Cost mode skips overshoot correction only while predicted overshoot stays within this limit; 0 disables the limit. |
+| `heat_forecast_cop_extrapolation_margin` | `HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN` | float (-1–5) | `0.3` | Caps COP outside the calibrated range at best observed COP + margin; negative disables. |
 | `heat_forecast_lookahead_hours` | `HEAT_FORECAST_LOOKAHEAD_HOURS` | float (0.25–12) | `3.0` | Forecast simulation keeps the room above the comfort band this many hours ahead. |
 | `heat_forecast_max_ramp_kw_per_step` | `HEAT_FORECAST_MAX_RAMP_KW_PER_STEP` | float (0–20) | `1.5` | Max. change of simulated thermal power per step; 0 disables. |
 | `heat_forecast_smoothing_enabled` | `HEAT_FORECAST_SMOOTHING_ENABLED` | bool | `false` | Legacy 6 h block smoothing of heating energy. |

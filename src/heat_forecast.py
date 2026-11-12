@@ -822,8 +822,22 @@ def hourly_electrical_forecast(
     defrost_el_fraction: float = 0.06,
     cop_min: float = 1.5,
     cop_max: float = 10.0,
+    cop_extrapolation_margin: float | None = None,
 ) -> dict[str, Any]:
-    """Convert thermal heating to electrical energy and form EOS profile rows."""
+    """Convert thermal heating to electrical energy and form EOS profile rows.
+
+    With ``cop_extrapolation_margin`` the COP outside the calibrated
+    temperature range is capped at the observed maximum plus the margin.
+    """
+    temp_range = cop_curve.get("temp_range_c")
+    observed = cop_curve.get("observed_cop_range")
+    cap_active = (
+        cop_extrapolation_margin is not None
+        and cop_curve.get("calibrated")
+        and temp_range
+        and observed
+    )
+    extrapolated_hours = 0
     arrays = (heat_th_kwh, outdoor_c, dhw_el_kwh, standby_el_kwh)
     if any(len(values) != len(starts) for values in arrays):
         raise ValueError("All forecast arrays must match the timestamp horizon")
@@ -833,6 +847,11 @@ def hourly_electrical_forecast(
     ):
         cop = float(cop_curve["intercept"]) + float(cop_curve["slope"]) * outdoor
         cop = min(cop_max, max(cop_min, cop))
+        if cap_active and not temp_range[0] <= outdoor <= temp_range[1]:
+            extrapolated_hours += 1
+            cop = min(
+                cop, max(cop_min, float(observed[1]) + cop_extrapolation_margin)
+            )
         if defrost_handling == "separate":
             hp_electric = heat / cop
             defrost_electric = (
@@ -860,6 +879,7 @@ def hourly_electrical_forecast(
             round(float(v), 4) for v in standby_el_kwh
         ],
         "forecast_total_el_kwh": [round(v, 4) for v in total_el],
+        "cop_extrapolated_hours": extrapolated_hours,
     }
 
 
@@ -2389,6 +2409,7 @@ class HeatForecastEngine:
             defrost_el_fraction=defrost_el_fraction,
             cop_min=config.COP_MIN_VALUE,
             cop_max=config.COP_MAX_VALUE,
+            cop_extrapolation_margin=config.HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN,
         )
         self._correct_current_slot(
             now=now,

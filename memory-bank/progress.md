@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ COP Extrapolation Cap (PR 1 rest) — 2026-11-12
+
+**Status:** COMPLETED — `hourly_electrical_forecast(cop_extrapolation_margin)`, attribute `cop_extrapolated_hours`, config option.
+
+**Files changed:** `src/heat_forecast.py`, `src/config.py`, `config_adapter.py`, config.yaml, translations, PARAMETER_REFERENCE, tests, CHANGELOG.
+
 ## ✅ HP Start Estimate in Cost Mode (PR 4a-5, partial) — 2026-11-12
 
 **Status:** PARTIAL — part (a) only (`cost_skip_allowed`, `_hp_cost_skip_allowed` on wrapper). 4a-5 (b)/(c) and 4a-6 (grace) open: the grace wait loop has no access to states.

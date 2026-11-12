@@ -2054,3 +2054,25 @@ def test_start_estimate_without_window_is_identity():
             sim, [2.0] * 3, minutes_to_start=minutes,
             runtime_min=runtime, first_hour_fraction=1.0,
         ) == sim
+
+
+def test_cop_extrapolation_cap_outside_calibrated_range():
+    from datetime import datetime, timezone
+
+    from src.heat_forecast import hourly_electrical_forecast
+
+    curve = {
+        "intercept": 3.0, "slope": 0.1, "calibrated": True,
+        "temp_range_c": [0.0, 12.0], "observed_cop_range": [3.0, 4.0],
+    }
+    starts = [datetime(2026, 11, 12, h, tzinfo=timezone.utc) for h in range(2)]
+    kwargs = dict(
+        starts=starts, heat_th_kwh=[1.0, 1.0], outdoor_c=[10.0, 25.0],
+        cop_curve=curve, dhw_el_kwh=[0, 0], standby_el_kwh=[0, 0],
+    )
+    capped = hourly_electrical_forecast(**kwargs, cop_extrapolation_margin=0.3)
+    free = hourly_electrical_forecast(**kwargs)
+    assert capped["cop_extrapolated_hours"] == 1
+    assert capped["forecast_heat_el_kwh"][0] == free["forecast_heat_el_kwh"][0]
+    assert capped["forecast_heat_el_kwh"][1] == pytest.approx(1 / 4.3, abs=1e-4)
+    assert free["forecast_heat_el_kwh"][1] < capped["forecast_heat_el_kwh"][1]
