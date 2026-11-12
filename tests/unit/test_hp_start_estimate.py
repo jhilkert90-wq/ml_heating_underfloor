@@ -152,7 +152,10 @@ def test_learning_weight():
     assert hse.learning_weight(est("unknown", status="blocked"), 30) == 0.0
     assert hse.learning_weight(est("10", status="starting_soon"), 30) == pytest.approx(2 / 3)
     assert hse.learning_weight(est("0", status="running"), 30) == 1.0
-    assert hse.learning_weight(est("100"), 30) == 1.0
+    assert hse.learning_weight(est("100"), 30) == 0.0
+    assert hse.learning_weight(est("10"), 30) == pytest.approx(2 / 3)
+    assert hse.learning_weight(est("unknown"), 30) == 0.0
+    assert hse.learning_weight(est("5", status="unknown"), 30) is None
 
 
 def test_hp_channel_skips_blocked_cycle_and_scales_rate():
@@ -182,3 +185,65 @@ def test_cost_skip_allowed():
     assert hse.cost_skip_allowed(est("60", status="starting_soon"), 120)
     assert not hse.cost_skip_allowed(est("300"), 120)
     assert not hse.cost_skip_allowed(est("unknown"), 120)
+
+
+RUNTIME = "sensor.wp_laufzeit_heizen"
+
+
+def test_runtime_sensor_takes_precedence_and_falls_back():
+    cfg = _cfg(HP_START_ESTIMATE_HEATING_RUNTIME_ENTITY_ID=RUNTIME)
+    states = _states("0", status="running")
+    states[RUNTIME] = {"state": "90"}
+    est = hse.read_hp_start_estimate(states, "heating", now=NOW, cfg=cfg)
+    assert est.expected_runtime_min == 90 and est.runtime_source == "sensor"
+    for bad in ("unavailable", "-5", "abc"):
+        states[RUNTIME] = {"state": bad}
+        est = hse.read_hp_start_estimate(states, "heating", now=NOW, cfg=cfg)
+        assert est.expected_runtime_min == 250
+        assert est.runtime_source == "attribute"
+    est = hse.read_hp_start_estimate(
+        {HEAT: states[HEAT]}, "heating", now=NOW, cfg=cfg
+    )
+    assert est.runtime_source == "attribute"
+
+
+def test_circuit_breaker_locks_again_after_pause():
+    bad_cfg = SimpleNamespace(
+        HP_START_ESTIMATE_ENABLED=True,
+        HP_START_ESTIMATE_HEATING_ENTITY_ID=HEAT,
+        HP_START_ESTIMATE_MAX_AGE_MIN="x",
+    )
+    states = _states()
+    later = NOW
+    for round_ in range(2):
+        for _ in range(5):
+            assert hse.read_hp_start_estimate(
+                states, "heating", now=later, cfg=bad_cfg
+            ) is None
+        assert hse.read_hp_start_estimate(
+            states, "heating", now=later, cfg=bad_cfg
+        ) is None
+        assert hse.last_fallback_reason("heating") == "circuit_breaker"
+        later = later + timedelta(seconds=601)
+
+
+def test_candidate_window_shortens_delay_for_higher_outlet_only():
+    est = hse.read_hp_start_estimate(
+        _states("60", required_supply_c=30.0, supply_actual_c=28.0),
+        "heating", now=NOW, cfg=_cfg(),
+    )
+    window = hse.trajectory_window(est)
+    same = hse.candidate_window(
+        est, window, candidate_outlet=30.0, reference_outlet=30.0, mode="heating"
+    )
+    lower = hse.candidate_window(
+        est, window, candidate_outlet=28.0, reference_outlet=30.0, mode="heating"
+    )
+    higher = hse.candidate_window(
+        est, window, candidate_outlet=32.0, reference_outlet=30.0, mode="heating"
+    )
+    assert same == lower == window
+    assert higher["delay_h"] == pytest.approx(window["delay_h"] * 2 / 4)
+    assert hse.candidate_window(
+        None, window, candidate_outlet=32.0, reference_outlet=30.0, mode="heating"
+    ) == window

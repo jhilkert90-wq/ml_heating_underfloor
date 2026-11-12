@@ -905,6 +905,21 @@ class HeatForecastEngine:
             return None
         return number if math.isfinite(number) else None
 
+    def _measured_thermal_kw(
+        self, ha_client: Any, states: Mapping[str, Any]
+    ) -> float | None:
+        """Measured heating thermal power [kW]; None during DHW or unknown."""
+        from . import config
+
+        try:
+            dhw = str(ha_client.get_state(config.DHW_STATUS_ENTITY_ID, states))
+        except Exception:
+            dhw = ""
+        if dhw.lower() in ("on", "true", "heating"):
+            return None
+        watts = self._number(ha_client, states, config.THERMAL_POWER_ENTITY_ID)
+        return max(0.0, watts / 1000.0) if watts is not None else None
+
     def _near_kwargs(
         self, *, wrapper: Any, ha_client: Any, states: Mapping[str, Any],
         inlet: float | None, mode: str, eff: float,
@@ -2389,6 +2404,20 @@ class HeatForecastEngine:
         slab_conductance = max(
             0.01, float(getattr(model, "outlet_effectiveness", 0.2))
         )
+        near_kwargs = self._near_kwargs(
+            wrapper=wrapper, ha_client=ha_client, states=states,
+            inlet=inlet, mode=mode, eff=slab_conductance,
+        )
+        measured_thermal_kw = (
+            self._measured_thermal_kw(ha_client, states)
+            if mode == "heating"
+            else None
+        )
+        ramp_seed_kw = (
+            measured_thermal_kw
+            if getattr(config, "HEAT_FORECAST_RAMP_START_FROM_MEASURED", False)
+            else None
+        )
         heat_result = simulate_heating_energy(
             outdoor_c=outdoor,
             pv_gain_kw=pv_gain,
@@ -2406,10 +2435,8 @@ class HeatForecastEngine:
             first_hour_fraction=remaining_hours,
             lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
             max_ramp_kw_per_step=config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP,
-            **self._near_kwargs(
-                wrapper=wrapper, ha_client=ha_client, states=states,
-                inlet=inlet, mode=mode, eff=slab_conductance,
-            ),
+            initial_power_kw=ramp_seed_kw,
+            **near_kwargs,
         )
         if mode != "heating":
             heat_result["heat_kwh"] = [0.0] * horizon
@@ -2443,18 +2470,26 @@ class HeatForecastEngine:
                 else None
             )
             if estimate is not None and estimate.known_method:
-                power = [
-                    min(config.HEAT_FORECAST_MAX_HEATING_KW, value)
-                    for value in baseline
-                ]
-                heat_result["heat_kwh"] = apply_start_estimate(
-                    heat_result["heat_kwh"],
-                    power,
-                    minutes_to_start=estimate.minutes_to_start,
-                    runtime_min=estimate.expected_runtime_min,
-                    first_hour_fraction=remaining_hours,
+                window_power = sensor_window_power_kw(
+                    measured_kw=measured_thermal_kw,
+                    near_kwargs=near_kwargs,
+                    room_c=indoor_now,
+                    max_kw=config.HEAT_FORECAST_MAX_HEATING_KW,
                 )
-                start_estimate_applied = True
+                if window_power is None:
+                    start_estimate_diag["forecast_power_source"] = "none"
+                else:
+                    heat_result["heat_kwh"] = apply_start_estimate(
+                        heat_result["heat_kwh"],
+                        [window_power[0]] * horizon,
+                        minutes_to_start=estimate.minutes_to_start,
+                        runtime_min=estimate.expected_runtime_min,
+                        first_hour_fraction=remaining_hours,
+                    )
+                    start_estimate_diag["forecast_power_source"] = (
+                        window_power[1]
+                    )
+                    start_estimate_applied = True
         dhw, standby, auxiliary_stats = self._dhw_and_standby_profiles(starts)
         curve = cop_curve_from_state(
             self.state,
@@ -3356,6 +3391,29 @@ def forecast_hour_starts(now: datetime, hours: int) -> list[datetime]:
     ]
 
 
+def sensor_window_power_kw(
+    *,
+    measured_kw: float | None,
+    near_kwargs: Mapping[str, Any],
+    room_c: float,
+    max_kw: float,
+) -> tuple[float, str] | None:
+    """Thermal power [kW] for the sensor's run window and its source.
+
+    Prefers the measured power while the HP runs, then the live controller
+    model. Never the baseline, which is zero when solar gain covers the load.
+    """
+    if measured_kw is not None and measured_kw >= 0.5:
+        return min(max_kw, measured_kw), "measured"
+    outlet = near_kwargs.get("near_outlet_c")
+    eff = near_kwargs.get("near_eff", 0.0)
+    if outlet is not None and eff > 0:
+        model = near_kwargs.get("near_scale", 1.0) * eff * (outlet - room_c)
+        if model > 0.0:
+            return min(max_kw, model), "controller_model"
+    return None
+
+
 def apply_start_estimate(
     heat_kwh: Sequence[float],
     power_kw: Sequence[float],
@@ -3410,12 +3468,15 @@ def simulate_heating_energy(
     near_scale: float = 1.0,
     near_hours: float = 0.0,
     near_blend_hours: float = 2.0,
+    initial_power_kw: float | None = None,
 ) -> dict[str, Any]:
     """Simulate a two-node room/slab balance with a receding-horizon controller.
 
     With ``near_outlet_c`` the first ``near_hours`` use the live controller
     outlet (power = scale * eff * (outlet - room)); the result is blended into
     the lookahead controller over ``near_blend_hours``.
+    ``initial_power_kw`` seeds the ramp limiter with the currently measured
+    thermal power instead of an unconstrained first step.
 
     Heat reaches the room only through the slow slab, so a one-step check makes
     the heat pump chatter between zero and maximum power. Each step instead
@@ -3488,6 +3549,10 @@ def simulate_heating_energy(
         return next_room, next_slab
 
     previous_q: float | None = None
+    if initial_power_kw is not None:
+        if not math.isfinite(initial_power_kw) or initial_power_kw < 0:
+            raise ValueError("initial_power_kw must be finite and non-negative")
+        previous_q = min(float(max_hp_kw), float(initial_power_kw))
     last_index = len(steps) - 1
     elapsed_h = 0.0
     near_active = (

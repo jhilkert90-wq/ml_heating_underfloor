@@ -1119,7 +1119,7 @@ configuration:
     description: 'No shift is applied if the spread between cheapest and dearest effective hour is below this value. Default: 0.02.'
   price_cost_max_overshoot_k:
     name: '[Erweitert] Cost-Modus max. Überschwingen (K)'
-    description: 'Der Cost-Modus überspringt die Overshoot-Korrektur nur, solange das prognostizierte Überschwingen innerhalb dieser Grenze bleibt; 0 deaktiviert die Grenze. Standard: 0.3.'
+    description: 'Der Cost-Modus überspringt die Overshoot-Korrektur nur, solange das prognostizierte Überschwingen innerhalb dieser Grenze bleibt; 0 deaktiviert die Grenze (bisheriges Verhalten). Standard: 0.'
   price_cost_household_power_offset_kw:
     name: '[Erweitert] Hausgrundverbrauch für Cost-Modus (kW)'
     description: 'Wird zur erwarteten Wärmepumpenleistung addiert, damit PV erst nach Deckung des Hausgrundverbrauchs als verfügbar gilt. Kann später durch den gemessenen Haushaltsverbrauch ersetzt werden. Standard: 0.7.'
@@ -1128,7 +1128,7 @@ configuration:
     description: 'Electrical heat pump power assumed until heating samples exist. The runtime estimate is the rolling mean of power consumption while heating, excluding hot water and defrost. Default: 1.5.'
   hp_power_min_samples:
     name: '[Erweitert] WP-Leistung Mindestanzahl Samples'
-    description: 'Mindestanzahl Heiz-Samples, bevor der Messmittelwert den Fallback ersetzt. Standard: 6.'
+    description: 'Mindestanzahl Heiz-Samples, bevor der Messmittelwert den Fallback ersetzt. Standard: 1.'
   hp_start_estimate_enabled:
     name: '[Erweitert] WP-Startschätzung: Aktivieren'
     description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
@@ -1138,6 +1138,12 @@ configuration:
   hp_start_estimate_cooling_entity_id:
     name: '[Erweitert] WP-Startschätzung: Entität Kühlen'
     description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_heating_runtime_entity_id:
+    name: '[Erweitert] WP-Startschätzung: Laufzeit-Sensor Heizen'
+    description: 'Optionaler separater Restlaufzeit-Sensor (Minuten) für Heizen; hat Vorrang vor dem Attribut des Start-Sensors. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_cooling_runtime_entity_id:
+    name: '[Erweitert] WP-Startschätzung: Laufzeit-Sensor Kühlen'
+    description: 'Optionaler separater Restlaufzeit-Sensor (Minuten) für Kühlen; hat Vorrang vor dem Attribut des Start-Sensors. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
   hp_start_estimate_max_age_min:
     name: '[Erweitert] WP-Startschätzung: Max. Alter (min)'
     description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
@@ -1162,6 +1168,9 @@ configuration:
   hp_start_estimate_use_for_grace:
     name: '[Erweitert] WP-Startschätzung: Nutzen für grace'
     description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  heat_forecast_ramp_start_from_measured:
+    name: '[Erweitert] Prognose-Rampe startet mit gemessener WP-Leistung'
+    description: 'Optional; standardmäßig aus. Initialisiert die Rampenbegrenzung der Prognose mit der gemessenen elektrischen WP-Leistung statt mit 0.'
   hp_power_window_hours:
     name: '[Erweitert] HP Power Window (hours)'
     description: 'Window for the rolling mean of heat pump electrical power while heating. Default: 6.'

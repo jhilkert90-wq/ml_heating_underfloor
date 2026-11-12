@@ -744,7 +744,7 @@ def convert_addon_to_env(config):
             config.get('price_cost_min_spread_eur_kwh', 0.02)
         ),
         'PRICE_COST_MAX_OVERSHOOT_K': str(
-            config.get('price_cost_max_overshoot_k', 0.3)
+            config.get('price_cost_max_overshoot_k', 0.0)
         ),
         'PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW': str(
             config.get('price_cost_household_power_offset_kw', 0.7)
@@ -758,6 +758,17 @@ def convert_addon_to_env(config):
         'HP_START_ESTIMATE_COOLING_ENTITY_ID': str(
             config.get('hp_start_estimate_cooling_entity_id', '') or ''
         ),
+        'HP_START_ESTIMATE_HEATING_RUNTIME_ENTITY_ID': str(
+            config.get('hp_start_estimate_heating_runtime_entity_id', '')
+            or ''
+        ),
+        'HP_START_ESTIMATE_COOLING_RUNTIME_ENTITY_ID': str(
+            config.get('hp_start_estimate_cooling_runtime_entity_id', '')
+            or ''
+        ),
+        'HEAT_FORECAST_RAMP_START_FROM_MEASURED': str(
+            config.get('heat_forecast_ramp_start_from_measured', False)
+        ).lower(),
         'HP_START_ESTIMATE_MAX_AGE_MIN': str(
             config.get('hp_start_estimate_max_age_min', 5)
         ),
@@ -783,7 +794,7 @@ def convert_addon_to_env(config):
             config.get('hp_start_estimate_use_for_grace', False)
         ).lower(),
         'HP_POWER_MIN_SAMPLES': str(
-            config.get('hp_power_min_samples', 6)
+            config.get('hp_power_min_samples', 1)
         ),
         'HP_EXPECTED_POWER_FALLBACK_KW': str(
             config.get('hp_expected_power_fallback_kw', 1.5)

@@ -271,6 +271,11 @@ HEAT_FORECAST_NEAR_BLEND_HOURS: float = float(
     os.getenv("HEAT_FORECAST_NEAR_BLEND_HOURS", "2.0")
 )
 # Max. change of simulated thermal power per simulation step [kW]; 0 = off.
+# Start the forecast ramp limiter from the measured HP power instead of zero.
+HEAT_FORECAST_RAMP_START_FROM_MEASURED: bool = (
+    os.getenv("HEAT_FORECAST_RAMP_START_FROM_MEASURED", "false").lower()
+    == "true"
+)
 HEAT_FORECAST_MAX_RAMP_KW_PER_STEP: float = float(
     os.getenv("HEAT_FORECAST_MAX_RAMP_KW_PER_STEP", "1.5")
 )
@@ -407,7 +412,7 @@ PRICE_COST_MIN_SPREAD_EUR_KWH: float = float(
 # Cost mode keeps skipping overshoot correction only while the predicted
 # overshoot stays within this limit [K]; 0 disables the limit.
 PRICE_COST_MAX_OVERSHOOT_K: float = float(
-    os.getenv("PRICE_COST_MAX_OVERSHOOT_K", "0.3")
+    os.getenv("PRICE_COST_MAX_OVERSHOOT_K", "0")
 )
 PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
     os.getenv("PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW", "0.7")
@@ -418,7 +423,7 @@ HP_EXPECTED_POWER_FALLBACK_KW: float = float(
     os.getenv("HP_EXPECTED_POWER_FALLBACK_KW", "1.5")
 )
 # Minimum samples before the measured mean replaces the fallback power.
-HP_POWER_MIN_SAMPLES: int = int(os.getenv("HP_POWER_MIN_SAMPLES", "6"))
+HP_POWER_MIN_SAMPLES: int = int(os.getenv("HP_POWER_MIN_SAMPLES", "1"))
 # Optional external HP start/runtime estimate sensor (HA template sensor, see
 # docs/HA_WP_START_ESTIMATE_GUIDE.md). Everything is off by default; without a
 # valid sensor the system behaves exactly as before.
@@ -430,6 +435,14 @@ HP_START_ESTIMATE_HEATING_ENTITY_ID: str = os.getenv(
 )
 HP_START_ESTIMATE_COOLING_ENTITY_ID: str = os.getenv(
     "HP_START_ESTIMATE_COOLING_ENTITY_ID", ""
+)
+# Optional separate remaining-runtime sensors (state = minutes). When valid they
+# take precedence over the start sensor's ``expected_runtime_min`` attribute.
+HP_START_ESTIMATE_HEATING_RUNTIME_ENTITY_ID: str = os.getenv(
+    "HP_START_ESTIMATE_HEATING_RUNTIME_ENTITY_ID", ""
+)
+HP_START_ESTIMATE_COOLING_RUNTIME_ENTITY_ID: str = os.getenv(
+    "HP_START_ESTIMATE_COOLING_RUNTIME_ENTITY_ID", ""
 )
 HP_START_ESTIMATE_MAX_AGE_MIN: float = float(
     os.getenv("HP_START_ESTIMATE_MAX_AGE_MIN", "5")

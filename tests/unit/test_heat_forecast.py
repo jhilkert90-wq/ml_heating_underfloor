@@ -2280,9 +2280,7 @@ def test_current_slot_keeps_start_estimate_energy_separate_from_measured_energy(
     assert electrical["forecast_heat_th_kwh"][0] == pytest.approx(1.0)
 
 
-def test_start_estimate_is_applied_before_electrical_forecast(
-    monkeypatch, tmp_path
-):
+def _run_start_estimate_forecast(monkeypatch, tmp_path, overrides=None):
     from src import building_capacity, config, ha_client, heat_forecast, physics_features
 
     now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
@@ -2292,12 +2290,14 @@ def test_start_estimate_is_applied_before_electrical_forecast(
         "HEAT_FORECAST_SMOOTHING_ENABLED": False,
         "HEAT_FORECAST_MAX_HEATING_KW": 8.0,
         "HEAT_FORECAST_INCLUDE_DHW": False,
+        "THERMAL_POWER_ENTITY_ID": "sensor.thermal_power",
         "HP_START_ESTIMATE_ENABLED": True,
         "HP_START_ESTIMATE_USE_FOR_FORECAST": True,
         "HP_START_ESTIMATE_HEATING_ENTITY_ID": "sensor.start",
         "HP_START_ESTIMATE_COOLING_ENTITY_ID": "",
         "HP_START_ESTIMATE_MAX_AGE_MIN": 5.0,
         "HP_START_ESTIMATE_MIN_CONFIDENCE": 0.3,
+        **(overrides or {}),
     }.items():
         monkeypatch.setattr(config, key, value)
     monkeypatch.setattr(config, "get_climate_mode", lambda _state: "heating")
@@ -2367,6 +2367,7 @@ def test_start_estimate_is_applied_before_electrical_forecast(
         config.TARGET_INDOOR_TEMP_ENTITY_ID: "22",
         config.HEATING_STATUS_ENTITY_ID: "on",
         config.FIREPLACE_STATUS_ENTITY_ID: "off",
+        "sensor.thermal_power": "2200",
         "sensor.start": {
             "state": "0",
             "attributes": {
@@ -2394,8 +2395,75 @@ def test_start_estimate_is_applied_before_electrical_forecast(
         ha_client=HA(), states=states, wrapper=wrapper, now=now
     )
 
-    assert thermal_input[0][0] > 0.0
     assert reconciled_heat[0] == thermal_input[0]
+    return thermal_input
+
+
+def test_start_estimate_is_applied_before_electrical_forecast(
+    monkeypatch, tmp_path
+):
+    thermal_input = _run_start_estimate_forecast(monkeypatch, tmp_path)
+    # Simulation yields 0 kWh while the HP runs at the measured 2.2 kW (12.11.)
+    assert thermal_input[0][0] > 0.0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"HP_START_ESTIMATE_ENABLED": False},
+        {"HP_START_ESTIMATE_USE_FOR_FORECAST": False},
+        {"HP_START_ESTIMATE_HEATING_ENTITY_ID": ""},
+    ],
+)
+def test_forecast_unchanged_without_usable_sensor(
+    monkeypatch, tmp_path, overrides
+):
+    thermal_input = _run_start_estimate_forecast(
+        monkeypatch, tmp_path, overrides
+    )
+    assert thermal_input[0] == [0.0]
+
+
+def test_sensor_window_power_never_uses_baseline():
+    from src.heat_forecast import sensor_window_power_kw
+
+    assert sensor_window_power_kw(
+        measured_kw=2.2, near_kwargs={}, room_c=21.0, max_kw=8.0
+    ) == (2.2, "measured")
+    power, source = sensor_window_power_kw(
+        measured_kw=0.0,
+        near_kwargs={"near_outlet_c": 30.0, "near_eff": 0.2, "near_scale": 1.0},
+        room_c=21.0,
+        max_kw=8.0,
+    )
+    assert source == "controller_model" and power == pytest.approx(1.8)
+    assert sensor_window_power_kw(
+        measured_kw=None, near_kwargs={}, room_c=21.0, max_kw=8.0
+    ) is None
+
+
+def test_simulation_ramp_starts_from_measured_power():
+    from src.heat_forecast import simulate_heating_energy
+
+    kwargs = dict(
+        outdoor_c=[-5.0] * 3,
+        pv_gain_kw=[0.0] * 3,
+        fireplace_kw=[0.0] * 3,
+        target_c=[21.0] * 3,
+        room_c=18.0,
+        slab_c=18.0,
+        room_capacity_kwh_k=5.8,
+        slab_capacity_kwh_k=3.9,
+        heat_loss_kw_k=0.131,
+        slab_to_room_kw_k=0.2,
+        max_ramp_kw_per_step=0.5,
+    )
+    free = simulate_heating_energy(**kwargs)
+    seeded = simulate_heating_energy(**kwargs, initial_power_kw=1.0)
+    assert seeded["hourly_max_hp_kw"][0] <= 1.0 + 0.5 * 4 + 1e-9
+    assert free["heat_kwh"][0] != seeded["heat_kwh"][0]
+    with pytest.raises(ValueError):
+        simulate_heating_energy(**kwargs, initial_power_kw=-1.0)
 
 
 def test_near_range_uses_live_outlet_and_blends_out():

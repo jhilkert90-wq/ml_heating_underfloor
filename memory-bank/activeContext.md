@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### PR 112 deviations resolved — 2026-11-12
+
+- **What:** restored previous-behaviour defaults (overshoot limit 0, min samples 1), forecast sensor path uses measured/controller-model power instead of baseline, optional runtime-sensor entities, opt-in measured ramp start, per-candidate start delay in the outlet search, idle learning weight = running share, circuit breaker re-locks. **Why:** deviations from "app as before without sensor" and unresolved 12.11. case. **Files:** see progress.md.
+
 ### PR 112 review fixes — 2026-11-12
 
 - **What:** Corrected all nine review findings covering near-range snapshots and units, start-estimate forecast/runtime, HP learning weights, overshoot limits, forecast-accuracy alignment/defrost normalization, and manual sensor validation. Affected tests pass.
