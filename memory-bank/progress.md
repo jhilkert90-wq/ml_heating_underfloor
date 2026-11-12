@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ HP Start Estimate in Learning (PR 4a-4) — 2026-11-12
+
+**Status:** COMPLETED — `learning_weight` in `src/hp_start_estimate.py`, feature `hp_run_weight` (cycle_routes), context in `pre_dispatch.py`, applied in `HeatPumpChannel._learn_from_recent`. Gated by `HP_START_ESTIMATE_USE_FOR_LEARNING`.
+
+**Files changed:** `src/hp_start_estimate.py`, `src/cycle_routes.py`, `src/pre_dispatch.py`, `src/heat_source_channels.py`, tests, `CHANGELOG.md`.
+
 ## ✅ HP Start Estimate in Trajectory (PR 4a-3) — 2026-11-12
 
 **Status:** COMPLETED — `predict_thermal_trajectory` accepts `hp_start_delay_h`/`hp_runtime_h`; cycle sets `wrapper._hp_start_window` via `_attach_hp_start_window`; wrapper passes it in binary search and verification. Gated by `HP_START_ESTIMATE_USE_FOR_TRAJECTORY`.

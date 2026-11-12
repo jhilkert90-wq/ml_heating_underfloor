@@ -185,6 +185,24 @@ def trajectory_window(estimate: Optional[HPStartEstimate]) -> Optional[dict]:
     return {"delay_h": estimate.minutes_to_start / 60.0, "runtime_h": runtime_h}
 
 
+def learning_weight(
+    estimate: Optional[HPStartEstimate], cycle_minutes: float
+) -> Optional[float]:
+    """Weight [0, 1] of a cycle for HP learning; None = no sensor info.
+
+    Blocked cycles (DHW/defrost) get 0; if the HP starts inside the cycle only
+    the running share counts; running or idle cycles keep weight 1.
+    """
+    if estimate is None or not estimate.known_method:
+        return None
+    if estimate.status == "blocked":
+        return 0.0
+    minutes = estimate.minutes_to_start
+    if estimate.status == "starting_soon" and minutes and cycle_minutes > 0:
+        return max(0.0, min(1.0, (cycle_minutes - minutes) / cycle_minutes))
+    return 1.0
+
+
 def diagnostics(
     states: Mapping[str, Any], *, now: Optional[datetime] = None, cfg: Any = None
 ) -> dict[str, Any]:

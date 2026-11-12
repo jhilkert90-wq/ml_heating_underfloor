@@ -143,6 +143,30 @@ def step_build_features(ctx: CycleContext) -> bool:
     return True
 
 
+def _attach_hp_learning_weight(ctx: CycleContext) -> None:
+    """Feature ``hp_run_weight`` for HP learning (opt-in, sensor required)."""
+    if not (
+        getattr(config, "HP_START_ESTIMATE_ENABLED", False)
+        and getattr(config, "HP_START_ESTIMATE_USE_FOR_LEARNING", False)
+        and ctx.features_dict is not None
+    ):
+        return
+    try:
+        from .hp_start_estimate import learning_weight, read_hp_start_estimate
+
+        weight = learning_weight(
+            read_hp_start_estimate(
+                ctx.all_states or {}, getattr(ctx, "climate_mode", "heating")
+            ),
+            float(config.CYCLE_INTERVAL_MINUTES),
+        )
+    except Exception as exc:
+        logging.warning("HP learning weight unavailable: %s", exc)
+        weight = None
+    if weight is not None:
+        ctx.features_dict["hp_run_weight"] = weight
+
+
 def _attach_hp_start_window(ctx: CycleContext) -> None:
     """Expose the external start/runtime window to the trajectory model."""
     if not (
@@ -156,9 +180,8 @@ def _attach_hp_start_window(ctx: CycleContext) -> None:
         from .hp_start_estimate import read_hp_start_estimate, trajectory_window
 
         mode = getattr(ctx, "climate_mode", "heating")
-        window = trajectory_window(
-            read_hp_start_estimate(ctx.all_states or {}, mode)
-        )
+        estimate = read_hp_start_estimate(ctx.all_states or {}, mode)
+        window = trajectory_window(estimate)
     except Exception as exc:
         logging.warning("HP start estimate unavailable: %s", exc)
         window = None
@@ -287,6 +310,7 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
             logging.warning("Failed to read electricity price: %s", exc)
 
     _attach_hp_start_window(ctx)
+    _attach_hp_learning_weight(ctx)
 
     # Suppress price in forecast trajectory mode (cost mode works together
     # with forecast scaling and is therefore not suppressed)

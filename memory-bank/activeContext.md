@@ -1,5 +1,10 @@
 # Active Context - Current Work & Decision State
 
+### HP Start Estimate in Learning — 2026-11-12
+
+- **What:** HP learning weight from sensor (blocked=0, partial run share); no sensor = weight absent = unchanged.
+- **Files:** see progress.md.
+
 ### HP Start Estimate in Trajectory — 2026-11-12
 
 - **What:** Trajectory pump gating uses sensor window when enabled; idle with no start = no HP contribution; blocked/unknown/stale = old heuristic.

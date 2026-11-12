@@ -332,6 +332,7 @@ def run_online_learning(
                 "minutes_since_defrost", float("inf")
             ),
             "climate_mode": previous_cycle_climate_mode,
+            "hp_run_weight": learning_features.get("hp_run_weight"),
             "auxiliary_heat": learning_features.get("total_auxiliary_heat_kw", 0.0),
             "target_temp": target_indoor_temp,
             "avg_cloud_cover": avg_cloud_cover,

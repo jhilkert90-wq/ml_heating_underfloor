@@ -531,6 +531,18 @@ class HeatPumpChannel(HeatSourceChannel):
             )
             return
 
+        run_weights = [
+            float(w)
+            for w in (r.get("context", {}).get("hp_run_weight") for r in recent)
+            if isinstance(w, (int, float)) and math.isfinite(w)
+        ]
+        run_weight = (
+            sum(run_weights) / len(run_weights) if run_weights else 1.0
+        )
+        if run_weight <= 0.0:
+            logger.debug("HeatPumpChannel skipping learning: blocked cycle")
+            return
+
         avg_error = _average_recent_error(self.history)
         raw_avg = _average_recent_raw_error(self.history)
         if avg_error is None or raw_avg is None or abs(raw_avg) < _get_learning_dead_zone():
@@ -578,7 +590,7 @@ class HeatPumpChannel(HeatSourceChannel):
             "slab_time_constant_hours": avg_error * 0.2,
             "delta_t_floor": avg_delta_t - self.delta_t_floor,
         }
-        learning_rate = _get_channel_learning_rate()
+        learning_rate = _get_channel_learning_rate() * run_weight
         self.apply_gradient_update(gradients, learning_rate)
         if (
             str(getattr(config, "OUTLET_EFFECTIVENESS_MODE", "scalar")).lower()

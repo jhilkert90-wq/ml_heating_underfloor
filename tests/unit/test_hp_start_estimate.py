@@ -128,3 +128,32 @@ def test_trajectory_window_helper():
         _states("unknown", status="blocked"), "heating", now=NOW, cfg=_cfg()
     )
     assert hse.trajectory_window(blocked) is None
+
+
+def test_learning_weight():
+    def est(state, **kw):
+        return hse.read_hp_start_estimate(_states(state, **kw), "heating", now=NOW, cfg=_cfg())
+
+    assert hse.learning_weight(None, 30) is None
+    assert hse.learning_weight(est("unknown", status="blocked"), 30) == 0.0
+    assert hse.learning_weight(est("10", status="starting_soon"), 30) == pytest.approx(2 / 3)
+    assert hse.learning_weight(est("0", status="running"), 30) == 1.0
+    assert hse.learning_weight(est("100"), 30) == 1.0
+
+
+def test_hp_channel_skips_blocked_cycle_and_scales_rate():
+    from src.heat_source_channels import HeatPumpChannel
+
+    def run(weight):
+        ch = HeatPumpChannel()
+        before = ch.outlet_effectiveness
+        for _ in range(12):
+            ch.record_learning(
+                1.0,
+                {"delta_t": 3.0, "climate_mode": "heating", "outdoor_temp": 5.0,
+                 "hp_run_weight": weight},
+            )
+        return ch.outlet_effectiveness - before
+
+    assert run(0.0) == 0.0
+    assert abs(run(0.5)) <= abs(run(None)) + 1e-12

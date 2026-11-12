@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Step 4a-4: with `hp_start_estimate_use_for_learning` HP-channel learning skips blocked (DHW/defrost) cycles and scales the learning rate by the share of the cycle the heat pump runs. Off by default.
 - Step 4a-3: with `hp_start_estimate_use_for_trajectory` the binary search and trajectory verification let the heat pump contribute only inside the sensor's start/runtime window (instead of the ΔT heuristic). Off by default; without a valid sensor unchanged.
 - Step 4a-2: with `hp_start_estimate_use_for_forecast` the WP load forecast raises heating energy inside the sensor's start/runtime window; attribute `hp_start_estimate` shows source and fallback reason. Off by default.
 - Optional HP start/runtime estimate sensor reader (`src/hp_start_estimate.py`, options `hp_start_estimate_*`, all off by default, diagnostic only) and the Home Assistant build guide `docs/HA_WP_START_ESTIMATE_GUIDE.md` (degree-minutes and hysteresis heat pumps, heating and cooling).
