@@ -1,5 +1,34 @@
 # Changelog - ML Heating Underfloor
 
+## [0.2.114] - 2026-11-12
+
+### Fixed
+- Near-range forecast controller gate also accepts measured thermal power ≥ 0.5 kW when outlet − inlet is below `delta_t_floor`.
+- `sensor.ml_feature_importance` ignores PV/fireplace/TV sources with fewer than 50 learning samples.
+- `sensor.ml_heating_price_level` exposes `grid_price_level` and `effective_price_level` (cost-mode/PV adjusted) separately.
+- Near-range snapshots use the applied outlet target; thermal-power readings are converted from watts to kW, start-estimate energy survives current-hour reconciliation, and zero runtime remains finite.
+- Heat-pump learning excludes zero-weight records and treats missing weights as 1; cost-mode overshoot limits also govern quick-target boundaries.
+- Forecast accuracy requires aligned hourly counter readings and normalizes measured energy using the configured defrost policy.
+- Start-estimate guide requires manual validation before enabling consuming features.
+
+### Added
+- Dashboard category "WP Load Forecast & Start Estimate" for all forecast, COP calibration, counter, near-range and start-estimate options.
+- Docs: forecast behaviour, start-estimate sensor setup and `docs/HEAT_FORECAST_OPEN_ITEMS.md` (not yet implemented items).
+- Optional near-range controller snapshot for the WP load forecast (`heat_forecast_near_controller_enabled`, default off): the first hours use the live outlet setpoint with a learned power scale (EMA vs. measured thermal power) and blend into the lookahead controller.
+- Forecast accuracy tracking (`src/forecast_accuracy.py`): predictions at lead 1/6/24 h are compared with measured hourly counter energy; sensor attribute `accuracy` (bias, MAE, MAPE, missed/false-start rate over 24 h and 7 d).
+- COP extrapolation cap (`heat_forecast_cop_extrapolation_margin`, default 0.3) outside the calibrated temperature range; attribute `cop_extrapolated_hours`.
+- Step 4a-5 (partial): with `hp_start_estimate_use_for_cost_mode` the cost-mode overshoot skip is dropped when the sensor expects no heat-pump start within four cycles. Start-time shifting and short-run protection are not implemented. Off by default.
+- Step 4a-4: with `hp_start_estimate_use_for_learning` HP-channel learning skips blocked (DHW/defrost) cycles and scales the learning rate by the share of the cycle the heat pump runs. Off by default.
+- Step 4a-3: with `hp_start_estimate_use_for_trajectory` the binary search and trajectory verification let the heat pump contribute only inside the sensor's start/runtime window (instead of the ΔT heuristic). Off by default; without a valid sensor unchanged.
+- Step 4a-2: with `hp_start_estimate_use_for_forecast` the WP load forecast raises heating energy inside the sensor's start/runtime window; attribute `hp_start_estimate` shows source and fallback reason. Off by default.
+- Optional HP start/runtime estimate sensor reader (`src/hp_start_estimate.py`, options `hp_start_estimate_*`, all off by default, diagnostic only) and the Home Assistant build guide `docs/HA_WP_START_ESTIMATE_GUIDE.md` (degree-minutes and hysteresis heat pumps, heating and cooling).
+- WP load forecast: options `heat_forecast_lookahead_hours`, `heat_forecast_max_ramp_kw_per_step`, `heat_forecast_smoothing_enabled` and `heat_forecast_pv_gap_mode`.
+- `price_cost_max_overshoot_k` (default 0.3 K) limits the cost-mode overshoot-correction skip; `hp_power_min_samples` (default 6) sets the minimum samples for the measured HP power.
+
+### Changed
+- WP load forecast simulation uses a receding-horizon controller instead of a one-step on/off decision, removing 0/8 kW chatter; 6 h block smoothing is now opt-in.
+- Current-hour thermal forecast is derived from the electrical remainder (consistent COP); PV forecast gaps repeat the value from 24 h earlier.
+
 ## [0.2.113] - 2026-11-12
 
 ### Added
