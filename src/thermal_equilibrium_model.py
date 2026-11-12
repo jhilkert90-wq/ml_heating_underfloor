@@ -2350,6 +2350,10 @@ class ThermalEquilibriumModel:
         solar_contribution_cap_kw = external_sources.get(
             "solar_contribution_cap_kw"
         )
+        # Optional external start/runtime estimate: the HP contributes only
+        # inside [delay, delay + runtime) hours; None keeps the ΔT heuristic.
+        _hp_delay_h = external_sources.get("hp_start_delay_h")
+        _hp_runtime_h = external_sources.get("hp_runtime_h")
         # _resolve_delta_t_floor already substitutes the HP channel's learned
         # value (~2 °C) when measured < 1.0, so no hardcoded fallback needed.
 
@@ -2439,7 +2443,17 @@ class ThermalEquilibriumModel:
                     if inlet_temp is not None
                     else float(outlet_temp)
                 )
-            if _traj_climate_mode == "cooling":
+            if _hp_delay_h is not None:
+                _elapsed_h = step * time_step_hours
+                _in_window = _elapsed_h + 1e-9 >= float(_hp_delay_h) and (
+                    _hp_runtime_h is None
+                    or _elapsed_h < float(_hp_delay_h) + float(_hp_runtime_h)
+                )
+                if _traj_climate_mode == "cooling":
+                    pump_on = _in_window and float(outlet_temp) < t_slab
+                else:
+                    pump_on = _in_window and float(outlet_temp) > t_slab
+            elif _traj_climate_mode == "cooling":
                 pump_on = (
                     float(outlet_temp) < t_slab and measured_delta_t <= -1.0
                 )

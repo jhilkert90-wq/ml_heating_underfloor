@@ -143,6 +143,29 @@ def step_build_features(ctx: CycleContext) -> bool:
     return True
 
 
+def _attach_hp_start_window(ctx: CycleContext) -> None:
+    """Expose the external start/runtime window to the trajectory model."""
+    if not (
+        getattr(config, "HP_START_ESTIMATE_ENABLED", False)
+        and getattr(config, "HP_START_ESTIMATE_USE_FOR_TRAJECTORY", False)
+    ):
+        if ctx.wrapper is not None:
+            ctx.wrapper._hp_start_window = None
+        return
+    try:
+        from .hp_start_estimate import read_hp_start_estimate, trajectory_window
+
+        mode = getattr(ctx, "climate_mode", "heating")
+        window = trajectory_window(
+            read_hp_start_estimate(ctx.all_states or {}, mode)
+        )
+    except Exception as exc:
+        logging.warning("HP start estimate unavailable: %s", exc)
+        window = None
+    if ctx.wrapper is not None:
+        ctx.wrapper._hp_start_window = window
+
+
 def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
     """Add the PV/feed-in aware ``cost_target_offset`` to ``ctx.price_data``."""
     from .price_optimizer import get_hp_power_tracker
@@ -262,6 +285,8 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
                 _attach_cost_offset(ctx, optimizer)
         except Exception as exc:
             logging.warning("Failed to read electricity price: %s", exc)
+
+    _attach_hp_start_window(ctx)
 
     # Suppress price in forecast trajectory mode (cost mode works together
     # with forecast scaling and is therefore not suppressed)

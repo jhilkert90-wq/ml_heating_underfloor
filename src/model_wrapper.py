@@ -510,6 +510,16 @@ class EnhancedModelWrapper:
             self._get_pv_forecast_electrical(features),
         )
 
+    def _hp_start_window_kwargs(self) -> Dict[str, Any]:
+        """Trajectory kwargs for the external HP start/runtime window."""
+        window = getattr(self, "_hp_start_window", None)
+        if not isinstance(window, dict):
+            return {}
+        return {
+            "hp_start_delay_h": window["delay_h"],
+            "hp_runtime_h": window["runtime_h"],
+        }
+
     def calculate_optimal_outlet_temp(
         self, features: Dict
     ) -> Tuple[float, Dict]:
@@ -1351,6 +1361,7 @@ class EnhancedModelWrapper:
                     delta_t_floor=_dtf,
                     indoor_temp_delta_60m=_trend_60m,
                     climate_mode=self._climate_mode,
+                    **self._hp_start_window_kwargs(),
                 )
             except Exception as e:
                 logging.error(
@@ -1977,6 +1988,7 @@ class EnhancedModelWrapper:
                     else 0.0
                 ),
                 climate_mode=self._climate_mode,
+                **self._hp_start_window_kwargs(),
             )
             trajectory = self.thermal_model.predict_thermal_trajectory(
                 **_traj_kwargs

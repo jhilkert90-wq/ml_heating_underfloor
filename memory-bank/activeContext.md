@@ -1,5 +1,10 @@
 # Active Context - Current Work & Decision State
 
+### HP Start Estimate in Trajectory — 2026-11-12
+
+- **What:** Trajectory pump gating uses sensor window when enabled; idle with no start = no HP contribution; blocked/unknown/stale = old heuristic.
+- **Files:** see progress.md.
+
 ### HP Start Estimate in Forecast — 2026-11-12
 
 - **What:** Forecast uses sensor start/runtime window (heating only, cooling forecast still open); energy counted once via current-hour counter logic.

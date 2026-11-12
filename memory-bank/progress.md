@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ HP Start Estimate in Trajectory (PR 4a-3) — 2026-11-12
+
+**Status:** COMPLETED — `predict_thermal_trajectory` accepts `hp_start_delay_h`/`hp_runtime_h`; cycle sets `wrapper._hp_start_window` via `_attach_hp_start_window`; wrapper passes it in binary search and verification. Gated by `HP_START_ESTIMATE_USE_FOR_TRAJECTORY`.
+
+**Files changed:** `src/thermal_equilibrium_model.py`, `src/model_wrapper.py`, `src/cycle_routes.py`, `src/hp_start_estimate.py`, `tests/unit/test_hp_start_estimate.py`, `CHANGELOG.md`.
+
 ## ✅ HP Start Estimate in Forecast (PR 4a-2) — 2026-11-12
 
 **Status:** COMPLETED — `apply_start_estimate` in `src/heat_forecast.py`, gated by `HP_START_ESTIMATE_USE_FOR_FORECAST`; power = steady-state baseline; sensor absent = unchanged output.

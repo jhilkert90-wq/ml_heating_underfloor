@@ -95,3 +95,36 @@ def test_diagnostics_reports_source():
     diag = hse.diagnostics(_states(), now=NOW, cfg=_cfg())
     assert diag["heating"]["start_estimate_source"] == "sensor"
     assert diag["cooling"]["start_estimate_source"] == "fallback"
+
+
+def _traj(model, **kw):
+    return model.predict_thermal_trajectory(
+        current_indoor=21.0, target_indoor=22.0, outlet_temp=35.0,
+        outdoor_temp=5.0, time_horizon_hours=4, time_step_minutes=30,
+        inlet_temp=24.0, delta_t_floor=2.0, **kw,
+    )["trajectory"]
+
+
+def test_trajectory_window_gates_hp_contribution():
+    from src.thermal_equilibrium_model import ThermalEquilibriumModel
+
+    model = ThermalEquilibriumModel()
+    base = _traj(model)
+    running = _traj(model, hp_start_delay_h=0.0, hp_runtime_h=None)
+    never = _traj(model, hp_start_delay_h=1e6, hp_runtime_h=None)
+    later = _traj(model, hp_start_delay_h=2.0, hp_runtime_h=None)
+    assert running == pytest.approx(base)
+    assert never[-1] < base[-1]
+    assert never[0] <= later[0] + 1e-9 and later[-1] < base[-1]
+    assert later[-1] > never[-1]
+
+
+def test_trajectory_window_helper():
+    est = hse.read_hp_start_estimate(_states(), "heating", now=NOW, cfg=_cfg())
+    win = hse.trajectory_window(est)
+    assert win["delay_h"] == pytest.approx(100 / 60) and win["runtime_h"] == pytest.approx(250 / 60)
+    assert hse.trajectory_window(None) is None
+    blocked = hse.read_hp_start_estimate(
+        _states("unknown", status="blocked"), "heating", now=NOW, cfg=_cfg()
+    )
+    assert hse.trajectory_window(blocked) is None
