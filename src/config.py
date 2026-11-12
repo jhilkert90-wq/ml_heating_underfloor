@@ -255,6 +255,41 @@ HEAT_FORECAST_MAX_HEATING_KW: float = float(
 HEAT_FORECAST_BASE_GAIN_KW: float = float(
     os.getenv("HEAT_FORECAST_BASE_GAIN_KW", "0.3")
 )
+# Receding-horizon controller of the forecast simulation: the heat pump power
+# must keep the room above the comfort band for this many hours ahead.
+HEAT_FORECAST_LOOKAHEAD_HOURS: float = float(
+    os.getenv("HEAT_FORECAST_LOOKAHEAD_HOURS", "3.0")
+)
+# Use the live controller outlet for the near forecast range (default off).
+HEAT_FORECAST_NEAR_CONTROLLER_ENABLED: bool = (
+    os.getenv("HEAT_FORECAST_NEAR_CONTROLLER_ENABLED", "false").lower() == "true"
+)
+HEAT_FORECAST_NEAR_HOURS: float = float(
+    os.getenv("HEAT_FORECAST_NEAR_HOURS", "6.0")
+)
+HEAT_FORECAST_NEAR_BLEND_HOURS: float = float(
+    os.getenv("HEAT_FORECAST_NEAR_BLEND_HOURS", "2.0")
+)
+# Max. change of simulated thermal power per simulation step [kW]; 0 = off.
+HEAT_FORECAST_MAX_RAMP_KW_PER_STEP: float = float(
+    os.getenv("HEAT_FORECAST_MAX_RAMP_KW_PER_STEP", "1.5")
+)
+# Redistribute heating energy over 6 h blocks (legacy behaviour).
+HEAT_FORECAST_SMOOTHING_ENABLED: bool = (
+    os.getenv("HEAT_FORECAST_SMOOTHING_ENABLED", "false").lower() == "true"
+)
+# PV forecast gap handling beyond the provider horizon: "daily_profile" repeats
+# the value from 24 h earlier, "none" assumes no PV.
+HEAT_FORECAST_PV_GAP_MODE: str = os.getenv(
+    "HEAT_FORECAST_PV_GAP_MODE", "daily_profile"
+)
+# Max. COP above the best observed value when the forecast outdoor
+# temperature lies outside the calibrated range; negative = no cap.
+HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN: float | None = (
+    float(os.getenv("HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN", "0.3"))
+    if float(os.getenv("HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN", "0.3")) >= 0
+    else None
+)
 HEAT_FORECAST_FIREPLACE_DURATION_H: float = float(
     os.getenv("HEAT_FORECAST_FIREPLACE_DURATION_H", "3.5")
 )
@@ -369,6 +404,11 @@ PRICE_COST_MIN_SPREAD_EUR_KWH: float = float(
 )
 # Fixed household baseline load [kW] added to the expected HP demand when
 # calculating the PV share in cost-aware mode.
+# Cost mode keeps skipping overshoot correction only while the predicted
+# overshoot stays within this limit [K]; 0 disables the limit.
+PRICE_COST_MAX_OVERSHOOT_K: float = float(
+    os.getenv("PRICE_COST_MAX_OVERSHOOT_K", "0.3")
+)
 PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
     os.getenv("PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW", "0.7")
 )
@@ -376,6 +416,45 @@ PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
 # is heating (no DHW / defrost). Fallback [kW] when no samples exist.
 HP_EXPECTED_POWER_FALLBACK_KW: float = float(
     os.getenv("HP_EXPECTED_POWER_FALLBACK_KW", "1.5")
+)
+# Minimum samples before the measured mean replaces the fallback power.
+HP_POWER_MIN_SAMPLES: int = int(os.getenv("HP_POWER_MIN_SAMPLES", "6"))
+# Optional external HP start/runtime estimate sensor (HA template sensor, see
+# docs/HA_WP_START_ESTIMATE_GUIDE.md). Everything is off by default; without a
+# valid sensor the system behaves exactly as before.
+HP_START_ESTIMATE_ENABLED: bool = (
+    os.getenv("HP_START_ESTIMATE_ENABLED", "false").lower() == "true"
+)
+HP_START_ESTIMATE_HEATING_ENTITY_ID: str = os.getenv(
+    "HP_START_ESTIMATE_HEATING_ENTITY_ID", ""
+)
+HP_START_ESTIMATE_COOLING_ENTITY_ID: str = os.getenv(
+    "HP_START_ESTIMATE_COOLING_ENTITY_ID", ""
+)
+HP_START_ESTIMATE_MAX_AGE_MIN: float = float(
+    os.getenv("HP_START_ESTIMATE_MAX_AGE_MIN", "5")
+)
+HP_START_ESTIMATE_MIN_CONFIDENCE: float = float(
+    os.getenv("HP_START_ESTIMATE_MIN_CONFIDENCE", "0.3")
+)
+# Approximation: calculated NIBE setpoint minus ml_heating outlet [K].
+HP_START_ESTIMATE_REQUIRED_OFFSET_K: float = float(
+    os.getenv("HP_START_ESTIMATE_REQUIRED_OFFSET_K", "0")
+)
+HP_START_ESTIMATE_USE_FOR_FORECAST: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_FORECAST", "false").lower() == "true"
+)
+HP_START_ESTIMATE_USE_FOR_TRAJECTORY: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_TRAJECTORY", "false").lower() == "true"
+)
+HP_START_ESTIMATE_USE_FOR_LEARNING: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_LEARNING", "false").lower() == "true"
+)
+HP_START_ESTIMATE_USE_FOR_COST_MODE: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_COST_MODE", "false").lower() == "true"
+)
+HP_START_ESTIMATE_USE_FOR_GRACE: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_GRACE", "false").lower() == "true"
 )
 HP_POWER_WINDOW_HOURS: float = float(os.getenv("HP_POWER_WINDOW_HOURS", "6"))
 # Minimum electrical power [W] for the HP to count as "on".

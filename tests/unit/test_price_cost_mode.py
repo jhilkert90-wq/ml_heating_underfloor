@@ -138,6 +138,13 @@ class TestHPPowerTracker:
         assert not t.record(_feat(thermal_power_kw=3.0), "cooling", NOW)
         assert t.record(_feat(thermal_power_kw=-3.0), "cooling", NOW)
 
+    def test_fallback_until_minimum_samples(self):
+        t = HPPowerTracker()
+        t.record(_feat(power_consumption=4000.0), "heating", NOW)
+        with patch.object(config, "HP_EXPECTED_POWER_FALLBACK_KW", 1.5, create=True):
+            assert t.expected_power_kw(NOW) == pytest.approx(1.5)
+
+    @patch.object(config, "HP_POWER_MIN_SAMPLES", 1, create=True)
     def test_old_samples_pruned(self):
         t = HPPowerTracker()
         t.record(_feat(power_consumption=3000.0), "heating", NOW - timedelta(hours=10))
@@ -161,6 +168,7 @@ class TestCycleIntegration:
         get_hp_power_tracker()._samples.clear()
         ctx.features_dict["pv_now_electrical"] = 2000.0
         with (
+            patch.object(config, "HP_POWER_MIN_SAMPLES", 1, create=True),
             _patches(PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW=0.7),
             patch("src.cycle_routes.datetime") as mock_dt,
         ):

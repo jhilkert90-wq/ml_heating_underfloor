@@ -35,6 +35,8 @@ except ImportError:
     )
 
 
+FEATURE_IMPORTANCE_MIN_HISTORY = 50
+
 class ThermalEquilibriumModel:
     """
     A physics-based thermal model that predicts indoor temperature equilibrium
@@ -2350,6 +2352,10 @@ class ThermalEquilibriumModel:
         solar_contribution_cap_kw = external_sources.get(
             "solar_contribution_cap_kw"
         )
+        # Optional external start/runtime estimate: the HP contributes only
+        # inside [delay, delay + runtime) hours; None keeps the ΔT heuristic.
+        _hp_delay_h = external_sources.get("hp_start_delay_h")
+        _hp_runtime_h = external_sources.get("hp_runtime_h")
         # _resolve_delta_t_floor already substitutes the HP channel's learned
         # value (~2 °C) when measured < 1.0, so no hardcoded fallback needed.
 
@@ -2439,7 +2445,17 @@ class ThermalEquilibriumModel:
                     if inlet_temp is not None
                     else float(outlet_temp)
                 )
-            if _traj_climate_mode == "cooling":
+            if _hp_delay_h is not None:
+                _elapsed_h = step * time_step_hours
+                _in_window = _elapsed_h + 1e-9 >= float(_hp_delay_h) and (
+                    _hp_runtime_h is None
+                    or _elapsed_h < float(_hp_delay_h) + float(_hp_runtime_h)
+                )
+                if _traj_climate_mode == "cooling":
+                    pump_on = _in_window and float(outlet_temp) < t_slab
+                else:
+                    pump_on = _in_window and float(outlet_temp) > t_slab
+            elif _traj_climate_mode == "cooling":
                 pump_on = (
                     float(outlet_temp) < t_slab and measured_delta_t <= -1.0
                 )
@@ -2720,10 +2736,23 @@ class ThermalEquilibriumModel:
         Acts as a compatibility layer for the legacy feature importance metric.
         """
         # Normalize weights to sum to 1.0 for relative importance
+        # Sources without enough learning history keep their default weight
+        # and must not appear as influential.
+        channels = getattr(
+            getattr(self, "orchestrator", None), "channels", None
+        )
+
+        def source_weight(source: str) -> float:
+            if channels is not None and source in channels:
+                history = getattr(channels[source], "history", [])
+                if len(history) < FEATURE_IMPORTANCE_MIN_HISTORY:
+                    return 0.0
+            return self.external_source_weights.get(source, 0.0)
+
         weights = {
-            "pv_power": self.external_source_weights.get("pv", 0.0),
-            "fireplace": self.external_source_weights.get("fireplace", 0.0),
-            "tv_power": self.external_source_weights.get("tv", 0.0),
+            "pv_power": source_weight("pv"),
+            "fireplace": source_weight("fireplace"),
+            "tv_power": source_weight("tv"),
             # Proxy for outdoor influence
             "outdoor_temp": self.heat_loss_coefficient,
             # Proxy for target influence

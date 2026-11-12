@@ -143,6 +143,75 @@ def step_build_features(ctx: CycleContext) -> bool:
     return True
 
 
+def _attach_hp_cost_skip_hint(ctx: CycleContext) -> None:
+    """Tell the wrapper whether the cost-mode overshoot skip is still useful."""
+    if ctx.wrapper is None:
+        return
+    ctx.wrapper._hp_cost_skip_allowed = True
+    if not (
+        getattr(config, "HP_START_ESTIMATE_ENABLED", False)
+        and getattr(config, "HP_START_ESTIMATE_USE_FOR_COST_MODE", False)
+    ):
+        return
+    try:
+        from .hp_start_estimate import cost_skip_allowed, read_hp_start_estimate
+
+        ctx.wrapper._hp_cost_skip_allowed = cost_skip_allowed(
+            read_hp_start_estimate(
+                ctx.all_states or {}, getattr(ctx, "climate_mode", "heating")
+            ),
+            float(config.CYCLE_INTERVAL_MINUTES) * 4,
+        )
+    except Exception as exc:
+        logging.warning("HP cost-mode hint unavailable: %s", exc)
+
+
+def _attach_hp_learning_weight(ctx: CycleContext) -> None:
+    """Feature ``hp_run_weight`` for HP learning (opt-in, sensor required)."""
+    if not (
+        getattr(config, "HP_START_ESTIMATE_ENABLED", False)
+        and getattr(config, "HP_START_ESTIMATE_USE_FOR_LEARNING", False)
+        and ctx.features_dict is not None
+    ):
+        return
+    try:
+        from .hp_start_estimate import learning_weight, read_hp_start_estimate
+
+        weight = learning_weight(
+            read_hp_start_estimate(
+                ctx.all_states or {}, getattr(ctx, "climate_mode", "heating")
+            ),
+            float(config.CYCLE_INTERVAL_MINUTES),
+        )
+    except Exception as exc:
+        logging.warning("HP learning weight unavailable: %s", exc)
+        weight = None
+    if weight is not None:
+        ctx.features_dict["hp_run_weight"] = weight
+
+
+def _attach_hp_start_window(ctx: CycleContext) -> None:
+    """Expose the external start/runtime window to the trajectory model."""
+    if not (
+        getattr(config, "HP_START_ESTIMATE_ENABLED", False)
+        and getattr(config, "HP_START_ESTIMATE_USE_FOR_TRAJECTORY", False)
+    ):
+        if ctx.wrapper is not None:
+            ctx.wrapper._hp_start_window = None
+        return
+    try:
+        from .hp_start_estimate import read_hp_start_estimate, trajectory_window
+
+        mode = getattr(ctx, "climate_mode", "heating")
+        estimate = read_hp_start_estimate(ctx.all_states or {}, mode)
+        window = trajectory_window(estimate)
+    except Exception as exc:
+        logging.warning("HP start estimate unavailable: %s", exc)
+        window = None
+    if ctx.wrapper is not None:
+        ctx.wrapper._hp_start_window = window
+
+
 def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
     """Add the PV/feed-in aware ``cost_target_offset`` to ``ctx.price_data``."""
     from .price_optimizer import get_hp_power_tracker
@@ -262,6 +331,10 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
                 _attach_cost_offset(ctx, optimizer)
         except Exception as exc:
             logging.warning("Failed to read electricity price: %s", exc)
+
+    _attach_hp_start_window(ctx)
+    _attach_hp_learning_weight(ctx)
+    _attach_hp_cost_skip_hint(ctx)
 
     # Suppress price in forecast trajectory mode (cost mode works together
     # with forecast scaling and is therefore not suppressed)
@@ -518,6 +591,7 @@ def step_update_ha(ctx: CycleContext) -> None:
     from .model_wrapper import get_enhanced_model_wrapper
     from .prediction_context import prediction_context_manager
 
+    ctx.applied_outlet_temp = None
     target_output_entity_id = get_shadow_output_entity_id(
         config.TARGET_OUTLET_TEMP_ENTITY_ID
     )
@@ -658,6 +732,8 @@ def step_update_ha(ctx: CycleContext) -> None:
             get_sensor_attributes(target_output_entity_id),
             round_digits=None,
         )
+        if not ctx.effective_shadow_mode:
+            ctx.applied_outlet_temp = float(smart_rounded_temp)
 
 
 def step_log_metrics(ctx: CycleContext) -> None:
@@ -790,6 +866,19 @@ def step_save_state(ctx: CycleContext) -> None:
     }
     save_state(state_manager=ctx.state_manager, **state_to_save)
     ctx.state.update(state_to_save)
+    if config.HEAT_FORECAST_NEAR_CONTROLLER_ENABLED:
+        from .forecast_near_controller import save_snapshot
+
+        active = ctx.climate_mode in (None, "heating") and not ctx.is_blocking
+        save_snapshot(
+            ctx.wrapper,
+            outlet=(
+                ctx.applied_outlet_temp
+                if active and not ctx.effective_shadow_mode
+                else None
+            ),
+            indoor=ctx.actual_indoor,
+        )
 
 
 _BUILDING_CURVE_PUBLISHER = BuildingCurvePublisher(

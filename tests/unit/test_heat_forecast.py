@@ -1,4 +1,5 @@
 import math
+import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -681,8 +682,9 @@ def test_cop_curve_decays_stale_bins_for_confidence_and_fit_weight():
 
 
 def test_heating_energy_is_zero_when_room_is_already_above_target():
+    # Mild weather: the room stays above the band for the whole lookahead.
     result = simulate_heating_energy(
-        outdoor_c=[0.0],
+        outdoor_c=[18.0],
         pv_gain_kw=[0.0],
         fireplace_kw=[0.0],
         target_c=[21.0],
@@ -1977,3 +1979,470 @@ def test_first_forecast_hour_advances_only_its_remaining_fraction():
     assert partial["heat_kwh"][0] == pytest.approx(full["heat_kwh"][0] * 0.25)
     assert partial["room_end_c"] != pytest.approx(full["room_end_c"])
     assert partial["slab_end_c"] != pytest.approx(full["slab_end_c"])
+
+
+def _steady_sim(**overrides):
+    loss, conductance = 0.1312, 0.7047
+    steady_kw = loss * (22.7 - 5.0)
+    params = dict(
+        outdoor_c=[5.0] * 48,
+        pv_gain_kw=[0.0] * 48,
+        fireplace_kw=[0.0] * 48,
+        target_c=[22.7] * 48,
+        room_c=22.7,
+        slab_c=22.7 + steady_kw / conductance,
+        room_capacity_kwh_k=5.846,
+        slab_capacity_kwh_k=3.912,
+        heat_loss_kw_k=loss,
+        slab_to_room_kw_k=conductance,
+    )
+    params.update(overrides)
+    return steady_kw, simulate_heating_energy(**params)["heat_kwh"]
+
+
+def test_lookahead_controller_settles_without_on_off_chatter():
+    steady_kw, heat = _steady_sim()
+    assert all(abs(v - steady_kw) < 0.1 * steady_kw for v in heat[8:])
+    assert max(heat[8:]) < 8.0 * 0.5
+
+
+def test_lookahead_controller_keeps_room_above_band():
+    _, heat = _steady_sim(outdoor_c=[-5.0] * 48)
+    assert min(heat[6:]) > 1.0
+    assert sum(heat) > 0.0
+
+
+def test_ramp_limit_bounds_step_to_step_power_change():
+    result = simulate_heating_energy(
+        outdoor_c=[5.0] * 6,
+        pv_gain_kw=[0.0] * 6,
+        fireplace_kw=[0.0] * 6,
+        target_c=[22.7] * 6,
+        room_c=22.7,
+        slab_c=22.7,
+        room_capacity_kwh_k=5.846,
+        slab_capacity_kwh_k=3.912,
+        heat_loss_kw_k=0.1312,
+        slab_to_room_kw_k=0.7047,
+        step_minutes=60,
+        max_ramp_kw_per_step=1.0,
+    )
+    heat = result["heat_kwh"]
+    assert all(abs(b - a) <= 1.0 + 1e-6 for a, b in zip(heat, heat[1:]))
+
+
+def test_start_estimate_window_raises_energy_only_inside_window():
+    from src.heat_forecast import apply_start_estimate
+
+    sim = [0.0] * 6
+    power = [2.0] * 6
+    out = apply_start_estimate(
+        sim, power, minutes_to_start=45, runtime_min=120, first_hour_fraction=0.5
+    )
+    assert out[0] == 0.0  # hour 0 ends before the start
+    assert out[1] == pytest.approx(1.5)  # window covers 0.75 h of hour 1
+    assert out[2] == pytest.approx(2.0)
+    assert out[3] == pytest.approx(0.5)
+    assert out[4] == 0.0
+
+
+def test_start_estimate_without_window_is_identity():
+    from src.heat_forecast import apply_start_estimate
+
+    sim = [0.3, 1.0, 0.0]
+    for minutes, runtime in ((None, 100), (0, None), (0, 0)):
+        assert apply_start_estimate(
+            sim, [2.0] * 3, minutes_to_start=minutes,
+            runtime_min=runtime, first_hour_fraction=1.0,
+        ) == sim
+
+
+def test_cop_extrapolation_cap_outside_calibrated_range():
+    from datetime import datetime, timezone
+
+    from src.heat_forecast import hourly_electrical_forecast
+
+    curve = {
+        "intercept": 3.0, "slope": 0.1, "calibrated": True,
+        "temp_range_c": [0.0, 12.0], "observed_cop_range": [3.0, 4.0],
+    }
+    starts = [datetime(2026, 11, 12, h, tzinfo=timezone.utc) for h in range(2)]
+    kwargs = dict(
+        starts=starts, heat_th_kwh=[1.0, 1.0], outdoor_c=[10.0, 25.0],
+        cop_curve=curve, dhw_el_kwh=[0, 0], standby_el_kwh=[0, 0],
+    )
+    capped = hourly_electrical_forecast(**kwargs, cop_extrapolation_margin=0.3)
+    free = hourly_electrical_forecast(**kwargs)
+    assert capped["cop_extrapolated_hours"] == 1
+    assert capped["forecast_heat_el_kwh"][0] == free["forecast_heat_el_kwh"][0]
+    assert capped["forecast_heat_el_kwh"][1] == pytest.approx(1 / 4.3, abs=1e-4)
+    assert free["forecast_heat_el_kwh"][1] < capped["forecast_heat_el_kwh"][1]
+
+
+def test_forecast_accuracy_tracks_lead_and_metrics():
+    from datetime import datetime, timedelta, timezone
+
+    from src import forecast_accuracy as fa
+
+    now = datetime(2026, 11, 12, 9, 5, tzinfo=timezone.utc)
+    starts = [now.replace(minute=0) + timedelta(hours=i) for i in range(25)]
+    state = {}
+    fa.record_predictions(
+        state, now=now, starts=starts,
+        el_kwh=[0.0] * 25, th_kwh=[0.0] * 25,
+    )
+    # first write wins
+    fa.record_predictions(
+        state, now=now, starts=starts,
+        el_kwh=[9.0] * 25, th_kwh=[9.0] * 25,
+    )
+    pending = state["forecast_accuracy"]["pending"]
+    assert len(pending) == 3
+    assert all(v["el"] == 0.0 for v in pending.values())
+
+    hour = starts[1]
+    old = {
+        "hour_utc": hour.isoformat(), "coverage": "counter_anchor",
+        "reading_times_utc": {
+            "heating_el": hour.isoformat(), "heating_th": hour.isoformat()
+        },
+        "readings": {"heating_el": 100.0, "heating_th": 300.0},
+    }
+    new = {
+        "hour_utc": (hour + timedelta(hours=1)).isoformat(),
+        "coverage": "counter_anchor",
+        "reading_times_utc": {
+            "heating_el": (hour + timedelta(hours=1)).isoformat(),
+            "heating_th": (hour + timedelta(hours=1)).isoformat(),
+        },
+        "readings": {"heating_el": 100.5, "heating_th": 302.0},
+    }
+    actual = fa.actual_from_anchors(old, new)
+    assert actual == (hour, 0.5, 2.0)
+    fa.record_actual(state, *actual)
+    summary = fa.summary(state, hour + timedelta(hours=2))
+    el = summary["lead_1h"]["24h"]["el"]
+    assert el["n"] == 1 and el["bias_kwh"] == -0.5
+    assert el["missed_start_rate"] == 1.0
+    assert summary["lead_6h"]["24h"]["el"] == {"n": 0}
+
+    new["readings"]["heating_el"] = 99.0  # counter reset
+    assert fa.actual_from_anchors(old, new) is None
+
+
+def test_forecast_accuracy_rejects_unaligned_thermal_anchors_and_normalizes_defrost():
+    from datetime import datetime, timedelta, timezone
+
+    from src.forecast_accuracy import actual_from_anchors
+
+    hour = datetime(2026, 11, 12, 9, tzinfo=timezone.utc)
+
+    def anchor(at, readings):
+        return {
+            "hour_utc": at.isoformat(),
+            "coverage": "counter_anchor",
+            "reading_times_utc": {
+                name: at.isoformat()
+                for name in (
+                    "heating_el",
+                    "heating_th",
+                    "defrost_el",
+                    "defrost_th",
+                )
+            },
+            "readings": readings,
+        }
+
+    old = anchor(
+        hour,
+        {
+            "heating_el": 100.0,
+            "heating_th": 300.0,
+            "defrost_el": 10.0,
+            "defrost_th": 20.0,
+        },
+    )
+    new = anchor(
+        hour + timedelta(hours=1),
+        {
+            "heating_el": 100.5,
+            "heating_th": 302.0,
+            "defrost_el": 10.1,
+            "defrost_th": 20.2,
+        },
+    )
+
+    assert actual_from_anchors(
+        old,
+        new,
+        defrost_handling="net",
+        defrost_el_in_heating_counter=False,
+    ) == (hour, pytest.approx(0.6), pytest.approx(1.8))
+    assert actual_from_anchors(
+        old,
+        new,
+        defrost_handling="separate",
+        defrost_el_in_heating_counter=True,
+    ) == (hour, pytest.approx(0.4), pytest.approx(1.8))
+
+    new["reading_times_utc"]["heating_th"] = (
+        hour + timedelta(hours=1, minutes=-10)
+    ).isoformat()
+    assert actual_from_anchors(old, new) is None
+
+
+def test_near_controller_converts_measured_thermal_watts_to_kw(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "HEAT_FORECAST_NEAR_CONTROLLER_ENABLED", True)
+    monkeypatch.setattr(config, "DHW_STATUS_ENTITY_ID", "dhw")
+    monkeypatch.setattr(config, "THERMAL_POWER_ENTITY_ID", "thermal_power")
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    wrapper = SimpleNamespace(
+        _forecast_control_snapshot={
+            "outlet_c": 25.0,
+            "indoor_c": 22.78,
+            "time": time.time(),
+        }
+    )
+    ha_client = SimpleNamespace(
+        get_state=lambda entity, _states: {
+            "dhw": "off",
+            "thermal_power": "100",
+        }[entity]
+    )
+
+    kwargs = engine._near_kwargs(
+        wrapper=wrapper,
+        ha_client=ha_client,
+        states={},
+        inlet=24.0,
+        mode="heating",
+        eff=0.72,
+    )
+
+    assert kwargs == {}
+
+
+def test_current_slot_keeps_start_estimate_energy_separate_from_measured_energy(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "COP_DEFROST_HANDLING", "net")
+    monkeypatch.setattr(config, "COP_DEFROST_EL_IN_HEATING_COUNTER", "true")
+    monkeypatch.setattr(config, "POWER_CONSUMPTION_ENTITY_ID", "power")
+    monkeypatch.setattr(config, "DHW_STATUS_ENTITY_ID", "dhw")
+    for key in (
+        "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID",
+        "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID",
+    ):
+        monkeypatch.setattr(config, key, "")
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine.state["hour_anchor"] = {
+        "hour_utc": "2026-01-01T12:00:00+00:00",
+        "sample_time_utc": "2026-01-01T12:30:00+00:00",
+        "readings": {},
+        "energy_so_far": {"heating_el": 0.1, "heating_th": 0.4},
+        "energy_coverage": {},
+    }
+    electrical = {
+        "forecast": [{"value": 0.2}],
+        "forecast_total_el_kwh": [0.2],
+        "forecast_heat_th_kwh": [0.6],
+        "forecast_heat_el_kwh": [0.2],
+        "forecast_defrost_el_kwh": [0.0],
+        "forecast_dhw_el_kwh": [0.0],
+        "forecast_standby_el_kwh": [0.0],
+    }
+
+    engine._correct_current_slot(
+        now=datetime(2026, 1, 1, 12, 30, tzinfo=timezone.utc),
+        states={"power": {"state": "100"}, "dhw": {"state": "off"}},
+        ha_client=SimpleNamespace(
+            get_state=lambda entity, states: states[entity]["state"]
+        ),
+        deltas={},
+        electrical=electrical,
+        heat_result={"heat_kwh": [0.6]},
+        outdoor=[0.0],
+        remaining_hours=0.5,
+        preserve_heat_forecast=True,
+    )
+
+    assert electrical["forecast_heat_el_kwh"][0] == pytest.approx(0.3)
+    assert electrical["forecast_heat_th_kwh"][0] == pytest.approx(1.0)
+
+
+def test_start_estimate_is_applied_before_electrical_forecast(
+    monkeypatch, tmp_path
+):
+    from src import building_capacity, config, ha_client, heat_forecast, physics_features
+
+    now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    for key, value in {
+        "HEAT_FORECAST_ENABLED": True,
+        "HEAT_FORECAST_HORIZON_HOURS": 1,
+        "HEAT_FORECAST_SMOOTHING_ENABLED": False,
+        "HEAT_FORECAST_MAX_HEATING_KW": 8.0,
+        "HEAT_FORECAST_INCLUDE_DHW": False,
+        "HP_START_ESTIMATE_ENABLED": True,
+        "HP_START_ESTIMATE_USE_FOR_FORECAST": True,
+        "HP_START_ESTIMATE_HEATING_ENTITY_ID": "sensor.start",
+        "HP_START_ESTIMATE_COOLING_ENTITY_ID": "",
+        "HP_START_ESTIMATE_MAX_AGE_MIN": 5.0,
+        "HP_START_ESTIMATE_MIN_CONFIDENCE": 0.3,
+    }.items():
+        monkeypatch.setattr(config, key, value)
+    monkeypatch.setattr(config, "get_climate_mode", lambda _state: "heating")
+    monkeypatch.setattr(
+        building_capacity,
+        "resolve_capacities",
+        lambda *_args, **_kwargs: {"room": 3.0, "slab": 20.0},
+    )
+    monkeypatch.setattr(physics_features, "parse_hourly_pv_forecast", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        heat_forecast,
+        "simulate_heating_energy",
+        lambda **_kwargs: {"heat_kwh": [0.0]},
+    )
+    monkeypatch.setattr(
+        heat_forecast,
+        "cop_curve_from_state",
+        lambda *_args, **_kwargs: {
+            "intercept": 3.0,
+            "slope": 0.0,
+            "calibrated": False,
+        },
+    )
+    monkeypatch.setattr(
+        heat_forecast,
+        "_defrost_fraction",
+        lambda *_args, default, **_kwargs: default,
+    )
+    monkeypatch.setattr(
+        ha_client, "get_sensor_attributes", lambda _entity: {}
+    )
+    thermal_input = []
+    convert = heat_forecast.hourly_electrical_forecast
+
+    def observe_conversion(**kwargs):
+        thermal_input.append(list(kwargs["heat_th_kwh"]))
+        return convert(**kwargs)
+
+    monkeypatch.setattr(
+        heat_forecast, "hourly_electrical_forecast", observe_conversion
+    )
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine._record_interval = lambda **_kwargs: {}
+    engine._target_offsets = lambda **_kwargs: ([0.0], ["none"])
+    engine._dhw_and_standby_profiles = lambda _starts: ([0.0], [0.0], {})
+    reconciled_heat = []
+    engine._correct_current_slot = lambda **kwargs: reconciled_heat.append(
+        list(kwargs["heat_result"]["heat_kwh"])
+    )
+
+    class HA:
+        def get_state(self, entity, states, is_binary=False):
+            value = states.get(entity)
+            if isinstance(value, dict):
+                value = value.get("state")
+            return str(value).lower() in ("on", "true", "1") if is_binary else value
+
+        def get_hourly_forecast_strict(self, *_args, **_kwargs):
+            return []
+
+        def set_state(self, *_args, **_kwargs):
+            return True
+
+    states = {
+        config.OUTDOOR_TEMP_ENTITY_ID: "10",
+        config.INDOOR_TEMP_ENTITY_ID: "21",
+        config.TARGET_INDOOR_TEMP_ENTITY_ID: "22",
+        config.HEATING_STATUS_ENTITY_ID: "on",
+        config.FIREPLACE_STATUS_ENTITY_ID: "off",
+        "sensor.start": {
+            "state": "0",
+            "attributes": {
+                "status": "running",
+                "mode": "heating",
+                "method": "degree_minutes",
+                "expected_runtime_min": 30,
+                "confidence": 0.8,
+                "updated_at": (now - timedelta(minutes=1)).isoformat(),
+            },
+        },
+    }
+    wrapper = SimpleNamespace(
+        thermal_model=SimpleNamespace(
+            heat_loss_coefficient=0.131,
+            outlet_effectiveness=0.2,
+            slab_time_constant_hours=2.0,
+            solar_decay_tau_hours=0.5,
+            external_source_weights={},
+            orchestrator=None,
+        )
+    )
+
+    assert engine.update_and_publish(
+        ha_client=HA(), states=states, wrapper=wrapper, now=now
+    )
+
+    assert thermal_input[0][0] > 0.0
+    assert reconciled_heat[0] == thermal_input[0]
+
+
+def test_near_range_uses_live_outlet_and_blends_out():
+    from src.heat_forecast import simulate_heating_energy
+
+    base = dict(
+        outdoor_c=[21.0] * 8, pv_gain_kw=[0.0] * 8, fireplace_kw=[0.0] * 8,
+        target_c=[22.0] * 8, room_c=22.8, slab_c=23.0,
+        room_capacity_kwh_k=3.0, slab_capacity_kwh_k=20.0,
+        heat_loss_kw_k=0.13, slab_to_room_kw_k=0.5, max_hp_kw=8.0,
+        lookahead_hours=3.0,
+    )
+    plain = simulate_heating_energy(**base)
+    near = simulate_heating_energy(
+        **base, near_outlet_c=25.0, near_eff=0.72, near_scale=1.2,
+        near_hours=2.0, near_blend_hours=2.0,
+    )
+    # room above target: controller idles, live outlet still delivers heat
+    assert plain["heat_kwh"][0] == 0.0
+    assert near["heat_kwh"][0] > 1.0
+    assert near["heat_kwh"][1] > 1.0
+    assert near["heat_kwh"][7] == pytest.approx(plain["heat_kwh"][7], abs=0.2)
+
+
+def test_near_controller_snapshot_gating_and_scale():
+    import time
+
+    from src import forecast_near_controller as nc
+
+    class W:
+        pass
+
+    wrapper, state = W(), {}
+    nc.save_snapshot(wrapper, outlet=25.0, indoor=22.78)
+    kwargs = dict(
+        eff=0.72, inlet=22.5, measured_kw=2.0, dhw_active=False,
+        delta_t_floor=2.3, near_hours=6.0, blend_hours=2.0,
+    )
+    params = nc.near_parameters(wrapper, state, **kwargs)
+    assert params["near_outlet_c"] == 25.0
+    assert 1.0 < params["near_scale"] <= 1.2  # modelled 1.6 kW vs 2.0 measured
+    assert nc.near_parameters(wrapper, state, **{**kwargs, "dhw_active": True}) is None
+    low_dt = {**kwargs, "inlet": 24.0}
+    assert nc.near_parameters(wrapper, state, **low_dt) is not None  # measured power
+    assert nc.near_parameters(
+        wrapper, state, **{**low_dt, "measured_kw": 0.1}
+    ) is None
+    assert nc.near_parameters(
+        wrapper, state, **kwargs, now_ts=time.time() + 3600
+    ) is None

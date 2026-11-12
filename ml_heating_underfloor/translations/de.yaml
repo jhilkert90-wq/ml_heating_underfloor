@@ -160,6 +160,30 @@ configuration:
   heat_forecast_base_gain_kw:
     name: '[Prognose] Grundwärmegewinne (kW)'
     description: Konfigurierbarer mittlerer Wärmegewinn ohne PV und Kamin.
+  heat_forecast_near_controller_enabled:
+    name: '[Prognose] Nahbereich-Reglerstand'
+    description: 'Nutzt den aktuellen Vorlauf-Sollwert für die ersten Prognosestunden (Leistung = Skalierung x Effizienz x (Vorlauf - Raum)). Standard: aus.'
+  heat_forecast_near_hours:
+    name: '[Prognose] Nahbereich Stunden'
+    description: 'Stunden mit aktuellem Vorlauf-Sollwert. Standard: 6.'
+  heat_forecast_near_blend_hours:
+    name: '[Prognose] Nahbereich Übergang'
+    description: 'Stunden, über die der Nahbereich in den Lookahead-Regler übergeht. Standard: 2.'
+  heat_forecast_lookahead_hours:
+    name: '[Prognose] Vorausschau (Stunden)'
+    description: 'Prognosefenster der Regelung: Die WP-Leistung muss den Raum so lange über dem Komfortband halten. Standard: 3.'
+  heat_forecast_max_ramp_kw_per_step:
+    name: '[Prognose] Max. Leistungsänderung pro Schritt (kW)'
+    description: 'Maximale Änderung der simulierten thermischen Leistung pro Schritt; 0 deaktiviert. Standard: 1.5.'
+  heat_forecast_smoothing_enabled:
+    name: '[Prognose] Blockglättung'
+    description: 'Heizenergie über 6-h-Blöcke umverteilen (alt). Standard: aus.'
+  heat_forecast_pv_gap_mode:
+    name: '[Prognose] PV-Lückenbehandlung'
+    description: 'daily_profile wiederholt PV von vor 24 h jenseits des Prognosehorizonts; none nimmt kein PV an. Standard: daily_profile.'
+  heat_forecast_cop_extrapolation_margin:
+    name: '[Prognose] COP-Extrapolationsreserve'
+    description: 'Außerhalb des kalibrierten Temperaturbereichs wird der COP auf den besten beobachteten COP plus diesen Wert begrenzt; negativ deaktiviert. Standard: 0.3.'
   heat_forecast_fireplace_duration_h:
     name: '[Prognose] Kamin-Brenndauer (Stunden)'
     description: Angenommene Restbrenndauer bei aktivem Kamin.
@@ -1093,12 +1117,51 @@ configuration:
   price_cost_min_spread_eur_kwh:
     name: '[Erweitert] Minimum Price Spread (EUR/kWh)'
     description: 'No shift is applied if the spread between cheapest and dearest effective hour is below this value. Default: 0.02.'
+  price_cost_max_overshoot_k:
+    name: '[Erweitert] Cost-Modus max. Überschwingen (K)'
+    description: 'Der Cost-Modus überspringt die Overshoot-Korrektur nur, solange das prognostizierte Überschwingen innerhalb dieser Grenze bleibt; 0 deaktiviert die Grenze. Standard: 0.3.'
   price_cost_household_power_offset_kw:
     name: '[Erweitert] Hausgrundverbrauch für Cost-Modus (kW)'
     description: 'Wird zur erwarteten Wärmepumpenleistung addiert, damit PV erst nach Deckung des Hausgrundverbrauchs als verfügbar gilt. Kann später durch den gemessenen Haushaltsverbrauch ersetzt werden. Standard: 0.7.'
   hp_expected_power_fallback_kw:
     name: '[Erweitert] Expected HP Power Fallback (kW)'
     description: 'Electrical heat pump power assumed until heating samples exist. The runtime estimate is the rolling mean of power consumption while heating, excluding hot water and defrost. Default: 1.5.'
+  hp_power_min_samples:
+    name: '[Erweitert] WP-Leistung Mindestanzahl Samples'
+    description: 'Mindestanzahl Heiz-Samples, bevor der Messmittelwert den Fallback ersetzt. Standard: 6.'
+  hp_start_estimate_enabled:
+    name: '[Erweitert] WP-Startschätzung: Aktivieren'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_heating_entity_id:
+    name: '[Erweitert] WP-Startschätzung: Entität Heizen'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_cooling_entity_id:
+    name: '[Erweitert] WP-Startschätzung: Entität Kühlen'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_max_age_min:
+    name: '[Erweitert] WP-Startschätzung: Max. Alter (min)'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_min_confidence:
+    name: '[Erweitert] WP-Startschätzung: Min. Konfidenz'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_required_offset_k:
+    name: '[Erweitert] WP-Startschätzung: Soll-Offset (K)'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_forecast:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für forecast'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_trajectory:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für trajectory'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_learning:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für learning'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_cost_mode:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für cost_mode'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_grace:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für grace'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
   hp_power_window_hours:
     name: '[Erweitert] HP Power Window (hours)'
     description: 'Window for the rolling mean of heat pump electrical power while heating. Default: 6.'

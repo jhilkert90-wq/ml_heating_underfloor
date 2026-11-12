@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 from datetime import datetime
+import time
 
 from src import cycle_routes
 from src.cycle_context import CycleContext
@@ -48,6 +49,55 @@ def _make_ctx(**kwargs) -> CycleContext:
     for key, val in kwargs.items():
         setattr(ctx, key, val)
     return ctx
+
+
+def test_near_controller_snapshot_uses_published_target_and_skips_shadow(
+    monkeypatch,
+):
+    from src import forecast_near_controller
+
+    monkeypatch.setattr(
+        cycle_routes.config, "HEAT_FORECAST_NEAR_CONTROLLER_ENABLED", True
+    )
+    monkeypatch.setattr(
+        cycle_routes.config, "TARGET_OUTLET_TEMP_ENTITY_ID", "sensor.target"
+    )
+    monkeypatch.setattr(
+        cycle_routes, "get_shadow_output_entity_id", lambda entity: entity
+    )
+    monkeypatch.setattr(
+        cycle_routes, "get_sensor_attributes", lambda _entity: {}
+    )
+    monkeypatch.setattr(cycle_routes, "save_state", lambda **_kwargs: None)
+    snapshots = []
+    monkeypatch.setattr(
+        forecast_near_controller,
+        "save_snapshot",
+        lambda wrapper, **kwargs: snapshots.append(kwargs),
+    )
+
+    ctx = _make_ctx(
+        final_temp=31.0,
+        actual_indoor=22.0,
+        target_indoor_temp=22.0,
+        climate_mode="heating",
+    )
+    cycle_routes.step_update_ha(ctx)
+    step_save_state(ctx)
+    assert ctx.ha_client.set_state.call_args.args[1] == 31.0
+    assert snapshots[-1]["outlet"] == 31.0
+
+    ctx = _make_ctx(
+        final_temp=31.0,
+        actual_indoor=22.0,
+        target_indoor_temp=22.0,
+        climate_mode="heating",
+        effective_shadow_mode=True,
+    )
+    cycle_routes.step_update_ha(ctx)
+    step_save_state(ctx)
+    assert ctx.ha_client.set_state.call_count == 0
+    assert snapshots[-1]["outlet"] is None
 
 
 class TestStepGetSensorData:

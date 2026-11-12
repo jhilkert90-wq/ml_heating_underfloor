@@ -816,6 +816,10 @@ class HAClient:
         attrs.update({
             "price_eur_kwh": price_info.get("price_eur_kwh"),
             "price_level": price_info.get("price_level", "normal"),
+            "grid_price_level": price_info.get(
+                "grid_price_level", price_info.get("price_level", "normal")
+            ),
+            "effective_price_level": price_info.get("price_level", "normal"),
             "cheap_threshold": price_info.get("price_cheap_threshold"),
             "expensive_threshold": price_info.get("price_expensive_threshold"),
             "target_offset": price_info.get("price_target_offset", 0.0),

@@ -510,6 +510,16 @@ class EnhancedModelWrapper:
             self._get_pv_forecast_electrical(features),
         )
 
+    def _hp_start_window_kwargs(self) -> Dict[str, Any]:
+        """Trajectory kwargs for the external HP start/runtime window."""
+        window = getattr(self, "_hp_start_window", None)
+        if not isinstance(window, dict):
+            return {}
+        return {
+            "hp_start_delay_h": window["delay_h"],
+            "hp_runtime_h": window["runtime_h"],
+        }
+
     def calculate_optimal_outlet_temp(
         self, features: Dict
     ) -> Tuple[float, Dict]:
@@ -545,6 +555,9 @@ class EnhancedModelWrapper:
                     )
                     offset = optimizer.get_target_offset(level) * _price_sign
                     price_info = optimizer.get_price_info()
+                    price_info["grid_price_level"] = price_info.get(
+                        "price_level", level.value
+                    )
                     if (
                         getattr(config, "PRICE_COST_MODE_ENABLED", False)
                         and "cost_target_offset" in price_data
@@ -1351,6 +1364,7 @@ class EnhancedModelWrapper:
                     delta_t_floor=_dtf,
                     indoor_temp_delta_60m=_trend_60m,
                     climate_mode=self._climate_mode,
+                    **self._hp_start_window_kwargs(),
                 )
             except Exception as e:
                 logging.error(
@@ -1920,12 +1934,16 @@ class EnhancedModelWrapper:
                 and bool(_cost_pi.get("price_cost_mode"))
                 and float(_cost_pi.get("price_target_offset", 0.0)) > 0.0
                 and float(_cost_pi.get("cost_pv_share_now", 0.0)) >= 1.0
+                and getattr(self, "_hp_cost_skip_allowed", True)
             )
-            _skip_forecast_overshoot_correction = (
+            _skip_traj_overshoot = bool(
                 getattr(config, "PV_TRAJ_DISABLE_OVERSHOOT_CORRECTION", False)
                 and _forecast_state.active
                 and _forecast_state.dynamic_steps_above_min
-            ) or _skip_cost_overshoot_correction
+            )
+            _skip_forecast_overshoot_correction = (
+                _skip_traj_overshoot or _skip_cost_overshoot_correction
+            )
 
             fireplace_on = thermal_features.get("fireplace_on", 0.0)
             fireplace_power_kw, fp_decay_kw = self._calculate_fireplace_power_kw(
@@ -1974,6 +1992,7 @@ class EnhancedModelWrapper:
                     else 0.0
                 ),
                 climate_mode=self._climate_mode,
+                **self._hp_start_window_kwargs(),
             )
             trajectory = self.thermal_model.predict_thermal_trajectory(
                 **_traj_kwargs
@@ -2021,6 +2040,15 @@ class EnhancedModelWrapper:
             sensor_precision_tolerance = (
                 _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C
             )
+            _max_cost_overshoot = float(
+                getattr(config, "PRICE_COST_MAX_OVERSHOOT_K", 0.0)
+            )
+            cost_overshoot_limit = (
+                _max_cost_overshoot
+                if _skip_cost_overshoot_correction
+                and _max_cost_overshoot > 0.0
+                else None
+            )
 
             # Price-aware future overshoot threshold.  During expensive
             # electricity periods a tighter limit catches overshoot earlier,
@@ -2034,6 +2062,18 @@ class EnhancedModelWrapper:
                 future_overshoot_tolerance = _expensive_overshoot
             else:
                 future_overshoot_tolerance = 0.5  # existing default
+            strict_overshoot_tolerance = sensor_precision_tolerance
+            quick_overshoot_tolerance = 0.3
+            if cost_overshoot_limit is not None:
+                future_overshoot_tolerance = min(
+                    future_overshoot_tolerance, cost_overshoot_limit
+                )
+                strict_overshoot_tolerance = min(
+                    strict_overshoot_tolerance, cost_overshoot_limit
+                )
+                quick_overshoot_tolerance = min(
+                    quick_overshoot_tolerance, cost_overshoot_limit
+                )
 
             # DEBUG: Log trajectory details for diagnosis
             trajectory_temps = trajectory.get("trajectory", [])
@@ -2093,7 +2133,7 @@ class EnhancedModelWrapper:
                 ):
                     if (
                         trajectory_temps[0]
-                        > target_indoor + sensor_precision_tolerance
+                        > target_indoor + strict_overshoot_tolerance
                     ):
                         immediate_overshoot = True
                 else:
@@ -2101,7 +2141,7 @@ class EnhancedModelWrapper:
                     # future
                     if (
                         trajectory_temps[0]
-                        > target_indoor + sensor_precision_tolerance
+                        > target_indoor + strict_overshoot_tolerance
                     ):
                         immediate_overshoot = True
 
@@ -2139,10 +2179,25 @@ class EnhancedModelWrapper:
                             target_indoor,
                             sensor_precision_tolerance,
                         )
-                        or max_temp >= target_indoor + sensor_precision_tolerance
+                        or max_temp >= target_indoor + strict_overshoot_tolerance
                     )
             else:
                 temp_boundary_violation = False
+
+            if (
+                _skip_cost_overshoot_correction
+                and not _skip_traj_overshoot
+                and _max_cost_overshoot > 0.0
+                and max_temp - target_indoor > _max_cost_overshoot
+            ):
+                logging.info(
+                    "Cost-mode overshoot skip disabled: predicted overshoot "
+                    "%.2f K exceeds limit %.2f K",
+                    max_temp - target_indoor,
+                    _max_cost_overshoot,
+                )
+                _skip_cost_overshoot_correction = False
+                _skip_forecast_overshoot_correction = False
 
             if _skip_forecast_overshoot_correction:
                 predicted_undershoot = _trajectory_has_undershoot(
@@ -2186,7 +2241,8 @@ class EnhancedModelWrapper:
                                 target_indoor,
                                 sensor_precision_tolerance,
                             )
-                            or max_temp >= target_indoor + 0.3  # Relaxed overshoot only
+                            or max_temp
+                            >= target_indoor + quick_overshoot_tolerance
                         )
                         if not relaxed_boundary_violation:
                             logging.info(

@@ -1,5 +1,62 @@
 # Active Context - Current Work & Decision State
 
+### PR 112 review fixes — 2026-11-12
+
+- **What:** Corrected all nine review findings covering near-range snapshots and units, start-estimate forecast/runtime, HP learning weights, overshoot limits, forecast-accuracy alignment/defrost normalization, and manual sensor validation. Affected tests pass.
+- **Files:** see the PR 112 review-fix milestone in `progress.md`.
+
+### Forecast docs + dashboard category — 2026-11-12
+
+- **What:** own dashboard group for forecast/start-estimate options; open items documented. Files: see progress.md.
+
+### PR 5 rest + near gate fix — 2026-11-12
+
+- **What:** see progress.md (log replay showed outlet−inlet 1.5 K < floor 2.59 despite 2.2 kW measured → gate relaxed).
+
+### Near-Range Controller Snapshot — 2026-11-12
+
+- **What:** forecast near range uses live outlet setpoint (power = scale x eff x (outlet - room)); scale persisted in forecast state. Not yet using sensor `t_start`/runtime. **Files:** see progress.md.
+
+### Forecast Accuracy Tracking — 2026-11-12
+
+- **What:** new accuracy store in forecast state (`forecast_accuracy`), exposed as attribute `accuracy`. **Files:** see progress.md.
+
+### COP Extrapolation Cap — 2026-11-12
+
+- **What:** COP outside calibrated range capped at observed max + margin. **Files:** see progress.md.
+
+### HP Start Estimate in Cost Mode — 2026-11-12
+
+- **What:** Overshoot skip in cost mode requires sensor-expected HP run within 4 cycles (when enabled). Grace (4a-6) deferred.
+- **Files:** see progress.md.
+
+### HP Start Estimate in Learning — 2026-11-12
+
+- **What:** HP learning weight from sensor (blocked=0, partial run share); no sensor = weight absent = unchanged.
+- **Files:** see progress.md.
+
+### HP Start Estimate in Trajectory — 2026-11-12
+
+- **What:** Trajectory pump gating uses sensor window when enabled; idle with no start = no HP contribution; blocked/unknown/stale = old heuristic.
+- **Files:** see progress.md.
+
+### HP Start Estimate in Forecast — 2026-11-12
+
+- **What:** Forecast uses sensor start/runtime window (heating only, cooling forecast still open); energy counted once via current-hour counter logic.
+- **Why:** Imminent starts were missed. **Files:** `src/heat_forecast.py`, tests, CHANGELOG, progress.
+
+### HP Start Estimate Reader — 2026-11-12
+
+- **What:** New updated plan adds PR 4a (external start/runtime sensor). Implemented step 4a-1 (reader + config, diagnostic only) and copied the HA guide into `docs/HA_WP_START_ESTIMATE_GUIDE.md`.
+- **Why:** The app cannot know when the HP starts; the vendor-specific calculation lives in an HA sensor, the app only consumes the contract (state + attributes).
+- **Files:** see progress.md entry of the same date.
+
+### WP Load Forecast Controller — 2026-11-12
+
+- **What:** Forecast simulation now uses a lookahead controller with ramp limit (smoothing opt-in); current-hour thermal derived from electrical remainder; PV gaps use 24 h profile; HP expected power needs `HP_POWER_MIN_SAMPLES`; cost-mode overshoot skip limited by `PRICE_COST_MAX_OVERSHOOT_K`.
+- **Why:** Forecast showed standby although the heat pump was about to start; 0/8 kW chatter; implausible COP in the current hour; overly wide overshoot skip.
+- **Files:** see progress.md entry of the same date. Remaining: PR 3/4 and rest of PR 5.
+
 ### Optional Warmwasser Forecast Inclusion — 2026-11-12
 
 - **What:** Added the enabled-by-default `heat_forecast_include_dhw` dashboard setting; disabling it removes DHW from all forecast totals and scenarios, not from preparation or history collection.

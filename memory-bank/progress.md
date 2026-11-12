@@ -1,5 +1,81 @@
 # ML Heating System - Current Progress
 
+## ✅ PR 112 review fixes — 2026-11-12
+
+**Status:** COMPLETED — all nine review findings addressed with regression coverage.
+
+**Implementation summary:** Near-range snapshots use applied targets and thermal watts convert to kW; start-estimate forecasts reach electrical conversion and current-hour reconciliation, zero runtime stays finite; HP learning applies weights consistently; cost-mode overshoot limits govern early-return boundaries; accuracy requires exact hourly readings and normalizes defrost energy; guide requires manual validation. All affected test files pass; the full suite's 7 failures are isolated to the unchanged heating-controller tests, which pass when run alone.
+
+**Files changed:** `src/cycle_context.py`, `src/cycle_routes.py`, `src/forecast_accuracy.py`, `src/heat_forecast.py`, `src/heat_source_channels.py`, `src/hp_start_estimate.py`, `src/model_wrapper.py`, corresponding unit tests, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## ✅ Forecast docs + dashboard category — 2026-11-12
+
+**Status:** COMPLETED — group `wp_forecast` in `dashboard/config_schema.py`, new section header in config.yaml, docs incl. open items.
+
+**Files changed:** `dashboard/config_schema.py`, config.yaml, `docs/HEAT_FORECAST_EOS_CONNECT.md`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, guide, tests, CHANGELOG.
+
+## ✅ PR 5 rest + near gate fix — 2026-11-12
+
+**Status:** COMPLETED — price label split, feature-importance history guard, near-controller gate uses measured power.
+
+**Files changed:** `src/forecast_near_controller.py`, `src/model_wrapper.py`, `src/ha_client.py`, `src/thermal_equilibrium_model.py`, tests, CHANGELOG.
+
+## ✅ Near-Range Controller Snapshot (PR 4) — 2026-11-12
+
+**Status:** COMPLETED (default off) — `simulate_heating_energy(near_*)`, `src/forecast_near_controller.py`, snapshot saved in `step_save_state`.
+
+**Files changed:** `src/forecast_near_controller.py` (new), `src/heat_forecast.py`, `src/cycle_routes.py`, config plumbing, tests, CHANGELOG.
+
+## ✅ Forecast Accuracy Tracking (PR 3) — 2026-11-12
+
+**Status:** COMPLETED — first-write-wins predictions per (hour, lead), actuals from consecutive exact hour anchors, `accuracy` attribute.
+
+**Files changed:** `src/forecast_accuracy.py` (new), `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, CHANGELOG.
+
+## ✅ COP Extrapolation Cap (PR 1 rest) — 2026-11-12
+
+**Status:** COMPLETED — `hourly_electrical_forecast(cop_extrapolation_margin)`, attribute `cop_extrapolated_hours`, config option.
+
+**Files changed:** `src/heat_forecast.py`, `src/config.py`, `config_adapter.py`, config.yaml, translations, PARAMETER_REFERENCE, tests, CHANGELOG.
+
+## ✅ HP Start Estimate in Cost Mode (PR 4a-5, partial) — 2026-11-12
+
+**Status:** PARTIAL — part (a) only (`cost_skip_allowed`, `_hp_cost_skip_allowed` on wrapper). 4a-5 (b)/(c) and 4a-6 (grace) open: the grace wait loop has no access to states.
+
+**Files changed:** `src/hp_start_estimate.py`, `src/cycle_routes.py`, `src/model_wrapper.py`, tests, `CHANGELOG.md`.
+
+## ✅ HP Start Estimate in Learning (PR 4a-4) — 2026-11-12
+
+**Status:** COMPLETED — `learning_weight` in `src/hp_start_estimate.py`, feature `hp_run_weight` (cycle_routes), context in `pre_dispatch.py`, applied in `HeatPumpChannel._learn_from_recent`. Gated by `HP_START_ESTIMATE_USE_FOR_LEARNING`.
+
+**Files changed:** `src/hp_start_estimate.py`, `src/cycle_routes.py`, `src/pre_dispatch.py`, `src/heat_source_channels.py`, tests, `CHANGELOG.md`.
+
+## ✅ HP Start Estimate in Trajectory (PR 4a-3) — 2026-11-12
+
+**Status:** COMPLETED — `predict_thermal_trajectory` accepts `hp_start_delay_h`/`hp_runtime_h`; cycle sets `wrapper._hp_start_window` via `_attach_hp_start_window`; wrapper passes it in binary search and verification. Gated by `HP_START_ESTIMATE_USE_FOR_TRAJECTORY`.
+
+**Files changed:** `src/thermal_equilibrium_model.py`, `src/model_wrapper.py`, `src/cycle_routes.py`, `src/hp_start_estimate.py`, `tests/unit/test_hp_start_estimate.py`, `CHANGELOG.md`.
+
+## ✅ HP Start Estimate in Forecast (PR 4a-2) — 2026-11-12
+
+**Status:** COMPLETED — `apply_start_estimate` in `src/heat_forecast.py`, gated by `HP_START_ESTIMATE_USE_FOR_FORECAST`; power = steady-state baseline; sensor absent = unchanged output.
+
+**Files changed:** `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `CHANGELOG.md`.
+
+## ✅ HP Start Estimate Reader (PR 4a-1) — 2026-11-12
+
+**Status:** COMPLETED for step 4a-1 — decoupled, default-off reader with validation (mode, age, confidence, status), circuit breaker and diagnostics; HA build guide added to docs. Consumers (4a-2…4a-6), PR 3, PR 4 and COP cap remain open.
+
+**Files changed:** `src/hp_start_estimate.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, translations, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_hp_start_estimate.py`, `tests/unit/test_config_adapter.py`, `CHANGELOG.md`.
+
+## ✅ WP Load Forecast Controller & Cost-Mode Overshoot Limit — 2026-11-12
+
+**Status:** PARTIAL — Implemented plan PR 1 (current-hour th/el consistency, PV gap fallback, HP min samples), PR 2 (receding-horizon forecast controller, opt-in smoothing) and the PR 5 overshoot limit. Not yet done: COP extrapolation cap, accuracy tracking (PR 3), near-term controller snapshot (PR 4), price-label split, feature_importance guard.
+
+**Files changed:** `src/heat_forecast.py`, `src/config.py`, `src/price_optimizer.py`, `src/model_wrapper.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/{de,en}.yaml`, `docs/PARAMETER_REFERENCE.md`, tests (`test_heat_forecast.py`, `test_price_cost_mode.py`, `test_overshoot_logic.py`), `CHANGELOG.md`.
+
+**Validation:** full suite 1953 passed; 7 pre-existing `test_heating_controller.py` failures in full-suite order.
+
 ## ✅ Optional Warmwasser Forecast Inclusion — 2026-11-12
 
 **Status:** COMPLETED — Added an enabled-by-default dashboard setting to include or exclude hot-water electricity in the EOS load forecast, including the current hour and fireplace scenarios, without changing actual hot-water preparation.

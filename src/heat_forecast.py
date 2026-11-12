@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
+from . import forecast_accuracy
+
 BERLIN = ZoneInfo("Europe/Berlin")
 LOGGER = logging.getLogger(__name__)
 
@@ -822,8 +824,22 @@ def hourly_electrical_forecast(
     defrost_el_fraction: float = 0.06,
     cop_min: float = 1.5,
     cop_max: float = 10.0,
+    cop_extrapolation_margin: float | None = None,
 ) -> dict[str, Any]:
-    """Convert thermal heating to electrical energy and form EOS profile rows."""
+    """Convert thermal heating to electrical energy and form EOS profile rows.
+
+    With ``cop_extrapolation_margin`` the COP outside the calibrated
+    temperature range is capped at the observed maximum plus the margin.
+    """
+    temp_range = cop_curve.get("temp_range_c")
+    observed = cop_curve.get("observed_cop_range")
+    cap_active = (
+        cop_extrapolation_margin is not None
+        and cop_curve.get("calibrated")
+        and temp_range
+        and observed
+    )
+    extrapolated_hours = 0
     arrays = (heat_th_kwh, outdoor_c, dhw_el_kwh, standby_el_kwh)
     if any(len(values) != len(starts) for values in arrays):
         raise ValueError("All forecast arrays must match the timestamp horizon")
@@ -833,6 +849,11 @@ def hourly_electrical_forecast(
     ):
         cop = float(cop_curve["intercept"]) + float(cop_curve["slope"]) * outdoor
         cop = min(cop_max, max(cop_min, cop))
+        if cap_active and not temp_range[0] <= outdoor <= temp_range[1]:
+            extrapolated_hours += 1
+            cop = min(
+                cop, max(cop_min, float(observed[1]) + cop_extrapolation_margin)
+            )
         if defrost_handling == "separate":
             hp_electric = heat / cop
             defrost_electric = (
@@ -860,6 +881,7 @@ def hourly_electrical_forecast(
             round(float(v), 4) for v in standby_el_kwh
         ],
         "forecast_total_el_kwh": [round(v, 4) for v in total_el],
+        "cop_extrapolated_hours": extrapolated_hours,
     }
 
 
@@ -882,6 +904,40 @@ class HeatForecastEngine:
         except (TypeError, ValueError):
             return None
         return number if math.isfinite(number) else None
+
+    def _near_kwargs(
+        self, *, wrapper: Any, ha_client: Any, states: Mapping[str, Any],
+        inlet: float | None, mode: str, eff: float,
+    ) -> dict[str, Any]:
+        from . import config
+        from .forecast_near_controller import near_parameters
+
+        if not config.HEAT_FORECAST_NEAR_CONTROLLER_ENABLED or mode != "heating":
+            return {}
+        dhw = ""
+        try:
+            dhw = str(ha_client.get_state(config.DHW_STATUS_ENTITY_ID, states))
+        except Exception:
+            pass
+        measured_power_w = self._number(
+            ha_client, states, config.THERMAL_POWER_ENTITY_ID
+        )
+        params = near_parameters(
+            wrapper,
+            self.state,
+            eff=eff,
+            inlet=inlet,
+            measured_kw=(
+                measured_power_w / 1000.0
+                if measured_power_w is not None
+                else None
+            ),
+            dhw_active=dhw.lower() in ("on", "true", "heating"),
+            delta_t_floor=config.DELTA_T_FLOOR,
+            near_hours=config.HEAT_FORECAST_NEAR_HOURS,
+            blend_hours=config.HEAT_FORECAST_NEAR_BLEND_HOURS,
+        )
+        return params or {}
 
     def _record_interval(
         self,
@@ -1246,6 +1302,7 @@ class HeatForecastEngine:
                     )
                 except (KeyError, TypeError, ValueError):
                     LOGGER.info("Ignoring malformed heating counter anchor timestamp")
+            previous_anchor = self.state.get("hour_anchor")
             self.state["hour_anchor"] = {
                 "hour_utc": hour_key,
                 "sample_time_utc": now_utc.isoformat(),
@@ -1258,6 +1315,21 @@ class HeatForecastEngine:
                     "counter_anchor" if usable_counter_anchor else "partial"
                 ),
             }
+            actual = forecast_accuracy.actual_from_anchors(
+                previous_anchor,
+                self.state["hour_anchor"],
+                defrost_handling=config.COP_DEFROST_HANDLING,
+                defrost_el_in_heating_counter=(
+                    config.COP_DEFROST_EL_IN_HEATING_COUNTER == "true"
+                    or (
+                        config.COP_DEFROST_EL_IN_HEATING_COUNTER == "auto"
+                        and self.state.get("defrost_el_in_heating_counter")
+                        != "false"
+                    )
+                ),
+            )
+            if actual:
+                forecast_accuracy.record_actual(self.state, *actual)
         return deltas
 
     def _record_daily_energy(
@@ -2158,6 +2230,15 @@ class HeatForecastEngine:
             if index - 1 < len(pv_future):
                 pv_electrical.append(max(0.0, float(pv_future[index - 1])))
                 pv_flags.append({"source": "pv_forecast", "padded": False})
+            elif (
+                getattr(config, "HEAT_FORECAST_PV_GAP_MODE", "daily_profile")
+                == "daily_profile"
+                and index - 24 >= 1
+            ):
+                pv_electrical.append(pv_electrical[index - 24])
+                pv_flags.append(
+                    {"source": "daily_profile_fallback", "padded": True}
+                )
             else:
                 pv_electrical.append(0.0)
                 pv_flags.append({"source": "missing_zero", "padded": True})
@@ -2323,10 +2404,16 @@ class HeatForecastEngine:
             step_minutes=config.HEAT_FORECAST_STEP_MINUTES,
             base_gain_kw=config.HEAT_FORECAST_BASE_GAIN_KW,
             first_hour_fraction=remaining_hours,
+            lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
+            max_ramp_kw_per_step=config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP,
+            **self._near_kwargs(
+                wrapper=wrapper, ha_client=ha_client, states=states,
+                inlet=inlet, mode=mode, eff=slab_conductance,
+            ),
         )
         if mode != "heating":
             heat_result["heat_kwh"] = [0.0] * horizon
-        else:
+        elif config.HEAT_FORECAST_SMOOTHING_ENABLED:
             heat_result["heat_kwh"] = _smooth_future_heating_energy(
                 heat_result["heat_kwh"]
             )
@@ -2343,6 +2430,31 @@ class HeatForecastEngine:
             else 0.0
             for index in range(horizon)
         ]
+        start_estimate_diag: dict[str, Any] | None = None
+        start_estimate_applied = False
+        if getattr(config, "HP_START_ESTIMATE_ENABLED", False):
+            from .hp_start_estimate import diagnostics, read_hp_start_estimate
+
+            start_estimate_diag = diagnostics(states, now=now)
+            estimate = (
+                read_hp_start_estimate(states, "heating", now=now)
+                if config.HP_START_ESTIMATE_USE_FOR_FORECAST
+                and mode == "heating"
+                else None
+            )
+            if estimate is not None and estimate.known_method:
+                power = [
+                    min(config.HEAT_FORECAST_MAX_HEATING_KW, value)
+                    for value in baseline
+                ]
+                heat_result["heat_kwh"] = apply_start_estimate(
+                    heat_result["heat_kwh"],
+                    power,
+                    minutes_to_start=estimate.minutes_to_start,
+                    runtime_min=estimate.expected_runtime_min,
+                    first_hour_fraction=remaining_hours,
+                )
+                start_estimate_applied = True
         dhw, standby, auxiliary_stats = self._dhw_and_standby_profiles(starts)
         curve = cop_curve_from_state(
             self.state,
@@ -2378,6 +2490,7 @@ class HeatForecastEngine:
             defrost_el_fraction=defrost_el_fraction,
             cop_min=config.COP_MIN_VALUE,
             cop_max=config.COP_MAX_VALUE,
+            cop_extrapolation_margin=config.HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN,
         )
         self._correct_current_slot(
             now=now,
@@ -2388,6 +2501,7 @@ class HeatForecastEngine:
             heat_result=heat_result,
             outdoor=outdoor,
             remaining_hours=remaining_hours,
+            preserve_heat_forecast=start_estimate_applied,
         )
         if not config.HEAT_FORECAST_INCLUDE_DHW:
             for index, value in enumerate(electrical["forecast_dhw_el_kwh"]):
@@ -2415,6 +2529,10 @@ class HeatForecastEngine:
                     step_minutes=config.HEAT_FORECAST_STEP_MINUTES,
                     base_gain_kw=config.HEAT_FORECAST_BASE_GAIN_KW,
                     first_hour_fraction=remaining_hours,
+                    lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
+                    max_ramp_kw_per_step=(
+                        config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP
+                    ),
                 )
                 scenario_electric = hourly_electrical_forecast(
                     starts=starts,
@@ -2525,6 +2643,11 @@ class HeatForecastEngine:
             "learned": bool(curve["calibrated"]),
             **auxiliary_stats,
             "data_quality": per_hour,
+            **(
+                {"hp_start_estimate": start_estimate_diag}
+                if start_estimate_diag is not None
+                else {}
+            ),
             "current_hour_estimate": self.state.get(
                 "current_hour_estimate", "degraded_partial"
             ),
@@ -2559,6 +2682,14 @@ class HeatForecastEngine:
         attrs["degraded_reasons"] = degraded_reasons
         if config.COP_DEFROST_HANDLING != "separate":
             attrs.pop("forecast_defrost_el_kwh", None)
+        forecast_accuracy.record_predictions(
+            self.state,
+            now=now,
+            starts=starts,
+            el_kwh=electrical["forecast_heat_el_kwh"],
+            th_kwh=electrical["forecast_heat_th_kwh"],
+        )
+        attrs["accuracy"] = forecast_accuracy.summary(self.state, now)
         attrs["unit_of_measurement"] = "kWh"
         attrs["device_class"] = "energy"
         attrs["state_class"] = "measurement"
@@ -2782,6 +2913,7 @@ class HeatForecastEngine:
         heat_result: dict[str, Any],
         outdoor: Sequence[float],
         remaining_hours: float,
+        preserve_heat_forecast: bool = False,
     ) -> None:
         from . import config
 
@@ -2974,6 +3106,8 @@ class HeatForecastEngine:
                 else:
                     heat_remainder = active_projection
                     defrost_remainder = 0.0
+                if preserve_heat_forecast:
+                    heat_remainder = max(heat_remainder, heat_full)
             if historical_counter_anchor:
                 self.state["current_hour_estimate"] = "counter_anchor"
             elif self.state["current_hour_estimate"] not in (
@@ -2997,11 +3131,33 @@ class HeatForecastEngine:
         total = round(sum(component_totals), 4)
         electrical["forecast_total_el_kwh"][0] = total
         electrical["forecast"][0]["value"] = total
-        electrical["forecast_heat_th_kwh"][0] = round(
-            max(0.0, heat_th_so_far - defrost_th_so_far)
-            + float(heat_result["heat_kwh"][0]),
-            4,
-        )
+        # Derive the remaining thermal energy from the (power-projected)
+        # electrical remainder so that thermal and electrical stay consistent.
+        modeled_th = max(0.0, float(heat_result["heat_kwh"][0]))
+        th_so_far = max(0.0, heat_th_so_far - defrost_th_so_far)
+        if heat_full > 1e-9 and modeled_th > 0.0:
+            modeled_cop = min(max(modeled_th / heat_full, 1.0), 8.0)
+            th_remainder = heat_remainder * modeled_cop
+        elif heat_remainder > 0.0:
+            th_remainder = heat_remainder * max(
+                1.0, float(getattr(config, "COP_MIN_VALUE", 1.0))
+            )
+        else:
+            th_remainder = 0.0
+        electrical["forecast_heat_th_kwh"][0] = round(th_so_far + th_remainder, 4)
+        el_so_far = max(0.0, heat_el_component_so_far)
+        if el_so_far > 0.02 and not 1.0 <= th_so_far / el_so_far <= 8.0:
+            LOGGER.info(
+                "Current-hour thermal/electrical counters inconsistent "
+                "(th=%.3f el=%.3f kWh)",
+                th_so_far,
+                el_so_far,
+            )
+            electrical["forecast_heat_th_kwh"][0] = round(
+                el_so_far * min(max(modeled_th / max(heat_full, 1e-9), 1.0), 8.0)
+                + th_remainder,
+                4,
+            )
 
 
 _forecast_engine: HeatForecastEngine | None = None
@@ -3200,6 +3356,36 @@ def forecast_hour_starts(now: datetime, hours: int) -> list[datetime]:
     ]
 
 
+def apply_start_estimate(
+    heat_kwh: Sequence[float],
+    power_kw: Sequence[float],
+    *,
+    minutes_to_start: float | None,
+    runtime_min: float | None,
+    first_hour_fraction: float,
+) -> list[float]:
+    """Raise the thermal energy inside the sensor's start/run window.
+
+    Hour 0 only covers its remaining fraction. Inside the window the energy is
+    at least power x overlap; outside it the simulation is left untouched.
+    """
+    result = [float(v) for v in heat_kwh]
+    if minutes_to_start is None or not runtime_min or runtime_min <= 0:
+        return result
+    start_h = max(0.0, float(minutes_to_start)) / 60.0
+    end_h = start_h + float(runtime_min) / 60.0
+    hour_begin = 0.0
+    for index in range(len(result)):
+        length = first_hour_fraction if index == 0 else 1.0
+        overlap = max(
+            0.0, min(end_h, hour_begin + length) - max(start_h, hour_begin)
+        )
+        if overlap > 0.0:
+            result[index] = max(result[index], float(power_kw[index]) * overlap)
+        hour_begin += length
+    return result
+
+
 def simulate_heating_energy(
     *,
     outdoor_c: Sequence[float],
@@ -3217,8 +3403,26 @@ def simulate_heating_energy(
     target_band_k: float = 0.1,
     base_gain_kw: float = 0.0,
     first_hour_fraction: float = 1.0,
+    lookahead_hours: float = 2.0,
+    max_ramp_kw_per_step: float | None = None,
+    near_outlet_c: float | None = None,
+    near_eff: float = 0.0,
+    near_scale: float = 1.0,
+    near_hours: float = 0.0,
+    near_blend_hours: float = 2.0,
 ) -> dict[str, Any]:
-    """Simulate a two-node room/slab balance and meet the lower comfort band."""
+    """Simulate a two-node room/slab balance with a receding-horizon controller.
+
+    With ``near_outlet_c`` the first ``near_hours`` use the live controller
+    outlet (power = scale * eff * (outlet - room)); the result is blended into
+    the lookahead controller over ``near_blend_hours``.
+
+    Heat reaches the room only through the slow slab, so a one-step check makes
+    the heat pump chatter between zero and maximum power. Each step instead
+    applies the smallest constant power that keeps the room at or above the
+    lower comfort band over the whole lookahead window. Only the first step is
+    applied, and the power change per step can be rate limited.
+    """
     length = len(outdoor_c)
     if not length or any(
         len(series) != length
@@ -3241,57 +3445,110 @@ def simulate_heating_energy(
         or not 0.0 <= first_hour_fraction <= 1.0
     ):
         raise ValueError("first_hour_fraction must be between zero and one")
+    if not math.isfinite(lookahead_hours) or lookahead_hours < 0:
+        raise ValueError("lookahead_hours must be finite and non-negative")
+    if max_ramp_kw_per_step is not None and (
+        not math.isfinite(max_ramp_kw_per_step) or max_ramp_kw_per_step < 0
+    ):
+        raise ValueError("max_ramp_kw_per_step must be finite and non-negative")
 
     step_hours = step_minutes / 60.0
+    ramp_limit = (
+        float(max_ramp_kw_per_step)
+        if max_ramp_kw_per_step is not None and max_ramp_kw_per_step > 0
+        else None
+    )
+    lookahead_steps = max(1, int(round(lookahead_hours / step_hours)))
     room = float(room_c)
     slab = float(slab_c)
-    heat_kwh: list[float] = []
-    hourly_max_kw: list[float] = []
+    heat_kwh: list[float] = [0.0] * length
+    hourly_max_kw: list[float] = [0.0] * length
 
-    def advance(
-        q_hp: float, outdoor: float, gains: float, dt_hours: float
-    ) -> tuple[float, float]:
-        slab_midpoint = slab + dt_hours * q_hp / (2.0 * slab_capacity_kwh_k)
-        transfer_kw = slab_to_room_kw_k * (slab_midpoint - room)
-        next_room = room + dt_hours * (
-            transfer_kw + gains - heat_loss_kw_k * (room - outdoor)
-        ) / room_capacity_kwh_k
-        next_slab = slab + dt_hours * (q_hp - transfer_kw) / slab_capacity_kwh_k
-        return next_room, next_slab
-
+    # Flatten the horizon into (outdoor, gains, floor, dt, hour) steps.
+    steps: list[tuple[float, float, float, float, int]] = []
     for hour in range(length):
-        energy = 0.0
-        max_kw_this_hour = 0.0
         remaining = first_hour_fraction if hour == 0 else 1.0
+        gains = float(pv_gain_kw[hour]) + float(fireplace_kw[hour]) + base_gain_kw
+        floor = float(target_c[hour]) - target_band_k
         while remaining > 1e-12:
             dt = min(step_hours, remaining)
-            target_floor = float(target_c[hour]) - target_band_k
-            gains = float(pv_gain_kw[hour]) + float(fireplace_kw[hour]) + base_gain_kw
-
-            def projected_room(q_hp: float) -> float:
-                next_room, _ = advance(q_hp, float(outdoor_c[hour]), gains, dt)
-                return next_room
-
-            if projected_room(0.0) >= target_floor:
-                q_hp = 0.0
-            elif projected_room(max_hp_kw) < target_floor:
-                q_hp = max_hp_kw
-            else:
-                lower, upper = 0.0, max_hp_kw
-                for _iteration in range(24):
-                    middle = (lower + upper) / 2.0
-                    if projected_room(middle) >= target_floor:
-                        upper = middle
-                    else:
-                        lower = middle
-                q_hp = upper
-
-            room, slab = advance(q_hp, float(outdoor_c[hour]), gains, dt)
-            energy += q_hp * dt
-            max_kw_this_hour = max(max_kw_this_hour, q_hp)
+            steps.append((float(outdoor_c[hour]), gains, floor, dt, hour))
             remaining -= dt
-        heat_kwh.append(energy)
-        hourly_max_kw.append(max_kw_this_hour)
+
+    def advance(
+        room_c_: float, slab_c_: float, q_hp: float,
+        outdoor: float, gains: float, dt_hours: float,
+    ) -> tuple[float, float]:
+        slab_midpoint = slab_c_ + dt_hours * q_hp / (2.0 * slab_capacity_kwh_k)
+        transfer_kw = slab_to_room_kw_k * (slab_midpoint - room_c_)
+        next_room = room_c_ + dt_hours * (
+            transfer_kw + gains - heat_loss_kw_k * (room_c_ - outdoor)
+        ) / room_capacity_kwh_k
+        next_slab = slab_c_ + dt_hours * (q_hp - transfer_kw) / slab_capacity_kwh_k
+        return next_room, next_slab
+
+    previous_q: float | None = None
+    last_index = len(steps) - 1
+    elapsed_h = 0.0
+    near_active = (
+        near_outlet_c is not None and near_hours > 0 and near_eff > 0
+    )
+    for index, (outdoor, gains, _floor, dt, hour) in enumerate(steps):
+        near_weight = 0.0
+        if near_active:
+            if elapsed_h < near_hours:
+                near_weight = 1.0
+            elif near_blend_hours > 0:
+                near_weight = max(
+                    0.0, 1.0 - (elapsed_h - near_hours) / near_blend_hours
+                )
+        elapsed_h += dt
+        window = [
+            steps[min(index + offset, last_index)]
+            for offset in range(lookahead_steps)
+        ]
+
+        def worst_margin(q_hp: float) -> float:
+            room_i, slab_i = room, slab
+            margin = math.inf
+            for w_outdoor, w_gains, w_floor, w_dt, _ in window:
+                room_i, slab_i = advance(
+                    room_i, slab_i, q_hp, w_outdoor, w_gains, w_dt
+                )
+                margin = min(margin, room_i - w_floor)
+            return margin
+
+        lower, upper = 0.0, float(max_hp_kw)
+        if ramp_limit is not None and previous_q is not None:
+            lower = max(lower, previous_q - ramp_limit)
+            upper = min(upper, previous_q + ramp_limit)
+        if near_weight >= 1.0:
+            q_hp = 0.0
+        elif worst_margin(lower) >= 0.0:
+            q_hp = lower
+        elif worst_margin(upper) < 0.0:
+            q_hp = upper
+        else:
+            low, high = lower, upper
+            for _iteration in range(24):
+                middle = (low + high) / 2.0
+                if worst_margin(middle) >= 0.0:
+                    high = middle
+                else:
+                    low = middle
+            q_hp = high
+
+        if near_weight > 0.0:
+            q_near = min(
+                float(max_hp_kw),
+                max(0.0, near_scale * near_eff * (near_outlet_c - room)),
+            )
+            q_hp = near_weight * q_near + (1.0 - near_weight) * q_hp
+
+        room, slab = advance(room, slab, q_hp, outdoor, gains, dt)
+        heat_kwh[hour] += q_hp * dt
+        hourly_max_kw[hour] = max(hourly_max_kw[hour], q_hp)
+        previous_q = q_hp
 
     return {
         "heat_kwh": heat_kwh,

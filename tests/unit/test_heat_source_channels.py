@@ -428,6 +428,35 @@ def test_heat_pump_self_learning_skips_post_defrost_recovery():
     assert channel.get_learnable_parameters() == initial
 
 
+def test_heat_pump_learning_excludes_zero_weight_records_and_defaults_missing_weights():
+    min_records = _get_min_records_for_learning()
+
+    def train(blocked_count=0, zero_then_unweighted=False):
+        channel = HeatPumpChannel()
+        for index in range(min_records):
+            blocked = index >= min_records - blocked_count
+            context = {
+                "climate_mode": "heating",
+                "delta_t": 100.0 if blocked else 5.0,
+                "outdoor_temp": 5.0,
+                "raw_prediction_error": -100.0 if blocked else 1.0,
+            }
+            if blocked or not zero_then_unweighted:
+                context["hp_run_weight"] = 0.0 if blocked else 1.0
+            channel.history.append(
+                {"error": -100.0 if blocked else 1.0, "context": context}
+            )
+        channel._learn_from_recent()
+        return channel.get_learnable_parameters()
+
+    baseline = train()
+    with_blocked = train(blocked_count=2)
+    missing_weight = train(blocked_count=1, zero_then_unweighted=True)
+
+    assert with_blocked == pytest.approx(baseline)
+    assert missing_weight["outlet_effectiveness"] > HeatPumpChannel().outlet_effectiveness
+
+
 def test_heat_pump_channel_updates_curve_in_normal_channel_learning(
     monkeypatch,
 ):

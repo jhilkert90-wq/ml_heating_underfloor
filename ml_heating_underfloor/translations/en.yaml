@@ -160,6 +160,30 @@ configuration:
   heat_forecast_base_gain_kw:
     name: '[Forecast] Base Internal Gains (kW)'
     description: Configurable average heat gain excluding PV and fireplace.
+  heat_forecast_near_controller_enabled:
+    name: '[Forecast] Near-Range Controller Snapshot'
+    description: 'Use the live outlet setpoint for the first forecast hours (power = scale x efficiency x (outlet - room)). Default: off.'
+  heat_forecast_near_hours:
+    name: '[Forecast] Near-Range Hours'
+    description: 'Hours using the live outlet setpoint. Default: 6.'
+  heat_forecast_near_blend_hours:
+    name: '[Forecast] Near-Range Blend Hours'
+    description: 'Hours over which the near range blends into the lookahead controller. Default: 2.'
+  heat_forecast_lookahead_hours:
+    name: '[Forecast] Lookahead (hours)'
+    description: 'Receding-horizon window: heat pump power must keep the room above the comfort band this long. Default: 3.'
+  heat_forecast_max_ramp_kw_per_step:
+    name: '[Forecast] Max. Power Ramp per Step (kW)'
+    description: 'Maximum change of simulated thermal power per step; 0 disables. Default: 1.5.'
+  heat_forecast_smoothing_enabled:
+    name: '[Forecast] Block Smoothing'
+    description: 'Redistribute heating energy over 6 h blocks (legacy). Default: off.'
+  heat_forecast_pv_gap_mode:
+    name: '[Forecast] PV Gap Handling'
+    description: 'daily_profile repeats PV from 24 h earlier beyond the provider horizon; none assumes no PV. Default: daily_profile.'
+  heat_forecast_cop_extrapolation_margin:
+    name: '[Forecast] COP Extrapolation Margin'
+    description: 'Outside the calibrated temperature range the COP is capped at the best observed COP plus this margin; negative disables. Default: 0.3.'
   heat_forecast_fireplace_duration_h:
     name: '[Forecast] Fireplace Burn Time (hours)'
     description: Assumed remaining burn time while the fireplace is active.
@@ -1176,12 +1200,51 @@ configuration:
   price_cost_min_spread_eur_kwh:
     name: '[Advanced] Minimum Price Spread (EUR/kWh)'
     description: 'No shift is applied if the spread between cheapest and dearest effective hour is below this value. Default: 0.02.'
+  price_cost_max_overshoot_k:
+    name: '[Advanced] Cost Mode Max. Overshoot (K)'
+    description: 'Cost mode only skips overshoot correction while the predicted overshoot stays within this limit; 0 disables the limit. Default: 0.3.'
   price_cost_household_power_offset_kw:
     name: '[Advanced] Household Baseline for Cost Mode (kW)'
     description: 'Added to expected heat pump power so PV is only counted after the household baseline load is covered. Can later be replaced by measured household consumption. Default: 0.7.'
   hp_expected_power_fallback_kw:
     name: '[Advanced] Expected HP Power Fallback (kW)'
     description: 'Electrical heat pump power assumed until heating samples exist. The runtime estimate is the rolling mean of power consumption while heating, excluding hot water and defrost. Default: 1.5.'
+  hp_power_min_samples:
+    name: '[Advanced] HP Power Min. Samples'
+    description: 'Minimum heating samples before the measured mean replaces the fallback power. Default: 6.'
+  hp_start_estimate_enabled:
+    name: '[Advanced] HP Start Estimate: Enable'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_heating_entity_id:
+    name: '[Advanced] HP Start Estimate: Heating Entity'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_cooling_entity_id:
+    name: '[Advanced] HP Start Estimate: Cooling Entity'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_max_age_min:
+    name: '[Advanced] HP Start Estimate: Max. Age (min)'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_min_confidence:
+    name: '[Advanced] HP Start Estimate: Min. Confidence'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_required_offset_k:
+    name: '[Advanced] HP Start Estimate: Required Offset (K)'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_forecast:
+    name: '[Advanced] HP Start Estimate: Use for forecast'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_trajectory:
+    name: '[Advanced] HP Start Estimate: Use for trajectory'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_learning:
+    name: '[Advanced] HP Start Estimate: Use for learning'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_cost_mode:
+    name: '[Advanced] HP Start Estimate: Use for cost_mode'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_grace:
+    name: '[Advanced] HP Start Estimate: Use for grace'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
   hp_power_window_hours:
     name: '[Advanced] HP Power Window (hours)'
     description: 'Window for the rolling mean of heat pump electrical power while heating. Default: 6.'

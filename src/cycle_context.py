@@ -60,6 +60,7 @@ class CycleContext:
     # --- Prediction results ---
     suggested_temp: float | None = None
     final_temp: float | None = None
+    applied_outlet_temp: float | None = None
     confidence: float = 0.0
     metadata: dict = field(default_factory=dict)
     predicted_indoor: float | None = None
