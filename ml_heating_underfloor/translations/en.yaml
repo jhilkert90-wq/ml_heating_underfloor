@@ -160,6 +160,15 @@ configuration:
   heat_forecast_base_gain_kw:
     name: '[Forecast] Base Internal Gains (kW)'
     description: Configurable average heat gain excluding PV and fireplace.
+  heat_forecast_near_controller_enabled:
+    name: '[Forecast] Near-Range Controller Snapshot'
+    description: 'Use the live outlet setpoint for the first forecast hours (power = scale x efficiency x (outlet - room)). Default: off.'
+  heat_forecast_near_hours:
+    name: '[Forecast] Near-Range Hours'
+    description: 'Hours using the live outlet setpoint. Default: 6.'
+  heat_forecast_near_blend_hours:
+    name: '[Forecast] Near-Range Blend Hours'
+    description: 'Hours over which the near range blends into the lookahead controller. Default: 2.'
   heat_forecast_lookahead_hours:
     name: '[Forecast] Lookahead (hours)'
     description: 'Receding-horizon window: heat pump power must keep the room above the comfort band this long. Default: 3.'

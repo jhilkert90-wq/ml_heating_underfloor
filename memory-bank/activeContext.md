@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### Near-Range Controller Snapshot — 2026-11-12
+
+- **What:** forecast near range uses live outlet setpoint (power = scale x eff x (outlet - room)); scale persisted in forecast state. Not yet using sensor `t_start`/runtime. **Files:** see progress.md.
+
 ### Forecast Accuracy Tracking — 2026-11-12
 
 - **What:** new accuracy store in forecast state (`forecast_accuracy`), exposed as attribute `accuracy`. **Files:** see progress.md.

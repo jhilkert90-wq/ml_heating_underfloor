@@ -160,6 +160,15 @@ configuration:
   heat_forecast_base_gain_kw:
     name: '[Prognose] Grundwärmegewinne (kW)'
     description: Konfigurierbarer mittlerer Wärmegewinn ohne PV und Kamin.
+  heat_forecast_near_controller_enabled:
+    name: '[Prognose] Nahbereich-Reglerstand'
+    description: 'Nutzt den aktuellen Vorlauf-Sollwert für die ersten Prognosestunden (Leistung = Skalierung x Effizienz x (Vorlauf - Raum)). Standard: aus.'
+  heat_forecast_near_hours:
+    name: '[Prognose] Nahbereich Stunden'
+    description: 'Stunden mit aktuellem Vorlauf-Sollwert. Standard: 6.'
+  heat_forecast_near_blend_hours:
+    name: '[Prognose] Nahbereich Übergang'
+    description: 'Stunden, über die der Nahbereich in den Lookahead-Regler übergeht. Standard: 2.'
   heat_forecast_lookahead_hours:
     name: '[Prognose] Vorausschau (Stunden)'
     description: 'Prognosefenster der Regelung: Die WP-Leistung muss den Raum so lange über dem Komfortband halten. Standard: 3.'

@@ -107,6 +107,9 @@ options:
   heat_forecast_max_heating_kw: 8.0
   heat_forecast_base_gain_kw: 0.3
   heat_forecast_lookahead_hours: 3.0
+  heat_forecast_near_controller_enabled: false
+  heat_forecast_near_hours: 6.0
+  heat_forecast_near_blend_hours: 2.0
   heat_forecast_max_ramp_kw_per_step: 1.5
   heat_forecast_smoothing_enabled: false
   heat_forecast_cop_extrapolation_margin: 0.3
@@ -861,6 +864,9 @@ schema:
   heat_forecast_max_heating_kw: "float(1.0,20.0)"
   heat_forecast_base_gain_kw: "float(0.0,5.0)"
   heat_forecast_lookahead_hours: "float(0.25,12.0)"
+  heat_forecast_near_controller_enabled: "bool"
+  heat_forecast_near_hours: "float(1,12)"
+  heat_forecast_near_blend_hours: "float(0,6)"
   heat_forecast_max_ramp_kw_per_step: "float(0.0,20.0)"
   heat_forecast_smoothing_enabled: "bool"
   heat_forecast_cop_extrapolation_margin: "float(-1,5)"

@@ -863,6 +863,15 @@ def step_save_state(ctx: CycleContext) -> None:
     }
     save_state(state_manager=ctx.state_manager, **state_to_save)
     ctx.state.update(state_to_save)
+    if config.HEAT_FORECAST_NEAR_CONTROLLER_ENABLED:
+        from .forecast_near_controller import save_snapshot
+
+        active = ctx.climate_mode in (None, "heating") and not ctx.is_blocking
+        save_snapshot(
+            ctx.wrapper,
+            outlet=ctx.final_temp if active else None,
+            indoor=ctx.actual_indoor,
+        )
 
 
 _BUILDING_CURVE_PUBLISHER = BuildingCurvePublisher(

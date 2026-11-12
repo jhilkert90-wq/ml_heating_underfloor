@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Near-Range Controller Snapshot (PR 4) — 2026-11-12
+
+**Status:** COMPLETED (default off) — `simulate_heating_energy(near_*)`, `src/forecast_near_controller.py`, snapshot saved in `step_save_state`.
+
+**Files changed:** `src/forecast_near_controller.py` (new), `src/heat_forecast.py`, `src/cycle_routes.py`, config plumbing, tests, CHANGELOG.
+
 ## ✅ Forecast Accuracy Tracking (PR 3) — 2026-11-12
 
 **Status:** COMPLETED — first-write-wins predictions per (hour, lead), actuals from consecutive exact hour anchors, `accuracy` attribute.

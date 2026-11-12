@@ -260,6 +260,16 @@ HEAT_FORECAST_BASE_GAIN_KW: float = float(
 HEAT_FORECAST_LOOKAHEAD_HOURS: float = float(
     os.getenv("HEAT_FORECAST_LOOKAHEAD_HOURS", "3.0")
 )
+# Use the live controller outlet for the near forecast range (default off).
+HEAT_FORECAST_NEAR_CONTROLLER_ENABLED: bool = (
+    os.getenv("HEAT_FORECAST_NEAR_CONTROLLER_ENABLED", "false").lower() == "true"
+)
+HEAT_FORECAST_NEAR_HOURS: float = float(
+    os.getenv("HEAT_FORECAST_NEAR_HOURS", "6.0")
+)
+HEAT_FORECAST_NEAR_BLEND_HOURS: float = float(
+    os.getenv("HEAT_FORECAST_NEAR_BLEND_HOURS", "2.0")
+)
 # Max. change of simulated thermal power per simulation step [kW]; 0 = off.
 HEAT_FORECAST_MAX_RAMP_KW_PER_STEP: float = float(
     os.getenv("HEAT_FORECAST_MAX_RAMP_KW_PER_STEP", "1.5")

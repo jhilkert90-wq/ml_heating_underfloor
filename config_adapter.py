@@ -268,6 +268,15 @@ def convert_addon_to_env(config):
         'HEAT_FORECAST_BASE_GAIN_KW': str(
             config.get('heat_forecast_base_gain_kw', 0.3)
         ),
+        'HEAT_FORECAST_NEAR_CONTROLLER_ENABLED': str(
+            config.get('heat_forecast_near_controller_enabled', False)
+        ).lower(),
+        'HEAT_FORECAST_NEAR_HOURS': str(
+            config.get('heat_forecast_near_hours', 6.0)
+        ),
+        'HEAT_FORECAST_NEAR_BLEND_HOURS': str(
+            config.get('heat_forecast_near_blend_hours', 2.0)
+        ),
         'HEAT_FORECAST_LOOKAHEAD_HOURS': str(
             config.get('heat_forecast_lookahead_hours', 3.0)
         ),

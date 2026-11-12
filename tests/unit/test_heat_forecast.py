@@ -2124,3 +2124,49 @@ def test_forecast_accuracy_tracks_lead_and_metrics():
 
     new["readings"]["heating_el"] = 99.0  # counter reset
     assert fa.actual_from_anchors(old, new) is None
+
+
+def test_near_range_uses_live_outlet_and_blends_out():
+    from src.heat_forecast import simulate_heating_energy
+
+    base = dict(
+        outdoor_c=[21.0] * 8, pv_gain_kw=[0.0] * 8, fireplace_kw=[0.0] * 8,
+        target_c=[22.0] * 8, room_c=22.8, slab_c=23.0,
+        room_capacity_kwh_k=3.0, slab_capacity_kwh_k=20.0,
+        heat_loss_kw_k=0.13, slab_to_room_kw_k=0.5, max_hp_kw=8.0,
+        lookahead_hours=3.0,
+    )
+    plain = simulate_heating_energy(**base)
+    near = simulate_heating_energy(
+        **base, near_outlet_c=25.0, near_eff=0.72, near_scale=1.2,
+        near_hours=2.0, near_blend_hours=2.0,
+    )
+    # room above target: controller idles, live outlet still delivers heat
+    assert plain["heat_kwh"][0] == 0.0
+    assert near["heat_kwh"][0] > 1.0
+    assert near["heat_kwh"][1] > 1.0
+    assert near["heat_kwh"][7] == pytest.approx(plain["heat_kwh"][7], abs=0.2)
+
+
+def test_near_controller_snapshot_gating_and_scale():
+    import time
+
+    from src import forecast_near_controller as nc
+
+    class W:
+        pass
+
+    wrapper, state = W(), {}
+    nc.save_snapshot(wrapper, outlet=25.0, indoor=22.78)
+    kwargs = dict(
+        eff=0.72, inlet=22.5, measured_kw=2.0, dhw_active=False,
+        delta_t_floor=2.3, near_hours=6.0, blend_hours=2.0,
+    )
+    params = nc.near_parameters(wrapper, state, **kwargs)
+    assert params["near_outlet_c"] == 25.0
+    assert 1.0 < params["near_scale"] <= 1.2  # modelled 1.6 kW vs 2.0 measured
+    assert nc.near_parameters(wrapper, state, **{**kwargs, "dhw_active": True}) is None
+    assert nc.near_parameters(wrapper, state, **{**kwargs, "inlet": 24.0}) is None
+    assert nc.near_parameters(
+        wrapper, state, **kwargs, now_ts=time.time() + 3600
+    ) is None

@@ -905,6 +905,35 @@ class HeatForecastEngine:
             return None
         return number if math.isfinite(number) else None
 
+    def _near_kwargs(
+        self, *, wrapper: Any, ha_client: Any, states: Mapping[str, Any],
+        inlet: float | None, mode: str, eff: float,
+    ) -> dict[str, Any]:
+        from . import config
+        from .forecast_near_controller import near_parameters
+
+        if not config.HEAT_FORECAST_NEAR_CONTROLLER_ENABLED or mode != "heating":
+            return {}
+        dhw = ""
+        try:
+            dhw = str(ha_client.get_state(config.DHW_STATUS_ENTITY_ID, states))
+        except Exception:
+            pass
+        params = near_parameters(
+            wrapper,
+            self.state,
+            eff=eff,
+            inlet=inlet,
+            measured_kw=self._number(
+                ha_client, states, config.THERMAL_POWER_ENTITY_ID
+            ),
+            dhw_active=dhw.lower() in ("on", "true", "heating"),
+            delta_t_floor=config.DELTA_T_FLOOR,
+            near_hours=config.HEAT_FORECAST_NEAR_HOURS,
+            blend_hours=config.HEAT_FORECAST_NEAR_BLEND_HOURS,
+        )
+        return params or {}
+
     def _record_interval(
         self,
         *,
@@ -2362,6 +2391,10 @@ class HeatForecastEngine:
             first_hour_fraction=remaining_hours,
             lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
             max_ramp_kw_per_step=config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP,
+            **self._near_kwargs(
+                wrapper=wrapper, ha_client=ha_client, states=states,
+                inlet=inlet, mode=mode, eff=slab_conductance,
+            ),
         )
         if mode != "heating":
             heat_result["heat_kwh"] = [0.0] * horizon
@@ -3351,8 +3384,17 @@ def simulate_heating_energy(
     first_hour_fraction: float = 1.0,
     lookahead_hours: float = 2.0,
     max_ramp_kw_per_step: float | None = None,
+    near_outlet_c: float | None = None,
+    near_eff: float = 0.0,
+    near_scale: float = 1.0,
+    near_hours: float = 0.0,
+    near_blend_hours: float = 2.0,
 ) -> dict[str, Any]:
     """Simulate a two-node room/slab balance with a receding-horizon controller.
+
+    With ``near_outlet_c`` the first ``near_hours`` use the live controller
+    outlet (power = scale * eff * (outlet - room)); the result is blended into
+    the lookahead controller over ``near_blend_hours``.
 
     Heat reaches the room only through the slow slab, so a one-step check makes
     the heat pump chatter between zero and maximum power. Each step instead
@@ -3426,7 +3468,20 @@ def simulate_heating_energy(
 
     previous_q: float | None = None
     last_index = len(steps) - 1
+    elapsed_h = 0.0
+    near_active = (
+        near_outlet_c is not None and near_hours > 0 and near_eff > 0
+    )
     for index, (outdoor, gains, _floor, dt, hour) in enumerate(steps):
+        near_weight = 0.0
+        if near_active:
+            if elapsed_h < near_hours:
+                near_weight = 1.0
+            elif near_blend_hours > 0:
+                near_weight = max(
+                    0.0, 1.0 - (elapsed_h - near_hours) / near_blend_hours
+                )
+        elapsed_h += dt
         window = [
             steps[min(index + offset, last_index)]
             for offset in range(lookahead_steps)
@@ -3446,7 +3501,9 @@ def simulate_heating_energy(
         if ramp_limit is not None and previous_q is not None:
             lower = max(lower, previous_q - ramp_limit)
             upper = min(upper, previous_q + ramp_limit)
-        if worst_margin(lower) >= 0.0:
+        if near_weight >= 1.0:
+            q_hp = 0.0
+        elif worst_margin(lower) >= 0.0:
             q_hp = lower
         elif worst_margin(upper) < 0.0:
             q_hp = upper
@@ -3459,6 +3516,13 @@ def simulate_heating_energy(
                 else:
                     low = middle
             q_hp = high
+
+        if near_weight > 0.0:
+            q_near = min(
+                float(max_hp_kw),
+                max(0.0, near_scale * near_eff * (near_outlet_c - room)),
+            )
+            q_hp = near_weight * q_near + (1.0 - near_weight) * q_hp
 
         room, slab = advance(room, slab, q_hp, outdoor, gains, dt)
         heat_kwh[hour] += q_hp * dt

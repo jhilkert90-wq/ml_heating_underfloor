@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Optional near-range controller snapshot for the WP load forecast (`heat_forecast_near_controller_enabled`, default off): the first hours use the live outlet setpoint with a learned power scale (EMA vs. measured thermal power) and blend into the lookahead controller.
 - Forecast accuracy tracking (`src/forecast_accuracy.py`): predictions at lead 1/6/24 h are compared with measured hourly counter energy; sensor attribute `accuracy` (bias, MAE, MAPE, missed/false-start rate over 24 h and 7 d).
 - COP extrapolation cap (`heat_forecast_cop_extrapolation_margin`, default 0.3) outside the calibrated temperature range; attribute `cop_extrapolated_hours`.
 - Step 4a-5 (partial): with `hp_start_estimate_use_for_cost_mode` the cost-mode overshoot skip is dropped when the sensor expects no heat-pump start within four cycles. Start-time shifting and short-run protection are not implemented. Off by default.
