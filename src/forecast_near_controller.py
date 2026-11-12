@@ -15,6 +15,7 @@ from typing import Any, Mapping
 SNAPSHOT_MAX_AGE_S = 30 * 60
 SCALE_MIN, SCALE_MAX = 0.5, 2.0
 SCALE_ALPHA = 0.1
+MEASURED_RUNNING_KW = 0.5
 
 
 def save_snapshot(
@@ -70,7 +71,8 @@ def near_parameters(
     now_ts = time.time() if now_ts is None else now_ts
     if now_ts - snapshot["time"] > SNAPSHOT_MAX_AGE_S:
         return None
-    if snapshot["outlet_c"] - inlet < delta_t_floor:
+    measured_running = measured_kw is not None and measured_kw >= MEASURED_RUNNING_KW
+    if snapshot["outlet_c"] - inlet < delta_t_floor and not measured_running:
         return None
     if not math.isfinite(eff) or eff <= 0:
         return None

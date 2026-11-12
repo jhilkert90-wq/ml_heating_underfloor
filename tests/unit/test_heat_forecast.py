@@ -2166,7 +2166,11 @@ def test_near_controller_snapshot_gating_and_scale():
     assert params["near_outlet_c"] == 25.0
     assert 1.0 < params["near_scale"] <= 1.2  # modelled 1.6 kW vs 2.0 measured
     assert nc.near_parameters(wrapper, state, **{**kwargs, "dhw_active": True}) is None
-    assert nc.near_parameters(wrapper, state, **{**kwargs, "inlet": 24.0}) is None
+    low_dt = {**kwargs, "inlet": 24.0}
+    assert nc.near_parameters(wrapper, state, **low_dt) is not None  # measured power
+    assert nc.near_parameters(
+        wrapper, state, **{**low_dt, "measured_kw": 0.1}
+    ) is None
     assert nc.near_parameters(
         wrapper, state, **kwargs, now_ts=time.time() + 3600
     ) is None
