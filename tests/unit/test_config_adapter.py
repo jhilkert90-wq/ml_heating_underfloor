@@ -52,3 +52,10 @@ def test_forecast_dhw_option_defaults_on_and_maps_disabled():
     assert convert_addon_to_env({"heat_forecast_include_dhw": False})[
         "HEAT_FORECAST_INCLUDE_DHW"
     ] == "false"
+
+
+def test_hp_start_estimate_defaults_are_off():
+    env = convert_addon_to_env({})
+    assert env["HP_START_ESTIMATE_ENABLED"] == "false"
+    assert env["HP_START_ESTIMATE_USE_FOR_FORECAST"] == "false"
+    assert env["HP_START_ESTIMATE_HEATING_ENTITY_ID"] == ""

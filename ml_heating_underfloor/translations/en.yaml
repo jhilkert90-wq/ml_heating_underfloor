@@ -1200,6 +1200,39 @@ configuration:
   hp_power_min_samples:
     name: '[Advanced] HP Power Min. Samples'
     description: 'Minimum heating samples before the measured mean replaces the fallback power. Default: 6.'
+  hp_start_estimate_enabled:
+    name: '[Advanced] HP Start Estimate: Enable'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_heating_entity_id:
+    name: '[Advanced] HP Start Estimate: Heating Entity'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_cooling_entity_id:
+    name: '[Advanced] HP Start Estimate: Cooling Entity'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_max_age_min:
+    name: '[Advanced] HP Start Estimate: Max. Age (min)'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_min_confidence:
+    name: '[Advanced] HP Start Estimate: Min. Confidence'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_required_offset_k:
+    name: '[Advanced] HP Start Estimate: Required Offset (K)'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_forecast:
+    name: '[Advanced] HP Start Estimate: Use for forecast'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_trajectory:
+    name: '[Advanced] HP Start Estimate: Use for trajectory'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_learning:
+    name: '[Advanced] HP Start Estimate: Use for learning'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_cost_mode:
+    name: '[Advanced] HP Start Estimate: Use for cost_mode'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_grace:
+    name: '[Advanced] HP Start Estimate: Use for grace'
+    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
   hp_power_window_hours:
     name: '[Advanced] HP Power Window (hours)'
     description: 'Window for the rolling mean of heat pump electrical power while heating. Default: 6.'

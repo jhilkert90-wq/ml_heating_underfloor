@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### HP Start Estimate Reader — 2026-11-12
+
+- **What:** New updated plan adds PR 4a (external start/runtime sensor). Implemented step 4a-1 (reader + config, diagnostic only) and copied the HA guide into `docs/HA_WP_START_ESTIMATE_GUIDE.md`.
+- **Why:** The app cannot know when the HP starts; the vendor-specific calculation lives in an HA sensor, the app only consumes the contract (state + attributes).
+- **Files:** see progress.md entry of the same date.
+
 ### WP Load Forecast Controller — 2026-11-12
 
 - **What:** Forecast simulation now uses a lookahead controller with ramp limit (smoothing opt-in); current-hour thermal derived from electrical remainder; PV gaps use 24 h profile; HP expected power needs `HP_POWER_MIN_SAMPLES`; cost-mode overshoot skip limited by `PRICE_COST_MAX_OVERSHOOT_K`.

@@ -737,6 +737,39 @@ def convert_addon_to_env(config):
         'PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW': str(
             config.get('price_cost_household_power_offset_kw', 0.7)
         ),
+        'HP_START_ESTIMATE_ENABLED': str(
+            config.get('hp_start_estimate_enabled', False)
+        ).lower(),
+        'HP_START_ESTIMATE_HEATING_ENTITY_ID': str(
+            config.get('hp_start_estimate_heating_entity_id', '') or ''
+        ),
+        'HP_START_ESTIMATE_COOLING_ENTITY_ID': str(
+            config.get('hp_start_estimate_cooling_entity_id', '') or ''
+        ),
+        'HP_START_ESTIMATE_MAX_AGE_MIN': str(
+            config.get('hp_start_estimate_max_age_min', 5)
+        ),
+        'HP_START_ESTIMATE_MIN_CONFIDENCE': str(
+            config.get('hp_start_estimate_min_confidence', 0.3)
+        ),
+        'HP_START_ESTIMATE_REQUIRED_OFFSET_K': str(
+            config.get('hp_start_estimate_required_offset_k', 0.0)
+        ),
+        'HP_START_ESTIMATE_USE_FOR_FORECAST': str(
+            config.get('hp_start_estimate_use_for_forecast', False)
+        ).lower(),
+        'HP_START_ESTIMATE_USE_FOR_TRAJECTORY': str(
+            config.get('hp_start_estimate_use_for_trajectory', False)
+        ).lower(),
+        'HP_START_ESTIMATE_USE_FOR_LEARNING': str(
+            config.get('hp_start_estimate_use_for_learning', False)
+        ).lower(),
+        'HP_START_ESTIMATE_USE_FOR_COST_MODE': str(
+            config.get('hp_start_estimate_use_for_cost_mode', False)
+        ).lower(),
+        'HP_START_ESTIMATE_USE_FOR_GRACE': str(
+            config.get('hp_start_estimate_use_for_grace', False)
+        ).lower(),
         'HP_POWER_MIN_SAMPLES': str(
             config.get('hp_power_min_samples', 6)
         ),

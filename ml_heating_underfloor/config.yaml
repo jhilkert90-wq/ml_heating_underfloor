@@ -681,6 +681,17 @@ options:
   # Expected HP electrical power (kW) used until heating samples exist
   hp_expected_power_fallback_kw: 1.5
   hp_power_min_samples: 6
+  hp_start_estimate_enabled: false
+  hp_start_estimate_heating_entity_id: ""
+  hp_start_estimate_cooling_entity_id: ""
+  hp_start_estimate_max_age_min: 5
+  hp_start_estimate_min_confidence: 0.3
+  hp_start_estimate_required_offset_k: 0.0
+  hp_start_estimate_use_for_forecast: false
+  hp_start_estimate_use_for_trajectory: false
+  hp_start_estimate_use_for_learning: false
+  hp_start_estimate_use_for_cost_mode: false
+  hp_start_estimate_use_for_grace: false
   # Window (hours) for the rolling mean of HP power while heating (no DHW/defrost)
   hp_power_window_hours: 6
   # Minimum electrical power (W) for the HP to count as "on"
@@ -1127,6 +1138,17 @@ schema:
   price_cost_household_power_offset_kw: "float(0.0,10.0)"
   hp_expected_power_fallback_kw: "float(0.1,20.0)"
   hp_power_min_samples: "int(1,100)"
+  hp_start_estimate_enabled: "bool"
+  hp_start_estimate_heating_entity_id: "str?"
+  hp_start_estimate_cooling_entity_id: "str?"
+  hp_start_estimate_max_age_min: "float(1,60)"
+  hp_start_estimate_min_confidence: "float(0,1)"
+  hp_start_estimate_required_offset_k: "float(-10,10)"
+  hp_start_estimate_use_for_forecast: "bool"
+  hp_start_estimate_use_for_trajectory: "bool"
+  hp_start_estimate_use_for_learning: "bool"
+  hp_start_estimate_use_for_cost_mode: "bool"
+  hp_start_estimate_use_for_grace: "bool"
   hp_power_window_hours: "float(1.0,48.0)"
   hp_power_min_on_w: "int(0,5000)"
   # PV Surplus Optimization

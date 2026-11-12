@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ HP Start Estimate Reader (PR 4a-1) — 2026-11-12
+
+**Status:** COMPLETED for step 4a-1 — decoupled, default-off reader with validation (mode, age, confidence, status), circuit breaker and diagnostics; HA build guide added to docs. Consumers (4a-2…4a-6), PR 3, PR 4 and COP cap remain open.
+
+**Files changed:** `src/hp_start_estimate.py`, `src/config.py`, `config_adapter.py`, `ml_heating_underfloor/config.yaml`, translations, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, `docs/PARAMETER_REFERENCE.md`, `tests/unit/test_hp_start_estimate.py`, `tests/unit/test_config_adapter.py`, `CHANGELOG.md`.
+
 ## ✅ WP Load Forecast Controller & Cost-Mode Overshoot Limit — 2026-11-12
 
 **Status:** PARTIAL — Implemented plan PR 1 (current-hour th/el consistency, PV gap fallback, HP min samples), PR 2 (receding-horizon forecast controller, opt-in smoothing) and the PR 5 overshoot limit. Not yet done: COP extrapolation cap, accuracy tracking (PR 3), near-term controller snapshot (PR 4), price-label split, feature_importance guard.

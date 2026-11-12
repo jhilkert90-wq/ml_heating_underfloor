@@ -374,6 +374,12 @@ Requires the Tibber integration in Home Assistant.
 | `price_cost_lookahead_hours` | `PRICE_COST_LOOKAHEAD_HOURS` | int (2–48) | `24` | Look-ahead window for the effective price comparison. |
 | `price_cost_min_spread_eur_kwh` | `PRICE_COST_MIN_SPREAD_EUR_KWH` | float (0–0.5) | `0.02` | No shift below this spread. |
 | `price_cost_household_power_offset_kw` | `PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW` | float (0–10) | `0.7` | Household baseline load added to expected HP power for PV coverage; intended to be replaced by measured household consumption when available. |
+| `hp_start_estimate_enabled` | `HP_START_ESTIMATE_ENABLED` | bool | `false` | Reads the optional HA start/runtime estimate sensor (see `HA_WP_START_ESTIMATE_GUIDE.md`). Without a valid sensor behaviour is unchanged. |
+| `hp_start_estimate_heating_entity_id` / `hp_start_estimate_cooling_entity_id` | `HP_START_ESTIMATE_HEATING_ENTITY_ID` / `..._COOLING_ENTITY_ID` | str | empty | Sensor per mode; empty = mode unchanged. |
+| `hp_start_estimate_max_age_min` | `HP_START_ESTIMATE_MAX_AGE_MIN` | float (1–60) | `5` | Older estimates are ignored. |
+| `hp_start_estimate_min_confidence` | `HP_START_ESTIMATE_MIN_CONFIDENCE` | float (0–1) | `0.3` | Lower-confidence estimates are ignored. |
+| `hp_start_estimate_required_offset_k` | `HP_START_ESTIMATE_REQUIRED_OFFSET_K` | float | `0` | Approximation: calculated HP setpoint minus ml_heating outlet. |
+| `hp_start_estimate_use_for_forecast` / `_trajectory` / `_learning` / `_cost_mode` / `_grace` | `HP_START_ESTIMATE_USE_FOR_*` | bool | `false` | Per-use switches (consumers follow in later steps; the reader alone is diagnostic). |
 | `hp_power_min_samples` | `HP_POWER_MIN_SAMPLES` | int (1–100) | `6` | Minimum heating samples before the measured mean replaces the fallback power. |
 | `price_cost_max_overshoot_k` | `PRICE_COST_MAX_OVERSHOOT_K` | float (0–5) | `0.3` | Cost mode skips overshoot correction only while predicted overshoot stays within this limit; 0 disables the limit. |
 | `heat_forecast_lookahead_hours` | `HEAT_FORECAST_LOOKAHEAD_HOURS` | float (0.25–12) | `3.0` | Forecast simulation keeps the room above the comfort band this many hours ahead. |

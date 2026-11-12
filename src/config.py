@@ -402,6 +402,43 @@ HP_EXPECTED_POWER_FALLBACK_KW: float = float(
 )
 # Minimum samples before the measured mean replaces the fallback power.
 HP_POWER_MIN_SAMPLES: int = int(os.getenv("HP_POWER_MIN_SAMPLES", "6"))
+# Optional external HP start/runtime estimate sensor (HA template sensor, see
+# docs/HA_WP_START_ESTIMATE_GUIDE.md). Everything is off by default; without a
+# valid sensor the system behaves exactly as before.
+HP_START_ESTIMATE_ENABLED: bool = (
+    os.getenv("HP_START_ESTIMATE_ENABLED", "false").lower() == "true"
+)
+HP_START_ESTIMATE_HEATING_ENTITY_ID: str = os.getenv(
+    "HP_START_ESTIMATE_HEATING_ENTITY_ID", ""
+)
+HP_START_ESTIMATE_COOLING_ENTITY_ID: str = os.getenv(
+    "HP_START_ESTIMATE_COOLING_ENTITY_ID", ""
+)
+HP_START_ESTIMATE_MAX_AGE_MIN: float = float(
+    os.getenv("HP_START_ESTIMATE_MAX_AGE_MIN", "5")
+)
+HP_START_ESTIMATE_MIN_CONFIDENCE: float = float(
+    os.getenv("HP_START_ESTIMATE_MIN_CONFIDENCE", "0.3")
+)
+# Approximation: calculated NIBE setpoint minus ml_heating outlet [K].
+HP_START_ESTIMATE_REQUIRED_OFFSET_K: float = float(
+    os.getenv("HP_START_ESTIMATE_REQUIRED_OFFSET_K", "0")
+)
+HP_START_ESTIMATE_USE_FOR_FORECAST: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_FORECAST", "false").lower() == "true"
+)
+HP_START_ESTIMATE_USE_FOR_TRAJECTORY: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_TRAJECTORY", "false").lower() == "true"
+)
+HP_START_ESTIMATE_USE_FOR_LEARNING: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_LEARNING", "false").lower() == "true"
+)
+HP_START_ESTIMATE_USE_FOR_COST_MODE: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_COST_MODE", "false").lower() == "true"
+)
+HP_START_ESTIMATE_USE_FOR_GRACE: bool = (
+    os.getenv("HP_START_ESTIMATE_USE_FOR_GRACE", "false").lower() == "true"
+)
 HP_POWER_WINDOW_HOURS: float = float(os.getenv("HP_POWER_WINDOW_HOURS", "6"))
 # Minimum electrical power [W] for the HP to count as "on".
 HP_POWER_MIN_ON_W: float = float(os.getenv("HP_POWER_MIN_ON_W", "300"))

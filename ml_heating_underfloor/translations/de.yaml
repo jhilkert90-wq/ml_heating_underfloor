@@ -1117,6 +1117,39 @@ configuration:
   hp_power_min_samples:
     name: '[Erweitert] WP-Leistung Mindestanzahl Samples'
     description: 'Mindestanzahl Heiz-Samples, bevor der Messmittelwert den Fallback ersetzt. Standard: 6.'
+  hp_start_estimate_enabled:
+    name: '[Erweitert] WP-Startschätzung: Aktivieren'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_heating_entity_id:
+    name: '[Erweitert] WP-Startschätzung: Entität Heizen'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_cooling_entity_id:
+    name: '[Erweitert] WP-Startschätzung: Entität Kühlen'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_max_age_min:
+    name: '[Erweitert] WP-Startschätzung: Max. Alter (min)'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_min_confidence:
+    name: '[Erweitert] WP-Startschätzung: Min. Konfidenz'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_required_offset_k:
+    name: '[Erweitert] WP-Startschätzung: Soll-Offset (K)'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_forecast:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für forecast'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_trajectory:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für trajectory'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_learning:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für learning'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_cost_mode:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für cost_mode'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
+  hp_start_estimate_use_for_grace:
+    name: '[Erweitert] WP-Startschätzung: Nutzen für grace'
+    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
   hp_power_window_hours:
     name: '[Erweitert] HP Power Window (hours)'
     description: 'Window for the rolling mean of heat pump electrical power while heating. Default: 6.'
