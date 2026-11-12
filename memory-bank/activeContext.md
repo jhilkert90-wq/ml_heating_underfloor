@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### PR 113 review fixes — 2026-11-12
+
+- **What:** corrected candidate-delay reference and fallback gating, preferred a valid runtime sensor over an invalid attribute, and aligned the initial verification trajectory with candidate simulations. **Why:** address four review findings on PR 113. **Files:** see the PR 113 review-fix milestone in `progress.md`.
+
 ### PR 112 deviations resolved — 2026-11-12
 
 - **What:** restored previous-behaviour defaults (overshoot limit 0, min samples 1), forecast sensor path uses measured/controller-model power instead of baseline, optional runtime-sensor entities, opt-in measured ramp start, per-candidate start delay in the outlet search, idle learning weight = running share, circuit breaker re-locks. **Why:** deviations from "app as before without sensor" and unresolved 12.11. case. **Files:** see progress.md.

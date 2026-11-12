@@ -207,6 +207,19 @@ def test_runtime_sensor_takes_precedence_and_falls_back():
     assert est.runtime_source == "attribute"
 
 
+def test_valid_runtime_sensor_overrides_negative_attribute():
+    cfg = _cfg(HP_START_ESTIMATE_HEATING_RUNTIME_ENTITY_ID=RUNTIME)
+    states = _states("0", status="running", expected_runtime_min=-1)
+    states[RUNTIME] = {"state": "90"}
+
+    estimate = hse.read_hp_start_estimate(
+        states, "heating", now=NOW, cfg=cfg
+    )
+
+    assert estimate.expected_runtime_min == 90
+    assert estimate.runtime_source == "sensor"
+
+
 def test_circuit_breaker_locks_again_after_pause():
     bad_cfg = SimpleNamespace(
         HP_START_ESTIMATE_ENABLED=True,

@@ -927,7 +927,7 @@ class HeatForecastEngine:
         from . import config
         from .forecast_near_controller import near_parameters
 
-        if not config.HEAT_FORECAST_NEAR_CONTROLLER_ENABLED or mode != "heating":
+        if mode != "heating":
             return {}
         dhw = ""
         try:
@@ -2436,7 +2436,11 @@ class HeatForecastEngine:
             lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
             max_ramp_kw_per_step=config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP,
             initial_power_kw=ramp_seed_kw,
-            **near_kwargs,
+            **(
+                near_kwargs
+                if config.HEAT_FORECAST_NEAR_CONTROLLER_ENABLED
+                else {}
+            ),
         )
         if mode != "heating":
             heat_result["heat_kwh"] = [0.0] * horizon

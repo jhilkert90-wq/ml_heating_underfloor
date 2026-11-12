@@ -2010,7 +2010,7 @@ class EnhancedModelWrapper:
                     else 0.0
                 ),
                 climate_mode=self._climate_mode,
-                **self._hp_start_window_kwargs(),
+                **self._hp_start_window_kwargs(float(outlet_temp)),
             )
             trajectory = self.thermal_model.predict_thermal_trajectory(
                 **_traj_kwargs

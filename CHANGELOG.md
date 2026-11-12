@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - The start-estimate reader's circuit breaker locks again after each pause once five further errors occur.
+- Candidate delay uses required supply and its configured offset; controller-model fallback remains available when near-range simulation is disabled; valid runtime sensors override invalid attributes; verification starts with the candidate-specific window.
 
 ## [0.2.0] - 2026-02-10
 

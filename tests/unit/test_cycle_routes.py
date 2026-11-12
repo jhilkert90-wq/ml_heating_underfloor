@@ -100,6 +100,37 @@ def test_near_controller_snapshot_uses_published_target_and_skips_shadow(
     assert snapshots[-1]["outlet"] is None
 
 
+def test_hp_start_reference_uses_required_supply_minus_offset(monkeypatch):
+    from src import config
+
+    monkeypatch.setattr(config, "HP_START_ESTIMATE_ENABLED", True)
+    monkeypatch.setattr(config, "HP_START_ESTIMATE_USE_FOR_TRAJECTORY", True)
+    monkeypatch.setattr(config, "HP_START_ESTIMATE_HEATING_ENTITY_ID", "sensor.start")
+    monkeypatch.setattr(config, "HP_START_ESTIMATE_REQUIRED_OFFSET_K", 2.0)
+    ctx = _make_ctx(
+        all_states={
+            "sensor.start": {
+                "state": "60",
+                "attributes": {
+                    "status": "idle",
+                    "mode": "heating",
+                    "method": "degree_minutes",
+                    "required_supply_c": 30.0,
+                    "supply_actual_c": 28.0,
+                    "expected_runtime_min": 120,
+                    "confidence": 0.8,
+                    "updated_at": datetime.now().astimezone().isoformat(),
+                },
+            }
+        },
+        actual_outlet_temp=29.5,
+    )
+
+    cycle_routes._attach_hp_start_window(ctx)
+
+    assert ctx.wrapper._hp_start_reference_outlet == 28.0
+
+
 class TestStepGetSensorData:
     """Test sensor data retrieval step."""
 

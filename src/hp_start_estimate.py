@@ -164,14 +164,14 @@ def read_hp_start_estimate(
             return fallback("invalid_state")
         if minutes is None and status in ("starting_soon", "running"):
             return fallback("inconsistent")
-        runtime = _number(attrs.get("expected_runtime_min"))
-        if runtime is not None and runtime < 0:
-            return fallback("invalid_runtime")
         sensor_runtime = _runtime_sensor_minutes(states, mode, cfg)
+        runtime = _number(attrs.get("expected_runtime_min"))
         runtime_source = "attribute"
         if sensor_runtime is not None:
             runtime = sensor_runtime
             runtime_source = "sensor"
+        elif runtime is not None and runtime < 0:
+            return fallback("invalid_runtime")
         _failures = 0
         _last_reason[mode] = ""
         return HPStartEstimate(

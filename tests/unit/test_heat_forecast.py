@@ -2226,6 +2226,42 @@ def test_near_controller_converts_measured_thermal_watts_to_kw(
     assert kwargs == {}
 
 
+def test_controller_model_available_when_near_simulation_is_disabled(
+    monkeypatch, tmp_path
+):
+    from src import config
+
+    monkeypatch.setattr(config, "HEAT_FORECAST_NEAR_CONTROLLER_ENABLED", False)
+    monkeypatch.setattr(config, "DHW_STATUS_ENTITY_ID", "dhw")
+    monkeypatch.setattr(config, "THERMAL_POWER_ENTITY_ID", "thermal_power")
+    engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    wrapper = SimpleNamespace(
+        _forecast_control_snapshot={
+            "outlet_c": 30.0,
+            "indoor_c": 21.0,
+            "time": time.time(),
+        }
+    )
+    ha_client = SimpleNamespace(
+        get_state=lambda entity, _states: {
+            "dhw": "off",
+            "thermal_power": "100",
+        }[entity]
+    )
+
+    kwargs = engine._near_kwargs(
+        wrapper=wrapper,
+        ha_client=ha_client,
+        states={},
+        inlet=24.0,
+        mode="heating",
+        eff=0.2,
+    )
+
+    assert kwargs["near_outlet_c"] == 30.0
+    assert kwargs["near_eff"] == 0.2
+
+
 def test_current_slot_keeps_start_estimate_energy_separate_from_measured_energy(
     monkeypatch, tmp_path
 ):

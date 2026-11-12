@@ -923,6 +923,52 @@ class TestProjectedTempOvershootGate:
         assert result == 27.0
         assert corrections
 
+    def test_initial_verification_trajectory_uses_candidate_start_window(
+        self, wrapper, monkeypatch
+    ):
+        from types import SimpleNamespace
+
+        calls = []
+        monkeypatch.setattr(
+            wrapper,
+            "_get_forecast_conditions",
+            lambda *_args: (None, None, [5.0], [0.0]),
+        )
+        monkeypatch.setattr(
+            wrapper,
+            "_calculate_fireplace_power_kw",
+            lambda **_kwargs: (0.0, 0.0),
+        )
+        monkeypatch.setattr(
+            wrapper,
+            "_hp_start_window_kwargs",
+            lambda outlet=None: {"hp_start_delay_h": outlet},
+        )
+
+        def predict(**kwargs):
+            calls.append(kwargs)
+            return {"trajectory": [], "times": []}
+
+        wrapper.thermal_model.predict_thermal_trajectory = predict
+        wrapper._get_forecast_trajectory_state_from_features = lambda _features: (
+            SimpleNamespace(active=False, dynamic_steps_above_min=False)
+        )
+        wrapper._verify_trajectory_and_correct(
+            outlet_temp=28.0,
+            current_indoor=21.0,
+            target_indoor=22.0,
+            outdoor_temp=5.0,
+            thermal_features={},
+            outdoor_forecast=[5.0],
+            pv_forecast=[0.0],
+            pv_history_for_buffer=[0.0],
+        )
+
+        assert calls[0]["hp_start_delay_h"] == 28.0
+        simulator = wrapper._trajectory_simulator[1]
+        simulator(28.0)
+        assert calls[-1]["hp_start_delay_h"] == calls[0]["hp_start_delay_h"]
+
 
 # ---------------------------------------------------------------------------
 # Drift detection regression coverage
