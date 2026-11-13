@@ -463,3 +463,32 @@ This gives a long horizon in the morning (many forecast hours above `pv_traj_zer
 - [docs/THERMAL_PARAMETER_REFERENCE.md](THERMAL_PARAMETER_REFERENCE.md) — Deep dive into the thermal model physics
 - [docs/PRICE_OPTIMIZATION_INTEGRATION.md](PRICE_OPTIMIZATION_INTEGRATION.md) — Tibber electricity price integration setup
 - [.env_sample](../.env_sample) — Annotated environment variable template for standalone deployments
+
+
+## WP Load Forecast stabilisation
+
+| Option | Environment variable | Type | Default | Description |
+|---|---|---|---|---|
+| `heat_forecast_anchor_max_gap_minutes` | `HEAT_FORECAST_ANCHOR_MAX_GAP_MINUTES` | int(5,180) | `30` | Counter samples around a full hour are linearly interpolated to the hour boundary when they are at most this far apart. |
+| `heat_forecast_anchor_tolerance_minutes` | `HEAT_FORECAST_ANCHOR_TOLERANCE_MINUTES` | int(0,30) | `5` | Accuracy statistics accept counter anchors that deviate at most this many minutes from the full hour. |
+| `heat_forecast_start_power_window_minutes` | `HEAT_FORECAST_START_POWER_WINDOW_MINUTES` | int(5,180) | `45` | The start-estimate window uses the mean measured thermal power of the last minutes instead of the instantaneous value. |
+| `heat_forecast_start_power_cap_factor` | `HEAT_FORECAST_START_POWER_CAP_FACTOR` | float(1.0,5.0) | `1.5` | Start-window power is capped at this factor times the baseline/simulated power. |
+| `heat_forecast_start_max_runtime_hours` | `HEAT_FORECAST_START_MAX_RUNTIME_HOURS` | float(0.5,12.0) | `3.0` | Maximum run length taken from the start estimate for the forecast. |
+| `heat_forecast_start_blend_hours` | `HEAT_FORECAST_START_BLEND_HOURS` | float(0.0,6.0) | `1.0` | After the start window the raised energy fades back into the simulation over this time. 0 disables. |
+| `heat_forecast_block_hold_enabled` | `HEAT_FORECAST_BLOCK_HOLD_ENABLED` | bool | `true` | During DHW/defrost blockades and their grace period the last good simulation is held; only slot 0 is updated and the slab start is frozen. |
+| `heat_forecast_block_hold_max_hours` | `HEAT_FORECAST_BLOCK_HOLD_MAX_HOURS` | float(0.5,12.0) | `3.0` | A held simulation older than this is discarded and a new simulation is run. |
+| `heat_forecast_block_grace_minutes` | `HEAT_FORECAST_BLOCK_GRACE_MINUTES` | int(0,120) | `10` | Time after a DHW/defrost blockade during which the forecast is still held. |
+| `heat_forecast_block_publish_interval_seconds` | `HEAT_FORECAST_BLOCK_PUBLISH_INTERVAL_SECONDS` | int(0,3600) | `120` | Minimum interval between forecast publishes during a blockade (removes the duplicate publish at blockade start). |
+| `cop_bin_width_k` | `COP_BIN_WIDTH_K` | float(1.0,5.0) | `2.0` | Outdoor-temperature bin width for COP learning. |
+| `cop_max_bin_weight_share` | `COP_MAX_BIN_WEIGHT_SHARE` | float(0.1,1.0) | `0.4` | No single COP bin may carry more than this share of the fit weight (outlier robustness). 1.0 disables. |
+| `cop_online_correction_enabled` | `COP_ONLINE_CORRECTION_ENABLED` | bool | `true` | Multiply forecast heating electricity by the bounded moving ratio actual/forecast. |
+| `cop_online_correction_hours` | `COP_ONLINE_CORRECTION_HOURS` | int(24,48) | `36` | History window for the online correction factor (24–48 h). |
+| `cop_online_correction_limit` | `COP_ONLINE_CORRECTION_LIMIT` | float(0.0,0.5) | `0.2` | The correction factor is bounded to 1 ± this value. |
+| `cop_online_correction_min_hours` | `COP_ONLINE_CORRECTION_MIN_HOURS` | int(1,48) | `12` | Minimum evaluated hours before the correction is active. |
+| `heat_forecast_slot0_window_minutes` | `HEAT_FORECAST_SLOT0_WINDOW_MINUTES` | int(5,180) | `45` | Slot 0 projects the mean electrical power of the last minutes instead of the instantaneous value. |
+| `heat_forecast_slot0_measured_weight` | `HEAT_FORECAST_SLOT0_MEASURED_WEIGHT` | float(0.0,1.0) | `0.5` | Weight of the measured mean versus the model value in the slot-0 remainder. |
+| `heat_forecast_slot0_cap_factor` | `HEAT_FORECAST_SLOT0_CAP_FACTOR` | float(1.0,5.0) | `1.5` | The slot-0 remainder is capped at this factor times the simulation. |
+| `heat_forecast_sum_stabilization_enabled` | `HEAT_FORECAST_SUM_STABILIZATION_ENABLED` | bool | `true` | Bind the future 24 h thermal sum to the baseline; the simulation only distributes it. Smooths consecutive forecasts. |
+| `heat_forecast_sum_baseline_band` | `HEAT_FORECAST_SUM_BASELINE_BAND` | float(0.0,1.0) | `0.15` | Allowed deviation of the 24 h sum from the baseline (±fraction). |
+| `heat_forecast_sum_smoothing_alpha` | `HEAT_FORECAST_SUM_SMOOTHING_ALPHA` | float(0.0,1.0) | `0.5` | Share of the new 24 h sum taken per run (1 = no smoothing). |
+| `heat_forecast_sum_hysteresis` | `HEAT_FORECAST_SUM_HYSTERESIS` | float(0.0,0.5) | `0.03` | Changes of the 24 h sum below this fraction keep the previous sum. |

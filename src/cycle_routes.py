@@ -519,18 +519,24 @@ def _calm_conditions(ctx: CycleContext) -> bool:
     act blindly.
     """
     if ctx.climate_mode == "cooling":
+        logging.debug("Calm check: cooling mode -> not calm")
         return False
     indoor = ctx.prediction_indoor_temp
     if indoor is None:
         indoor = ctx.actual_indoor
     target = ctx.target_indoor_temp
     if indoor is None or target is None:
+        logging.debug("Calm check: indoor/target missing -> not calm")
         return False
     last_target = ctx.state.get("last_target_indoor_temp")
     try:
         if last_target is not None and abs(
             float(target) - float(last_target)
         ) > 0.15:
+            logging.debug(
+                "Calm check: target changed %.2f -> %.2f -> not calm",
+                float(last_target), float(target),
+            )
             return False
         trend = (ctx.features_dict or {}).get("indoor_temp_delta_60m")
         return not has_heat_demand(
@@ -583,6 +589,10 @@ def step_gradual_control(ctx: CycleContext) -> None:
         target_jump=False,
     )
 
+    logging.debug(
+        "Gradual control: baseline=%.1f°C, limit=%.1f K (%s)",
+        baseline, max_change, "calm" if calm else "demand/target change",
+    )
     delta = ctx.final_temp - baseline
     if abs(delta) > max_change:
         ctx.final_temp = baseline + np.clip(delta, -max_change, max_change)

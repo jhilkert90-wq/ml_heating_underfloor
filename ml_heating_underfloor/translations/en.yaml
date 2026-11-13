@@ -196,6 +196,75 @@ configuration:
   heat_forecast_min_calibration_hours:
     name: '[Forecast] Minimum Calibration Hours'
     description: Minimum aligned heating-counter history required before accepting calibration; default 48 hours.
+  heat_forecast_anchor_max_gap_minutes:
+    name: '[Forecast] Anchor Interpolation Max Gap (min)'
+    description: 'Counter samples around a full hour are linearly interpolated to the hour boundary when they are at most this far apart.'
+  heat_forecast_anchor_tolerance_minutes:
+    name: '[Forecast] Anchor Alignment Tolerance (min)'
+    description: 'Accuracy statistics accept counter anchors that deviate at most this many minutes from the full hour.'
+  heat_forecast_start_power_window_minutes:
+    name: '[Forecast] Start Window Power Averaging (min)'
+    description: 'The start-estimate window uses the mean measured thermal power of the last minutes instead of the instantaneous value.'
+  heat_forecast_start_power_cap_factor:
+    name: '[Forecast] Start Window Power Cap Factor'
+    description: 'Start-window power is capped at this factor times the baseline/simulated power.'
+  heat_forecast_start_max_runtime_hours:
+    name: '[Forecast] Start Window Max Runtime (h)'
+    description: 'Maximum run length taken from the start estimate for the forecast.'
+  heat_forecast_start_blend_hours:
+    name: '[Forecast] Start Window Blend-Out (h)'
+    description: 'After the start window the raised energy fades back into the simulation over this time. 0 disables.'
+  heat_forecast_block_hold_enabled:
+    name: '[Forecast] Hold Forecast During DHW/Defrost'
+    description: 'During DHW/defrost blockades and their grace period the last good simulation is held; only slot 0 is updated and the slab start is frozen.'
+  heat_forecast_block_hold_max_hours:
+    name: '[Forecast] Blockade Hold Max Age (h)'
+    description: 'A held simulation older than this is discarded and a new simulation is run.'
+  heat_forecast_block_grace_minutes:
+    name: '[Forecast] Blockade Grace (min)'
+    description: 'Time after a DHW/defrost blockade during which the forecast is still held.'
+  heat_forecast_block_publish_interval_seconds:
+    name: '[Forecast] Blockade Publish Interval (s)'
+    description: 'Minimum interval between forecast publishes during a blockade (removes the duplicate publish at blockade start).'
+  cop_bin_width_k:
+    name: '[Forecast] COP Bin Width (K)'
+    description: 'Outdoor-temperature bin width for COP learning.'
+  cop_max_bin_weight_share:
+    name: '[Forecast] COP Max Weight per Bin'
+    description: 'No single COP bin may carry more than this share of the fit weight (outlier robustness). 1.0 disables.'
+  cop_online_correction_enabled:
+    name: '[Forecast] COP Online Correction'
+    description: 'Multiply forecast heating electricity by the bounded moving ratio actual/forecast.'
+  cop_online_correction_hours:
+    name: '[Forecast] COP Correction Window (h)'
+    description: 'History window for the online correction factor (24–48 h).'
+  cop_online_correction_limit:
+    name: '[Forecast] COP Correction Limit'
+    description: 'The correction factor is bounded to 1 ± this value.'
+  cop_online_correction_min_hours:
+    name: '[Forecast] COP Correction Min Hours'
+    description: 'Minimum evaluated hours before the correction is active.'
+  heat_forecast_slot0_window_minutes:
+    name: '[Forecast] Slot 0 Averaging (min)'
+    description: 'Slot 0 projects the mean electrical power of the last minutes instead of the instantaneous value.'
+  heat_forecast_slot0_measured_weight:
+    name: '[Forecast] Slot 0 Measured Weight'
+    description: 'Weight of the measured mean versus the model value in the slot-0 remainder.'
+  heat_forecast_slot0_cap_factor:
+    name: '[Forecast] Slot 0 Cap Factor'
+    description: 'The slot-0 remainder is capped at this factor times the simulation.'
+  heat_forecast_sum_stabilization_enabled:
+    name: '[Forecast] 24 h Sum Stabilisation'
+    description: 'Bind the future 24 h thermal sum to the baseline; the simulation only distributes it. Smooths consecutive forecasts.'
+  heat_forecast_sum_baseline_band:
+    name: '[Forecast] 24 h Sum Baseline Band'
+    description: 'Allowed deviation of the 24 h sum from the baseline (±fraction).'
+  heat_forecast_sum_smoothing_alpha:
+    name: '[Forecast] 24 h Sum Smoothing'
+    description: 'Share of the new 24 h sum taken per run (1 = no smoothing).'
+  heat_forecast_sum_hysteresis:
+    name: '[Forecast] 24 h Sum Hysteresis'
+    description: 'Changes of the 24 h sum below this fraction keep the previous sum.'
   heat_forecast_electricity_counter_entity:
     name: '[Forecast] Heating Electricity Counter (kWh)'
     description: Reset-safe annual counter; may include defrost electricity.

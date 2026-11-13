@@ -115,6 +115,12 @@ def read_hp_start_estimate(
         from . import config as cfg  # type: ignore[no-redef]
 
     def fallback(reason: str) -> None:
+        if _last_reason.get(mode) != reason:
+            LOGGER.info(
+                "HP start estimate (%s) unavailable: %s -> heuristic fallback",
+                mode,
+                reason,
+            )
         _last_reason[mode] = reason
         return None
 
@@ -173,7 +179,15 @@ def read_hp_start_estimate(
         elif runtime is not None and runtime < 0:
             return fallback("invalid_runtime")
         _failures = 0
+        if _last_reason.get(mode):
+            LOGGER.info("HP start estimate (%s) available again", mode)
         _last_reason[mode] = ""
+        LOGGER.debug(
+            "HP start estimate (%s): status=%s method=%s start_in=%s min "
+            "runtime=%s min (%s) confidence=%.2f age=%.1f min",
+            mode, status, attrs.get("method", ""), minutes, runtime,
+            runtime_source, confidence, age_min,
+        )
         return HPStartEstimate(
             mode=mode,
             status=status,
@@ -213,6 +227,7 @@ def trajectory_window(estimate: Optional[HPStartEstimate]) -> Optional[dict]:
     if estimate is None or not estimate.known_method:
         return None
     if estimate.status in ("blocked", "unknown"):
+        LOGGER.debug("Trajectory window skipped: sensor status %s", estimate.status)
         return None
     runtime = estimate.expected_runtime_min
     runtime_h = runtime / 60.0 if runtime is not None else None
@@ -259,10 +274,13 @@ def candidate_window(
     )
     if need <= 0.05 or need + shift <= need:
         return window
-    return {
-        **window,
-        "delay_h": min(window["delay_h"], window["delay_h"] * need / (need + shift)),
-    }
+    delay_h = min(window["delay_h"], window["delay_h"] * need / (need + shift))
+    LOGGER.debug(
+        "Candidate window: outlet %.1f (ref %.1f) need=%.2f K shift=%.2f K "
+        "delay %.2f -> %.2f h",
+        candidate_outlet, reference_outlet, need, shift, window["delay_h"], delay_h,
+    )
+    return {**window, "delay_h": delay_h}
 
 
 def learning_weight(
@@ -285,7 +303,12 @@ def learning_weight(
     minutes = estimate.minutes_to_start
     if minutes is None or cycle_minutes <= 0:
         return 0.0
-    return max(0.0, min(1.0, (cycle_minutes - minutes) / cycle_minutes))
+    weight = max(0.0, min(1.0, (cycle_minutes - minutes) / cycle_minutes))
+    LOGGER.debug(
+        "Learning weight %.2f (start in %.0f min, cycle %.0f min)",
+        weight, minutes, cycle_minutes,
+    )
+    return weight
 
 
 def cost_skip_allowed(
@@ -300,7 +323,13 @@ def cost_skip_allowed(
     if estimate.status in ("blocked", "unknown", "running"):
         return True
     minutes = estimate.minutes_to_start
-    return minutes is not None and minutes <= horizon_min
+    allowed = minutes is not None and minutes <= horizon_min
+    if not allowed:
+        LOGGER.debug(
+            "Cost skip not allowed: HP start in %s min beyond horizon %.0f min",
+            minutes, horizon_min,
+        )
+    return allowed
 
 
 def diagnostics(

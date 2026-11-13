@@ -11,10 +11,13 @@ demand-aware.
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any, Dict, Iterable, Optional
 
 from .building_curve import base_outlet_temp
+
+LOGGER = logging.getLogger(__name__)
 
 
 def has_heat_demand(
@@ -26,13 +29,17 @@ def has_heat_demand(
 ) -> bool:
     """True when the room is below target or is falling towards it."""
     deficit = float(target_indoor) - float(current_indoor)
-    if deficit > deficit_k:
-        return True
     try:
         trend = float(trend_60m) if trend_60m is not None else 0.0
     except (TypeError, ValueError):
         trend = 0.0
-    return trend < -trend_threshold and deficit > -deficit_k
+    demand = deficit > deficit_k or (
+        trend < -trend_threshold and deficit > -deficit_k
+    )
+    LOGGER.debug(
+        "Heat demand=%s (deficit=%.2f K, trend60m=%.2f K/h)", demand, deficit, trend
+    )
+    return demand
 
 
 def reference_outlet(
@@ -54,8 +61,13 @@ def reference_outlet(
     except (TypeError, ValueError):
         return None
     if ref is None or not math.isfinite(ref):
+        LOGGER.debug("Reference outlet unavailable (base curve returned %s)", ref)
         return None
-    return min(upper, max(lower, ref))
+    clamped = min(upper, max(lower, ref))
+    LOGGER.debug(
+        "Reference outlet %.2f C (base %.2f, bounds %.1f-%.1f)", clamped, ref, lower, upper
+    )
+    return clamped
 
 
 def reference_band(demand: bool, base_k: float, demand_extra_k: float) -> float:
@@ -85,6 +97,11 @@ def pick_regularized(
         value = cand["score"] + lam * (outlet - reference) ** 2
         if value < best_value:
             best, best_value = cand, value
+    if best is not None:
+        LOGGER.debug(
+            "Regularised pick: outlet %.2f (score %.3f, ref %.2f, lambda %.4f)",
+            best["outlet"], best["score"], reference, lam,
+        )
     return best
 
 
@@ -97,4 +114,6 @@ def slew_limit(
     """Per-cycle setpoint change limit; relaxed on demand or target jumps."""
     if demand or target_jump:
         return max_change
-    return min(max_change, calm_limit)
+    limit = min(max_change, calm_limit)
+    LOGGER.debug("Calm slew limit %.2f K (default %.2f K)", limit, max_change)
+    return limit

@@ -218,6 +218,7 @@ class PredictionMetrics:
 
         # Control-quality metrics that room-temperature MAE cannot show
         metrics['control_quality'] = self._calculate_control_quality()
+        logging.debug("Control quality metrics: %s", metrics['control_quality'])
         
         # Cache results
         self._cached_metrics = metrics

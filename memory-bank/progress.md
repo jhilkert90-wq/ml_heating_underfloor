@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ WP load forecast stabilisation (Prompt Nr.1) + 0.3.1 — 2026-11-13
+
+**Status:** IMPLEMENTED — 15 new tests; full suite 2041 passed, 7 known order-dependent grace failures. Version bumped to 0.3.1; changelog entries now in English.
+
+**Summary:** Anchor interpolation, windowed start power with runtime limit, blockade hold, COP bin width/weight cap/online correction, slot-0 blend, 24 h sum stabilisation, extensive logging (forecast, start estimate, accuracy, outlet stability). Not done: median of last 3 start-estimate runs, Tibber median profile. `HEAT_FORECAST_NEAR_CONTROLLER_ENABLED` left unchanged (code default false). Defaults untuned against real data.
+
+**Files changed:** `src/heat_forecast.py`, `src/heat_forecast_stabilizers.py`, `src/forecast_accuracy.py`, `src/hp_start_estimate.py`, `src/outlet_stability.py`, `src/cycle_routes.py`, `src/prediction_metrics.py`, config/translations/docs, tests, changelogs.
+
 ## ✅ Outlet search stabilisation (Prompt Nr.2) — 2026-11-13
 
 **Status:** IMPLEMENTED — full suite 2026 passed; 7 pre-existing order-dependent `test_heating_controller` grace failures unchanged.

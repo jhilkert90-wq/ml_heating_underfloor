@@ -196,6 +196,75 @@ configuration:
   heat_forecast_min_calibration_hours:
     name: '[Prognose] Mindeststunden für Kalibrierung'
     description: Erforderliche übereinstimmende Heiz-Zählerhistorie vor Übernahme der Kalibrierung; Standard 48 Stunden.
+  heat_forecast_anchor_max_gap_minutes:
+    name: '[Prognose] Anker-Interpolation max. Lücke (min)'
+    description: 'Zählerwerte um die volle Stunde werden linear auf die Stundengrenze interpoliert, wenn sie höchstens so weit auseinander liegen.'
+  heat_forecast_anchor_tolerance_minutes:
+    name: '[Prognose] Anker-Ausrichtungstoleranz (min)'
+    description: 'Die Genauigkeitsstatistik akzeptiert Zähler-Anker, die höchstens so viele Minuten von der vollen Stunde abweichen.'
+  heat_forecast_start_power_window_minutes:
+    name: '[Prognose] Startfenster-Leistung Mittelung (min)'
+    description: 'Das Startfenster verwendet die mittlere gemessene Wärmeleistung der letzten Minuten statt des Momentanwerts.'
+  heat_forecast_start_power_cap_factor:
+    name: '[Prognose] Startfenster-Leistung Deckel-Faktor'
+    description: 'Die Startfenster-Leistung wird auf diesen Faktor mal Baseline/Simulationsleistung begrenzt.'
+  heat_forecast_start_max_runtime_hours:
+    name: '[Prognose] Startfenster max. Laufzeit (h)'
+    description: 'Maximale Laufzeit aus der Startschätzung, die in die Prognose übernommen wird.'
+  heat_forecast_start_blend_hours:
+    name: '[Prognose] Startfenster Ausblenden (h)'
+    description: 'Nach dem Startfenster wird die angehobene Energie über diese Zeit in die Simulation zurückgeblendet. 0 deaktiviert.'
+  heat_forecast_block_hold_enabled:
+    name: '[Prognose] Prognose bei WW/Abtauen halten'
+    description: 'Während WW/Abtau-Blockaden und deren Nachlaufzeit wird die letzte gute Simulation gehalten; nur Slot 0 wird aktualisiert und der Slab-Start eingefroren.'
+  heat_forecast_block_hold_max_hours:
+    name: '[Prognose] Blockade-Haltedauer max. (h)'
+    description: 'Eine gehaltene Simulation, die älter ist, wird verworfen und neu simuliert.'
+  heat_forecast_block_grace_minutes:
+    name: '[Prognose] Blockade-Nachlauf (min)'
+    description: 'Zeit nach einer WW/Abtau-Blockade, in der die Prognose weiter gehalten wird.'
+  heat_forecast_block_publish_interval_seconds:
+    name: '[Prognose] Blockade Publish-Intervall (s)'
+    description: 'Mindestabstand zwischen Prognose-Veröffentlichungen während einer Blockade (entfernt das doppelte Publish bei Blockadebeginn).'
+  cop_bin_width_k:
+    name: '[Prognose] COP-Bin-Breite (K)'
+    description: 'Außentemperatur-Binbreite für das COP-Lernen.'
+  cop_max_bin_weight_share:
+    name: '[Prognose] COP max. Gewicht je Bin'
+    description: 'Kein einzelnes COP-Bin darf mehr als diesen Anteil des Fit-Gewichts tragen (Ausreißer-Robustheit). 1.0 deaktiviert.'
+  cop_online_correction_enabled:
+    name: '[Prognose] COP-Online-Korrektur'
+    description: 'Multipliziert den Heizstrom der Prognose mit dem begrenzten gleitenden Verhältnis Ist/Prognose.'
+  cop_online_correction_hours:
+    name: '[Prognose] COP-Korrekturfenster (h)'
+    description: 'Historienfenster für den Online-Korrekturfaktor (24–48 h).'
+  cop_online_correction_limit:
+    name: '[Prognose] COP-Korrekturgrenze'
+    description: 'Der Korrekturfaktor wird auf 1 ± diesen Wert begrenzt.'
+  cop_online_correction_min_hours:
+    name: '[Prognose] COP-Korrektur Mindeststunden'
+    description: 'Mindestanzahl bewerteter Stunden, bevor die Korrektur aktiv wird.'
+  heat_forecast_slot0_window_minutes:
+    name: '[Prognose] Slot 0 Mittelung (min)'
+    description: 'Slot 0 projiziert die mittlere elektrische Leistung der letzten Minuten statt des Momentanwerts.'
+  heat_forecast_slot0_measured_weight:
+    name: '[Prognose] Slot 0 Messwert-Gewicht'
+    description: 'Gewicht des gemessenen Mittels gegenüber dem Modellwert im Slot-0-Rest.'
+  heat_forecast_slot0_cap_factor:
+    name: '[Prognose] Slot 0 Deckel-Faktor'
+    description: 'Der Slot-0-Rest wird auf diesen Faktor mal Simulation begrenzt.'
+  heat_forecast_sum_stabilization_enabled:
+    name: '[Prognose] 24-h-Summe stabilisieren'
+    description: 'Bindet die zukünftige 24-h-Wärmesumme an die Baseline; die Simulation verteilt sie nur. Glättet aufeinanderfolgende Prognosen.'
+  heat_forecast_sum_baseline_band:
+    name: '[Prognose] 24-h-Summe Baseline-Band'
+    description: 'Erlaubte Abweichung der 24-h-Summe von der Baseline (± Anteil).'
+  heat_forecast_sum_smoothing_alpha:
+    name: '[Prognose] 24-h-Summe Glättung'
+    description: 'Anteil der neuen 24-h-Summe je Lauf (1 = keine Glättung).'
+  heat_forecast_sum_hysteresis:
+    name: '[Prognose] 24-h-Summe Hysterese'
+    description: 'Änderungen der 24-h-Summe unter diesem Anteil behalten die vorherige Summe.'
   heat_forecast_electricity_counter_entity:
     name: '[Prognose] Stromzähler Heizen (kWh)'
     description: Reset-sicherer Jahreszähler; darf den Abtaustrom enthalten.

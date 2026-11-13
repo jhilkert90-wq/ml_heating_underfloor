@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### WP load forecast stabilisation + 0.3.1 — 2026-11-13
+
+- **What:** forecast stabilisers, blockade hold, COP/accuracy correction, logging, version 0.3.1. **Why:** forecast jumped around DHW/defrost and start estimates. **Files:** see progress.md.
+
 ### Outlet search stabilisation — 2026-11-13
 
 - **What:** sensitivity guard + building-curve regularisation, calm slew/hysteresis, scaled FD-Newton, operational-state persistence fix, control-quality metrics. **Why:** required outlet jumped 26–34 °C on a flat search objective. **Files:** see progress.md.
