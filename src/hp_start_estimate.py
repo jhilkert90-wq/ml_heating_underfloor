@@ -253,6 +253,16 @@ def candidate_window(
     an upper bound; everything else keeps the sensor window unchanged.
     """
     if (
+        estimate is not None
+        and isinstance(window, dict)
+        and reference_outlet is not None
+        and estimate.method == "degree_minutes"
+        and estimate.status == "running"
+    ):
+        return _running_candidate_window(
+            estimate, window, candidate_outlet, reference_outlet, mode
+        )
+    if (
         estimate is None
         or not isinstance(window, dict)
         or reference_outlet is None
@@ -281,6 +291,46 @@ def candidate_window(
         candidate_outlet, reference_outlet, need, shift, window["delay_h"], delay_h,
     )
     return {**window, "delay_h": delay_h}
+
+
+def _running_candidate_window(
+    estimate: HPStartEstimate,
+    window: dict,
+    candidate_outlet: float,
+    reference_outlet: float,
+    mode: str,
+) -> dict:
+    """Remaining runtime for one outlet candidate while the HP is running.
+
+    The sensor's remaining runtime is ``(gm_stop - gm) / margin`` with
+    ``margin`` the distance between the actual supply and the required supply
+    of the *currently applied* setpoint. Using it unchanged for every
+    candidate makes the trajectory assume the pump stops early, which flattens
+    the objective and makes the search depend on the previous setpoint. A
+    candidate ``d`` K above (heating) the reference shrinks the margin by
+    ``d`` and extends the runtime accordingly; no margin left means unbounded.
+    """
+    runtime_h = window.get("runtime_h")
+    required = _number(estimate.attributes.get("required_supply_c"))
+    supply = _number(estimate.attributes.get("supply_actual_c"))
+    if runtime_h is None or estimate.runtime_unbounded or required is None or supply is None:
+        return window
+    margin = (supply - required) if mode == "heating" else (required - supply)
+    shift = (
+        candidate_outlet - reference_outlet
+        if mode == "heating"
+        else reference_outlet - candidate_outlet
+    )
+    if margin <= 0.05 or shift <= 0:
+        return window
+    new_margin = margin - shift
+    extended = None if new_margin <= 0.05 else runtime_h * margin / new_margin
+    LOGGER.debug(
+        "Running window: outlet %.1f (ref %.1f) margin=%.2f K runtime %.2f -> %s h",
+        candidate_outlet, reference_outlet, margin, runtime_h,
+        "unbounded" if extended is None else f"{extended:.2f}",
+    )
+    return {**window, "runtime_h": extended}
 
 
 def learning_weight(

@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Running-HP runtime window per candidate — 2026-11-13
+
+**Status:** IMPLEMENTED — root cause of the 26/34 °C flip: the sensor runtime (for the applied setpoint) was reused for all candidates while the HP runs, so the predicted end temperature depended on the previous outlet.
+
+**Files changed:** `src/hp_start_estimate.py`, `tests/unit/test_hp_start_estimate.py`, `CHANGELOG.md`.
+
 ## ✅ Outlet reference band tuning — 2026-11-13
 
 **Status:** IMPLEMENTED — band default 2 K, `OUTLET_REFERENCE_ALWAYS_ACTIVE` (default true) after replaying the oscillating log (max step 1.6 -> 0.3 K). Open: root cause of the model-state flip between cycles.

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Outlet search oscillation: while the heat pump is running, the start-estimate runtime window is now re-derived per outlet candidate (higher candidate shrinks the supply margin and extends the runtime) instead of reusing the runtime computed for the previously applied setpoint. This removed the previous-setpoint dependence of the predicted end temperature.
+
 ### Added
 - **WP load forecast stabilisation** (24 new `heat_forecast_*` / `cop_*` options, new `src/heat_forecast_stabilizers.py`): windowed start power with cap, runtime limit and blend-out for the start estimate; blockade hold (DHW/defrost) that keeps the last good simulation, freezes the slab start and de-duplicates publishes; 24 h sum bound to the baseline with hysteresis and smoothing; online electrical correction factor from forecast accuracy (`forecast_accuracy.correction_factor`); COP bin width and per-bin weight cap
 - Logging for WP load forecast, start estimate, forecast accuracy and the outlet stabilisation helpers (INFO for state changes, DEBUG for per-cycle details)

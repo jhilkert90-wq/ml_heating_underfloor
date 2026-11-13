@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### Running-HP runtime window — 2026-11-13
+
+- **What:** `candidate_window` re-derives runtime per candidate when status is running. **Why:** alternating predictions at identical outlet (23.35/22.38 °C). **Files:** `src/hp_start_estimate.py`, test, CHANGELOG.
+
 ### Outlet reference band tuning — 2026-11-13
 
 - **What:** band 4->2 K, always-active option. **Why:** replay of oscillating log showed guard (S<0.1) too narrow. **Files:** see progress.md.
