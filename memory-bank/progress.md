@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ PR 114 review fixes — 2026-11-13
+
+**Status:** IMPLEMENTED — all five review findings addressed; seven focused regression tests pass.
+
+**Implementation summary:** Cache thermal forecasts after start-estimate adjustments, project DHW from current power net of standby, cap COP-fit shares against final weights, adjust running runtime for lower candidates, and persist the pre-limiter outlet for deviation telemetry.
+
+**Files changed:** `src/heat_forecast.py`, `src/hp_start_estimate.py`, `src/pre_dispatch.py`, `src/cycle_routes.py`, `src/state_manager.py`, `src/unified_thermal_state.py`, `src/unified_thermal_state_cooling.py`, `tests/unit/test_heat_forecast.py`, `tests/unit/test_heat_forecast_stabilizers.py`, `tests/unit/test_hp_start_estimate.py`, `tests/unit/test_pre_dispatch.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## ✅ Running-HP runtime window per candidate — 2026-11-13
 
 **Status:** IMPLEMENTED — root cause of the 26/34 °C flip: the sensor runtime (for the applied setpoint) was reused for all candidates while the HP runs, so the predicted end temperature depended on the previous outlet.

@@ -929,6 +929,7 @@ def step_save_state(ctx: CycleContext) -> None:
         "last_avg_other_rooms_temp": ctx.avg_other_rooms_temp,
         "last_fireplace_on": ctx.fireplace_on,
         "last_final_temp": ctx.final_temp,
+        "last_computed_temp": ctx.suggested_temp,
         "last_climate_mode": ctx.climate_mode,
         "last_active_climate_mode": getattr(
             ctx.wrapper, "last_active_climate_mode", ctx.climate_mode

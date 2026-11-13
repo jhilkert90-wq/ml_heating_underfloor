@@ -284,12 +284,15 @@ class TestStepPublishBuildingCurves:
 
     @patch("src.cycle_routes.save_state")
     def test_idle_state_saves_last_active_mode(self, mock_save):
-        ctx = _make_ctx(climate_mode="heating", features_dict={})
+        ctx = _make_ctx(
+            climate_mode="heating", features_dict={}, suggested_temp=35.0
+        )
         ctx.wrapper.last_active_climate_mode = "cooling"
 
         step_save_state(ctx)
 
         assert mock_save.call_args.kwargs["last_active_climate_mode"] == "cooling"
+        assert mock_save.call_args.kwargs["last_computed_temp"] == 35.0
 
 
 class TestStepRecordBuildingSample:

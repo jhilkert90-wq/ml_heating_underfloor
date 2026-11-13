@@ -307,8 +307,9 @@ def _running_candidate_window(
     of the *currently applied* setpoint. Using it unchanged for every
     candidate makes the trajectory assume the pump stops early, which flattens
     the objective and makes the search depend on the previous setpoint. A
-    candidate ``d`` K above (heating) the reference shrinks the margin by
-    ``d`` and extends the runtime accordingly; no margin left means unbounded.
+    candidate above the reference shrinks the margin and extends runtime;
+    one below it increases the margin and shortens runtime. No margin left
+    means unbounded.
     """
     runtime_h = window.get("runtime_h")
     required = _number(estimate.attributes.get("required_supply_c"))
@@ -321,7 +322,7 @@ def _running_candidate_window(
         if mode == "heating"
         else reference_outlet - candidate_outlet
     )
-    if margin <= 0.05 or shift <= 0:
+    if margin <= 0.05 or abs(shift) <= 0.05:
         return window
     new_margin = margin - shift
     extended = None if new_margin <= 0.05 else runtime_h * margin / new_margin

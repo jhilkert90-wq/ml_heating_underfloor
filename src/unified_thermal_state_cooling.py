@@ -143,6 +143,7 @@ class CoolingThermalStateManager:
                 "is_calibrating": False,
                 "last_run_features": None,
                 "last_final_temp": None,
+                "last_computed_temp": None,
                 "last_avg_other_rooms_temp": None,
                 "last_fireplace_on": False,
                 "last_is_blocking": False,

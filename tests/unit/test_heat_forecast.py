@@ -1444,6 +1444,9 @@ def test_power_projection_uses_only_remaining_time_and_assigns_active_dhw(
     for key, entity in entities.items():
         monkeypatch.setattr(config, key, entity)
     engine = HeatForecastEngine(str(tmp_path / "state.json"))
+    engine.state["power_history"] = [
+        {"t": "2026-01-01T12:43:00+00:00", "el": 0.5, "th": None}
+    ]
     electrical = {
         "forecast": [{"value": 0.3}],
         "forecast_total_el_kwh": [0.3],
@@ -2432,15 +2435,16 @@ def _run_start_estimate_forecast(monkeypatch, tmp_path, overrides=None):
     )
 
     assert reconciled_heat[0] == thermal_input[0]
-    return thermal_input
+    return thermal_input, engine.state["last_good_forecast"]["heat_kwh"]
 
 
 def test_start_estimate_is_applied_before_electrical_forecast(
     monkeypatch, tmp_path
 ):
-    thermal_input = _run_start_estimate_forecast(monkeypatch, tmp_path)
+    thermal_input, cached_heat = _run_start_estimate_forecast(monkeypatch, tmp_path)
     # Simulation yields 0 kWh while the HP runs at the measured 2.2 kW (12.11.)
     assert thermal_input[0][0] > 0.0
+    assert cached_heat[0] == pytest.approx(thermal_input[0][0])
 
 
 @pytest.mark.parametrize(
@@ -2454,7 +2458,7 @@ def test_start_estimate_is_applied_before_electrical_forecast(
 def test_forecast_unchanged_without_usable_sensor(
     monkeypatch, tmp_path, overrides
 ):
-    thermal_input = _run_start_estimate_forecast(
+    thermal_input, _ = _run_start_estimate_forecast(
         monkeypatch, tmp_path, overrides
     )
     assert thermal_input[0] == [0.0]

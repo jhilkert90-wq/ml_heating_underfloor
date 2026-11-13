@@ -120,6 +120,7 @@ EXTRA_OPERATIONAL_KEYS = frozenset(
         "last_active_climate_mode",
         "last_target_indoor_temp",
         "setpoint_hold_cycles_remaining",
+        "last_computed_temp",
     }
 )
 
@@ -246,6 +247,7 @@ class ThermalStateManager:
                 # Added missing fields required by main.py learning logic
                 "last_run_features": None,
                 "last_final_temp": None,
+                "last_computed_temp": None,
                 "last_avg_other_rooms_temp": None,
                 "last_fireplace_on": False,
                 "last_is_blocking": False,

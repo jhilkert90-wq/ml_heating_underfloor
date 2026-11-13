@@ -30,6 +30,7 @@ def test_run_online_learning_forwards_defrost_context():
         },
         "last_indoor_temp": 21.0,
         "last_final_temp": 40.0,
+        "last_computed_temp": 35.0,
         "last_predicted_indoor": 21.2,
         "last_target_indoor_temp": 21.0,
         "last_climate_mode": "heating",
@@ -49,6 +50,7 @@ def test_run_online_learning_forwards_defrost_context():
     ]
     assert context["defrosting"] == 1.0
     assert context["minutes_since_defrost"] == 20.0
+    assert context["outlet_applied_vs_computed_k"] == pytest.approx(5.0)
 
 
 class TestUpdateSensorBufferAndThermo:

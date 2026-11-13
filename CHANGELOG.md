@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Outlet search oscillation: while the heat pump is running, the start-estimate runtime window is now re-derived per outlet candidate (higher candidate shrinks the supply margin and extends the runtime) instead of reusing the runtime computed for the previously applied setpoint. This removed the previous-setpoint dependence of the predicted end temperature.
+- Running-HP runtime windows now shorten for lower-effort outlet candidates as well as extending for higher-effort candidates.
+- Last-good thermal forecasts are cached after start-estimate adjustments, so blockade holds preserve the previously published future heating profile.
+- DHW slot-0 projections now use current electrical power net of standby instead of the preceding heating power mean.
+- COP-fit weight clipping now enforces the configured maximum share against the final clipped total.
+- Applied-versus-computed outlet telemetry now compares against a separately persisted pre-limiter computed outlet.
+- Hour anchors interpolate counters across the hour boundary (anchor coverage no longer 0); accuracy accepts a small boundary tolerance
+- Phantom load spikes in the forecast during DHW/defrost blockades
+- Operational-state keys (`setpoint_hold_cycles_remaining`, `last_climate_mode`, `last_active_climate_mode`, `last_target_indoor_temp`) were dropped on save, so the setpoint hold never fired
+- Saturation cap is re-applied after trajectory verification correction
 
 ### Added
 - **WP load forecast stabilisation** (24 new `heat_forecast_*` / `cop_*` options, new `src/heat_forecast_stabilizers.py`): windowed start power with cap, runtime limit and blend-out for the start estimate; blockade hold (DHW/defrost) that keeps the last good simulation, freezes the slab start and de-duplicates publishes; 24 h sum bound to the baseline with hysteresis and smoothing; online electrical correction factor from forecast accuracy (`forecast_accuracy.correction_factor`); COP bin width and per-bin weight cap
@@ -20,12 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Outlet reference band default 4 K -> 2 K; new `OUTLET_REFERENCE_ALWAYS_ACTIVE` (default true) applies the base-curve band to every search, not only ill-conditioned ones (validated by log replay)
 - `COP_MIN_HOURS_PER_BIN` default 4 -> 2; COP bins are 2 K wide; slot 0 uses a windowed power mean blended with the model rate
 - Add-on version bumped to 0.3.1
-
-### Fixed
-- Hour anchors interpolate counters across the hour boundary (anchor coverage no longer 0); accuracy accepts a small boundary tolerance
-- Phantom load spikes in the forecast during DHW/defrost blockades
-- Operational-state keys (`setpoint_hold_cycles_remaining`, `last_climate_mode`, `last_active_climate_mode`, `last_target_indoor_temp`) were dropped on save, so the setpoint hold never fired
-- Saturation cap is re-applied after trajectory verification correction
 
 ## [0.2.0] - 2026-02-10
 

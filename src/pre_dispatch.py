@@ -238,6 +238,9 @@ def run_online_learning(
     last_run_features = state.get("last_run_features")
     last_indoor_temp = state.get("last_indoor_temp")
     last_final_temp_stored = state.get("last_final_temp")
+    last_computed_temp = state.get("last_computed_temp")
+    if last_computed_temp is None:
+        last_computed_temp = last_final_temp_stored
     last_avg_other_rooms_temp = state.get("last_avg_other_rooms_temp")
 
     if (
@@ -366,7 +369,7 @@ def run_online_learning(
             ),
             "indoor_change_k": float(actual_indoor_change),
             "outlet_applied_vs_computed_k": float(
-                actual_applied_temp - last_final_temp_stored
+                actual_applied_temp - last_computed_temp
             ),
             "avg_cloud_cover": avg_cloud_cover,
             "cloud_cover_forecast": cloud_cover_forecasts,

@@ -2689,13 +2689,6 @@ class HeatForecastEngine:
                 sum_info.get("final_sum"),
                 sum_info.get("reason"),
             )
-        if held is None and not blocked and mode == "heating":
-            self.state["last_good_forecast"] = {
-                "generated_at": now.astimezone(timezone.utc).isoformat(),
-                "first_hour_fraction": remaining_hours,
-                "heat_kwh": [round(float(v), 5) for v in heat_result["heat_kwh"]],
-            }
-            self.state["slab_start_last_good"] = slab_start
         start_estimate_diag: dict[str, Any] | None = None
         start_estimate_applied = False
         if getattr(config, "HP_START_ESTIMATE_ENABLED", False) and held is None:
@@ -2773,6 +2766,13 @@ class HeatForecastEngine:
                         window_power[1]
                     )
                     start_estimate_applied = True
+        if held is None and not blocked and mode == "heating":
+            self.state["last_good_forecast"] = {
+                "generated_at": now.astimezone(timezone.utc).isoformat(),
+                "first_hour_fraction": remaining_hours,
+                "heat_kwh": [round(float(v), 5) for v in heat_result["heat_kwh"]],
+            }
+            self.state["slab_start_last_good"] = slab_start
         dhw, standby, auxiliary_stats = self._dhw_and_standby_profiles(starts)
         curve = cop_curve_from_state(
             self.state,
@@ -3489,7 +3489,9 @@ class HeatForecastEngine:
                 or str(defrost_state).strip().lower() in ("on", "true", "1")
             )
             if dhw_active:
-                dhw_remainder = measured_projection
+                dhw_remainder = max(
+                    0.0, current_power_w / 1000.0 - standby_rate
+                ) * future_fraction
                 heat_remainder = 0.0
                 defrost_remainder = 0.0
             elif defrost_active and config.COP_DEFROST_HANDLING == "separate":
@@ -3725,12 +3727,20 @@ def fit_energy_weighted_cop(
 
     if max_weight_share is not None and len(points) >= 3:
         share = max(1.0 / len(points), min(1.0, float(max_weight_share)))
-        for _ in range(5):
-            total = sum(weight for _, _, weight in points)
-            cap = share * total
-            if all(weight <= cap + 1e-12 for _, _, weight in points):
-                break
-            points = [(x, y, min(weight, cap)) for x, y, weight in points]
+        low, high = 0.0, max(weight for _, _, weight in points)
+        for _ in range(64):
+            cap = (low + high) / 2.0
+            clipped_total = sum(
+                min(weight, cap) for _, _, weight in points
+            )
+            if cap <= share * clipped_total:
+                low = cap
+            else:
+                high = cap
+        points = [
+            (x, y, min(weight, low))
+            for x, y, weight in points
+        ]
 
     weight_sum = sum(weight for _, _, weight in points)
     mean_x = sum(x * weight for x, _, weight in points) / weight_sum

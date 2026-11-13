@@ -1,5 +1,11 @@
 # Active Context - Current Work & Decision State
 
+### PR 114 review fixes — 2026-11-13
+
+- **What:** Addressed five review findings in the forecast cache, DHW projection, COP weight cap, candidate runtime, and applied-versus-computed outlet metric. The computed outlet is persisted before downstream limiters; targeted regression tests pass.
+- **Why:** Ensure blockade forecasts retain start-estimate increases, DHW uses live power, robust COP fitting respects its weight limit, candidate runtime is independent of prior setpoint, and telemetry measures actual limiter deviation.
+- **Files:** see the PR 114 review-fix milestone in `progress.md`.
+
 ### Running-HP runtime window — 2026-11-13
 
 - **What:** `candidate_window` re-derives runtime per candidate when status is running. **Why:** alternating predictions at identical outlet (23.35/22.38 °C). **Files:** `src/hp_start_estimate.py`, test, CHANGELOG.

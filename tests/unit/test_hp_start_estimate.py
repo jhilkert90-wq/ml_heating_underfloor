@@ -281,3 +281,18 @@ def test_running_candidate_extends_runtime_with_higher_outlet():
     assert same == window
     assert higher["runtime_h"] == pytest.approx(window["runtime_h"] * 2)
     assert unbounded["runtime_h"] is None
+
+
+def test_running_candidate_shortens_runtime_with_lower_outlet():
+    est = hse.read_hp_start_estimate(
+        _states("0", status="running", expected_runtime_min=60,
+                required_supply_c=28.0, supply_actual_c=30.0),
+        "heating", now=NOW, cfg=_cfg(),
+    )
+    window = hse.trajectory_window(est)
+    lower = hse.candidate_window(
+        est, window, candidate_outlet=27.0, reference_outlet=28.0,
+        mode="heating",
+    )
+
+    assert lower["runtime_h"] == pytest.approx(40 / 60)

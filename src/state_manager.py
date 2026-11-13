@@ -29,6 +29,7 @@ class SystemState:
     last_avg_other_rooms_temp: Optional[float] = None
     last_fireplace_on: bool = False
     last_final_temp: Optional[float] = None
+    last_computed_temp: Optional[float] = None
     last_climate_mode: Optional[str] = None
     last_active_climate_mode: Optional[str] = None
     last_target_indoor_temp: Optional[float] = None

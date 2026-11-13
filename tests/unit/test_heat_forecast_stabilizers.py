@@ -170,6 +170,16 @@ class TestCop:
         robust = fit_energy_weighted_cop(samples, max_weight_share=0.3)
         assert abs(robust["slope"] - 0.1) < abs(plain["slope"] - 0.1)
 
+    def test_weight_share_respects_final_clipped_total(self):
+        samples = [
+            {"outdoor_c": 5.0, "heat_kwh": 8000.0, "electric_kwh": 1000.0},
+            {"outdoor_c": 5.0, "heat_kwh": 2.0, "electric_kwh": 1.0},
+            {"outdoor_c": 5.0, "heat_kwh": 4.0, "electric_kwh": 1.0},
+        ]
+        robust = fit_energy_weighted_cop(samples, max_weight_share=0.4)
+        dominant_share = (robust["intercept"] - 3.0) / 5.0
+        assert dominant_share == pytest.approx(0.4)
+
     def test_bin_width_groups_temperatures(self):
         state = {}
         for temp in (4.2, 5.7):
