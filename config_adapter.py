@@ -303,6 +303,29 @@ def convert_addon_to_env(config):
                 'heat_forecast_influx_timeout_seconds', 60
             ))))
         ),
+        'HEAT_FORECAST_ANCHOR_MAX_GAP_MINUTES': str(config.get('heat_forecast_anchor_max_gap_minutes', 30)),
+        'HEAT_FORECAST_ANCHOR_TOLERANCE_MINUTES': str(config.get('heat_forecast_anchor_tolerance_minutes', 5)),
+        'HEAT_FORECAST_START_POWER_WINDOW_MINUTES': str(config.get('heat_forecast_start_power_window_minutes', 45)),
+        'HEAT_FORECAST_START_POWER_CAP_FACTOR': str(config.get('heat_forecast_start_power_cap_factor', 1.5)),
+        'HEAT_FORECAST_START_MAX_RUNTIME_HOURS': str(config.get('heat_forecast_start_max_runtime_hours', 3.0)),
+        'HEAT_FORECAST_START_BLEND_HOURS': str(config.get('heat_forecast_start_blend_hours', 1.0)),
+        'HEAT_FORECAST_BLOCK_HOLD_ENABLED': str(config.get('heat_forecast_block_hold_enabled', True)).lower(),
+        'HEAT_FORECAST_BLOCK_HOLD_MAX_HOURS': str(config.get('heat_forecast_block_hold_max_hours', 3.0)),
+        'HEAT_FORECAST_BLOCK_GRACE_MINUTES': str(config.get('heat_forecast_block_grace_minutes', 10)),
+        'HEAT_FORECAST_BLOCK_PUBLISH_INTERVAL_SECONDS': str(config.get('heat_forecast_block_publish_interval_seconds', 120)),
+        'COP_BIN_WIDTH_K': str(config.get('cop_bin_width_k', 2.0)),
+        'COP_MAX_BIN_WEIGHT_SHARE': str(config.get('cop_max_bin_weight_share', 0.4)),
+        'COP_ONLINE_CORRECTION_ENABLED': str(config.get('cop_online_correction_enabled', True)).lower(),
+        'COP_ONLINE_CORRECTION_HOURS': str(config.get('cop_online_correction_hours', 36)),
+        'COP_ONLINE_CORRECTION_LIMIT': str(config.get('cop_online_correction_limit', 0.2)),
+        'COP_ONLINE_CORRECTION_MIN_HOURS': str(config.get('cop_online_correction_min_hours', 12)),
+        'HEAT_FORECAST_SLOT0_WINDOW_MINUTES': str(config.get('heat_forecast_slot0_window_minutes', 45)),
+        'HEAT_FORECAST_SLOT0_MEASURED_WEIGHT': str(config.get('heat_forecast_slot0_measured_weight', 0.5)),
+        'HEAT_FORECAST_SLOT0_CAP_FACTOR': str(config.get('heat_forecast_slot0_cap_factor', 1.5)),
+        'HEAT_FORECAST_SUM_STABILIZATION_ENABLED': str(config.get('heat_forecast_sum_stabilization_enabled', True)).lower(),
+        'HEAT_FORECAST_SUM_BASELINE_BAND': str(config.get('heat_forecast_sum_baseline_band', 0.15)),
+        'HEAT_FORECAST_SUM_SMOOTHING_ALPHA': str(config.get('heat_forecast_sum_smoothing_alpha', 0.5)),
+        'HEAT_FORECAST_SUM_HYSTERESIS': str(config.get('heat_forecast_sum_hysteresis', 0.03)),
         'HEAT_FORECAST_MIN_CALIBRATION_HOURS': str(
             max(1, int(config.get('heat_forecast_min_calibration_hours', 48)))
         ),
@@ -342,7 +365,7 @@ def convert_addon_to_env(config):
         ),
         'COP_HALF_LIFE_DAYS': str(config.get('cop_half_life_days', 45)),
         'COP_MIN_HOURS_PER_BIN': str(
-            config.get('cop_min_hours_per_bin', 4)
+            config.get('cop_min_hours_per_bin', 2)
         ),
         'COP_START_INTERCEPT': str(config.get('cop_start_intercept', 5.0)),
         'COP_START_SLOPE': str(config.get('cop_start_slope', 0.2)),
@@ -857,6 +880,35 @@ def convert_addon_to_env(config):
         ),
         'OUTLET_SMOOTHING_BYPASS': str(
             config.get('outlet_smoothing_bypass', 2.0)
+        ),
+        'OUTLET_SEARCH_MIN_SENSITIVITY': str(
+            config.get('outlet_search_min_sensitivity', 0.1)
+        ),
+        'OUTLET_REFERENCE_ENABLED': str(
+            config.get('outlet_reference_enabled', True)
+        ).lower(),
+        'OUTLET_REFERENCE_ALWAYS_ACTIVE': str(
+            config.get('outlet_reference_always_active', True)
+        ).lower(),
+        'OUTLET_REFERENCE_LAMBDA': str(
+            config.get('outlet_reference_lambda', 0.01)
+        ),
+        'OUTLET_REFERENCE_BAND_K': str(
+            config.get('outlet_reference_band_k', 2.0)
+        ),
+        'OUTLET_REFERENCE_DEMAND_EXTRA_K': str(
+            config.get('outlet_reference_demand_extra_k', 4.0)
+        ),
+        'OUTLET_DEMAND_DEFICIT_K': str(
+            config.get('outlet_demand_deficit_k', 0.3)
+        ),
+        'OUTLET_DEMAND_TREND_K_PER_H': str(
+            config.get('outlet_demand_trend_k_per_h', 0.1)
+        ),
+        'OUTLET_CALM_SLEW_K': str(config.get('outlet_calm_slew_k', 1.0)),
+        'OUTLET_HYSTERESIS_K': str(config.get('outlet_hysteresis_k', 0.3)),
+        'FD_NEWTON_MIN_SENSITIVITY': str(
+            config.get('fd_newton_min_sensitivity', 0.1)
         ),
 
         # --- Heating Correction Mode ---

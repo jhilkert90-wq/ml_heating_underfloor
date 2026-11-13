@@ -1,5 +1,41 @@
 # ML Heating System - Current Progress
 
+## ✅ PR 114 review fixes — 2026-11-13
+
+**Status:** IMPLEMENTED — all five review findings addressed; seven focused regression tests pass.
+
+**Implementation summary:** Cache thermal forecasts after start-estimate adjustments, project DHW from current power net of standby, cap COP-fit shares against final weights, adjust running runtime for lower candidates, and persist the pre-limiter outlet for deviation telemetry.
+
+**Files changed:** `src/heat_forecast.py`, `src/hp_start_estimate.py`, `src/pre_dispatch.py`, `src/cycle_routes.py`, `src/state_manager.py`, `src/unified_thermal_state.py`, `src/unified_thermal_state_cooling.py`, `tests/unit/test_heat_forecast.py`, `tests/unit/test_heat_forecast_stabilizers.py`, `tests/unit/test_hp_start_estimate.py`, `tests/unit/test_pre_dispatch.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## ✅ Running-HP runtime window per candidate — 2026-11-13
+
+**Status:** IMPLEMENTED — root cause of the 26/34 °C flip: the sensor runtime (for the applied setpoint) was reused for all candidates while the HP runs, so the predicted end temperature depended on the previous outlet.
+
+**Files changed:** `src/hp_start_estimate.py`, `tests/unit/test_hp_start_estimate.py`, `CHANGELOG.md`.
+
+## ✅ Outlet reference band tuning — 2026-11-13
+
+**Status:** IMPLEMENTED — band default 2 K, `OUTLET_REFERENCE_ALWAYS_ACTIVE` (default true) after replaying the oscillating log (max step 1.6 -> 0.3 K). Open: root cause of the model-state flip between cycles.
+
+**Files changed:** `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, config/translations/docs, `tests/unit/test_outlet_stability.py`.
+
+## ✅ WP load forecast stabilisation (Prompt Nr.1) + 0.3.1 — 2026-11-13
+
+**Status:** IMPLEMENTED — 15 new tests; full suite 2041 passed, 7 known order-dependent grace failures. Version bumped to 0.3.1; changelog entries now in English.
+
+**Summary:** Anchor interpolation, windowed start power with runtime limit, blockade hold, COP bin width/weight cap/online correction, slot-0 blend, 24 h sum stabilisation, extensive logging (forecast, start estimate, accuracy, outlet stability). Not done: median of last 3 start-estimate runs, Tibber median profile. `HEAT_FORECAST_NEAR_CONTROLLER_ENABLED` left unchanged (code default false). Defaults untuned against real data.
+
+**Files changed:** `src/heat_forecast.py`, `src/heat_forecast_stabilizers.py`, `src/forecast_accuracy.py`, `src/hp_start_estimate.py`, `src/outlet_stability.py`, `src/cycle_routes.py`, `src/prediction_metrics.py`, config/translations/docs, tests, changelogs.
+
+## ✅ Outlet search stabilisation (Prompt Nr.2) — 2026-11-13
+
+**Status:** IMPLEMENTED — full suite 2026 passed; 7 pre-existing order-dependent `test_heating_controller` grace failures unchanged.
+
+**Implementation summary:** Flat objective (sensitivity 0.03–0.2 K/K on the slab) made the binary search jump 26–34 °C. Added sensitivity guard with regularisation against `building_curve.base_outlet_temp`, demand-aware slew/hysteresis, sensitivity-scaled FD-Newton raise, persistence fix for operational-state keys (hold now active; `last_predicted_indoor` deliberately not persisted to keep learning on applied outlets), and control-quality metrics. Defaults untuned against real data.
+
+**Files changed:** `src/outlet_stability.py`, `src/model_wrapper.py`, `src/cycle_routes.py`, `src/config.py`, `config_adapter.py`, `src/unified_thermal_state.py`, `src/unified_thermal_state_cooling.py`, `src/prediction_metrics.py`, `src/pre_dispatch.py`, config/translations/docs, tests, `CHANGELOG.md`, memory-bank.
+
 ## ✅ PR 113 review fixes — 2026-11-12
 
 **Status:** IMPLEMENTED — candidate-delay reference, controller-model fallback, runtime-sensor precedence, and initial verification window corrected. Syntax compilation and diff checks pass; pytest could not run because the sandbox lacks pytest and the project runtime dependencies.

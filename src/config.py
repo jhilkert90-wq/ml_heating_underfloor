@@ -307,6 +307,31 @@ HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS: int = max(
 HEAT_FORECAST_MIN_CALIBRATION_HOURS: int = max(
     1, int(os.getenv("HEAT_FORECAST_MIN_CALIBRATION_HOURS", "48"))
 )
+# --- WP load forecast stabilisation (see docs/PARAMETER_REFERENCE.md) ---
+HEAT_FORECAST_ANCHOR_MAX_GAP_MINUTES: int = int(os.getenv("HEAT_FORECAST_ANCHOR_MAX_GAP_MINUTES", "30"))
+HEAT_FORECAST_ANCHOR_TOLERANCE_MINUTES: int = int(os.getenv("HEAT_FORECAST_ANCHOR_TOLERANCE_MINUTES", "5"))
+HEAT_FORECAST_START_POWER_WINDOW_MINUTES: int = int(os.getenv("HEAT_FORECAST_START_POWER_WINDOW_MINUTES", "45"))
+HEAT_FORECAST_START_POWER_CAP_FACTOR: float = float(os.getenv("HEAT_FORECAST_START_POWER_CAP_FACTOR", "1.5"))
+HEAT_FORECAST_START_MAX_RUNTIME_HOURS: float = float(os.getenv("HEAT_FORECAST_START_MAX_RUNTIME_HOURS", "3.0"))
+HEAT_FORECAST_START_BLEND_HOURS: float = float(os.getenv("HEAT_FORECAST_START_BLEND_HOURS", "1.0"))
+HEAT_FORECAST_BLOCK_HOLD_ENABLED: bool = os.getenv("HEAT_FORECAST_BLOCK_HOLD_ENABLED", "true").lower() == "true"
+HEAT_FORECAST_BLOCK_HOLD_MAX_HOURS: float = float(os.getenv("HEAT_FORECAST_BLOCK_HOLD_MAX_HOURS", "3.0"))
+HEAT_FORECAST_BLOCK_GRACE_MINUTES: int = int(os.getenv("HEAT_FORECAST_BLOCK_GRACE_MINUTES", "10"))
+HEAT_FORECAST_BLOCK_PUBLISH_INTERVAL_SECONDS: int = int(os.getenv("HEAT_FORECAST_BLOCK_PUBLISH_INTERVAL_SECONDS", "120"))
+COP_BIN_WIDTH_K: float = float(os.getenv("COP_BIN_WIDTH_K", "2.0"))
+COP_MAX_BIN_WEIGHT_SHARE: float = float(os.getenv("COP_MAX_BIN_WEIGHT_SHARE", "0.4"))
+COP_ONLINE_CORRECTION_ENABLED: bool = os.getenv("COP_ONLINE_CORRECTION_ENABLED", "true").lower() == "true"
+COP_ONLINE_CORRECTION_HOURS: int = int(os.getenv("COP_ONLINE_CORRECTION_HOURS", "36"))
+COP_ONLINE_CORRECTION_LIMIT: float = float(os.getenv("COP_ONLINE_CORRECTION_LIMIT", "0.2"))
+COP_ONLINE_CORRECTION_MIN_HOURS: int = int(os.getenv("COP_ONLINE_CORRECTION_MIN_HOURS", "12"))
+HEAT_FORECAST_SLOT0_WINDOW_MINUTES: int = int(os.getenv("HEAT_FORECAST_SLOT0_WINDOW_MINUTES", "45"))
+HEAT_FORECAST_SLOT0_MEASURED_WEIGHT: float = float(os.getenv("HEAT_FORECAST_SLOT0_MEASURED_WEIGHT", "0.5"))
+HEAT_FORECAST_SLOT0_CAP_FACTOR: float = float(os.getenv("HEAT_FORECAST_SLOT0_CAP_FACTOR", "1.5"))
+HEAT_FORECAST_SUM_STABILIZATION_ENABLED: bool = os.getenv("HEAT_FORECAST_SUM_STABILIZATION_ENABLED", "true").lower() == "true"
+HEAT_FORECAST_SUM_BASELINE_BAND: float = float(os.getenv("HEAT_FORECAST_SUM_BASELINE_BAND", "0.15"))
+HEAT_FORECAST_SUM_SMOOTHING_ALPHA: float = float(os.getenv("HEAT_FORECAST_SUM_SMOOTHING_ALPHA", "0.5"))
+HEAT_FORECAST_SUM_HYSTERESIS: float = float(os.getenv("HEAT_FORECAST_SUM_HYSTERESIS", "0.03"))
+
 HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID: str = os.getenv(
     "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID", ""
 )
@@ -343,7 +368,7 @@ DEFROST_DEFAULT_EL_FRACTION: float = float(
 )
 COP_HALF_LIFE_DAYS: float = float(os.getenv("COP_HALF_LIFE_DAYS", "45"))
 COP_MIN_HOURS_PER_BIN: float = float(
-    os.getenv("COP_MIN_HOURS_PER_BIN", "4")
+    os.getenv("COP_MIN_HOURS_PER_BIN", "2")
 )
 COP_START_INTERCEPT: float = float(os.getenv("COP_START_INTERCEPT", "5.0"))
 COP_START_SLOPE: float = float(os.getenv("COP_START_SLOPE", "0.2"))
@@ -595,6 +620,49 @@ OUTLET_SMOOTHING_ALPHA: float = float(
 )
 OUTLET_SMOOTHING_BYPASS: float = float(
     os.getenv("OUTLET_SMOOTHING_BYPASS", "2.0")
+)
+# --- Outlet search stabilisation (flat objective on inert underfloor) ---
+# Below this sensitivity S = dT_end/dT_outlet [K/K] the binary search is
+# ill-conditioned and is regularised towards the learned base-curve outlet.
+OUTLET_SEARCH_MIN_SENSITIVITY: float = max(
+    0.0, float(os.getenv("OUTLET_SEARCH_MIN_SENSITIVITY", "0.1"))
+)
+OUTLET_REFERENCE_ENABLED: bool = (
+    os.getenv("OUTLET_REFERENCE_ENABLED", "true").lower() == "true"
+)
+# Comfort error (K) accepted per K² of deviation from the reference outlet.
+# Apply the reference band to every search, not only ill-conditioned ones.
+OUTLET_REFERENCE_ALWAYS_ACTIVE: bool = (
+    os.getenv("OUTLET_REFERENCE_ALWAYS_ACTIVE", "true").lower() == "true"
+)
+OUTLET_REFERENCE_LAMBDA: float = max(
+    0.0, float(os.getenv("OUTLET_REFERENCE_LAMBDA", "0.01"))
+)
+# Allowed deviation (K) from the reference; widened by the extra value when
+# heat demand is proven (room below target or falling).
+OUTLET_REFERENCE_BAND_K: float = max(
+    0.5, float(os.getenv("OUTLET_REFERENCE_BAND_K", "2.0"))
+)
+OUTLET_REFERENCE_DEMAND_EXTRA_K: float = max(
+    0.0, float(os.getenv("OUTLET_REFERENCE_DEMAND_EXTRA_K", "4.0"))
+)
+OUTLET_DEMAND_DEFICIT_K: float = max(
+    0.0, float(os.getenv("OUTLET_DEMAND_DEFICIT_K", "0.3"))
+)
+OUTLET_DEMAND_TREND_K_PER_H: float = max(
+    0.0, float(os.getenv("OUTLET_DEMAND_TREND_K_PER_H", "0.1"))
+)
+# Per-cycle setpoint change limit (K) without demand or target change.
+OUTLET_CALM_SLEW_K: float = max(
+    0.1, float(os.getenv("OUTLET_CALM_SLEW_K", "1.0"))
+)
+# Changes below this (K) are discarded without demand or target change.
+OUTLET_HYSTERESIS_K: float = max(
+    0.0, float(os.getenv("OUTLET_HYSTERESIS_K", "0.3"))
+)
+# FD-Newton raise corrections are scaled down below this sensitivity.
+FD_NEWTON_MIN_SENSITIVITY: float = max(
+    0.01, float(os.getenv("FD_NEWTON_MIN_SENSITIVITY", "0.1"))
 )
 # Heating correction algorithm selector.
 # "legacy"  — current empirical formula (default, preserves existing behaviour).

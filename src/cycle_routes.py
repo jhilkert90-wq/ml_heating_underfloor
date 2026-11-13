@@ -27,6 +27,7 @@ from .ha_client import get_sensor_attributes
 from .heat_source_channels import _is_heat_pump_active
 from .heating_controller import SensorDataManager
 from .model_wrapper import simplified_outlet_prediction
+from .outlet_stability import has_heat_demand, slew_limit
 from .physics_features import build_physics_features
 from .shadow_mode import get_shadow_output_entity_id
 from .state_manager import load_state, save_state
@@ -511,6 +512,44 @@ def _apply_shadow_pre_cool_guard(
     return blocked
 
 
+def _calm_conditions(ctx: CycleContext) -> bool:
+    """True when neither proven heat demand nor a target change is present.
+
+    Missing data and cooling mode count as not calm so the stabilisers never
+    act blindly.
+    """
+    if ctx.climate_mode == "cooling":
+        logging.debug("Calm check: cooling mode -> not calm")
+        return False
+    indoor = ctx.prediction_indoor_temp
+    if indoor is None:
+        indoor = ctx.actual_indoor
+    target = ctx.target_indoor_temp
+    if indoor is None or target is None:
+        logging.debug("Calm check: indoor/target missing -> not calm")
+        return False
+    last_target = ctx.state.get("last_target_indoor_temp")
+    try:
+        if last_target is not None and abs(
+            float(target) - float(last_target)
+        ) > 0.15:
+            logging.debug(
+                "Calm check: target changed %.2f -> %.2f -> not calm",
+                float(last_target), float(target),
+            )
+            return False
+        trend = (ctx.features_dict or {}).get("indoor_temp_delta_60m")
+        return not has_heat_demand(
+            float(indoor),
+            float(target),
+            trend,
+            float(getattr(config, "OUTLET_DEMAND_DEFICIT_K", 0.3)),
+            float(getattr(config, "OUTLET_DEMAND_TREND_K_PER_H", 0.1)),
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def step_gradual_control(ctx: CycleContext) -> None:
     """Apply gradual temperature change limiting."""
     if ctx.actual_outlet_temp is None:
@@ -542,6 +581,18 @@ def step_gradual_control(ctx: CycleContext) -> None:
     else:
         baseline = ctx.actual_outlet_temp
 
+    calm = _calm_conditions(ctx)
+    max_change = slew_limit(
+        max_change,
+        float(getattr(config, "OUTLET_CALM_SLEW_K", 1.0)),
+        demand=not calm,
+        target_jump=False,
+    )
+
+    logging.debug(
+        "Gradual control: baseline=%.1f°C, limit=%.1f K (%s)",
+        baseline, max_change, "calm" if calm else "demand/target change",
+    )
     delta = ctx.final_temp - baseline
     if abs(delta) > max_change:
         ctx.final_temp = baseline + np.clip(delta, -max_change, max_change)
@@ -592,6 +643,22 @@ def step_setpoint_hold(ctx: CycleContext) -> None:
         ctx.final_temp = held_temp
         ctx.new_hold_cycles = hold_remaining - 1
     else:
+        hysteresis = float(getattr(config, "OUTLET_HYSTERESIS_K", 0.0))
+        if (
+            held_temp is not None
+            and abs(ctx.final_temp - held_temp) < hysteresis
+            and _calm_conditions(ctx)
+        ):
+            logging.info(
+                "⏱️ Setpoint hysteresis: keeping %.1f°C (computed=%.1f°C, "
+                "|Δ| < %.2f K, no heat demand)",
+                held_temp,
+                ctx.final_temp,
+                hysteresis,
+            )
+            ctx.final_temp = held_temp
+            ctx.new_hold_cycles = 0
+            return
         setpoint_changed = (
             held_temp is None
             or abs(ctx.final_temp - held_temp)
@@ -862,6 +929,7 @@ def step_save_state(ctx: CycleContext) -> None:
         "last_avg_other_rooms_temp": ctx.avg_other_rooms_temp,
         "last_fireplace_on": ctx.fireplace_on,
         "last_final_temp": ctx.final_temp,
+        "last_computed_temp": ctx.suggested_temp,
         "last_climate_mode": ctx.climate_mode,
         "last_active_climate_mode": getattr(
             ctx.wrapper, "last_active_climate_mode", ctx.climate_mode

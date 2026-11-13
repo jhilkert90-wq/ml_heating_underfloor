@@ -1,5 +1,20 @@
 # Changelog - ML Heating Underfloor
 
+## [0.3.1] - 2026-11-13
+
+### Added
+- Outlet search stabilisation: sensitivity guard with regularisation towards the learned building heating curve, demand-aware slew limit and hysteresis, sensitivity-scaled FD-Newton raise, control-quality metrics.
+- WP load forecast stabilisation: windowed start power, blockade hold during DHW/defrost, 24 h sum bound to the baseline, online electrical correction factor, COP bin width and weight cap (24 new options).
+- Logging for WP load forecast, start estimate, forecast accuracy and outlet stabilisation.
+
+### Changed
+- `outlet_reference_band_k` default 4 -> 2 K; new `outlet_reference_always_active` (default true).
+- `cop_min_hours_per_bin` default 4 -> 2; COP bins are 2 K wide.
+
+### Fixed
+- Operational-state keys were dropped on save, so the setpoint hold never fired.
+- Hour anchors interpolate counters across the hour boundary; phantom forecast load during DHW/defrost removed.
+
 ## [0.2.115] - 2026-11-12
 
 ### Added

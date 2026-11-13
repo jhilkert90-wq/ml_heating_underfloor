@@ -451,8 +451,9 @@ def add_cop_observation(
     elapsed_hours: float,
     timestamp: datetime,
     half_life_days: float,
+    bin_width_k: float = 1.0,
 ) -> None:
-    """Update decayed sufficient statistics in an integer-degree outdoor bin."""
+    """Update decayed sufficient statistics in an outdoor-temperature bin."""
     if (
         not all(
             math.isfinite(v)
@@ -464,7 +465,8 @@ def add_cop_observation(
     ):
         return
     bins = state.setdefault("cop_bins", {})
-    key = str(math.floor(outdoor_c))
+    width = max(1.0, float(bin_width_k))
+    key = str(int(math.floor(outdoor_c / width) * width))
     bucket = bins.setdefault(
         key,
         {
@@ -764,8 +766,13 @@ def cop_curve_from_state(
     min_hours_per_bin: float,
     min_value: float,
     max_value: float,
+    max_weight_share: float | None = None,
 ) -> dict[str, Any]:
-    """Return a learned energy-weighted COP line or an explicit start curve."""
+    """Return a learned energy-weighted COP line or an explicit start curve.
+
+    ``max_weight_share`` caps the fit weight of any single bin so that one
+    outlier bin cannot dominate the line.
+    """
     now = now or datetime.now(timezone.utc)
     samples = []
     for bucket in state.get("cop_bins", {}).values():
@@ -798,7 +805,19 @@ def cop_curve_from_state(
                 "electric_kwh": electric,
             }
         )
-    fit = fit_energy_weighted_cop(samples, cop_min=min_value, cop_max=max_value)
+    fit = fit_energy_weighted_cop(
+        samples,
+        cop_min=min_value,
+        cop_max=max_value,
+        max_weight_share=max_weight_share,
+    )
+    LOGGER.debug(
+        "COP fit from %d bins (min %.1f h per bin): intercept=%s slope=%s",
+        len(samples),
+        min_hours_per_bin,
+        fit.get("intercept"),
+        fit.get("slope"),
+    )
     if len(samples) < 2:
         return {
             "intercept": start_intercept,
@@ -825,8 +844,12 @@ def hourly_electrical_forecast(
     cop_min: float = 1.5,
     cop_max: float = 10.0,
     cop_extrapolation_margin: float | None = None,
+    el_correction_factor: float = 1.0,
 ) -> dict[str, Any]:
     """Convert thermal heating to electrical energy and form EOS profile rows.
+
+    ``el_correction_factor`` scales the electrical energy of heating (online
+    actual/forecast correction of the COP curve).
 
     With ``cop_extrapolation_margin`` the COP outside the calibrated
     temperature range is capped at the observed maximum plus the margin.
@@ -855,14 +878,14 @@ def hourly_electrical_forecast(
                 cop, max(cop_min, float(observed[1]) + cop_extrapolation_margin)
             )
         if defrost_handling == "separate":
-            hp_electric = heat / cop
+            hp_electric = heat / cop * el_correction_factor
             defrost_electric = (
                 hp_electric * defrost_el_fraction / max(1e-9, 1.0 - defrost_el_fraction)
                 if outdoor <= 5.0
                 else 0.0
             )
         else:
-            hp_electric = heat / cop
+            hp_electric = heat / cop * el_correction_factor
             defrost_electric = 0.0
         heat_el.append(hp_electric)
         defrost_el.append(defrost_electric)
@@ -904,6 +927,98 @@ class HeatForecastEngine:
         except (TypeError, ValueError):
             return None
         return number if math.isfinite(number) else None
+
+    @staticmethod
+    def _flag(states: Mapping[str, Any], entity_id: str) -> bool:
+        """True when a binary status entity is on."""
+        if not entity_id:
+            return False
+        value = states.get(entity_id)
+        value = value.get("state") if isinstance(value, Mapping) else value
+        return value is True or str(value).strip().lower() in ("on", "true", "1")
+
+    def _update_block_state(
+        self, *, now: datetime, active: bool, reason: str
+    ) -> tuple[bool, str]:
+        """Track DHW/defrost blockades including the recovery grace period."""
+        from . import config
+
+        now_utc = now.astimezone(timezone.utc)
+        if active:
+            self.state["block_last_active_utc"] = now_utc.isoformat()
+            if not self.state.get("block_active"):
+                LOGGER.info("Heat forecast blockade started (%s)", reason)
+                self.state["block_active"] = True
+            self.state["block_reason"] = reason
+            return True, reason
+        if not self.state.get("block_active"):
+            return False, ""
+        grace = float(getattr(config, "HEAT_FORECAST_BLOCK_GRACE_MINUTES", 10))
+        try:
+            idle_min = (
+                now_utc - datetime.fromisoformat(self.state["block_last_active_utc"])
+            ).total_seconds() / 60.0
+        except (KeyError, TypeError, ValueError):
+            idle_min = grace + 1.0
+        if idle_min <= grace:
+            LOGGER.debug("Heat forecast blockade grace (%.1f/%.0f min)", idle_min, grace)
+            return True, f"{self.state.get('block_reason', 'block')}_grace"
+        LOGGER.info(
+            "Heat forecast blockade ended after %.0f min grace; simulation resumes "
+            "from the room temperature deficit and the pre-blockade slab state",
+            grace,
+        )
+        self.state["block_active"] = False
+        return False, ""
+
+    def _publish_recently(self, now: datetime) -> bool:
+        """True when a forecast was published within the blockade interval."""
+        from . import config
+
+        try:
+            last = datetime.fromisoformat(self.state["last_publish_utc"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        interval = float(
+            getattr(config, "HEAT_FORECAST_BLOCK_PUBLISH_INTERVAL_SECONDS", 120)
+        )
+        return 0.0 <= (now.astimezone(timezone.utc) - last).total_seconds() < interval
+
+    def _held_forecast(
+        self, now: datetime, remaining_hours: float, horizon: int
+    ) -> list[float] | None:
+        """Last good simulation re-indexed to the current hour, or None."""
+        from . import config
+        from .heat_forecast_stabilizers import shift_held_forecast
+
+        good = self.state.get("last_good_forecast")
+        if not isinstance(good, Mapping):
+            return None
+        try:
+            generated = datetime.fromisoformat(good["generated_at"]).astimezone(
+                timezone.utc
+            )
+            age_h = (now.astimezone(timezone.utc) - generated).total_seconds() / 3600.0
+            if age_h > float(getattr(config, "HEAT_FORECAST_BLOCK_HOLD_MAX_HOURS", 3.0)):
+                LOGGER.info("Held forecast too old (%.1f h); simulating instead", age_h)
+                return None
+            elapsed = int(
+                (
+                    now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+                    - generated.replace(minute=0, second=0, microsecond=0)
+                ).total_seconds()
+                // 3600
+            )
+            held = shift_held_forecast(
+                good["heat_kwh"],
+                first_hour_fraction_at_generation=float(good["first_hour_fraction"]),
+                hours_elapsed=elapsed,
+                remaining_hours=remaining_hours,
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+        held += [held[-1] if held else 0.0] * max(0, horizon - len(held))
+        return held[:horizon]
 
     def _measured_thermal_kw(
         self, ha_client: Any, states: Mapping[str, Any]
@@ -1230,6 +1345,7 @@ class HeatForecastEngine:
                     elapsed_hours=heater_interval,
                     timestamp=now,
                     half_life_days=config.COP_HALF_LIFE_DAYS,
+                    bin_width_k=getattr(config, "COP_BIN_WIDTH_K", 1.0),
                 )
             self.state["defrost_blend"] = min(heat_blend, el_blend)
             if readings.get("defrost_el") is not None:
@@ -1681,6 +1797,7 @@ class HeatForecastEngine:
                 elapsed_hours=elapsed,
                 timestamp=current,
                 half_life_days=config.COP_HALF_LIFE_DAYS,
+                bin_width_k=getattr(config, "COP_BIN_WIDTH_K", 1.0),
             )
             if heat_net > 0 and total_electric > 0:
                 processed_intervals += 1
@@ -1748,17 +1865,32 @@ class HeatForecastEngine:
                 timeout_seconds=config.HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS,
             )
 
+        max_gap = timedelta(
+            minutes=getattr(config, "HEAT_FORECAST_ANCHOR_MAX_GAP_MINUTES", 30)
+        )
+
         def latest_anchor(
             samples: Sequence[tuple[datetime, float]],
         ) -> tuple[datetime, float] | None:
-            eligible = [
-                (stamp.astimezone(timezone.utc), value)
-                for stamp, value in samples
-                if stamp.astimezone(timezone.utc) <= hour_start
-                and hour_start - stamp.astimezone(timezone.utc)
-                <= timedelta(hours=1)
+            normalized = sorted(
+                (stamp.astimezone(timezone.utc), value) for stamp, value in samples
+            )
+            before = [
+                item
+                for item in normalized
+                if item[0] <= hour_start and hour_start - item[0] <= timedelta(hours=1)
             ]
-            return max(eligible, default=None, key=lambda item: item[0])
+            latest = before[-1] if before else None
+            if latest is None or latest[0] == hour_start:
+                return latest
+            after = next((item for item in normalized if item[0] > hour_start), None)
+            if after is None or after[0] - latest[0] > max_gap:
+                return latest
+            if after[1] < latest[1]:
+                return latest
+            # Counter value at the full hour, interpolated between neighbours.
+            fraction = (hour_start - latest[0]) / (after[0] - latest[0])
+            return hour_start, latest[1] + (after[1] - latest[1]) * fraction
 
         heating_entity = config.HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID
         if not latest_anchor(history.get(heating_entity, [])) and ha_client is not None:
@@ -1779,6 +1911,13 @@ class HeatForecastEngine:
             reading_times[name] = sample[0].isoformat() if sample else hour_key
             energy_coverage[name] = bool(sample and sample[0] == hour_start)
 
+        LOGGER.info(
+            "Hour anchor %s: heating_el=%s at %s (exact boundary=%s)",
+            hour_key,
+            readings.get("heating_el"),
+            reading_times.get("heating_el"),
+            energy_coverage.get("heating_el"),
+        )
         if readings.get("heating_el") is not None:
             self.state["hour_anchor"] = {
                 "hour_utc": hour_key,
@@ -2197,12 +2336,41 @@ class HeatForecastEngine:
         deltas = self._record_interval(
             now=now, states=states, outdoor_c=outdoor_now
         )
+        dhw_active = self._flag(states, config.DHW_STATUS_ENTITY_ID)
+        defrost_active = self._flag(
+            states, getattr(config, "DEFROST_STATUS_ENTITY_ID", "")
+        )
+        from .heat_forecast_stabilizers import record_power_sample
+
+        el_power_w = self._number(ha_client, states, config.POWER_CONSUMPTION_ENTITY_ID)
+        record_power_sample(
+            self.state,
+            now,
+            el_kw=(
+                el_power_w / 1000.0
+                if el_power_w is not None and not dhw_active
+                else None
+            ),
+            th_kw=self._measured_thermal_kw(ha_client, states),
+        )
+        blocked, block_reason = self._update_block_state(
+            now=now, active=(dhw_active or defrost_active) and mode == "heating",
+            reason="dhw" if dhw_active else "defrost",
+        )
         if not config.HEAT_FORECAST_ENABLED:
             self._backfill(
                 now=now,
                 influx_service=influx_service,
                 outdoor_entity_id=config.OUTDOOR_TEMP_ENTITY_ID,
                 ha_client=ha_client,
+            )
+            self.store.save(self.state)
+            return True
+
+        if blocked and self._publish_recently(now):
+            LOGGER.debug(
+                "Heat forecast publish skipped: duplicate during blockade (%s)",
+                block_reason,
             )
             self.store.save(self.state)
             return True
@@ -2398,6 +2566,15 @@ class HeatForecastEngine:
             if inlet is not None and outlet is not None
             else indoor_now
         )
+        frozen_slab = self.state.get("slab_start_last_good")
+        if blocked and frozen_slab is not None:
+            LOGGER.info(
+                "Slab start frozen at %.2f C during %s blockade (live estimate %.2f C)",
+                float(frozen_slab),
+                block_reason,
+                slab_start,
+            )
+            slab_start = float(frozen_slab)
         heat_loss = max(
             0.01, float(getattr(model, "heat_loss_coefficient", 0.131))
         )
@@ -2418,33 +2595,51 @@ class HeatForecastEngine:
             if getattr(config, "HEAT_FORECAST_RAMP_START_FROM_MEASURED", False)
             else None
         )
-        heat_result = simulate_heating_energy(
-            outdoor_c=outdoor,
-            pv_gain_kw=pv_gain,
-            fireplace_kw=fireplace,
-            target_c=targets,
-            room_c=indoor_now,
-            slab_c=slab_start,
-            room_capacity_kwh_k=float(capacities["room"]),
-            slab_capacity_kwh_k=float(capacities["slab"]),
-            heat_loss_kw_k=heat_loss,
-            slab_to_room_kw_k=slab_conductance,
-            max_hp_kw=config.HEAT_FORECAST_MAX_HEATING_KW,
-            step_minutes=config.HEAT_FORECAST_STEP_MINUTES,
-            base_gain_kw=config.HEAT_FORECAST_BASE_GAIN_KW,
-            first_hour_fraction=remaining_hours,
-            lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
-            max_ramp_kw_per_step=config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP,
-            initial_power_kw=ramp_seed_kw,
-            **(
-                near_kwargs
-                if config.HEAT_FORECAST_NEAR_CONTROLLER_ENABLED
-                else {}
-            ),
+        held = (
+            self._held_forecast(now, remaining_hours, horizon)
+            if blocked and getattr(config, "HEAT_FORECAST_BLOCK_HOLD_ENABLED", True)
+            else None
         )
+        if held is not None:
+            LOGGER.info(
+                "Heat forecast held during %s blockade: last good simulation reused, "
+                "only slot 0 is updated (slot0=%.3f kWh)",
+                block_reason,
+                held[0],
+            )
+            heat_result = {
+                "heat_kwh": held,
+                "max_hp_kw": 0.0,
+                "hourly_max_hp_kw": [0.0] * horizon,
+            }
+        else:
+            heat_result = simulate_heating_energy(
+                outdoor_c=outdoor,
+                pv_gain_kw=pv_gain,
+                fireplace_kw=fireplace,
+                target_c=targets,
+                room_c=indoor_now,
+                slab_c=slab_start,
+                room_capacity_kwh_k=float(capacities["room"]),
+                slab_capacity_kwh_k=float(capacities["slab"]),
+                heat_loss_kw_k=heat_loss,
+                slab_to_room_kw_k=slab_conductance,
+                max_hp_kw=config.HEAT_FORECAST_MAX_HEATING_KW,
+                step_minutes=config.HEAT_FORECAST_STEP_MINUTES,
+                base_gain_kw=config.HEAT_FORECAST_BASE_GAIN_KW,
+                first_hour_fraction=remaining_hours,
+                lookahead_hours=config.HEAT_FORECAST_LOOKAHEAD_HOURS,
+                max_ramp_kw_per_step=config.HEAT_FORECAST_MAX_RAMP_KW_PER_STEP,
+                initial_power_kw=ramp_seed_kw,
+                **(
+                    near_kwargs
+                    if config.HEAT_FORECAST_NEAR_CONTROLLER_ENABLED
+                    else {}
+                ),
+            )
         if mode != "heating":
             heat_result["heat_kwh"] = [0.0] * horizon
-        elif config.HEAT_FORECAST_SMOOTHING_ENABLED:
+        elif held is None and config.HEAT_FORECAST_SMOOTHING_ENABLED:
             heat_result["heat_kwh"] = _smooth_future_heating_energy(
                 heat_result["heat_kwh"]
             )
@@ -2461,9 +2656,42 @@ class HeatForecastEngine:
             else 0.0
             for index in range(horizon)
         ]
+        sum_info: dict[str, Any] = {"applied": False, "reason": "disabled"}
+        if (
+            held is None
+            and mode == "heating"
+            and getattr(config, "HEAT_FORECAST_SUM_STABILIZATION_ENABLED", True)
+        ):
+            from .heat_forecast_stabilizers import stabilize_window_sum
+
+            previous_sum = self.state.get("forecast_window_sum_prev")
+            heat_result["heat_kwh"], sum_info = stabilize_window_sum(
+                heat_result["heat_kwh"],
+                baseline,
+                previous_sum=(
+                    float(previous_sum) if previous_sum is not None else None
+                ),
+                baseline_band=float(
+                    getattr(config, "HEAT_FORECAST_SUM_BASELINE_BAND", 0.15)
+                ),
+                smoothing_alpha=float(
+                    getattr(config, "HEAT_FORECAST_SUM_SMOOTHING_ALPHA", 0.5)
+                ),
+                hysteresis=float(
+                    getattr(config, "HEAT_FORECAST_SUM_HYSTERESIS", 0.03)
+                ),
+            )
+            self.state["forecast_window_sum_prev"] = sum_info.get("final_sum")
+            LOGGER.info(
+                "Forecast 24h thermal sum: raw=%s baseline=%s final=%s (%s)",
+                sum_info.get("raw_sum"),
+                sum_info.get("baseline_sum"),
+                sum_info.get("final_sum"),
+                sum_info.get("reason"),
+            )
         start_estimate_diag: dict[str, Any] | None = None
         start_estimate_applied = False
-        if getattr(config, "HP_START_ESTIMATE_ENABLED", False):
+        if getattr(config, "HP_START_ESTIMATE_ENABLED", False) and held is None:
             from .hp_start_estimate import diagnostics, read_hp_start_estimate
 
             start_estimate_diag = diagnostics(states, now=now)
@@ -2474,14 +2702,52 @@ class HeatForecastEngine:
                 else None
             )
             if estimate is not None and estimate.known_method:
+                from .heat_forecast_stabilizers import (
+                    start_window_power_kw,
+                    windowed_mean_kw,
+                )
+
                 window_power = sensor_window_power_kw(
                     measured_kw=measured_thermal_kw,
                     near_kwargs=near_kwargs,
                     room_c=indoor_now,
                     max_kw=config.HEAT_FORECAST_MAX_HEATING_KW,
                 )
+                if window_power is not None:
+                    reference_kw = max(
+                        float(getattr(config, "HEATING_MIN_THERMAL_POWER_KW", 0.5)),
+                        *baseline[:6],
+                        *[float(v) for v in heat_result["heat_kwh"][1:6]],
+                    )
+                    window_minutes = float(
+                        getattr(
+                            config, "HEAT_FORECAST_START_POWER_WINDOW_MINUTES", 45
+                        )
+                    )
+                    window_power = start_window_power_kw(
+                        instantaneous_kw=window_power[0],
+                        mean_kw=(
+                            windowed_mean_kw(
+                                self.state, now, key="th",
+                                window_minutes=window_minutes,
+                            )
+                            if window_power[1] == "measured"
+                            else None
+                        ),
+                        reference_kw=reference_kw,
+                        cap_factor=float(
+                            getattr(
+                                config, "HEAT_FORECAST_START_POWER_CAP_FACTOR", 1.5
+                            )
+                        ),
+                        max_kw=config.HEAT_FORECAST_MAX_HEATING_KW,
+                    )
                 if window_power is None:
                     start_estimate_diag["forecast_power_source"] = "none"
+                    LOGGER.info(
+                        "Start estimate known (in %.0f min) but no window power available",
+                        estimate.minutes_to_start,
+                    )
                 else:
                     heat_result["heat_kwh"] = apply_start_estimate(
                         heat_result["heat_kwh"],
@@ -2489,11 +2755,24 @@ class HeatForecastEngine:
                         minutes_to_start=estimate.minutes_to_start,
                         runtime_min=estimate.expected_runtime_min,
                         first_hour_fraction=remaining_hours,
+                        max_runtime_h=float(
+                            getattr(config, "HEAT_FORECAST_START_MAX_RUNTIME_HOURS", 3.0)
+                        ),
+                        blend_hours=float(
+                            getattr(config, "HEAT_FORECAST_START_BLEND_HOURS", 1.0)
+                        ),
                     )
                     start_estimate_diag["forecast_power_source"] = (
                         window_power[1]
                     )
                     start_estimate_applied = True
+        if held is None and not blocked and mode == "heating":
+            self.state["last_good_forecast"] = {
+                "generated_at": now.astimezone(timezone.utc).isoformat(),
+                "first_hour_fraction": remaining_hours,
+                "heat_kwh": [round(float(v), 5) for v in heat_result["heat_kwh"]],
+            }
+            self.state["slab_start_last_good"] = slab_start
         dhw, standby, auxiliary_stats = self._dhw_and_standby_profiles(starts)
         curve = cop_curve_from_state(
             self.state,
@@ -2504,6 +2783,27 @@ class HeatForecastEngine:
             min_hours_per_bin=config.COP_MIN_HOURS_PER_BIN,
             min_value=config.COP_MIN_VALUE,
             max_value=config.COP_MAX_VALUE,
+            max_weight_share=getattr(config, "COP_MAX_BIN_WEIGHT_SHARE", None),
+        )
+        el_factor = (
+            forecast_accuracy.correction_factor(
+                self.state,
+                now,
+                window_hours=float(getattr(config, "COP_ONLINE_CORRECTION_HOURS", 36)),
+                limit=float(getattr(config, "COP_ONLINE_CORRECTION_LIMIT", 0.2)),
+                min_samples=int(getattr(config, "COP_ONLINE_CORRECTION_MIN_HOURS", 12)),
+            )
+            if getattr(config, "COP_ONLINE_CORRECTION_ENABLED", True)
+            else 1.0
+        )
+        LOGGER.info(
+            "COP curve: %s intercept=%s slope=%s bins=%s online electricity "
+            "correction x%.3f",
+            "calibrated" if curve["calibrated"] else "start curve",
+            curve.get("intercept"),
+            curve.get("slope"),
+            curve.get("samples"),
+            el_factor,
         )
         defrost_heat_fraction = _defrost_fraction(
             self.state,
@@ -2530,6 +2830,7 @@ class HeatForecastEngine:
             cop_min=config.COP_MIN_VALUE,
             cop_max=config.COP_MAX_VALUE,
             cop_extrapolation_margin=config.HEAT_FORECAST_COP_EXTRAPOLATION_MARGIN,
+            el_correction_factor=el_factor,
         )
         self._correct_current_slot(
             now=now,
@@ -2725,7 +3026,7 @@ class HeatForecastEngine:
             self.state,
             now=now,
             starts=starts,
-            el_kwh=electrical["forecast_heat_el_kwh"],
+            el_kwh=[v / el_factor for v in electrical["forecast_heat_el_kwh"]],
             th_kwh=electrical["forecast_heat_th_kwh"],
         )
         attrs["accuracy"] = forecast_accuracy.summary(self.state, now)
@@ -2742,6 +3043,22 @@ class HeatForecastEngine:
                 round_digits=4,
             )
         )
+        self.state["last_publish_utc"] = now.astimezone(timezone.utc).isoformat()
+        LOGGER.info(
+            "Heat forecast published=%s: slot0=%.3f kWh, next24h=%.2f kWh, "
+            "state=%s, anchor=%s, cop_extrapolated_hours=%s, blockade=%s, "
+            "start_estimate=%s, degraded=%s",
+            published,
+            float(electrical["forecast_total_el_kwh"][0]),
+            sum(float(v) for v in electrical["forecast_total_el_kwh"][:24]),
+            "held" if held is not None else "simulated",
+            attrs["current_hour_estimate"],
+            electrical.get("cop_extrapolated_hours"),
+            block_reason or "none",
+            "applied" if start_estimate_applied else "inactive",
+            ",".join(degraded_reasons) or "none",
+        )
+        self.store.save(self.state)
         self._backfill(
             now=now,
             influx_service=influx_service,
@@ -3104,9 +3421,52 @@ class HeatForecastEngine:
                 else "degraded_partial"
             )
         else:
-            projected = max(0.0, current_power_w) / 1000.0 * future_fraction
-            standby_remainder = min(projected, standby_remainder)
-            active_projection = max(0.0, projected - standby_remainder)
+            from .heat_forecast_stabilizers import (
+                blend_slot0_projection,
+                windowed_mean_kw,
+            )
+
+            mean_kw = windowed_mean_kw(
+                self.state,
+                now,
+                key="el",
+                window_minutes=float(
+                    getattr(config, "HEAT_FORECAST_SLOT0_WINDOW_MINUTES", 45)
+                ),
+            )
+            observed_kw = (
+                mean_kw if mean_kw is not None else max(0.0, current_power_w) / 1000.0
+            )
+            standby_covered = float(coverage_hours.get("standby_el", 0.0))
+            standby_rate = (
+                standby_so_far / standby_covered
+                if standby_covered >= 0.1 and standby_so_far > 0.0
+                else standby_full
+            )
+            standby_rate = max(0.0, min(standby_rate, observed_kw))
+            standby_remainder = standby_rate * future_fraction
+            measured_active_kw = max(0.0, observed_kw - standby_rate)
+            model_rate_kw = heat_full / future_fraction if future_fraction > 0 else 0.0
+            projected_active_kw = blend_slot0_projection(
+                measured_mean_kw=measured_active_kw if mean_kw is not None else None,
+                model_rate_kw=measured_active_kw if mean_kw is None else model_rate_kw,
+                weight=float(getattr(config, "HEAT_FORECAST_SLOT0_MEASURED_WEIGHT", 0.5)),
+                cap_factor=float(getattr(config, "HEAT_FORECAST_SLOT0_CAP_FACTOR", 1.5)),
+            )
+            active_projection = projected_active_kw * future_fraction
+            measured_projection = measured_active_kw * future_fraction
+            LOGGER.info(
+                "Slot 0 projection: observed=%.2f kW (mean=%s, now=%.2f) standby=%.3f kW "
+                "measured_active=%.2f model=%.2f -> active=%.2f kW over %.0f%% of the hour",
+                observed_kw,
+                f"{mean_kw:.2f}" if mean_kw is not None else "n/a",
+                max(0.0, current_power_w) / 1000.0,
+                standby_rate,
+                measured_active_kw,
+                model_rate_kw,
+                projected_active_kw,
+                future_fraction * 100.0,
+            )
             dhw_state = states.get(config.DHW_STATUS_ENTITY_ID)
             dhw_state = (
                 dhw_state.get("state")
@@ -3129,13 +3489,15 @@ class HeatForecastEngine:
                 or str(defrost_state).strip().lower() in ("on", "true", "1")
             )
             if dhw_active:
-                dhw_remainder = active_projection
+                dhw_remainder = max(
+                    0.0, current_power_w / 1000.0 - standby_rate
+                ) * future_fraction
                 heat_remainder = 0.0
                 defrost_remainder = 0.0
             elif defrost_active and config.COP_DEFROST_HANDLING == "separate":
                 dhw_remainder = 0.0
                 heat_remainder = 0.0
-                defrost_remainder = active_projection
+                defrost_remainder = measured_projection
             else:
                 dhw_remainder = 0.0
                 modeled_active = heat_remainder + defrost_remainder
@@ -3335,8 +3697,13 @@ def fit_energy_weighted_cop(
     cop_min: float = 1.5,
     cop_max: float = 10.0,
     max_abs_slope: float = 0.5,
+    max_weight_share: float | None = None,
 ) -> dict[str, Any]:
-    """Fit ``COP = intercept + slope * outdoor_temperature`` weighted by kWh."""
+    """Fit ``COP = intercept + slope * outdoor_temperature`` weighted by kWh.
+
+    With ``max_weight_share`` no point may carry more than that share of the
+    total weight (robust against a single outlier bin).
+    """
     points: list[tuple[float, float, float]] = []
     for sample in samples:
         try:
@@ -3357,6 +3724,23 @@ def fit_energy_weighted_cop(
 
     if not points:
         return {"intercept": None, "slope": None, "samples": 0, "temp_range_c": None}
+
+    if max_weight_share is not None and len(points) >= 3:
+        share = max(1.0 / len(points), min(1.0, float(max_weight_share)))
+        low, high = 0.0, max(weight for _, _, weight in points)
+        for _ in range(64):
+            cap = (low + high) / 2.0
+            clipped_total = sum(
+                min(weight, cap) for _, _, weight in points
+            )
+            if cap <= share * clipped_total:
+                low = cap
+            else:
+                high = cap
+        points = [
+            (x, y, min(weight, low))
+            for x, y, weight in points
+        ]
 
     weight_sum = sum(weight for _, _, weight in points)
     mean_x = sum(x * weight for x, _, weight in points) / weight_sum
@@ -3408,13 +3792,16 @@ def sensor_window_power_kw(
     model. Never the baseline, which is zero when solar gain covers the load.
     """
     if measured_kw is not None and measured_kw >= 0.5:
+        LOGGER.debug("Sensor window power: measured %.2f kW", measured_kw)
         return min(max_kw, measured_kw), "measured"
     outlet = near_kwargs.get("near_outlet_c")
     eff = near_kwargs.get("near_eff", 0.0)
     if outlet is not None and eff > 0:
         model = near_kwargs.get("near_scale", 1.0) * eff * (outlet - room_c)
         if model > 0.0:
+            LOGGER.debug("Sensor window power: controller model %.2f kW", model)
             return min(max_kw, model), "controller_model"
+    LOGGER.debug("Sensor window power: no measured or controller-model value")
     return None
 
 
@@ -3425,18 +3812,32 @@ def apply_start_estimate(
     minutes_to_start: float | None,
     runtime_min: float | None,
     first_hour_fraction: float,
+    max_runtime_h: float | None = None,
+    blend_hours: float = 0.0,
 ) -> list[float]:
     """Raise the thermal energy inside the sensor's start/run window.
 
     Hour 0 only covers its remaining fraction. Inside the window the energy is
-    at least power x overlap; outside it the simulation is left untouched.
+    at least power x overlap; the window length is limited to
+    ``max_runtime_h`` and, after the window, the raised energy fades back to
+    the simulation over ``blend_hours``. Without a window the simulation is
+    left untouched.
     """
     result = [float(v) for v in heat_kwh]
     if minutes_to_start is None or not runtime_min or runtime_min <= 0:
+        LOGGER.debug("Start estimate not applied: no start/runtime window")
         return result
+    runtime_h = float(runtime_min) / 60.0
+    if max_runtime_h is not None and max_runtime_h > 0 and runtime_h > max_runtime_h:
+        LOGGER.info(
+            "Start-estimate runtime limited %.1f h -> %.1f h", runtime_h, max_runtime_h
+        )
+        runtime_h = float(max_runtime_h)
     start_h = max(0.0, float(minutes_to_start)) / 60.0
-    end_h = start_h + float(runtime_min) / 60.0
+    end_h = start_h + runtime_h
+    blend_h = max(0.0, float(blend_hours))
     hour_begin = 0.0
+    touched = 0
     for index in range(len(result)):
         length = first_hour_fraction if index == 0 else 1.0
         overlap = max(
@@ -3444,7 +3845,23 @@ def apply_start_estimate(
         )
         if overlap > 0.0:
             result[index] = max(result[index], float(power_kw[index]) * overlap)
+            touched += 1
+        elif blend_h > 0.0 and hour_begin >= end_h and length > 0.0:
+            weight = 1.0 - ((hour_begin + length / 2.0) - end_h) / blend_h
+            if weight > 0.0:
+                raised = float(power_kw[index]) * length
+                result[index] += max(0.0, raised - result[index]) * weight
+                touched += 1
         hour_begin += length
+    LOGGER.info(
+        "Start estimate applied: start in %.0f min, run %.1f h, power %.2f kW, "
+        "%d slots raised, blend %.1f h",
+        float(minutes_to_start),
+        runtime_h,
+        float(power_kw[0]) if len(power_kw) else 0.0,
+        touched,
+        blend_h,
+    )
     return result
 
 
@@ -3619,6 +4036,10 @@ def simulate_heating_energy(
         hourly_max_kw[hour] = max(hourly_max_kw[hour], q_hp)
         previous_q = q_hp
 
+    LOGGER.debug(
+        "Heat simulation: %d slots, total %.2f kWh, peak %.2f kW, room %.1f C, slab %.1f C",
+        len(heat_kwh), sum(heat_kwh), max(hourly_max_kw, default=0.0), room_c, slab_c,
+    )
     return {
         "heat_kwh": heat_kwh,
         "max_hp_kw": max(hourly_max_kw, default=0.0),

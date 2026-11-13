@@ -1,5 +1,27 @@
 # Active Context - Current Work & Decision State
 
+### PR 114 review fixes — 2026-11-13
+
+- **What:** Addressed five review findings in the forecast cache, DHW projection, COP weight cap, candidate runtime, and applied-versus-computed outlet metric. The computed outlet is persisted before downstream limiters; targeted regression tests pass.
+- **Why:** Ensure blockade forecasts retain start-estimate increases, DHW uses live power, robust COP fitting respects its weight limit, candidate runtime is independent of prior setpoint, and telemetry measures actual limiter deviation.
+- **Files:** see the PR 114 review-fix milestone in `progress.md`.
+
+### Running-HP runtime window — 2026-11-13
+
+- **What:** `candidate_window` re-derives runtime per candidate when status is running. **Why:** alternating predictions at identical outlet (23.35/22.38 °C). **Files:** `src/hp_start_estimate.py`, test, CHANGELOG.
+
+### Outlet reference band tuning — 2026-11-13
+
+- **What:** band 4->2 K, always-active option. **Why:** replay of oscillating log showed guard (S<0.1) too narrow. **Files:** see progress.md.
+
+### WP load forecast stabilisation + 0.3.1 — 2026-11-13
+
+- **What:** forecast stabilisers, blockade hold, COP/accuracy correction, logging, version 0.3.1. **Why:** forecast jumped around DHW/defrost and start estimates. **Files:** see progress.md.
+
+### Outlet search stabilisation — 2026-11-13
+
+- **What:** sensitivity guard + building-curve regularisation, calm slew/hysteresis, scaled FD-Newton, operational-state persistence fix, control-quality metrics. **Why:** required outlet jumped 26–34 °C on a flat search objective. **Files:** see progress.md.
+
 ### PR 113 review fixes — 2026-11-12
 
 - **What:** corrected candidate-delay reference and fallback gating, preferred a valid runtime sensor over an invalid attribute, and aligned the initial verification trajectory with candidate simulations. **Why:** address four review findings on PR 113. **Files:** see the PR 113 review-fix milestone in `progress.md`.

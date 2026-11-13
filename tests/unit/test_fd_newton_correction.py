@@ -253,12 +253,29 @@ class TestFiniteDifferenceNewton:
         assert result is not None and result > 25.8
 
     def test_correction_is_clamped(self):
-        simulate = _sim(0.05, 26.1, base_temp=20.0)
+        simulate = _sim(0.3, 26.1, base_temp=20.0)
         traj = self._traj(simulate, 30.0)
         result = self.w._finite_difference_newton_correction(
             30.0, traj, 22.6, 2.6
         )
         assert result == pytest.approx(32.5, abs=1e-6)
+
+    def test_raise_is_scaled_down_when_sensitivity_is_flat(self):
+        # S_max = 0.05 is half of FD_NEWTON_MIN_SENSITIVITY (0.1)
+        simulate = _sim(0.05, 26.1, base_temp=20.0)
+        traj = self._traj(simulate, 30.0)
+        result = self.w._finite_difference_newton_correction(
+            30.0, traj, 22.6, 2.6
+        )
+        assert result == pytest.approx(31.25, abs=1e-6)
+
+    def test_reduction_is_not_scaled_when_sensitivity_is_flat(self):
+        simulate = _sim(0.05, 20.0, base_temp=26.0, drift=0.0)
+        traj = self._traj(simulate, 30.0)
+        result = self.w._finite_difference_newton_correction(
+            30.0, traj, 22.6, -3.4
+        )
+        assert result == pytest.approx(27.5, abs=1e-6)
 
     def test_noise_in_pump_off_branch_does_not_raise_outlet(self):
         def simulate(outlet):

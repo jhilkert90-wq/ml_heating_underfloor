@@ -1,5 +1,5 @@
 name: "ML Heating Underfloor"
-version: "0.2.116"
+version: "0.3.1"
 slug: "ml_heating_underfloor"
 image: "ghcr.io/jhilkert90-wq/ml_heating_underfloor-{arch}"
 description: "Physics-based machine learning heating control optimized for underfloor heating systems with slow thermal response"
@@ -118,6 +118,29 @@ options:
   heat_forecast_reuse_prices: true
   heat_forecast_influx_timeout_seconds: 60
   heat_forecast_min_calibration_hours: 48
+  heat_forecast_anchor_max_gap_minutes: 30
+  heat_forecast_anchor_tolerance_minutes: 5
+  heat_forecast_start_power_window_minutes: 45
+  heat_forecast_start_power_cap_factor: 1.5
+  heat_forecast_start_max_runtime_hours: 3.0
+  heat_forecast_start_blend_hours: 1.0
+  heat_forecast_block_hold_enabled: true
+  heat_forecast_block_hold_max_hours: 3.0
+  heat_forecast_block_grace_minutes: 10
+  heat_forecast_block_publish_interval_seconds: 120
+  cop_bin_width_k: 2.0
+  cop_max_bin_weight_share: 0.4
+  cop_online_correction_enabled: true
+  cop_online_correction_hours: 36
+  cop_online_correction_limit: 0.2
+  cop_online_correction_min_hours: 12
+  heat_forecast_slot0_window_minutes: 45
+  heat_forecast_slot0_measured_weight: 0.5
+  heat_forecast_slot0_cap_factor: 1.5
+  heat_forecast_sum_stabilization_enabled: true
+  heat_forecast_sum_baseline_band: 0.15
+  heat_forecast_sum_smoothing_alpha: 0.5
+  heat_forecast_sum_hysteresis: 0.03
   heat_forecast_electricity_counter_entity: "sensor.stromzahler_heizen_jahr"
   heat_forecast_thermal_counter_entity: "sensor.wmz_heizen_jahr3"
   heat_forecast_dhw_counter_entity: "sensor.stromzahler_ww_jahr"
@@ -131,7 +154,7 @@ options:
   defrost_default_heat_fraction: 0.08
   defrost_default_el_fraction: 0.06
   cop_half_life_days: 45.0
-  cop_min_hours_per_bin: 4.0
+  cop_min_hours_per_bin: 2.0
   cop_start_intercept: 5.0
   cop_start_slope: 0.2
   cop_min_value: 1.5
@@ -768,6 +791,29 @@ options:
   # Skip smoothing when change exceeds this threshold (°C) for fast recovery
   outlet_smoothing_bypass: 2.0
 
+  # === Outlet Search Stabilisation ===
+  # With an inert slab the 4 h end temperature is nearly flat in the outlet
+  # temperature (sensitivity S [K/K]).  Below the minimum sensitivity the
+  # search is regularised towards the learned base-curve outlet.
+  outlet_search_min_sensitivity: 0.1
+  outlet_reference_enabled: true
+  # Comfort error (K) accepted per K² deviation from the reference outlet
+  outlet_reference_lambda: 0.01
+  # Allowed deviation (K) from the reference; widened by the extra value when
+  # heat demand is proven (room below target or falling)
+  outlet_reference_band_k: 2.0
+  # Apply the band to every search, not only ill-conditioned ones
+  outlet_reference_always_active: true
+  outlet_reference_demand_extra_k: 4.0
+  outlet_demand_deficit_k: 0.3
+  outlet_demand_trend_k_per_h: 0.1
+  # Per-cycle setpoint change limit (K) without demand or target change
+  outlet_calm_slew_k: 1.0
+  # Setpoint changes below this (K) are discarded without demand/target change
+  outlet_hysteresis_k: 0.3
+  # FD-Newton raise corrections are scaled down below this sensitivity
+  fd_newton_min_sensitivity: 0.1
+
   # === Heating Correction Mode ===
   # Selects the algorithm used to correct under/overshoot when the predicted
   # trajectory diverges from the target temperature.
@@ -884,6 +930,29 @@ schema:
   heat_forecast_reuse_prices: "bool"
   heat_forecast_influx_timeout_seconds: "int(10,300)"
   heat_forecast_min_calibration_hours: "int(1,720)"
+  heat_forecast_anchor_max_gap_minutes: "int(5,180)"
+  heat_forecast_anchor_tolerance_minutes: "int(0,30)"
+  heat_forecast_start_power_window_minutes: "int(5,180)"
+  heat_forecast_start_power_cap_factor: "float(1.0,5.0)"
+  heat_forecast_start_max_runtime_hours: "float(0.5,12.0)"
+  heat_forecast_start_blend_hours: "float(0.0,6.0)"
+  heat_forecast_block_hold_enabled: "bool"
+  heat_forecast_block_hold_max_hours: "float(0.5,12.0)"
+  heat_forecast_block_grace_minutes: "int(0,120)"
+  heat_forecast_block_publish_interval_seconds: "int(0,3600)"
+  cop_bin_width_k: "float(1.0,5.0)"
+  cop_max_bin_weight_share: "float(0.1,1.0)"
+  cop_online_correction_enabled: "bool"
+  cop_online_correction_hours: "int(24,48)"
+  cop_online_correction_limit: "float(0.0,0.5)"
+  cop_online_correction_min_hours: "int(1,48)"
+  heat_forecast_slot0_window_minutes: "int(5,180)"
+  heat_forecast_slot0_measured_weight: "float(0.0,1.0)"
+  heat_forecast_slot0_cap_factor: "float(1.0,5.0)"
+  heat_forecast_sum_stabilization_enabled: "bool"
+  heat_forecast_sum_baseline_band: "float(0.0,1.0)"
+  heat_forecast_sum_smoothing_alpha: "float(0.0,1.0)"
+  heat_forecast_sum_hysteresis: "float(0.0,0.5)"
   heat_forecast_electricity_counter_entity: "str?"
   heat_forecast_thermal_counter_entity: "str?"
   heat_forecast_dhw_counter_entity: "str?"
@@ -1190,6 +1259,17 @@ schema:
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"
+  outlet_search_min_sensitivity: "float(0.0,1.0)"
+  outlet_reference_enabled: "bool"
+  outlet_reference_always_active: "bool"
+  outlet_reference_lambda: "float(0.0,0.5)"
+  outlet_reference_band_k: "float(0.5,15.0)"
+  outlet_reference_demand_extra_k: "float(0.0,15.0)"
+  outlet_demand_deficit_k: "float(0.0,2.0)"
+  outlet_demand_trend_k_per_h: "float(0.0,1.0)"
+  outlet_calm_slew_k: "float(0.1,5.0)"
+  outlet_hysteresis_k: "float(0.0,2.0)"
+  fd_newton_min_sensitivity: "float(0.01,1.0)"
   # Heating Correction Mode
   heating_correction_mode: "list(legacy|physics|ml)"
   # Mode Profiles

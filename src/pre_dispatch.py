@@ -18,7 +18,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -201,6 +201,27 @@ def resolve_shadow_mode_for_cycle(ha_client: Any, all_states: Any):
 # ---------------------------------------------------------------------------
 
 
+def _target_temp_change(
+    ha_client: Any,
+    all_states: Any,
+    previous_target: float,
+    climate_mode: str,
+) -> Optional[float]:
+    """Target change since the previous cycle (None when unavailable)."""
+    entity_id = config.TARGET_INDOOR_TEMP_ENTITY_ID
+    if climate_mode == "cooling" and getattr(
+        config, "TARGET_INDOOR_TEMP_COOLING_ENTITY_ID", ""
+    ):
+        entity_id = config.TARGET_INDOOR_TEMP_COOLING_ENTITY_ID
+    try:
+        current = ha_client.get_state(entity_id, all_states)
+        if current is None:
+            return None
+        return float(current) - float(previous_target)
+    except Exception:  # telemetry must never break learning
+        return None
+
+
 def run_online_learning(
     ha_client: Any,
     all_states: Any,
@@ -217,6 +238,9 @@ def run_online_learning(
     last_run_features = state.get("last_run_features")
     last_indoor_temp = state.get("last_indoor_temp")
     last_final_temp_stored = state.get("last_final_temp")
+    last_computed_temp = state.get("last_computed_temp")
+    if last_computed_temp is None:
+        last_computed_temp = last_final_temp_stored
     last_avg_other_rooms_temp = state.get("last_avg_other_rooms_temp")
 
     if (
@@ -335,6 +359,18 @@ def run_online_learning(
             "hp_run_weight": learning_features.get("hp_run_weight"),
             "auxiliary_heat": learning_features.get("total_auxiliary_heat_kw", 0.0),
             "target_temp": target_indoor_temp,
+            # Separate setpoint changes from the measured temperature
+            # response and record what limiters changed (control quality).
+            "target_temp_change_k": _target_temp_change(
+                ha_client,
+                all_states,
+                target_indoor_temp,
+                previous_cycle_climate_mode,
+            ),
+            "indoor_change_k": float(actual_indoor_change),
+            "outlet_applied_vs_computed_k": float(
+                actual_applied_temp - last_computed_temp
+            ),
             "avg_cloud_cover": avg_cloud_cover,
             "cloud_cover_forecast": cloud_cover_forecasts,
             "inlet_temp": learning_features.get("inlet_temp"),

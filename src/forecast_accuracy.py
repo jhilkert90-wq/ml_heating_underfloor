@@ -7,9 +7,12 @@ bounded history from which bias/MAE/MAPE and start-detection rates derive.
 
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
+
+LOGGER = logging.getLogger(__name__)
 
 LEADS = (1, 6, 24)
 HISTORY_DAYS = 7
@@ -51,6 +54,7 @@ def record_predictions(
                 "th": float(th_kwh[lead]),
             },
         )
+    LOGGER.debug("Forecast accuracy: %d pending predictions", len(pending))
     cutoff = now.astimezone(timezone.utc) - timedelta(hours=48)
     section["pending"] = {
         key: value
@@ -87,18 +91,24 @@ def actual_from_anchors(
             return None
         readings = (old["readings"], new["readings"])
         reading_times = (old["reading_times_utc"], new["reading_times_utc"])
-        for name, old_boundary, new_boundary in (
-            ("heating_el", old_boundary, new_boundary),
-            ("heating_th", old_boundary, new_boundary),
-        ):
-            for times, boundary in (
-                (reading_times[0], old_boundary),
-                (reading_times[1], new_boundary),
+        from . import config
+
+        tolerance = timedelta(
+            minutes=getattr(config, "HEAT_FORECAST_ANCHOR_TOLERANCE_MINUTES", 5)
+        )
+
+        def aligned(stamp: str, boundary: datetime) -> bool:
+            return (
+                abs(datetime.fromisoformat(stamp).astimezone(timezone.utc) - boundary)
+                <= tolerance
+            )
+
+        for name in ("heating_el", "heating_th"):
+            if not (
+                aligned(reading_times[0][name], old_boundary)
+                and aligned(reading_times[1][name], new_boundary)
             ):
-                if datetime.fromisoformat(times[name]).astimezone(
-                    timezone.utc
-                ) != boundary:
-                    return None
+                return None
 
         def delta(name: str, *, optional: bool = False) -> float | None:
             start = readings[0].get(name)
@@ -113,14 +123,11 @@ def actual_from_anchors(
             ):
                 return None
             if optional:
-                for times, boundary in (
-                    (reading_times[0], old_boundary),
-                    (reading_times[1], new_boundary),
+                if not (
+                    aligned(reading_times[0][name], old_boundary)
+                    and aligned(reading_times[1][name], new_boundary)
                 ):
-                    if datetime.fromisoformat(times[name]).astimezone(
-                        timezone.utc
-                    ) != boundary:
-                        return None
+                    return None
             return end_value - start_value
 
         electricity = delta("heating_el")
@@ -155,6 +162,10 @@ def record_actual(
         item["act_el"] = el_kwh
         item["act_th"] = th_kwh
         section["history"].append(item)
+    LOGGER.info(
+        "Forecast accuracy: hour %s closed, actual el=%.3f kWh th=%.3f kWh",
+        hour_iso, el_kwh, th_kwh,
+    )
     cutoff = hour.astimezone(timezone.utc) - timedelta(days=HISTORY_DAYS)
     section["history"] = [
         item
@@ -223,3 +234,51 @@ def summary(state: Mapping[str, Any], now: datetime) -> dict[str, Any]:
             }
         result[f"lead_{lead}h"] = windows
     return result
+
+
+def correction_factor(
+    state: Mapping[str, Any],
+    now: datetime,
+    *,
+    window_hours: float = 36.0,
+    limit: float = 0.2,
+    min_samples: int = 12,
+) -> float:
+    """Multiplicative electricity correction = actual / forecast (lead 1 h).
+
+    Predictions are stored uncorrected, so the factor never compounds. The
+    result is bounded to ``1 +/- limit``; ``1.0`` without enough history.
+    """
+    history = state.get("forecast_accuracy", {}).get("history", [])
+    cutoff = now.astimezone(timezone.utc) - timedelta(hours=window_hours)
+    rows = []
+    for item in history:
+        try:
+            if (
+                item["lead"] == 1
+                and datetime.fromisoformat(item["hour_utc"]) >= cutoff
+                and item["el"] > 0
+                and item["act_el"] >= 0
+            ):
+                rows.append(item)
+        except (KeyError, TypeError, ValueError):
+            continue
+    if len(rows) < max(1, int(min_samples)):
+        LOGGER.debug(
+            "Forecast correction inactive: %d/%d usable hours", len(rows), min_samples
+        )
+        return 1.0
+    predicted = sum(r["el"] for r in rows)
+    actual = sum(r["act_el"] for r in rows)
+    if predicted <= 0:
+        return 1.0
+    limit = max(0.0, float(limit))
+    factor = min(1.0 + limit, max(1.0 - limit, actual / predicted))
+    LOGGER.info(
+        "Forecast correction factor %.3f from %d hours (actual %.2f / forecast %.2f kWh)",
+        factor,
+        len(rows),
+        actual,
+        predicted,
+    )
+    return factor

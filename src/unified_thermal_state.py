@@ -110,6 +110,21 @@ def _slim_channel_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     return slimmed
 
 
+# Keys that must be persisted even when an older state file lacks them.
+# ``last_predicted_indoor`` is deliberately excluded: online learning must
+# re-predict with the applied outlet instead of reusing the stored
+# horizon-end prediction of the computed outlet.
+EXTRA_OPERATIONAL_KEYS = frozenset(
+    {
+        "last_climate_mode",
+        "last_active_climate_mode",
+        "last_target_indoor_temp",
+        "setpoint_hold_cycles_remaining",
+        "last_computed_temp",
+    }
+)
+
+
 class ThermalStateManager:
     """Unified thermal state manager using single JSON file.
 
@@ -232,11 +247,16 @@ class ThermalStateManager:
                 # Added missing fields required by main.py learning logic
                 "last_run_features": None,
                 "last_final_temp": None,
+                "last_computed_temp": None,
                 "last_avg_other_rooms_temp": None,
                 "last_fireplace_on": False,
                 "last_is_blocking": False,
                 "last_blocking_reasons": [],
-                "last_blocking_end_time": None
+                "last_blocking_end_time": None,
+                "last_climate_mode": None,
+                "last_active_climate_mode": None,
+                "last_target_indoor_temp": None,
+                "setpoint_hold_cycles_remaining": 0
             }
         }
 
@@ -650,7 +670,7 @@ class ThermalStateManager:
         operational = self.state["operational_state"]
 
         for key, value in kwargs.items():
-            if key in operational:
+            if key in operational or key in EXTRA_OPERATIONAL_KEYS:
                 # Prevent last_run_features from being stored as a
                 # non-dict type (e.g. DataFrame, JSON string, Series).
                 # This is the root cause of the double-encoding bug
