@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Outlet search stabilisation**: ill-conditioning guard (`OUTLET_SEARCH_MIN_SENSITIVITY`) regularises flat searches towards the learned building heating curve (`OUTLET_REFERENCE_*`); calm-conditions slew limit and hysteresis (`OUTLET_CALM_SLEW_K`, `OUTLET_HYSTERESIS_K`); sensitivity-scaled FD-Newton raise (`FD_NEWTON_MIN_SENSITIVITY`)
+- **Control-quality metrics**: outlet step size, applied-vs-computed deviation and room MAE split by steady/changing target in `get_metrics()['control_quality']`
+
+### Fixed
+- Operational-state keys (`setpoint_hold_cycles_remaining`, `last_climate_mode`, `last_active_climate_mode`, `last_target_indoor_temp`) were dropped on save, so the setpoint hold never fired
+- Saturation cap is re-applied after trajectory verification correction
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

@@ -1251,6 +1251,36 @@ configuration:
     description: 'When the required setpoint change exceeds this threshold (°C), EMA
       smoothing is bypassed for immediate response (e.g. after defrost recovery).
       Default: 2.0°C.'
+  outlet_search_min_sensitivity:
+    name: '[Erweitert] Mindest-Sensitivität (K/K)'
+    description: 'Unterhalb dieser Sensitivität (Endtemperaturänderung pro K Vorlauf) wird die Vorlaufsuche zur gelernten Basis-Heizkurve hin regularisiert. Standard: 0.1.'
+  outlet_reference_enabled:
+    name: '[Erweitert] Vorlauf-Referenz-Regularisierung'
+    description: 'Aktiviert die Regularisierung schlecht konditionierter Vorlaufsuchen zur gelernten Basis-Heizkurve. Standard: true.'
+  outlet_reference_lambda:
+    name: '[Erweitert] Referenz-Gewicht Lambda (K/K²)'
+    description: 'Akzeptierter Komfortfehler (K) pro K² Abweichung vom Basis-Kurven-Vorlauf. Standard: 0.01.'
+  outlet_reference_band_k:
+    name: '[Erweitert] Referenz-Band (K)'
+    description: 'Erlaubte Abweichung vom Basis-Kurven-Vorlauf bei regularisierten Suchen. Standard: 4.0 K.'
+  outlet_reference_demand_extra_k:
+    name: '[Erweitert] Referenz-Band Zusatz bei Bedarf (K)'
+    description: 'Zusätzliche Bandbreite bei nachgewiesenem Wärmebedarf (Raum unter Soll oder fallend). Standard: 4.0 K.'
+  outlet_demand_deficit_k:
+    name: '[Erweitert] Bedarf: Defizit (K)'
+    description: 'Raumtemperatur-Defizit zum Soll, ab dem Wärmebedarf als nachgewiesen gilt. Standard: 0.3 K.'
+  outlet_demand_trend_k_per_h:
+    name: '[Erweitert] Bedarf: Trend (K/h)'
+    description: 'Fallender Raumtrend (pro 60 min), der als nachgewiesener Wärmebedarf gilt. Standard: 0.1 K/h.'
+  outlet_calm_slew_k:
+    name: '[Erweitert] Ruhiges Slew-Limit (K)'
+    description: 'Änderungslimit pro Zyklus ohne Bedarf oder Sollwertänderung (nie über max_temp_change_per_cycle). Standard: 1.0 K.'
+  outlet_hysteresis_k:
+    name: '[Erweitert] Vorlauf-Hysterese (K)'
+    description: 'Sollwertänderungen unter diesem Wert werden ohne Bedarf oder Sollwertänderung verworfen. 0 deaktiviert. Standard: 0.3 K.'
+  fd_newton_min_sensitivity:
+    name: '[Erweitert] FD-Newton Mindest-Sensitivität (K/K)'
+    description: 'Unterhalb dieser Sensitivität werden FD-Newton-Anhebungen proportional verkleinert; Absenkungen bleiben unbegrenzt. Standard: 0.1.'
   heating_correction_mode:
     name: '[Erweitert] Heizkorrektur Modus'
     description: 'Selects the algorithm used to correct under/overshoot when the predicted

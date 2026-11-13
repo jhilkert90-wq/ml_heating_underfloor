@@ -609,6 +609,80 @@ class TestStepSetpointHold:
         assert ctx.new_hold_cycles == 2  # max(0, 3-1) = 2
 
 
+class TestOutletStabilisers:
+    """Demand-aware slew limit and setpoint hysteresis."""
+
+    def _config(self, mock_config):
+        mock_config.MAX_TEMP_CHANGE_PER_CYCLE = 2.0
+        mock_config.OUTLET_CALM_SLEW_K = 1.0
+        mock_config.OUTLET_HYSTERESIS_K = 0.3
+        mock_config.OUTLET_DEMAND_DEFICIT_K = 0.3
+        mock_config.OUTLET_DEMAND_TREND_K_PER_H = 0.1
+        mock_config.MIN_SETPOINT_HOLD_CYCLES = 4
+        mock_config.TRAJECTORY_STEPS = 4
+        mock_config.DHW_STATUS_ENTITY_ID = "binary_sensor.dhw"
+        mock_config.DISINFECTION_STATUS_ENTITY_ID = "binary_sensor.disinfect"
+        mock_config.DHW_BOOST_HEATER_STATUS_ENTITY_ID = "binary_sensor.boost"
+
+    def _ctx(self, indoor, target, final_temp, **state):
+        ctx = _make_ctx(
+            actual_outlet_temp=26.0,
+            actual_indoor=indoor,
+            prediction_indoor_temp=indoor,
+            target_indoor_temp=target,
+            final_temp=final_temp,
+            effective_shadow_mode=False,
+        )
+        ctx.features_dict = {"indoor_temp_delta_60m": 0.0}
+        ctx.state = {"last_final_temp": 26.0, **state}
+        return ctx
+
+    @patch("src.cycle_routes.config")
+    def test_calm_conditions_use_tighter_slew(self, mock_config):
+        self._config(mock_config)
+        ctx = self._ctx(23.0, 22.5, 29.0, last_target_indoor_temp=22.5)
+        step_gradual_control(ctx)
+        assert ctx.final_temp == 27.0
+
+    @patch("src.cycle_routes.config")
+    def test_demand_uses_full_slew(self, mock_config):
+        self._config(mock_config)
+        ctx = self._ctx(22.0, 22.5, 29.0, last_target_indoor_temp=22.5)
+        step_gradual_control(ctx)
+        assert ctx.final_temp == 28.0
+
+    @patch("src.cycle_routes.config")
+    def test_target_jump_uses_full_slew(self, mock_config):
+        self._config(mock_config)
+        ctx = self._ctx(23.0, 22.5, 29.0, last_target_indoor_temp=21.0)
+        step_gradual_control(ctx)
+        assert ctx.final_temp == 28.0
+
+    @patch("src.cycle_routes.config")
+    def test_small_change_is_discarded_when_calm(self, mock_config):
+        self._config(mock_config)
+        ctx = self._ctx(
+            23.0, 22.5, 26.2,
+            last_target_indoor_temp=22.5,
+            setpoint_hold_cycles_remaining=0,
+        )
+        step_setpoint_hold(ctx)
+        assert ctx.final_temp == 26.0
+        assert ctx.new_hold_cycles == 0
+
+    @patch("src.cycle_routes.config")
+    def test_small_change_is_kept_on_demand(self, mock_config):
+        self._config(mock_config)
+        ctx = self._ctx(
+            22.0, 22.5, 26.2,
+            last_target_indoor_temp=22.5,
+            setpoint_hold_cycles_remaining=0,
+        )
+        step_setpoint_hold(ctx)
+        assert ctx.final_temp == 26.2
+        assert ctx.new_hold_cycles == 3
+
+
 class TestRunBlockingRoute:
     """Test blocking route handler."""
 

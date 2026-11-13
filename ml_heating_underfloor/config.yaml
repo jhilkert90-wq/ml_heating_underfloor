@@ -768,6 +768,27 @@ options:
   # Skip smoothing when change exceeds this threshold (°C) for fast recovery
   outlet_smoothing_bypass: 2.0
 
+  # === Outlet Search Stabilisation ===
+  # With an inert slab the 4 h end temperature is nearly flat in the outlet
+  # temperature (sensitivity S [K/K]).  Below the minimum sensitivity the
+  # search is regularised towards the learned base-curve outlet.
+  outlet_search_min_sensitivity: 0.1
+  outlet_reference_enabled: true
+  # Comfort error (K) accepted per K² deviation from the reference outlet
+  outlet_reference_lambda: 0.01
+  # Allowed deviation (K) from the reference; widened by the extra value when
+  # heat demand is proven (room below target or falling)
+  outlet_reference_band_k: 4.0
+  outlet_reference_demand_extra_k: 4.0
+  outlet_demand_deficit_k: 0.3
+  outlet_demand_trend_k_per_h: 0.1
+  # Per-cycle setpoint change limit (K) without demand or target change
+  outlet_calm_slew_k: 1.0
+  # Setpoint changes below this (K) are discarded without demand/target change
+  outlet_hysteresis_k: 0.3
+  # FD-Newton raise corrections are scaled down below this sensitivity
+  fd_newton_min_sensitivity: 0.1
+
   # === Heating Correction Mode ===
   # Selects the algorithm used to correct under/overshoot when the predicted
   # trajectory diverges from the target temperature.
@@ -1190,6 +1211,16 @@ schema:
   # Outlet Smoothing
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"
+  outlet_search_min_sensitivity: "float(0.0,1.0)"
+  outlet_reference_enabled: "bool"
+  outlet_reference_lambda: "float(0.0,0.5)"
+  outlet_reference_band_k: "float(0.5,15.0)"
+  outlet_reference_demand_extra_k: "float(0.0,15.0)"
+  outlet_demand_deficit_k: "float(0.0,2.0)"
+  outlet_demand_trend_k_per_h: "float(0.0,1.0)"
+  outlet_calm_slew_k: "float(0.1,5.0)"
+  outlet_hysteresis_k: "float(0.0,2.0)"
+  fd_newton_min_sensitivity: "float(0.01,1.0)"
   # Heating Correction Mode
   heating_correction_mode: "list(legacy|physics|ml)"
   # Mode Profiles

@@ -596,6 +596,45 @@ OUTLET_SMOOTHING_ALPHA: float = float(
 OUTLET_SMOOTHING_BYPASS: float = float(
     os.getenv("OUTLET_SMOOTHING_BYPASS", "2.0")
 )
+# --- Outlet search stabilisation (flat objective on inert underfloor) ---
+# Below this sensitivity S = dT_end/dT_outlet [K/K] the binary search is
+# ill-conditioned and is regularised towards the learned base-curve outlet.
+OUTLET_SEARCH_MIN_SENSITIVITY: float = max(
+    0.0, float(os.getenv("OUTLET_SEARCH_MIN_SENSITIVITY", "0.1"))
+)
+OUTLET_REFERENCE_ENABLED: bool = (
+    os.getenv("OUTLET_REFERENCE_ENABLED", "true").lower() == "true"
+)
+# Comfort error (K) accepted per K² of deviation from the reference outlet.
+OUTLET_REFERENCE_LAMBDA: float = max(
+    0.0, float(os.getenv("OUTLET_REFERENCE_LAMBDA", "0.01"))
+)
+# Allowed deviation (K) from the reference; widened by the extra value when
+# heat demand is proven (room below target or falling).
+OUTLET_REFERENCE_BAND_K: float = max(
+    0.5, float(os.getenv("OUTLET_REFERENCE_BAND_K", "4.0"))
+)
+OUTLET_REFERENCE_DEMAND_EXTRA_K: float = max(
+    0.0, float(os.getenv("OUTLET_REFERENCE_DEMAND_EXTRA_K", "4.0"))
+)
+OUTLET_DEMAND_DEFICIT_K: float = max(
+    0.0, float(os.getenv("OUTLET_DEMAND_DEFICIT_K", "0.3"))
+)
+OUTLET_DEMAND_TREND_K_PER_H: float = max(
+    0.0, float(os.getenv("OUTLET_DEMAND_TREND_K_PER_H", "0.1"))
+)
+# Per-cycle setpoint change limit (K) without demand or target change.
+OUTLET_CALM_SLEW_K: float = max(
+    0.1, float(os.getenv("OUTLET_CALM_SLEW_K", "1.0"))
+)
+# Changes below this (K) are discarded without demand or target change.
+OUTLET_HYSTERESIS_K: float = max(
+    0.0, float(os.getenv("OUTLET_HYSTERESIS_K", "0.3"))
+)
+# FD-Newton raise corrections are scaled down below this sensitivity.
+FD_NEWTON_MIN_SENSITIVITY: float = max(
+    0.01, float(os.getenv("FD_NEWTON_MIN_SENSITIVITY", "0.1"))
+)
 # Heating correction algorithm selector.
 # "legacy"  — current empirical formula (default, preserves existing behaviour).
 # "physics" — horizon-aware Newton step ΔT = ε / S(t_worst), where

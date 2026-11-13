@@ -33,6 +33,12 @@ from src.prediction_context import prediction_context_manager
 from src.shadow_mode import resolve_shadow_mode
 from src.heat_source_channels import _is_heat_pump_active
 from src.pv_trajectory import get_forecast_trajectory_state
+from src.outlet_stability import (
+    has_heat_demand,
+    pick_regularized,
+    reference_band,
+    reference_outlet,
+)
 
 _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C = 0.1
 _INLET_TEMP_UNSET = object()
@@ -1606,6 +1612,85 @@ class EnhancedModelWrapper:
                 if candidate:
                     _consider_best(candidate)
 
+        # ILL-CONDITIONING GUARD: with an inert slab the horizon-end error is
+        # nearly flat in the outlet temperature, so the zero crossing moves by
+        # several K for tiny input noise.  Measure S = dT_end/dT_outlet at the
+        # best candidate and, if it is too small, pick the candidate closest
+        # to the learned base-curve outlet within a demand-aware band.
+        self._search_sensitivity = None
+        _regularized = False
+        if self._climate_mode != "cooling":
+            _step = (
+                1.0
+                if best_candidate["outlet"] + 1.0 <= active_outlet_max
+                else -1.0
+            )
+            _probe = _evaluate_outlet(
+                best_candidate["outlet"] + _step, "Sensitivity probe"
+            )
+            if _probe:
+                _sens = abs(
+                    _probe["predicted_indoor"]
+                    - best_candidate["predicted_indoor"]
+                )
+                self._search_sensitivity = _sens
+                logging.info(
+                    "📐 Outlet search sensitivity S=%.3f K/K at %.1f°C",
+                    _sens,
+                    best_candidate["outlet"],
+                )
+                if (
+                    config.OUTLET_REFERENCE_ENABLED
+                    and _sens < config.OUTLET_SEARCH_MIN_SENSITIVITY
+                ):
+                    _ref = reference_outlet(
+                        avg_outdoor,
+                        target_indoor,
+                        self.thermal_model.heat_loss_coefficient,
+                        self.thermal_model.outlet_effectiveness,
+                        active_outlet_min,
+                        active_outlet_max,
+                    )
+                    if _ref is not None:
+                        _demand = has_heat_demand(
+                            current_indoor,
+                            target_indoor,
+                            _trend_60m,
+                            config.OUTLET_DEMAND_DEFICIT_K,
+                            config.OUTLET_DEMAND_TREND_K_PER_H,
+                        )
+                        _band = reference_band(
+                            _demand,
+                            config.OUTLET_REFERENCE_BAND_K,
+                            config.OUTLET_REFERENCE_DEMAND_EXTRA_K,
+                        )
+                        _lo = max(active_outlet_min, _ref - _band)
+                        _hi = min(active_outlet_max, _ref + _band)
+                        for _o in np.arange(_lo, _hi + 1e-9, 1.0).tolist():
+                            _evaluate_outlet(_o, "Regularize(grid)")
+                        _picked = pick_regularized(
+                            evaluated_candidates.values(),
+                            _ref,
+                            config.OUTLET_REFERENCE_LAMBDA,
+                            _lo,
+                            _hi,
+                        )
+                        if _picked is not None:
+                            logging.info(
+                                "🧭 Flat search objective (S=%.3f < %.2f): "
+                                "%.1f°C → %.1f°C (base curve %.1f°C ± %.1f K, "
+                                "demand=%s)",
+                                _sens,
+                                config.OUTLET_SEARCH_MIN_SENSITIVITY,
+                                best_candidate["outlet"],
+                                _picked["outlet"],
+                                _ref,
+                                _band,
+                                _demand,
+                            )
+                            best_candidate = _picked
+                            _regularized = True
+
         final_outlet = float(best_candidate["outlet"])
         final_predicted = float(best_candidate["predicted_indoor"])
         final_error = float(best_candidate["end_error"])
@@ -1645,6 +1730,15 @@ class EnhancedModelWrapper:
                 target_indoor=target_indoor,
                 outdoor_temp=outdoor_temp,
                 thermal_features=thermal_features,
+            )
+        elif _regularized:
+            logging.info(
+                "🧭 Regularized search result: %.1f°C → %.2f°C "
+                "(target %.1f°C, end_error=%+.3f°C)",
+                final_outlet,
+                final_predicted,
+                target_indoor,
+                final_error,
             )
         else:
             logging.warning(
@@ -1690,6 +1784,17 @@ class EnhancedModelWrapper:
                 active_outlet_max,
                 max(active_outlet_min, final_outlet),
             )
+            # Newton may raise the outlet again; the cap applies to the final
+            # value as well.
+            if _inlet_now is not None and final_outlet > _inlet_now + 5.0:
+                logging.warning(
+                    "🛡️ Saturation cap after correction: %.1f°C → %.1f°C "
+                    "(inlet %.1f°C + 5°C)",
+                    final_outlet,
+                    _inlet_now + 5.0,
+                    _inlet_now,
+                )
+                final_outlet = _inlet_now + 5.0
 
         return final_outlet
 
@@ -2701,6 +2806,13 @@ class EnhancedModelWrapper:
                 return None
 
             max_correction = 2.5
+            s_max = max(sens)
+            min_sens = config.FD_NEWTON_MIN_SENSITIVITY
+            if not reducing_effort and s_max < min_sens:
+                # Raising effort with a nearly flat response would demand
+                # large, unreliable corrections (ΔT ≈ e/S); trust it only
+                # proportionally.  Reductions stay unlimited.
+                max_correction *= s_max / min_sens
             tol = 0.1
             total = 0.0
             temps = temps0

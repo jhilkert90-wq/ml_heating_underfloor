@@ -215,6 +215,9 @@ class PredictionMetrics:
         
         # Add accuracy categories
         metrics['accuracy_breakdown'] = self._calculate_accuracy_breakdown()
+
+        # Control-quality metrics that room-temperature MAE cannot show
+        metrics['control_quality'] = self._calculate_control_quality()
         
         # Cache results
         self._cached_metrics = metrics
@@ -275,6 +278,60 @@ class PredictionMetrics:
             'max_error': float(max_error)
         }
     
+    def _calculate_control_quality(self, window_size: int = 72) -> Dict:
+        """Evaluate control quality beyond the room-temperature error.
+
+        The 10-minute room prediction error stays small even when the outlet
+        setpoint jumps by several K on an inert slab.  This reports:
+
+        * ``outlet_step_mean`` / ``outlet_step_max``: mean/max absolute
+          change of the applied outlet between consecutive records (K).
+        * ``applied_vs_computed_mean``: mean |applied - computed| outlet (K);
+          non-zero means limiters/hold changed the model's decision.
+        * ``mae_steady_target`` / ``mae_target_change``: prediction MAE for
+          cycles without / with a target change, so setpoint changes and the
+          real temperature response are not mixed.
+        """
+        records = list(self.predictions)[-window_size:]
+        outlets = [
+            r['context'].get('outlet_temp')
+            for r in records
+            if isinstance(r.get('context'), dict)
+        ]
+        outlets = [float(o) for o in outlets if o is not None]
+        steps = [abs(b - a) for a, b in zip(outlets, outlets[1:])]
+
+        deviations = [
+            abs(float(r['context']['outlet_applied_vs_computed_k']))
+            for r in records
+            if isinstance(r.get('context'), dict)
+            and r['context'].get('outlet_applied_vs_computed_k') is not None
+        ]
+
+        steady, changed = [], []
+        for r in records:
+            ctx = r.get('context')
+            if not isinstance(ctx, dict):
+                continue
+            delta = ctx.get('target_temp_change_k')
+            if delta is None:
+                continue
+            (changed if abs(float(delta)) > 0.15 else steady).append(
+                r['abs_error']
+            )
+
+        def _mean(values):
+            return float(np.mean(values)) if values else None
+
+        return {
+            'count': len(records),
+            'outlet_step_mean': _mean(steps),
+            'outlet_step_max': float(max(steps)) if steps else None,
+            'applied_vs_computed_mean': _mean(deviations),
+            'mae_steady_target': _mean(steady),
+            'mae_target_change': _mean(changed),
+        }
+
     def _calculate_trends(self) -> Dict:
         """Calculate accuracy trends over time."""
         if len(self.predictions) < 10:  # Require at least 10 predictions for trend analysis

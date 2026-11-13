@@ -858,6 +858,32 @@ def convert_addon_to_env(config):
         'OUTLET_SMOOTHING_BYPASS': str(
             config.get('outlet_smoothing_bypass', 2.0)
         ),
+        'OUTLET_SEARCH_MIN_SENSITIVITY': str(
+            config.get('outlet_search_min_sensitivity', 0.1)
+        ),
+        'OUTLET_REFERENCE_ENABLED': str(
+            config.get('outlet_reference_enabled', True)
+        ).lower(),
+        'OUTLET_REFERENCE_LAMBDA': str(
+            config.get('outlet_reference_lambda', 0.01)
+        ),
+        'OUTLET_REFERENCE_BAND_K': str(
+            config.get('outlet_reference_band_k', 4.0)
+        ),
+        'OUTLET_REFERENCE_DEMAND_EXTRA_K': str(
+            config.get('outlet_reference_demand_extra_k', 4.0)
+        ),
+        'OUTLET_DEMAND_DEFICIT_K': str(
+            config.get('outlet_demand_deficit_k', 0.3)
+        ),
+        'OUTLET_DEMAND_TREND_K_PER_H': str(
+            config.get('outlet_demand_trend_k_per_h', 0.1)
+        ),
+        'OUTLET_CALM_SLEW_K': str(config.get('outlet_calm_slew_k', 1.0)),
+        'OUTLET_HYSTERESIS_K': str(config.get('outlet_hysteresis_k', 0.3)),
+        'FD_NEWTON_MIN_SENSITIVITY': str(
+            config.get('fd_newton_min_sensitivity', 0.1)
+        ),
 
         # --- Heating Correction Mode ---
         'HEATING_CORRECTION_MODE': config.get(

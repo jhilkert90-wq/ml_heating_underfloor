@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### Outlet search stabilisation — 2026-11-13
+
+- **What:** sensitivity guard + building-curve regularisation, calm slew/hysteresis, scaled FD-Newton, operational-state persistence fix, control-quality metrics. **Why:** required outlet jumped 26–34 °C on a flat search objective. **Files:** see progress.md.
+
 ### PR 113 review fixes — 2026-11-12
 
 - **What:** corrected candidate-delay reference and fallback gating, preferred a valid runtime sensor over an invalid attribute, and aligned the initial verification trajectory with candidate simulations. **Why:** address four review findings on PR 113. **Files:** see the PR 113 review-fix milestone in `progress.md`.

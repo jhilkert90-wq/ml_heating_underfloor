@@ -1337,6 +1337,36 @@ configuration:
     description: 'When the required setpoint change exceeds this threshold (°C), EMA
       smoothing is bypassed for immediate response (e.g. after defrost recovery).
       Default: 2.0°C.'
+  outlet_search_min_sensitivity:
+    name: '[Advanced] Outlet Search Min Sensitivity (K/K)'
+    description: 'Below this sensitivity (end temperature change per K outlet) the outlet search is regularised towards the learned base-curve outlet. Default: 0.1.'
+  outlet_reference_enabled:
+    name: '[Advanced] Outlet Reference Regularisation'
+    description: 'Enables regularisation of ill-conditioned outlet searches towards the learned base heating curve. Default: true.'
+  outlet_reference_lambda:
+    name: '[Advanced] Outlet Reference Lambda (K/K²)'
+    description: 'Comfort error (K) accepted per K² deviation from the base-curve outlet. Default: 0.01.'
+  outlet_reference_band_k:
+    name: '[Advanced] Outlet Reference Band (K)'
+    description: 'Allowed deviation from the base-curve outlet during regularised searches. Default: 4.0 K.'
+  outlet_reference_demand_extra_k:
+    name: '[Advanced] Outlet Reference Demand Extra (K)'
+    description: 'Additional band width when heat demand is proven (room below target or falling). Default: 4.0 K.'
+  outlet_demand_deficit_k:
+    name: '[Advanced] Outlet Demand Deficit (K)'
+    description: 'Room temperature deficit to target above which heat demand counts as proven. Default: 0.3 K.'
+  outlet_demand_trend_k_per_h:
+    name: '[Advanced] Outlet Demand Trend (K/h)'
+    description: 'Falling indoor trend (per 60 min) that counts as proven heat demand. Default: 0.1 K/h.'
+  outlet_calm_slew_k:
+    name: '[Advanced] Outlet Calm Slew Limit (K)'
+    description: 'Per-cycle setpoint change limit without demand or target change (never above max_temp_change_per_cycle). Default: 1.0 K.'
+  outlet_hysteresis_k:
+    name: '[Advanced] Outlet Hysteresis (K)'
+    description: 'Setpoint changes smaller than this are discarded without demand or target change. 0 disables. Default: 0.3 K.'
+  fd_newton_min_sensitivity:
+    name: '[Advanced] FD-Newton Min Sensitivity (K/K)'
+    description: 'Below this sensitivity FD-Newton raise corrections are scaled down proportionally; reductions stay unlimited. Default: 0.1.'
   heating_correction_mode:
     name: '[Advanced] Heating Correction Mode'
     description: 'Selects the algorithm used to correct under/overshoot when the predicted

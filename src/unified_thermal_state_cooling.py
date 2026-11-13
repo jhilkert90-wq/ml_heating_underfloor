@@ -23,9 +23,11 @@ import numpy as np
 try:
     from .thermal_config import ThermalParameterConfig
     from .shadow_mode import get_effective_cooling_state_file
+    from .unified_thermal_state import EXTRA_OPERATIONAL_KEYS
 except ImportError:
     from thermal_config import ThermalParameterConfig
     from shadow_mode import get_effective_cooling_state_file
+    from unified_thermal_state import EXTRA_OPERATIONAL_KEYS
 
 
 class CoolingThermalStateManager:
@@ -150,6 +152,10 @@ class CoolingThermalStateManager:
                 "recovery_inlet_start": None,
                 "recovery_start_time": None,
                 "slab_absorption_progress": None,
+                "last_climate_mode": None,
+                "last_active_climate_mode": None,
+                "last_target_indoor_temp": None,
+                "setpoint_hold_cycles_remaining": 0,
             },
         }
 
@@ -449,7 +455,7 @@ class CoolingThermalStateManager:
         """Update cooling operational state."""
         op = self.state["operational_state"]
         for key, value in kwargs.items():
-            if key in op:
+            if key in op or key in EXTRA_OPERATIONAL_KEYS:
                 op[key] = value
         op["last_run_time"] = datetime.now().isoformat()
 

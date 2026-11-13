@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## ✅ Outlet search stabilisation (Prompt Nr.2) — 2026-11-13
+
+**Status:** IMPLEMENTED — full suite 2026 passed; 7 pre-existing order-dependent `test_heating_controller` grace failures unchanged.
+
+**Implementation summary:** Flat objective (sensitivity 0.03–0.2 K/K on the slab) made the binary search jump 26–34 °C. Added sensitivity guard with regularisation against `building_curve.base_outlet_temp`, demand-aware slew/hysteresis, sensitivity-scaled FD-Newton raise, persistence fix for operational-state keys (hold now active; `last_predicted_indoor` deliberately not persisted to keep learning on applied outlets), and control-quality metrics. Defaults untuned against real data.
+
+**Files changed:** `src/outlet_stability.py`, `src/model_wrapper.py`, `src/cycle_routes.py`, `src/config.py`, `config_adapter.py`, `src/unified_thermal_state.py`, `src/unified_thermal_state_cooling.py`, `src/prediction_metrics.py`, `src/pre_dispatch.py`, config/translations/docs, tests, `CHANGELOG.md`, memory-bank.
+
 ## ✅ PR 113 review fixes — 2026-11-12
 
 **Status:** IMPLEMENTED — candidate-delay reference, controller-model fallback, runtime-sensor precedence, and initial verification window corrected. Syntax compilation and diff checks pass; pytest could not run because the sandbox lacks pytest and the project runtime dependencies.
