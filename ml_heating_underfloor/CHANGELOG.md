@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.3.3] - 2026-11-13
+
+### Added
+- Add a default-enabled Smart Rounding checkbox under dashboard Settings > Outlet Smoothing (`smart_rounding_enabled`, standalone `SMART_ROUNDING_ENABLED`). Disabling it publishes the final heating/cooling setpoint without additional rounding or rounding predictions, while preserving safety limits, smoothing, setpoint hold and shadow behavior. Restart the add-on after changing the option.
+
 ## [0.3.2] - 2026-11-13
 
 ### Fixed
