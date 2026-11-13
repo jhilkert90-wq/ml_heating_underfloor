@@ -801,7 +801,9 @@ options:
   outlet_reference_lambda: 0.01
   # Allowed deviation (K) from the reference; widened by the extra value when
   # heat demand is proven (room below target or falling)
-  outlet_reference_band_k: 4.0
+  outlet_reference_band_k: 2.0
+  # Apply the band to every search, not only ill-conditioned ones
+  outlet_reference_always_active: true
   outlet_reference_demand_extra_k: 4.0
   outlet_demand_deficit_k: 0.3
   outlet_demand_trend_k_per_h: 0.1
@@ -1259,6 +1261,7 @@ schema:
   outlet_smoothing_bypass: "float(0.5,5.0)"
   outlet_search_min_sensitivity: "float(0.0,1.0)"
   outlet_reference_enabled: "bool"
+  outlet_reference_always_active: "bool"
   outlet_reference_lambda: "float(0.0,0.5)"
   outlet_reference_band_k: "float(0.5,15.0)"
   outlet_reference_demand_extra_k: "float(0.0,15.0)"

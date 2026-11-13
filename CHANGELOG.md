@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Control-quality metrics**: outlet step size, applied-vs-computed deviation and room MAE split by steady/changing target in `get_metrics()['control_quality']`
 
 ### Changed
+- Outlet reference band default 4 K -> 2 K; new `OUTLET_REFERENCE_ALWAYS_ACTIVE` (default true) applies the base-curve band to every search, not only ill-conditioned ones (validated by log replay)
 - `COP_MIN_HOURS_PER_BIN` default 4 -> 2; COP bins are 2 K wide; slot 0 uses a windowed power mean blended with the model rate
 - Add-on version bumped to 0.3.1
 

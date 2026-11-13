@@ -446,7 +446,8 @@ This gives a long horizon in the morning (many forecast hours above `pv_traj_zer
 | `outlet_search_min_sensitivity` | `OUTLET_SEARCH_MIN_SENSITIVITY` | float (0–1) | `0.1` | Below this sensitivity (end temperature change per K outlet) the outlet search is regularised towards the learned base-curve outlet. Default: 0.1. |
 | `outlet_reference_enabled` | `OUTLET_REFERENCE_ENABLED` | bool | `true` | Enables regularisation of ill-conditioned outlet searches towards the learned base heating curve. Default: true. |
 | `outlet_reference_lambda` | `OUTLET_REFERENCE_LAMBDA` | float (0–0.5) | `0.01` | Comfort error (K) accepted per K² deviation from the base-curve outlet. Default: 0.01. |
-| `outlet_reference_band_k` | `OUTLET_REFERENCE_BAND_K` | float (0.5–15) | `4.0` | Allowed deviation from the base-curve outlet during regularised searches. Default: 4.0 K. |
+| `outlet_reference_band_k` | `OUTLET_REFERENCE_BAND_K` | float (0.5–15) | `2.0` | Allowed deviation from the base-curve outlet during regularised searches. Default: 2.0 K. |
+| `outlet_reference_always_active` | `OUTLET_REFERENCE_ALWAYS_ACTIVE` | bool | `true` | Applies the base-curve band to every search, not only ill-conditioned ones. Default: true. |
 | `outlet_reference_demand_extra_k` | `OUTLET_REFERENCE_DEMAND_EXTRA_K` | float (0–15) | `4.0` | Additional band width when heat demand is proven (room below target or falling). Default: 4.0 K. |
 | `outlet_demand_deficit_k` | `OUTLET_DEMAND_DEFICIT_K` | float (0–2) | `0.3` | Room temperature deficit to target above which heat demand counts as proven. Default: 0.3 K. |
 | `outlet_demand_trend_k_per_h` | `OUTLET_DEMAND_TREND_K_PER_H` | float (0–1) | `0.1` | Falling indoor trend (per 60 min) that counts as proven heat demand. Default: 0.1 K/h. |

@@ -1,5 +1,11 @@
 # ML Heating System - Current Progress
 
+## ✅ Outlet reference band tuning — 2026-11-13
+
+**Status:** IMPLEMENTED — band default 2 K, `OUTLET_REFERENCE_ALWAYS_ACTIVE` (default true) after replaying the oscillating log (max step 1.6 -> 0.3 K). Open: root cause of the model-state flip between cycles.
+
+**Files changed:** `src/model_wrapper.py`, `src/config.py`, `config_adapter.py`, config/translations/docs, `tests/unit/test_outlet_stability.py`.
+
 ## ✅ WP load forecast stabilisation (Prompt Nr.1) + 0.3.1 — 2026-11-13
 
 **Status:** IMPLEMENTED — 15 new tests; full suite 2041 passed, 7 known order-dependent grace failures. Version bumped to 0.3.1; changelog entries now in English.

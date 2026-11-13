@@ -1641,7 +1641,10 @@ class EnhancedModelWrapper:
                 )
                 if (
                     config.OUTLET_REFERENCE_ENABLED
-                    and _sens < config.OUTLET_SEARCH_MIN_SENSITIVITY
+                    and (
+                        config.OUTLET_REFERENCE_ALWAYS_ACTIVE
+                        or _sens < config.OUTLET_SEARCH_MIN_SENSITIVITY
+                    )
                 ):
                     _ref = reference_outlet(
                         avg_outdoor,
@@ -1677,7 +1680,7 @@ class EnhancedModelWrapper:
                         )
                         if _picked is not None:
                             logging.info(
-                                "🧭 Flat search objective (S=%.3f < %.2f): "
+                                "🧭 Reference band applied (S=%.3f, min %.2f): "
                                 "%.1f°C → %.1f°C (base curve %.1f°C ± %.1f K, "
                                 "demand=%s)",
                                 _sens,

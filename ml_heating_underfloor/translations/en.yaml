@@ -1409,6 +1409,9 @@ configuration:
   outlet_search_min_sensitivity:
     name: '[Advanced] Outlet Search Min Sensitivity (K/K)'
     description: 'Below this sensitivity (end temperature change per K outlet) the outlet search is regularised towards the learned base-curve outlet. Default: 0.1.'
+  outlet_reference_always_active:
+    name: '[Advanced] Outlet Reference Always Active'
+    description: 'Applies the base-curve band to every search, not only ill-conditioned ones. Default: true.'
   outlet_reference_enabled:
     name: '[Advanced] Outlet Reference Regularisation'
     description: 'Enables regularisation of ill-conditioned outlet searches towards the learned base heating curve. Default: true.'
@@ -1417,7 +1420,7 @@ configuration:
     description: 'Comfort error (K) accepted per K² deviation from the base-curve outlet. Default: 0.01.'
   outlet_reference_band_k:
     name: '[Advanced] Outlet Reference Band (K)'
-    description: 'Allowed deviation from the base-curve outlet during regularised searches. Default: 4.0 K.'
+    description: 'Allowed deviation from the base-curve outlet during regularised searches. Default: 2.0 K.'
   outlet_reference_demand_extra_k:
     name: '[Advanced] Outlet Reference Demand Extra (K)'
     description: 'Additional band width when heat demand is proven (room below target or falling). Default: 4.0 K.'

@@ -631,13 +631,17 @@ OUTLET_REFERENCE_ENABLED: bool = (
     os.getenv("OUTLET_REFERENCE_ENABLED", "true").lower() == "true"
 )
 # Comfort error (K) accepted per K² of deviation from the reference outlet.
+# Apply the reference band to every search, not only ill-conditioned ones.
+OUTLET_REFERENCE_ALWAYS_ACTIVE: bool = (
+    os.getenv("OUTLET_REFERENCE_ALWAYS_ACTIVE", "true").lower() == "true"
+)
 OUTLET_REFERENCE_LAMBDA: float = max(
     0.0, float(os.getenv("OUTLET_REFERENCE_LAMBDA", "0.01"))
 )
 # Allowed deviation (K) from the reference; widened by the extra value when
 # heat demand is proven (room below target or falling).
 OUTLET_REFERENCE_BAND_K: float = max(
-    0.5, float(os.getenv("OUTLET_REFERENCE_BAND_K", "4.0"))
+    0.5, float(os.getenv("OUTLET_REFERENCE_BAND_K", "2.0"))
 )
 OUTLET_REFERENCE_DEMAND_EXTRA_K: float = max(
     0.0, float(os.getenv("OUTLET_REFERENCE_DEMAND_EXTRA_K", "4.0"))

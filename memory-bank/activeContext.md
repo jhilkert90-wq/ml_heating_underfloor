@@ -1,5 +1,9 @@
 # Active Context - Current Work & Decision State
 
+### Outlet reference band tuning — 2026-11-13
+
+- **What:** band 4->2 K, always-active option. **Why:** replay of oscillating log showed guard (S<0.1) too narrow. **Files:** see progress.md.
+
 ### WP load forecast stabilisation + 0.3.1 — 2026-11-13
 
 - **What:** forecast stabilisers, blockade hold, COP/accuracy correction, logging, version 0.3.1. **Why:** forecast jumped around DHW/defrost and start estimates. **Files:** see progress.md.

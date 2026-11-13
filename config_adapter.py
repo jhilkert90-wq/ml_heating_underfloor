@@ -887,11 +887,14 @@ def convert_addon_to_env(config):
         'OUTLET_REFERENCE_ENABLED': str(
             config.get('outlet_reference_enabled', True)
         ).lower(),
+        'OUTLET_REFERENCE_ALWAYS_ACTIVE': str(
+            config.get('outlet_reference_always_active', True)
+        ).lower(),
         'OUTLET_REFERENCE_LAMBDA': str(
             config.get('outlet_reference_lambda', 0.01)
         ),
         'OUTLET_REFERENCE_BAND_K': str(
-            config.get('outlet_reference_band_k', 4.0)
+            config.get('outlet_reference_band_k', 2.0)
         ),
         'OUTLET_REFERENCE_DEMAND_EXTRA_K': str(
             config.get('outlet_reference_demand_extra_k', 4.0)

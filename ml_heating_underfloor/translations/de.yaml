@@ -1323,6 +1323,9 @@ configuration:
   outlet_search_min_sensitivity:
     name: '[Erweitert] Mindest-Sensitivität (K/K)'
     description: 'Unterhalb dieser Sensitivität (Endtemperaturänderung pro K Vorlauf) wird die Vorlaufsuche zur gelernten Basis-Heizkurve hin regularisiert. Standard: 0.1.'
+  outlet_reference_always_active:
+    name: '[Erweitert] Referenz-Band immer aktiv'
+    description: 'Wendet das Basis-Kurven-Band auf jede Suche an, nicht nur auf schlecht konditionierte. Standard: true.'
   outlet_reference_enabled:
     name: '[Erweitert] Vorlauf-Referenz-Regularisierung'
     description: 'Aktiviert die Regularisierung schlecht konditionierter Vorlaufsuchen zur gelernten Basis-Heizkurve. Standard: true.'
@@ -1331,7 +1334,7 @@ configuration:
     description: 'Akzeptierter Komfortfehler (K) pro K² Abweichung vom Basis-Kurven-Vorlauf. Standard: 0.01.'
   outlet_reference_band_k:
     name: '[Erweitert] Referenz-Band (K)'
-    description: 'Erlaubte Abweichung vom Basis-Kurven-Vorlauf bei regularisierten Suchen. Standard: 4.0 K.'
+    description: 'Erlaubte Abweichung vom Basis-Kurven-Vorlauf bei regularisierten Suchen. Standard: 2.0 K.'
   outlet_reference_demand_extra_k:
     name: '[Erweitert] Referenz-Band Zusatz bei Bedarf (K)'
     description: 'Zusätzliche Bandbreite bei nachgewiesenem Wärmebedarf (Raum unter Soll oder fallend). Standard: 4.0 K.'

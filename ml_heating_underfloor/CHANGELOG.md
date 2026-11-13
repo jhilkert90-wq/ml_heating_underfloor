@@ -8,6 +8,7 @@
 - Logging for WP load forecast, start estimate, forecast accuracy and outlet stabilisation.
 
 ### Changed
+- `outlet_reference_band_k` default 4 -> 2 K; new `outlet_reference_always_active` (default true).
 - `cop_min_hours_per_bin` default 4 -> 2; COP bins are 2 K wide.
 
 ### Fixed

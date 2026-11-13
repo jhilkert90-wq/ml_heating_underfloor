@@ -91,9 +91,17 @@ class TestFlatSearchRegularisation:
         assert wrapper._search_sensitivity == pytest.approx(0.03, abs=1e-6)
         assert 25.0 < result < 29.5  # unregularised zero crossing is 30 °C
 
-    def test_well_conditioned_search_is_unchanged(self, wrapper):
+    def test_well_conditioned_search_is_unchanged(self, wrapper, monkeypatch):
+        monkeypatch.setattr(config, "OUTLET_REFERENCE_ALWAYS_ACTIVE", False)
         result = self._run(wrapper, slope=0.5)
         assert result == pytest.approx(30.0, abs=0.1)
+
+    def test_always_active_band_limits_well_conditioned_search(
+        self, wrapper, monkeypatch
+    ):
+        monkeypatch.setattr(config, "OUTLET_REFERENCE_ALWAYS_ACTIVE", True)
+        result = self._run(wrapper, slope=0.5)
+        assert result < 29.5
 
 
 class TestOperationalStatePersistence:
