@@ -1396,6 +1396,12 @@ configuration:
       trajectory scaling is active and trajectory_steps is above pv_traj_min_steps.
       Predicted undershoots are still corrected to protect comfort. Overshoot correction
       is re-enabled at the minimum horizon. Default: false.'
+  smart_rounding_enabled:
+    name: '[Outlet] Smart Rounding'
+    description: 'Choose the best integer outlet temperature using model predictions
+      at the end of each heating or cooling cycle. When disabled, publish the final
+      setpoint without additional rounding. Safety limits, smoothing and setpoint hold
+      remain active. Default: enabled. Restart the add-on after changing this setting.'
   outlet_smoothing_alpha:
     name: '[Advanced] Outlet Smoothing Alpha (EMA factor)'
     description: 'Exponential moving average smoothing factor for the outlet temperature

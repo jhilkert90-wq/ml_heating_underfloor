@@ -1310,6 +1310,13 @@ configuration:
       werden weiterhin korrigiert.
       Bei der Mindesthorizontlänge wird die Überschwingkorrektur wieder aktiviert.
       Standard: false.'
+  smart_rounding_enabled:
+    name: '[Vorlauf] Smart Rounding'
+    description: 'Am Ende jedes Heiz- oder Kühlzyklus die beste ganzzahlige
+      Vorlauftemperatur anhand der Modellvorhersagen auswählen. Wenn deaktiviert,
+      wird der finale Sollwert ohne zusätzliche Rundung übertragen.
+      Sicherheitsgrenzen, Glättung und Sollwerthaltezeit bleiben aktiv.
+      Standard: aktiviert. Nach einer Änderung das Add-on neu starten.'
   outlet_smoothing_alpha:
     name: '[Erweitert] Vorlauf Smoothing Alpha (EMA factor)'
     description: 'Exponential moving average smoothing factor for the outlet temperature

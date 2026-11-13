@@ -786,6 +786,9 @@ options:
   pv_traj_disable_overshoot_correction: false
 
   # === Outlet Smoothing ===
+  # Model-based integer rounding at cycle end. Restart required after changes.
+  # When disabled, publish the final setpoint without additional rounding.
+  smart_rounding_enabled: true
   # EMA smoothing factor (0.0 = max smoothing, 1.0 = no smoothing)
   outlet_smoothing_alpha: 0.3
   # Skip smoothing when change exceeds this threshold (°C) for fast recovery
@@ -1257,6 +1260,7 @@ schema:
   pv_traj_heating_target_offset: "float(0.0,2.0)"
   pv_traj_disable_overshoot_correction: "bool"
   # Outlet Smoothing
+  smart_rounding_enabled: "bool"
   outlet_smoothing_alpha: "float(0.0,1.0)"
   outlet_smoothing_bypass: "float(0.5,5.0)"
   outlet_search_min_sensitivity: "float(0.0,1.0)"

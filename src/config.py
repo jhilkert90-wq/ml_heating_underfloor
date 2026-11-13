@@ -615,6 +615,9 @@ MIN_SETPOINT_HOLD_CYCLES: int = max(
 TREND_DECAY_TAU_HOURS: float = max(
     0.1, float(os.getenv("TREND_DECAY_TAU_HOURS", "1.5"))
 )
+SMART_ROUNDING_ENABLED: bool = (
+    os.getenv("SMART_ROUNDING_ENABLED", "true").lower() == "true"
+)
 OUTLET_SMOOTHING_ALPHA: float = float(
     os.getenv("OUTLET_SMOOTHING_ALPHA", "0.3")
 )

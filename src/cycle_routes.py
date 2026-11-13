@@ -687,8 +687,8 @@ def step_update_ha(ctx: CycleContext) -> None:
             ctx.final_temp,
         )
     else:
-        smart_rounded_temp = round(ctx.final_temp, 1)
-        if not ctx.effective_shadow_mode:
+        smart_rounded_temp = ctx.final_temp
+        if not ctx.effective_shadow_mode and config.SMART_ROUNDING_ENABLED:
             # Smart rounding must use the price/PV/forecast adjusted target
             # the optimizer solved for, not the raw user target.
             rounding_target = ctx.target_indoor_temp
@@ -800,10 +800,16 @@ def step_update_ha(ctx: CycleContext) -> None:
                         ctx.final_temp,
                         smart_rounded_temp,
                     )
-        else:
+        elif ctx.effective_shadow_mode:
+            smart_rounded_temp = round(ctx.final_temp, 1)
             logging.info(
                 "🔍 SHADOW DEPLOYMENT: Publishing ML recommendation to %s",
                 target_output_entity_id,
+            )
+        else:
+            logging.debug(
+                "Smart rounding disabled: publishing final outlet temp %s°C",
+                ctx.final_temp,
             )
 
         logging.debug("Setting target outlet temp")

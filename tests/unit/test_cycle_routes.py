@@ -1064,12 +1064,71 @@ class TestHeatingVsCoolingDifferences:
 class TestStepUpdateHaSmartRounding:
     """Smart rounding must target the price-adjusted indoor target."""
 
+    @pytest.mark.parametrize("climate_mode", ["heating", "cooling"])
+    def test_disabled_publishes_exact_final_temperature(
+        self, monkeypatch, climate_mode
+    ):
+        from src.ha_client import HAClient
+
+        monkeypatch.setattr(
+            cycle_routes.config, "SMART_ROUNDING_ENABLED", False
+        )
+        monkeypatch.setattr(cycle_routes.config, "SHADOW_MODE", False)
+        ctx = _make_ctx(
+            final_temp=26.937,
+            climate_mode=climate_mode,
+            target_indoor_temp=22.6,
+        )
+        ctx.ha_client.set_state = MagicMock(
+            wraps=HAClient("http://ha.test", "test-token").set_state
+        )
+        with patch(
+            "src.model_wrapper.get_enhanced_model_wrapper"
+        ) as get_wrapper, patch(
+            "src.prediction_context.prediction_context_manager"
+        ) as pcm, patch("src.ha_client.requests.post") as post:
+            cycle_routes.step_update_ha(ctx)
+
+        assert ctx.ha_client.set_state.call_args.args[1] == 26.937
+        assert ctx.ha_client.set_state.call_args.kwargs["round_digits"] is None
+        assert post.call_args.kwargs["json"]["state"] == "26.937"
+        assert ctx.applied_outlet_temp == 26.937
+        get_wrapper.assert_not_called()
+        pcm.create_context.assert_not_called()
+
+    @pytest.mark.parametrize("enabled", [True, False])
+    @pytest.mark.parametrize("deployment", [True, False])
+    def test_shadow_behavior_is_unchanged(self, monkeypatch, enabled, deployment):
+        monkeypatch.setattr(
+            cycle_routes.config, "SMART_ROUNDING_ENABLED", enabled
+        )
+        ctx = _make_ctx(final_temp=26.937, effective_shadow_mode=True)
+        ctx.shadow_mode.shadow_deployment = deployment
+        with patch(
+            "src.model_wrapper.get_enhanced_model_wrapper"
+        ) as get_wrapper:
+            cycle_routes.step_update_ha(ctx)
+
+        if deployment:
+            assert ctx.ha_client.set_state.call_args.args[1] == 26.9
+        else:
+            ctx.ha_client.set_state.assert_not_called()
+        assert ctx.applied_outlet_temp is None
+        get_wrapper.assert_not_called()
+
+    @pytest.mark.parametrize("climate_mode", ["heating", "cooling"])
     @pytest.mark.parametrize(
         "adjusted, expected", [(23.1, 27.0), (None, 26.0)]
     )
-    def test_uses_adjusted_target(self, adjusted, expected):
+    def test_uses_adjusted_target(
+        self, monkeypatch, adjusted, expected, climate_mode
+    ):
+        monkeypatch.setattr(
+            cycle_routes.config, "SMART_ROUNDING_ENABLED", True
+        )
         ctx = _make_ctx(
             final_temp=26.9,
+            climate_mode=climate_mode,
             target_indoor_temp=22.6,
             prediction_indoor_temp=22.7,
             outdoor_temp=7.0,
@@ -1095,6 +1154,7 @@ class TestStepUpdateHaSmartRounding:
         ), patch("src.prediction_context.prediction_context_manager", pcm):
             cycle_routes.step_update_ha(ctx)
         assert ctx.ha_client.set_state.call_args[0][1] == expected
+        assert ctx.applied_outlet_temp == expected
 
 
 def test_cost_mode_without_price_enabled_warns(caplog):

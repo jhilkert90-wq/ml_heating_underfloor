@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Smart rounding dashboard switch - 2026-11-14
+
+**Status:** IMPLEMENTED - all 98 targeted cycle-route, configuration-adapter, dashboard-settings and HA-client tests pass on Python 3.13.
+
+**Implementation summary:** Added the default-enabled `smart_rounding_enabled` checkbox to Settings > Outlet Smoothing and mapped it to `SMART_ROUNDING_ENABLED`. When disabled, the final heating/cooling setpoint is published without additional rounding or floor/ceiling predictions; the applied-outlet value matches the published value. Existing limiters, smoothing, setpoint hold and shadow behavior are unchanged. Add-on restart required after changing the option.
+
+**Validation:** TDD reproduced the missing toggle and incorrect integer output before implementation. Regression tests verify the exact `26.937` HTTP state payload, both climate modes, adjusted rounding targets, shadow behavior, metadata grouping and Supervisor option round-trip. Pylance syntax checks and `git diff --check` pass. The full test suite and live Home Assistant deployment were not run.
+
+**Files changed:** `.env_sample`, `CHANGELOG.md`, `README.md`, `config_adapter.py`, `src/config.py`, `src/cycle_routes.py`, `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `tests/unit/test_config_adapter.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_dashboard_settings.py`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## ✅ PR 114 review fixes — 2026-11-13
 
 **Status:** IMPLEMENTED — all five review findings addressed; seven focused regression tests pass.

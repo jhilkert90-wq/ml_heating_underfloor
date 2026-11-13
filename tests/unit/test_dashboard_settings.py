@@ -37,6 +37,16 @@ class DummyResponse:
 
 
 class TestSettingsMetadata:
+    def test_smart_rounding_is_persistable_checkbox_in_outlet_group(self):
+        field = load_settings_metadata().fields["smart_rounding_enabled"]
+        assert field.widget_type == "bool"
+        assert field.default is True
+        assert field.group.slug == "outlet"
+        assert "restart" in field.description.lower()
+        assert _sanitize_options({"smart_rounding_enabled": False}) == {
+            "smart_rounding_enabled": False
+        }
+
     def test_forecast_dhw_option_is_persistable_checkbox_with_help(self):
         field = load_settings_metadata().fields["heat_forecast_include_dhw"]
         assert field.widget_type == "bool"
@@ -115,7 +125,10 @@ class TestSettingsMetadata:
 
 
 class TestSettingsService:
-    def test_forecast_dhw_option_round_trips_via_supervisor(self, monkeypatch):
+    @pytest.mark.parametrize(
+        "option", ["heat_forecast_include_dhw", "smart_rounding_enabled"]
+    )
+    def test_boolean_option_round_trips_via_supervisor(self, monkeypatch, option):
         stored = {}
 
         def fake_post(url, headers=None, json=None, timeout=None):
@@ -128,9 +141,9 @@ class TestSettingsService:
         monkeypatch.setenv("SUPERVISOR_TOKEN", "test-token")
         monkeypatch.setattr("settings_service.requests.post", fake_post)
         monkeypatch.setattr("settings_service.requests.get", fake_get)
-        assert fetch_addon_options()["heat_forecast_include_dhw"] is True
-        update_addon_options({"heat_forecast_include_dhw": False})
-        assert fetch_addon_options()["heat_forecast_include_dhw"] is False
+        assert fetch_addon_options()[option] is True
+        update_addon_options({option: False})
+        assert fetch_addon_options()[option] is False
 
     def test_default_options_match_config_schema(self):
         defaults = get_default_options()

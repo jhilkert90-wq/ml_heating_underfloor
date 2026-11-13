@@ -1,6 +1,13 @@
 from config_adapter import convert_addon_to_env
 
 
+def test_smart_rounding_defaults_on_and_maps_disabled():
+    assert convert_addon_to_env({})["SMART_ROUNDING_ENABLED"] == "true"
+    assert convert_addon_to_env({"smart_rounding_enabled": False})[
+        "SMART_ROUNDING_ENABLED"
+    ] == "false"
+
+
 def test_convert_addon_to_env_maps_learning_threshold_options():
     env = convert_addon_to_env(
         {

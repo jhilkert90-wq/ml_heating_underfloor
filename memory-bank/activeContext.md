@@ -1,5 +1,13 @@
 # Active Context - Current Work & Decision State
 
+### Smart rounding dashboard switch - 2026-11-14
+
+- **What:** Added the default-enabled Smart Rounding checkbox in Settings > Outlet Smoothing. `smart_rounding_enabled` maps to `SMART_ROUNDING_ENABLED`; disabling it sends the final cycle setpoint without additional rounding and skips the rounding predictions in heating and cooling. The applied-outlet value tracks the published value.
+- **Why:** Allow decimal required-outlet temperatures to reach the output sensor without model-based integer rounding, while preserving safety limits, gradual control, EMA smoothing, setpoint hold and existing shadow behavior.
+- **Operation:** Save the option and restart the add-on; this uses the existing settings lifecycle, not a new live Lovelace helper.
+- **Validation:** 98 targeted tests pass on Python 3.13, including the exact HTTP state payload and option persistence. Syntax and whitespace checks pass; no live Home Assistant test or full-suite run.
+- **Files:** `.env_sample`, `CHANGELOG.md`, `README.md`, `config_adapter.py`, `src/config.py`, `src/cycle_routes.py`, `ml_heating_underfloor/config.yaml`, both add-on translation files, `tests/unit/test_config_adapter.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_dashboard_settings.py`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### PR 114 review fixes — 2026-11-13
 
 - **What:** Addressed five review findings in the forecast cache, DHW projection, COP weight cap, candidate runtime, and applied-versus-computed outlet metric. The computed outlet is persisted before downstream limiters; targeted regression tests pass.

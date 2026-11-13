@@ -875,6 +875,9 @@ def convert_addon_to_env(config):
         ).lower(),
 
         # --- Outlet Smoothing ---
+        'SMART_ROUNDING_ENABLED': str(
+            config.get('smart_rounding_enabled', True)
+        ).lower(),
         'OUTLET_SMOOTHING_ALPHA': str(
             config.get('outlet_smoothing_alpha', 0.3)
         ),
