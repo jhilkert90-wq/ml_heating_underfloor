@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Surplus reductions bypass setpoint hold and hysteresis - 2026-11-14
+
+- **What/why:** Phase 2 step 4 allows necessary heating-surplus reductions through hold and, with explicit user approval, the otherwise conflicting hysteresis.
+- **Scope:** Only reductions above room target without heat demand clear the countdown; increases, demand and cooling keep prior behavior.
+- **Validation:** TDD reproduced blocked reductions in both hold states; all 84 cycle-route tests and whitespace checks pass.
+- **Files:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### No gradual outlet increase during heating surplus - 2026-11-14
 
 - **What/why:** Phase 2 step 3 prevents upward baseline changes when the control room is above target without heat demand. Target changes alone cannot override this condition.

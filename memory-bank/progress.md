@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Surplus reductions bypass setpoint hold and hysteresis - 2026-11-14
+
+**Status:** IMPLEMENTED - all 84 cycle-route tests pass.
+
+**Implementation summary:** Phase 2 step 4 accepts downward outlet changes and clears the hold countdown when the heating control room is above target without heat demand. The user explicitly approved extending this exception to independent hysteresis because it otherwise blocks small reductions. Increases remain held; demand and cooling paths retain their existing behavior.
+
+**Validation:** TDD reproduced a 25.3-to-25.1 C reduction blocked with and without active hold. Parameterized cases also protect increases, falling-room demand and cooling.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## No gradual outlet increase during heating surplus - 2026-11-14
 
 **Status:** IMPLEMENTED - all 78 cycle-route tests pass.

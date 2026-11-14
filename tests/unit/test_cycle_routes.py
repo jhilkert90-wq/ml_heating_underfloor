@@ -804,6 +804,34 @@ class TestOutletStabilisers:
         assert ctx.final_temp == 26.2
         assert ctx.new_hold_cycles == 3
 
+    @pytest.mark.parametrize(
+        "mode,indoor,trend,suggested,remaining,expected",
+        [
+            ("heating", 23.23, 0.04, 25.1, 2, 25.1),
+            ("heating", 23.23, 0.04, 25.1, 0, 25.1),
+            ("heating", 23.23, 0.04, 26.1, 2, 25.3),
+            ("heating", 22.6, -0.2, 25.1, 2, 25.3),
+            ("cooling", 23.23, 0.04, 25.1, 2, 25.3),
+            ("cooling", 23.23, 0.04, 25.1, 0, 25.1),
+        ],
+    )
+    @patch("src.cycle_routes.config")
+    def test_surplus_reduction_bypasses_hold_and_hysteresis_only(
+        self, mock_config, mode, indoor, trend, suggested, remaining, expected
+    ):
+        self._config(mock_config)
+        ctx = self._ctx(
+            indoor, 22.5, suggested,
+            last_final_temp=25.3, last_target_indoor_temp=22.5,
+            setpoint_hold_cycles_remaining=remaining,
+        )
+        ctx.climate_mode = mode
+        ctx.features_dict["indoor_temp_delta_60m"] = trend
+        step_setpoint_hold(ctx)
+        assert ctx.final_temp == expected
+        if expected == suggested and mode == "heating":
+            assert ctx.new_hold_cycles == 0
+
 
 class TestRunBlockingRoute:
     """Test blocking route handler."""

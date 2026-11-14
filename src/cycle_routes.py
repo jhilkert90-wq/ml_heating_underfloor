@@ -674,6 +674,19 @@ def step_setpoint_hold(ctx: CycleContext) -> None:
     ) if hold_enabled else 0
     held_temp = ctx.state.get("last_final_temp")
 
+    if (
+        held_temp is not None
+        and ctx.final_temp < held_temp
+        and _heating_surplus_without_demand(ctx)
+    ):
+        logging.info(
+            "Heating surplus without heat demand: bypassing setpoint hold "
+            "and hysteresis for reduction %.1f°C → %.1f°C",
+            held_temp, ctx.final_temp,
+        )
+        ctx.new_hold_cycles = 0
+        return
+
     if hold_remaining > 0 and held_temp is not None:
         logging.info(
             "⏱️ Setpoint hold: keeping %.1f°C for %d more cycle(s) "
