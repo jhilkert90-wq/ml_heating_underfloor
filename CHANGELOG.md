@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Keep heating outlet reference regularization one-sided outside the search tolerance, preventing reference-driven increases during overshoot and decreases during undershoot.
 - Derive heating candidate start delays from degree minutes when the external sensor is idle without a known start time, rather than suppressing heat-pump output for every candidate. Preserve existing start/runtime handling in other cases.
 
 ## [0.2.0] - 2026-02-10

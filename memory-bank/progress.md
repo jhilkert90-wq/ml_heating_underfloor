@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Directional heating outlet regularization - 2026-11-14
+
+**Status:** IMPLEMENTED - all 23 outlet-stability tests pass.
+
+**Implementation summary:** Phase 2 step 1 caps the reference band at the best candidate in the correcting direction when end error exceeds tolerance. Errors within tolerance keep the symmetric band. Cooling and `pick_regularized` are unchanged.
+
+**Validation:** TDD reproduced reference pulls from 24 to 26.5 C during flat overshoot and from the best undershoot plateau toward 26.5 C. Tests also cover flat undershoot, symmetric bands within tolerance and normal sensitivity S=0.3.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_outlet_stability.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Heating idle candidate start from degree minutes - 2026-11-14
 
 **Status:** IMPLEMENTED AND ACCEPTED - 49 targeted tests pass; the user explicitly accepted the confirmed baseline failures and missing Docker as a full-suite exception.

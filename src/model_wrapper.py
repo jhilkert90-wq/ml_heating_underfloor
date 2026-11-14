@@ -1669,6 +1669,10 @@ class EnhancedModelWrapper:
                         )
                         _lo = max(active_outlet_min, _ref - _band)
                         _hi = min(active_outlet_max, _ref + _band)
+                        if best_candidate["end_error"] > tolerance:
+                            _hi = min(_hi, best_candidate["outlet"])
+                        elif best_candidate["end_error"] < -tolerance:
+                            _lo = max(_lo, best_candidate["outlet"])
                         for _o in np.arange(_lo, _hi + 1e-9, 1.0).tolist():
                             _evaluate_outlet(_o, "Regularize(grid)")
                         _picked = pick_regularized(

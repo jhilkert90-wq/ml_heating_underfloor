@@ -103,6 +103,87 @@ class TestFlatSearchRegularisation:
         result = self._run(wrapper, slope=0.5)
         assert result < 29.5
 
+    def _run_directional(self, wrapper, monkeypatch, response, inlet=25.0):
+        monkeypatch.setattr(config, "get_outlet_bounds", lambda mode: (24.0, 35.0))
+        monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
+        monkeypatch.setattr(config, "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end")
+        monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(config, "OUTLET_REFERENCE_ENABLED", True)
+        monkeypatch.setattr(config, "OUTLET_REFERENCE_ALWAYS_ACTIVE", True)
+        monkeypatch.setattr(config, "OUTLET_REFERENCE_BAND_K", 2.0)
+        monkeypatch.setattr(config, "OUTLET_REFERENCE_LAMBDA", 0.01)
+        monkeypatch.setattr(
+            "src.model_wrapper.reference_outlet", lambda *args: 26.5
+        )
+        wrapper._climate_mode = "heating"
+        wrapper._current_features = {"inlet_temp": inlet, "delta_t": 2.68}
+        wrapper._log_multi_horizon_predictions = Mock()
+        wrapper._get_forecast_conditions = Mock(
+            return_value=(0.0, 0.0, [0.0] * 4, [0.0] * 4)
+        )
+        wrapper.thermal_model.predict_thermal_trajectory = Mock(
+            side_effect=lambda **kw: {
+                "trajectory": [response(kw["outlet_temp"])] * 24
+            }
+        )
+        wrapper.thermal_model.predict_equilibrium_temperature = Mock()
+        return wrapper._calculate_required_outlet_temp(
+            current_indoor=23.23, target_indoor=22.5, outdoor_temp=0.0,
+            thermal_features={"pv_power": 0.0},
+        )
+
+    def test_flat_overshoot_keeps_lower_bound(self, wrapper, monkeypatch):
+        result = self._run_directional(
+            wrapper, monkeypatch, lambda outlet: 23.2
+        )
+        assert wrapper._search_sensitivity == 0.0
+        assert result == 24.0
+
+    def test_flat_undershoot_does_not_lower_best(self, wrapper, monkeypatch):
+        result = self._run_directional(
+            wrapper, monkeypatch, lambda outlet: 22.0
+        )
+        assert wrapper._search_sensitivity == 0.0
+        assert result >= 24.0
+
+    def test_undershoot_plateau_does_not_pull_best_down(
+        self, wrapper, monkeypatch
+    ):
+        result = self._run_directional(
+            wrapper, monkeypatch,
+            lambda outlet: 22.0 if outlet >= 30.0 else 21.0,
+            inlet=None,
+        )
+        assert wrapper._search_sensitivity == 0.0
+        assert result == 35.0
+
+    @pytest.mark.parametrize("error", [-0.005, 0.0, 0.005])
+    def test_within_tolerance_keeps_symmetric_band(
+        self, wrapper, monkeypatch, error
+    ):
+        with patch(
+            "src.model_wrapper.pick_regularized", wraps=pick_regularized
+        ) as pick:
+            result = self._run_directional(
+                wrapper, monkeypatch, lambda outlet: 22.5 + error
+            )
+        assert pick.call_args.args[3:] == (24.5, 28.5)
+        assert result == pytest.approx(26.5)
+
+    def test_normal_sensitivity_keeps_symmetric_band(
+        self, wrapper, monkeypatch
+    ):
+        with patch(
+            "src.model_wrapper.pick_regularized", wraps=pick_regularized
+        ) as pick:
+            result = self._run_directional(
+                wrapper, monkeypatch,
+                lambda outlet: 22.5 + 0.3 * (outlet - 26.5),
+            )
+        assert wrapper._search_sensitivity == pytest.approx(0.3)
+        assert pick.call_args.args[3:] == (24.5, 28.5)
+        assert result == pytest.approx(26.5)
+
 
 class TestOperationalStatePersistence:
     def test_keys_missing_in_old_state_files_are_persisted(self, tmp_path):

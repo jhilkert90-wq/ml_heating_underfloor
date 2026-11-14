@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Directional heating outlet regularization - 2026-11-14
+
+- **What/why:** Phase 2 step 1 prevents the reference band from worsening a best candidate's overshoot or undershoot beyond tolerance; near-target behavior stays symmetric.
+- **Scope:** Only the existing heating search guard changes; `pick_regularized`, cooling and defaults remain unchanged.
+- **Validation:** Regression tests first reproduced both wrong-direction pulls; all 23 outlet-stability tests and whitespace checks pass.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_outlet_stability.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Heating idle candidate start from degree minutes - 2026-11-14
 
 - **What:** Added heating-only candidate start extrapolation for degree-minute sensors reporting idle with no known start time. GM thresholds and candidate supply determine the delay; invalid attributes preserve the sensor window with DEBUG diagnostics.
