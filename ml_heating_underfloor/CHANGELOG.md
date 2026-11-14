@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [0.3.4] - 2026-11-14
+
+### Added
+- Add a dashboard switch and maximum cycle limit for setpoint hold. Forecast-driven hold durations respect the configured minimum and maximum.
+
 ## [Unreleased]
 
 ### Added
