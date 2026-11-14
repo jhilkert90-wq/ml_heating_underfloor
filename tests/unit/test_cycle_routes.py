@@ -729,11 +729,11 @@ class TestOutletStabilisers:
         return ctx
 
     @patch("src.cycle_routes.config")
-    def test_calm_conditions_use_tighter_slew(self, mock_config):
+    def test_calm_surplus_does_not_raise_outlet(self, mock_config):
         self._config(mock_config)
         ctx = self._ctx(23.0, 22.5, 29.0, last_target_indoor_temp=22.5)
         step_gradual_control(ctx)
-        assert ctx.final_temp == 27.0
+        assert ctx.final_temp == 26.0
 
     @patch("src.cycle_routes.config")
     def test_demand_uses_full_slew(self, mock_config):
@@ -743,9 +743,40 @@ class TestOutletStabilisers:
         assert ctx.final_temp == 28.0
 
     @patch("src.cycle_routes.config")
-    def test_target_jump_uses_full_slew(self, mock_config):
+    def test_target_jump_does_not_override_surplus(self, mock_config):
         self._config(mock_config)
         ctx = self._ctx(23.0, 22.5, 29.0, last_target_indoor_temp=21.0)
+        step_gradual_control(ctx)
+        assert ctx.final_temp == 26.0
+
+    @pytest.mark.parametrize(
+        "mode,indoor,trend,suggested,expected",
+        [
+            ("heating", 23.23, 0.04, 26.5, 25.3),
+            ("heating", 23.23, 0.04, 25.5, 25.3),
+            ("heating", 23.23, 0.04, 24.0, 24.3),
+            ("heating", 22.6, -0.2, 28.0, 27.3),
+            ("cooling", 23.23, 0.04, 28.0, 27.3),
+        ],
+    )
+    @patch("src.cycle_routes.config")
+    def test_surplus_direction_and_existing_demand_behavior(
+        self, mock_config, mode, indoor, trend, suggested, expected
+    ):
+        self._config(mock_config)
+        ctx = self._ctx(
+            indoor, 22.5, suggested,
+            last_final_temp=25.3, last_target_indoor_temp=22.5,
+        )
+        ctx.climate_mode = mode
+        ctx.features_dict["indoor_temp_delta_60m"] = trend
+        step_gradual_control(ctx)
+        assert ctx.final_temp == pytest.approx(expected)
+
+    @patch("src.cycle_routes.config")
+    def test_target_jump_without_surplus_keeps_full_slew(self, mock_config):
+        self._config(mock_config)
+        ctx = self._ctx(22.5, 22.5, 29.0, last_target_indoor_temp=21.0)
         step_gradual_control(ctx)
         assert ctx.final_temp == 28.0
 

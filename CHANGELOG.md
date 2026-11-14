@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Prevent gradual control from increasing the heating outlet above its baseline during room surplus without heat demand, including after target changes.
 - Use the lower heating bound for zero-sensitivity FD-Newton reductions instead of retaining an excessive outlet; the caller continues to enforce active search bounds.
 - Keep heating outlet reference regularization one-sided outside the search tolerance, preventing reference-driven increases during overshoot and decreases during undershoot.
 - Derive heating candidate start delays from degree minutes when the external sensor is idle without a known start time, rather than suppressing heat-pump output for every candidate. Preserve existing start/runtime handling in other cases.

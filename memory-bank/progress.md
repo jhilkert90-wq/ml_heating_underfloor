@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## No gradual outlet increase during heating surplus - 2026-11-14
+
+**Status:** IMPLEMENTED - all 78 cycle-route tests pass.
+
+**Implementation summary:** Phase 2 step 3 caps upward gradual-control suggestions at the existing baseline when the control room is above target and `has_heat_demand` is false. A small shared heating-surplus predicate uses the existing prediction-room selection and demand helper, independently of target-change calm classification. Downward slew and real-demand/cooling behavior remain unchanged.
+
+**Validation:** TDD reproduced both large and within-slew erroneous increases. The user approved updating two old tests expecting surplus-driven increases, including after a target change. New cases retain reductions, falling-room demand and target-jump behavior without surplus.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Zero-sensitivity heating reduction bound - 2026-11-14
 
 **Status:** IMPLEMENTED - all 41 FD-Newton and outlet-stability tests pass.

@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### No gradual outlet increase during heating surplus - 2026-11-14
+
+- **What/why:** Phase 2 step 3 prevents upward baseline changes when the control room is above target without heat demand. Target changes alone cannot override this condition.
+- **Scope:** Reuses `has_heat_demand`; downward slew, proven heat demand and cooling stay unchanged. Two old opposite-behavior test expectations were updated with user approval.
+- **Validation:** TDD reproduced unwanted increases above baseline; all 78 cycle-route tests and whitespace checks pass.
+- **Files:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Zero-sensitivity heating reduction bound - 2026-11-14
 
 - **What/why:** Phase 2 step 2 lowers to the configured minimum instead of retaining an excessive heating outlet when FD-Newton has no simulated sensitivity; active bounds remain enforced by the caller.
