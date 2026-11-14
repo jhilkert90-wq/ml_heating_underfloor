@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## Repair forecast accuracy hour ingestion - 2026-11-15
+
+**Status:** IMPLEMENTED AND VERIFIED; NOT DEPLOYED.
+
+**Implementation summary:** Retain the previous hourly counter anchor in forecast state and reuse the same accuracy handoff after both live rollover and history repair. Reconstruct a stale previous boundary when needed, retry incomplete/stale history on subsequent forecast cycles, and fall back to HA when Influx contains readings but cannot supply aligned anchors. Save repaired anchors and completed pairs immediately, so restarting between rollover/repair or after repair does not lose the comparison. Already aligned live anchors retain the no-history-query fast path; pending predictions remain first-write-wins and close once.
+
+**Validity and limits:** Shared anchor validation supplies INFO rejection reasons for partial coverage, missing counters and stale timestamps. Counter resets and incomplete pairs remain rejected. No alignment tolerance, interpolation-gap default, COP learning/calibration, model parameter, outlet control or cooling behavior changed. The 48-slot electrical total still differs intentionally from the heating-only accuracy series. After deployment, repaired actuals appear in the sensor's next normal publication; a valid completed forecast hour is still required. No historical predictions or measurements are fabricated.
+
+**Validation:** Four new regression cases failed before the production fix; five new cases now cover rollover/repair across restart (including a stale previous anchor), delayed history, stale-Influx/valid-HA fallback and the unchanged aligned-live fast path. All 123 targeted tests pass. A separate 412-case comparison with pre-fix accuracy validation confirms unchanged acceptance/normalization for timestamp offsets, missing/non-finite/reset counters and defrost modes. Pylance syntax checks pass for all three Python files with no error diagnostics in the changed production files. Full suite: 2136 passed, unchanged two accepted baseline failures and eight missing-Docker errors; no existing test expectations changed.
+
+**Files changed:** `src/forecast_accuracy.py`, `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## State-adjacent offline exports and empty forecast accuracy analysis - 2026-11-14
 
 **Status:** EXPORT IMPLEMENTED; ACCURACY ANALYZED ONLY.

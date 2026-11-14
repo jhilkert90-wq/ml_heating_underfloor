@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default offline comparison exports to the effective unified-state directory while retaining an explicit output override and leaving the existing state file unchanged.
 
 ### Fixed
+- Close forecast accuracy hours after counter-history repair, retain the previous anchor across restarts, retry stale/incomplete history with HA fallback and log rejection reasons without weakening counter validity checks.
 - Log heating search collapse at DEBUG, identify true boundary saturation with its signed end error, and show both requested and clamped correction outlets.
 - Log the classified grid price separately from cost-mode target offsets and forward the grid level to its existing HA attribute without changing effective price-level semantics.
 - Let heating surplus reductions without heat demand bypass setpoint hold and outlet hysteresis, while preserving holds on increases and existing cooling behavior.

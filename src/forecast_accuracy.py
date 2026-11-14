@@ -63,6 +63,37 @@ def record_predictions(
     }
 
 
+def anchor_rejection_reason(anchor: Mapping[str, Any] | None) -> str | None:
+    """Explain why an anchor cannot supply aligned accuracy counter readings."""
+    if not isinstance(anchor, Mapping):
+        return "missing anchor"
+    try:
+        boundary = datetime.fromisoformat(anchor["hour_utc"]).astimezone(timezone.utc)
+        if boundary != boundary.replace(minute=0, second=0, microsecond=0):
+            return "not a full-hour boundary"
+        if anchor.get("coverage") != "counter_anchor":
+            return "partial counter coverage"
+        readings = anchor["readings"]
+        reading_times = anchor["reading_times_utc"]
+        from . import config
+
+        tolerance = timedelta(
+            minutes=getattr(config, "HEAT_FORECAST_ANCHOR_TOLERANCE_MINUTES", 5)
+        )
+        for name in ("heating_el", "heating_th", "defrost_el", "defrost_th"):
+            value = readings.get(name)
+            if value is None and name in ("defrost_el", "defrost_th"):
+                continue
+            if value is None or not math.isfinite(float(value)):
+                return f"{name} counter missing or non-finite"
+            stamp = datetime.fromisoformat(reading_times[name]).astimezone(timezone.utc)
+            if abs(stamp - boundary) > tolerance:
+                return f"{name} timestamp outside boundary tolerance"
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as exc:
+        return f"invalid anchor metadata: {exc}"
+    return None
+
+
 def actual_from_anchors(
     old: Mapping[str, Any] | None,
     new: Mapping[str, Any] | None,
@@ -72,43 +103,24 @@ def actual_from_anchors(
 ) -> tuple[datetime, float, float] | None:
     """Return aligned, defrost-normalized actuals for one hour."""
     if not isinstance(old, Mapping) or not isinstance(new, Mapping):
+        LOGGER.debug("Forecast accuracy: waiting for adjacent hour anchors")
         return None
     try:
+        for label, anchor in (("previous", old), ("current", new)):
+            reason = anchor_rejection_reason(anchor)
+            if reason:
+                LOGGER.info(
+                    "Forecast accuracy: %s anchor %s rejected: %s",
+                    label, anchor.get("hour_utc"), reason,
+                )
+                return None
         old_hour = datetime.fromisoformat(old["hour_utc"])
         new_hour = datetime.fromisoformat(new["hour_utc"])
         if new_hour - old_hour != timedelta(hours=1):
+            LOGGER.info("Forecast accuracy: rejected non-adjacent hour anchors")
             return None
         old_boundary = old_hour.astimezone(timezone.utc)
-        new_boundary = new_hour.astimezone(timezone.utc)
-        if any(
-            boundary != boundary.replace(minute=0, second=0, microsecond=0)
-            for boundary in (old_boundary, new_boundary)
-        ):
-            return None
-        if old.get("coverage") != "counter_anchor" or new.get(
-            "coverage"
-        ) != "counter_anchor":
-            return None
         readings = (old["readings"], new["readings"])
-        reading_times = (old["reading_times_utc"], new["reading_times_utc"])
-        from . import config
-
-        tolerance = timedelta(
-            minutes=getattr(config, "HEAT_FORECAST_ANCHOR_TOLERANCE_MINUTES", 5)
-        )
-
-        def aligned(stamp: str, boundary: datetime) -> bool:
-            return (
-                abs(datetime.fromisoformat(stamp).astimezone(timezone.utc) - boundary)
-                <= tolerance
-            )
-
-        for name in ("heating_el", "heating_th"):
-            if not (
-                aligned(reading_times[0][name], old_boundary)
-                and aligned(reading_times[1][name], new_boundary)
-            ):
-                return None
 
         def delta(name: str, *, optional: bool = False) -> float | None:
             start = readings[0].get(name)
@@ -122,12 +134,6 @@ def actual_from_anchors(
                 or end_value < start_value
             ):
                 return None
-            if optional:
-                if not (
-                    aligned(reading_times[0][name], old_boundary)
-                    and aligned(reading_times[1][name], new_boundary)
-                ):
-                    return None
             return end_value - start_value
 
         electricity = delta("heating_el")
@@ -135,6 +141,10 @@ def actual_from_anchors(
         defrost_electricity = delta("defrost_el", optional=True)
         defrost_heat = delta("defrost_th", optional=True)
         if None in (electricity, heat, defrost_electricity, defrost_heat):
+            LOGGER.info(
+                "Forecast accuracy: hour %s rejected: missing counter pair or counter reset",
+                old["hour_utc"],
+            )
             return None
         from .heat_forecast import cop_calibration_energies
 
@@ -147,7 +157,8 @@ def actual_from_anchors(
             defrost_handling=defrost_handling,
         )
         return old_boundary, normalized_electricity, normalized_heat
-    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as exc:
+        LOGGER.info("Forecast accuracy: invalid counter pair: %s", exc)
         return None
 
 

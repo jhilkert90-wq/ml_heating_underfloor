@@ -1,5 +1,14 @@
 # Active Context - Current Work & Decision State
 
+### Forecast accuracy ingestion fixed - 2026-11-15
+
+- **What/why:** User approved repairing the empty-accuracy defect. Forecast state now retains the previous hourly anchor; the same actual-pair handoff runs after live rollover and history repair. Repairs and completed comparisons are persisted immediately, including across restart.
+- **Recovery:** Stale/incomplete anchors no longer suppress retries merely through a `counter_anchor` label or a once-per-hour refresh marker. A stale previous boundary can be reconstructed from two hours of history. HA fallback also runs when Influx has readings but lacks aligned boundaries. Fully aligned live anchors still require no history query.
+- **Unchanged:** Alignment tolerance, maximum interpolation gap, reset/finite-value/defrost checks, first-write-wins prediction semantics, COP learning/calibration, model parameters and outlet/cooling control. Shared validation now reports concrete rejection reasons at INFO.
+- **Verified:** Four pre-fix regression failures; five new cases now green, 123 focused passes, 412 baseline-validity parity checks and Pylance syntax validation. Full suite: 2136 passed plus the same accepted 2 baseline failures / 8 unavailable-Docker errors.
+- **Operational limit:** Not deployed or pushed. Repaired accuracy is included at the next normal sensor publication; valid adjacent-hour counters and a stored prediction are still necessary. Missing/invalid observations remain excluded, not invented; the historical production forecast state was not supplied.
+- **Files:** `src/forecast_accuracy.py`, `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### State-adjacent offline exports and empty forecast accuracy - 2026-11-14
 
 - **Changed:** Offline CSV/JSON and the new UTF-8 diagnostic log default to the effective `UNIFIED_STATE_FILE` directory, with `--output` preserved. Generated filenames are ignored by Git. Current reports were regenerated beside the workspace state without changing its checksum. There is still no automatic per-cycle export, live shadow optimizer or Pi deployment.
