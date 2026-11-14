@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add an offline-only comparison of the corrected heating controller and a joint trajectory comfort-band optimizer, with explicit missing-start scenarios, shared simulator/stabilizers, CSV/JSON results and reconstruction limits; no live-control or configuration changes.
+
 ### Fixed
 - Log heating search collapse at DEBUG, identify true boundary saturation with its signed end error, and show both requested and clamped correction outlets.
 - Log the classified grid price separately from cost-mode target offsets and forward the grid level to its existing HA attribute without changing effective price-level semantics.

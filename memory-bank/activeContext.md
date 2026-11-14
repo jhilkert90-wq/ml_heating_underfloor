@@ -1,5 +1,14 @@
 # Active Context - Current Work & Decision State
 
+### Offline joint-trajectory comparison (Phase 3) - 2026-11-14
+
+- **What/why:** Implemented the user-approved offline comparison with a +/-0.1 K comfort band and equal time-integrated squared under-/overshoot costs, using the existing simulator closure and unchanged gradual/EMA/hold steps. The new selector has no separate Newton correction.
+- **Scope/approval:** User approved conditional start scenarios instead of supplying missing historical GM/supply attributes. All candidate windows remain frozen for this comparison; unknown idle starts get no-start and immediate-start/unlimited-runtime variants. No production module, config default, model/learning parameter or cooling path was modified; no live shadow controller or HA publish was added.
+- **Findings:** 21 historical-window cycles plus two extra scenarios. At 20:07 logged publication was 26.1 C; both computed methods select raw 24.0 C / publishable 24.5 C. Seventeen of 21 publishable values agree; mean simulated comfort-cost benefit is only 0.23% after stabilization (1.03% raw). No above-baseline increases occur. Some higher alternative outlets exploit non-monotonic simulated pump-gate behavior, not demonstrated real-world cooling. The trajectory cross-check mismatch reaches 0.0403 K.
+- **Limits/next:** No real undershoot in the log; missing start/runtime attributes and full original settings prevent exact replay. Hold/cloud/bound assumptions and excluded cycles are explicit in the report. Validate decision-time state, physical pump response and real undershoot before considering a live switch or removing stabilizers. Grace double-search and HA fetch errors remain report-only.
+- **Validation:** 12 new tests, 294 targeted passes; full suite 2129 passes plus unchanged known 2 baseline failures / 8 unavailable-Docker errors. No existing expectations changed. Pylance has no error diagnostics for the two new Python files.
+- **Files:** `validation/compare_trajectory_control.py`, `tests/unit/test_compare_trajectory_control.py`, `validation/README.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Accurate heating search and correction logs - 2026-11-14
 
 - **What/why:** Phase 2 step 6 distinguishes DEBUG search collapse from true boundary saturation and logs requested/clamped heating correction values. Interior discontinuities never receive false bound labels, as approved by the user.

@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## Offline joint-trajectory comparison (Phase 3) - 2026-11-14
+
+**Status:** IMPLEMENTED AND COMPARED OFFLINE - no production path, configuration defaults, learning or cooling changes.
+
+**Implementation summary:** With user approval, compare the corrected search/FD controller against a 0.1 K sampled optimizer minimizing time-integrated squared deviations outside a +/-0.1 K comfort band, equally weighting under-/overshoot. The alternative reuses the current controller's exact simulator closure, omits Newton post-correction, and runs through identical existing gradual/EMA/hold functions. Parsing isolates cycle boundaries and decision-time start-window reads, explicitly excludes incomplete cycles, and writes reusable CSV/JSON reports. Missing GM/supply attributes require frozen sensor windows for both methods; unknown idle starts also receive an immediate-start scenario. This is a conditional, one-cycle comparison, not live shadow control or an exact Phase-1 replay.
+
+**Results:** 21 reconstructed historical-window cycles, plus two immediate-start scenarios. At 20:07 both computed methods return raw 24.0 C and publishable 24.5 C versus logged 26.1 C. Seven raw and four publishable selections differ over the 21 historical windows; mean simulated comfort cost improves only 1.03% raw / 0.23% after stabilization. No publishable output exceeds its recorded baseline. Non-monotonic pump-gate response explains why some higher alternatives score better; no physical improvement or energy savings is established. Maximum logged-trajectory cross-check mismatch is 0.0403 K. Real undershoot evidence is absent.
+
+**Validation:** TDD covers whole-horizon scoring, symmetric/time-weighted band violations, flat-response selection, responsive undershoot, invalid trajectories, cycle isolation, decision-time sensor alignment and the no-network/no-production-state 20:07 pipeline. All 294 targeted tests pass (12 new). Full Python 3.13 suite: 2129 passed, the same two known baseline failures and eight missing-Docker errors; no existing test expectations changed. Pylance reports no errors in either new Python file. See `validation/README.md` for method, example results and all assumptions. Live switch, stabilization ablation, start-state reconstruction and real undershoot validation remain open.
+
+**Files changed:** `validation/compare_trajectory_control.py`, `tests/unit/test_compare_trajectory_control.py`, `validation/README.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Accurate heating search and correction logs - 2026-11-14
 
 **Status:** IMPLEMENTED AND ACCEPTED - all 282 targeted tests pass; the user explicitly accepted the unchanged baseline/full-suite limitations for Phase 2.
