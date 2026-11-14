@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Use the lower heating bound for zero-sensitivity FD-Newton reductions instead of retaining an excessive outlet; the caller continues to enforce active search bounds.
 - Keep heating outlet reference regularization one-sided outside the search tolerance, preventing reference-driven increases during overshoot and decreases during undershoot.
 - Derive heating candidate start delays from degree minutes when the external sensor is idle without a known start time, rather than suppressing heat-pump output for every candidate. Preserve existing start/runtime handling in other cases.
 

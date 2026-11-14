@@ -2803,6 +2803,14 @@ class EnhancedModelWrapper:
             # also rejects numerical noise in the pump-off branch.
             if max(sens) < 0.01:
                 if reducing_effort:
+                    if self._climate_mode != "cooling":
+                        logging.info(
+                            "🎯 [FD-Newton] No simulated outlet sensitivity "
+                            "(pump gate): reducing the outlet has no modelled "
+                            "effect — using lower bound %.1f°C",
+                            clamp_min,
+                        )
+                        return clamp_min
                     logging.info(
                         "🎯 [FD-Newton] No simulated outlet sensitivity "
                         "(pump gate): reducing the outlet has no modelled "

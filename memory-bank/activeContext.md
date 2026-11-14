@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Zero-sensitivity heating reduction bound - 2026-11-14
+
+- **What/why:** Phase 2 step 2 lowers to the configured minimum instead of retaining an excessive heating outlet when FD-Newton has no simulated sensitivity; active bounds remain enforced by the caller.
+- **Scope:** Cooling is unchanged. The user approved replacing two existing keep-outlet test expectations with the configured lower bound.
+- **Validation:** All 41 FD-Newton/outlet-stability tests and whitespace checks pass after TDD reproduction.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Directional heating outlet regularization - 2026-11-14
 
 - **What/why:** Phase 2 step 1 prevents the reference band from worsening a best candidate's overshoot or undershoot beyond tolerance; near-target behavior stays symmetric.

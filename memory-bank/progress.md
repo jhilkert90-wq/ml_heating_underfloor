@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Zero-sensitivity heating reduction bound - 2026-11-14
+
+**Status:** IMPLEMENTED - all 41 FD-Newton and outlet-stability tests pass.
+
+**Implementation summary:** Phase 2 step 2 returns the configured lower heating bound when FD-Newton measures no useful sensitivity while reducing heat input. The existing caller still clamps to the active inlet-relative bounds. Cooling retains its previous value and log.
+
+**Validation:** TDD reproduced retention of 26.5 C instead of 24 C. The user explicitly approved updating the two existing tests that encoded keeping 25.8 C during pump-off overshoot/noise; a cooling regression protects its unchanged behavior.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Directional heating outlet regularization - 2026-11-14
 
 **Status:** IMPLEMENTED - all 23 outlet-stability tests pass.
