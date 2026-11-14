@@ -103,9 +103,12 @@ class TestFlatSearchRegularisation:
         result = self._run(wrapper, slope=0.5)
         assert result < 29.5
 
-    def _run_directional(self, wrapper, monkeypatch, response, inlet=25.0):
-        monkeypatch.setattr(config, "get_outlet_bounds", lambda mode: (24.0, 35.0))
-        monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", False)
+    def _run_directional(
+        self, wrapper, monkeypatch, response, inlet=25.0,
+        verify=False, bounds=(24.0, 35.0),
+    ):
+        monkeypatch.setattr(config, "get_outlet_bounds", lambda mode: bounds)
+        monkeypatch.setattr(config, "TRAJECTORY_PREDICTION_ENABLED", verify)
         monkeypatch.setattr(config, "TRAJECTORY_SEARCH_ERROR_MODE", "horizon_end")
         monkeypatch.setattr(config, "TRAJECTORY_STEPS", 4)
         monkeypatch.setattr(config, "OUTLET_REFERENCE_ENABLED", True)
@@ -116,6 +119,7 @@ class TestFlatSearchRegularisation:
             "src.model_wrapper.reference_outlet", lambda *args: 26.5
         )
         wrapper._climate_mode = "heating"
+        wrapper._current_indoor = 23.23
         wrapper._current_features = {"inlet_temp": inlet, "delta_t": 2.68}
         wrapper._log_multi_horizon_predictions = Mock()
         wrapper._get_forecast_conditions = Mock(
@@ -183,6 +187,56 @@ class TestFlatSearchRegularisation:
         assert wrapper._search_sensitivity == pytest.approx(0.3)
         assert pick.call_args.args[3:] == (24.5, 28.5)
         assert result == pytest.approx(26.5)
+
+    @pytest.mark.parametrize("end,side,error", [
+        (23.2, "lower", "+0.700"), (22.0, "upper", "-0.500"),
+    ])
+    def test_collapsed_bound_search_logs_error_without_info_convergence(
+        self, wrapper, monkeypatch, caplog, end, side, error
+    ):
+        with caplog.at_level("DEBUG"):
+            self._run_directional(wrapper, monkeypatch, lambda outlet: end)
+        collapsed = [
+            record for record in caplog.records
+            if "range collapsed" in record.getMessage()
+        ]
+        assert collapsed
+        assert all(record.levelname == "DEBUG" for record in collapsed)
+        assert any(
+            record.levelname == "INFO"
+            and f"search at {side} bound, end_error={error}" in record.getMessage()
+            for record in caplog.records
+        )
+
+    def test_interior_discontinuity_does_not_log_a_false_bound(
+        self, wrapper, monkeypatch, caplog
+    ):
+        with caplog.at_level("DEBUG"):
+            self._run_directional(
+                wrapper, monkeypatch,
+                lambda outlet: 22.0 if outlet < 27.0 else 23.0,
+            )
+        collapsed = [
+            record for record in caplog.records
+            if "range collapsed" in record.getMessage()
+        ]
+        assert collapsed
+        assert all(record.levelname == "DEBUG" for record in collapsed)
+        assert "search at lower bound" not in caplog.text
+        assert "search at upper bound" not in caplog.text
+
+    def test_fd_result_logs_raw_and_active_lower_bound(
+        self, wrapper, monkeypatch, caplog
+    ):
+        monkeypatch.setattr(config, "HEATING_CORRECTION_MODE", "physics")
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+        with caplog.at_level("INFO"):
+            result = self._run_directional(
+                wrapper, monkeypatch, lambda outlet: 23.2,
+                verify=True, bounds=(23.5, 35.0),
+            )
+        assert result == 24.0
+        assert "outlet 23.5°C, clamped to 24.0°C" in caplog.text
 
 
 class TestOperationalStatePersistence:

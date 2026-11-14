@@ -1,5 +1,13 @@
 # Active Context - Current Work & Decision State
 
+### Accurate heating search and correction logs - 2026-11-14
+
+- **What/why:** Phase 2 step 6 distinguishes DEBUG search collapse from true boundary saturation and logs requested/clamped heating correction values. Interior discontinuities never receive false bound labels, as approved by the user.
+- **Scope:** Logging only; cooling search/correction logging and defaults are unchanged. Grace double-search and HA fetch errors remain report-only.
+- **Validation:** All 282 targeted tests, six Pylance syntax checks and whitespace checks pass. The deterministic flat-response 20:07 pipeline regression computes 24.0 C and publishes 24.5 C from baseline 25.3 C. Full suite: 2117 passed, identical baseline 2 failures and 8 Docker errors; all 30 new Phase-2 cases pass. The user explicitly accepted the baseline exception for Phase 2 and approved the final commit.
+- **Approved adjustments:** Four opposite-behavior test expectations updated; surplus-reduction hysteresis exception, existing grid-price attribute forwarding and qualified bound-log policy approved before implementation. The six requested steps are complete; no live deployment was tested.
+- **Files:** `src/model_wrapper.py`, the existing outlet-stability/FD-Newton/cycle-route tests, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Separate grid-price label from cost-mode offset - 2026-11-14
 
 - **What/why:** Phase 2 step 5 logs the real grid classification with a separate cost-mode offset label; the existing `grid_price_level` is forwarded to HA with user approval.

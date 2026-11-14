@@ -1470,12 +1470,29 @@ class EnhancedModelWrapper:
                 )
                 if collapsed_candidate:
                     _consider_best(collapsed_candidate)
-                logging.info(
+                logging.log(
+                    logging.INFO
+                    if self._climate_mode == "cooling" else logging.DEBUG,
                     "🔄 Binary search early exit after %d iterations: "
                     "range collapsed to %.3f°C",
                     iteration + 1,
                     range_size,
                 )
+                if (
+                    self._climate_mode != "cooling"
+                    and collapsed_candidate is not None
+                    and abs(collapsed_candidate["end_error"]) > tolerance
+                ):
+                    bound = None
+                    if outlet_min == search_lower_bound:
+                        bound = "lower"
+                    elif outlet_max == search_upper_bound:
+                        bound = "upper"
+                    if bound is not None:
+                        logging.info(
+                            "search at %s bound, end_error=%+.3f",
+                            bound, collapsed_candidate["end_error"],
+                        )
                 break
 
             outlet_mid = (outlet_min + outlet_max) / 2.0
@@ -1793,10 +1810,20 @@ class EnhancedModelWrapper:
                 pv_forecast=pv_forecast,
                 pv_history_for_buffer=pv_input,
             )
+            unclamped_outlet = final_outlet
             final_outlet = min(
                 active_outlet_max,
                 max(active_outlet_min, final_outlet),
             )
+            if (
+                self._climate_mode != "cooling"
+                and final_outlet != unclamped_outlet
+            ):
+                logging.info(
+                    "🎯 Trajectory correction → outlet %.1f°C, "
+                    "clamped to %.1f°C",
+                    unclamped_outlet, final_outlet,
+                )
             # Newton may raise the outlet again; the cap applies to the final
             # value as well.
             if _inlet_now is not None and final_outlet > _inlet_now + 5.0:
@@ -2843,9 +2870,19 @@ class EnhancedModelWrapper:
                 if abs(inc) < 0.02:
                     break
                 total = max(-max_correction, min(max_correction, total + inc))
+                unclamped_candidate = outlet_temp + total
                 candidate = max(
-                    clamp_min, min(clamp_max, outlet_temp + total)
+                    clamp_min, min(clamp_max, unclamped_candidate)
                 )
+                if (
+                    self._climate_mode != "cooling"
+                    and candidate != unclamped_candidate
+                ):
+                    logging.debug(
+                        "🎯 [FD-Newton] Candidate → outlet %.1f°C, "
+                        "clamped to %.1f°C",
+                        unclamped_candidate, candidate,
+                    )
                 total = candidate - outlet_temp
                 temps = simulate(candidate)
                 if len(temps) != n:

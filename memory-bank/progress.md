@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## Accurate heating search and correction logs - 2026-11-14
+
+**Status:** IMPLEMENTED AND ACCEPTED - all 282 targeted tests pass; the user explicitly accepted the unchanged baseline/full-suite limitations for Phase 2.
+
+**Implementation summary:** Phase 2 step 6 logs heating interval collapse at DEBUG and reports signed error at INFO only for actual lower/upper boundary saturation outside tolerance. With explicit user approval, interior discontinuities are not mislabeled as bounds. Internal FD candidate clamping logs both values at DEBUG; final active-bound clamping logs both at INFO. Cooling search/correction logging and all control calculations remain unchanged.
+
+**Validation:** TDD reproduced missing raw/clamped values and misleading INFO collapse. Tests cover both search boundaries and interior discontinuity. A deterministic 20:07 regression exercises flat-response search, FD verification, gradual control, unchanged EMA, hold bypass and the published HA value: computed 24.0 C, published 24.5 C from baseline 25.3 C. The full Python 3.13 suite reports 2117 passed, 2 failed and 8 Docker errors, with the same failing test IDs and errors as the earlier clean-HEAD baseline (2067 passed) and prerequisite (2087 passed). All 30 new Phase-2 cases pass. Syntax checks pass for both production files and all four changed test files; whitespace checks pass. The user accepted the unchanged baseline exception for Phase 2 before the last commit.
+
+**Approved specification adjustments:** Updated two old FD keep-value tests and two gradual-control increase tests; allowed surplus reductions through conflicting hysteresis; forwarded the existing grid-price attribute to HA; qualified bound logging to avoid false labels on interior discontinuities. No unapproved deviations. Grace-period double-search and HA state-fetch errors remain report-only. No live HA deployment was performed.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_outlet_stability.py`, `tests/unit/test_fd_newton_correction.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Separate grid-price label from cost-mode offset - 2026-11-14
 
 **Status:** IMPLEMENTED - all 186 wrapper, cycle-route, cost-mode and HA-client tests pass.

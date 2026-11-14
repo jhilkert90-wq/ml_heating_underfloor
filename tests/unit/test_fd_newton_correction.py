@@ -280,6 +280,19 @@ class TestFiniteDifferenceNewton:
         )
         assert result == pytest.approx(32.5, abs=1e-6)
 
+    def test_internal_bound_logs_candidate_and_clamped_value(self, caplog):
+        simulate = lambda outlet: [23.5 + 0.5 * (outlet - 26.0)] * 24
+        trajectory = self._traj(simulate, 26.0)
+        with patch(
+            "src.model_wrapper.config.get_outlet_bounds",
+            return_value=(24.0, 35.0),
+        ), caplog.at_level(logging.DEBUG):
+            result = self.w._finite_difference_newton_correction(
+                26.0, trajectory, 22.0, -1.5
+            )
+        assert result == 24.0
+        assert "outlet 23.5°C, clamped to 24.0°C" in caplog.text
+
     def test_raise_is_scaled_down_when_sensitivity_is_flat(self):
         # S_max = 0.05 is half of FD_NEWTON_MIN_SENSITIVITY (0.1)
         simulate = _sim(0.05, 26.1, base_temp=20.0)
