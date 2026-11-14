@@ -1,5 +1,77 @@
 # ML Heating System - Current Progress
 
+## Accurate heating search and correction logs - 2026-11-14
+
+**Status:** IMPLEMENTED AND ACCEPTED - all 282 targeted tests pass; the user explicitly accepted the unchanged baseline/full-suite limitations for Phase 2.
+
+**Implementation summary:** Phase 2 step 6 logs heating interval collapse at DEBUG and reports signed error at INFO only for actual lower/upper boundary saturation outside tolerance. With explicit user approval, interior discontinuities are not mislabeled as bounds. Internal FD candidate clamping logs both values at DEBUG; final active-bound clamping logs both at INFO. Cooling search/correction logging and all control calculations remain unchanged.
+
+**Validation:** TDD reproduced missing raw/clamped values and misleading INFO collapse. Tests cover both search boundaries and interior discontinuity. A deterministic 20:07 regression exercises flat-response search, FD verification, gradual control, unchanged EMA, hold bypass and the published HA value: computed 24.0 C, published 24.5 C from baseline 25.3 C. The full Python 3.13 suite reports 2117 passed, 2 failed and 8 Docker errors, with the same failing test IDs and errors as the earlier clean-HEAD baseline (2067 passed) and prerequisite (2087 passed). All 30 new Phase-2 cases pass. Syntax checks pass for both production files and all four changed test files; whitespace checks pass. The user accepted the unchanged baseline exception for Phase 2 before the last commit.
+
+**Approved specification adjustments:** Updated two old FD keep-value tests and two gradual-control increase tests; allowed surplus reductions through conflicting hysteresis; forwarded the existing grid-price attribute to HA; qualified bound logging to avoid false labels on interior discontinuities. No unapproved deviations. Grace-period double-search and HA state-fetch errors remain report-only. No live HA deployment was performed.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_outlet_stability.py`, `tests/unit/test_fd_newton_correction.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## Separate grid-price label from cost-mode offset - 2026-11-14
+
+**Status:** IMPLEMENTED - all 186 wrapper, cycle-route, cost-mode and HA-client tests pass.
+
+**Implementation summary:** Phase 2 step 5 stores the classifier's level directly in `grid_price_level` and logs cost-mode offsets separately from that grid label. `price_level` remains the effective cost-mode classification used by trajectory overshoot thresholds and HA `price_level`/`effective_price_level` attributes. With user approval, the existing grid field is also forwarded through auxiliary publication instead of being dropped and falling back to the effective level.
+
+**Validation:** TDD reproduced a normal-grid negative cost offset logged as expensive and missing grid metadata at publication. Positive/negative offsets retain effective classifications and target offsets. No control calculation changed.
+
+**Files changed:** `src/model_wrapper.py`, `src/cycle_routes.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## Surplus reductions bypass setpoint hold and hysteresis - 2026-11-14
+
+**Status:** IMPLEMENTED - all 84 cycle-route tests pass.
+
+**Implementation summary:** Phase 2 step 4 accepts downward outlet changes and clears the hold countdown when the heating control room is above target without heat demand. The user explicitly approved extending this exception to independent hysteresis because it otherwise blocks small reductions. Increases remain held; demand and cooling paths retain their existing behavior.
+
+**Validation:** TDD reproduced a 25.3-to-25.1 C reduction blocked with and without active hold. Parameterized cases also protect increases, falling-room demand and cooling.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## No gradual outlet increase during heating surplus - 2026-11-14
+
+**Status:** IMPLEMENTED - all 78 cycle-route tests pass.
+
+**Implementation summary:** Phase 2 step 3 caps upward gradual-control suggestions at the existing baseline when the control room is above target and `has_heat_demand` is false. A small shared heating-surplus predicate uses the existing prediction-room selection and demand helper, independently of target-change calm classification. Downward slew and real-demand/cooling behavior remain unchanged.
+
+**Validation:** TDD reproduced both large and within-slew erroneous increases. The user approved updating two old tests expecting surplus-driven increases, including after a target change. New cases retain reductions, falling-room demand and target-jump behavior without surplus.
+
+**Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## Zero-sensitivity heating reduction bound - 2026-11-14
+
+**Status:** IMPLEMENTED - all 41 FD-Newton and outlet-stability tests pass.
+
+**Implementation summary:** Phase 2 step 2 returns the configured lower heating bound when FD-Newton measures no useful sensitivity while reducing heat input. The existing caller still clamps to the active inlet-relative bounds. Cooling retains its previous value and log.
+
+**Validation:** TDD reproduced retention of 26.5 C instead of 24 C. The user explicitly approved updating the two existing tests that encoded keeping 25.8 C during pump-off overshoot/noise; a cooling regression protects its unchanged behavior.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## Directional heating outlet regularization - 2026-11-14
+
+**Status:** IMPLEMENTED - all 23 outlet-stability tests pass.
+
+**Implementation summary:** Phase 2 step 1 caps the reference band at the best candidate in the correcting direction when end error exceeds tolerance. Errors within tolerance keep the symmetric band. Cooling and `pick_regularized` are unchanged.
+
+**Validation:** TDD reproduced reference pulls from 24 to 26.5 C during flat overshoot and from the best undershoot plateau toward 26.5 C. Tests also cover flat undershoot, symmetric bands within tolerance and normal sensitivity S=0.3.
+
+**Files changed:** `src/model_wrapper.py`, `tests/unit/test_outlet_stability.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## Heating idle candidate start from degree minutes - 2026-11-14
+
+**Status:** IMPLEMENTED AND ACCEPTED - 49 targeted tests pass; the user explicitly accepted the confirmed baseline failures and missing Docker as a full-suite exception.
+
+**Implementation summary:** With explicit approval for this prerequisite before the original overshoot fixes, heating degree-minute candidates derive a start delay from GM thresholds when the external sensor is idle with no known start. Candidate supply follows the existing one-to-one offset mapping, confirmed by the user with offset 0. Insufficient demand preserves no-start; invalid inputs preserve the sensor window with DEBUG diagnostics. Known start times, running runtime handling, cooling, HA templates, defaults, learning and downstream limiters are unchanged.
+
+**Validation:** TDD reproduced five incorrect no-start results and six missing diagnostic cases before implementation. The 49 focused tests cover offsets, non-positive demand, exhausted GM deficit, starts beyond 720 minutes, invalid attributes, unchanged modes/statuses and delayed response in the real trajectory simulator. Pylance syntax and whitespace checks pass. With approved isolated Python 3.13 dependencies, the full suite reports 2087 passed, 2 failed and 8 errors. A user-approved detached baseline run at `8e7d06e`, with the same interpreter and environment settings, reports 2067 passed and the identical failures/errors: TV source-attribution learning, grace-poll StopIteration, and Docker-dependent image checks (Docker unavailable). All 20 added cases pass; no new failing test is observed. The user accepted these baseline limitations and approved committing this isolated prerequisite; unrelated fixes and the original six steps remain deferred.
+
+**Files changed:** `src/hp_start_estimate.py`, `tests/unit/test_hp_start_estimate.py`, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Bounded setpoint hold and dashboard switch - 2026-11-14
 
 **Status:** IMPLEMENTED - 142 targeted tests pass.

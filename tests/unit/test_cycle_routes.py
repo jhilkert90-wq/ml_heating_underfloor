@@ -51,6 +51,98 @@ def _make_ctx(**kwargs) -> CycleContext:
     return ctx
 
 
+def test_2007_flat_overshoot_replay_publishes_reduction(monkeypatch):
+    from src.model_wrapper import EnhancedModelWrapper
+
+    settings = {
+        "CYCLE_INTERVAL_MINUTES": 10,
+        "TRAJECTORY_STEPS": 4,
+        "TRAJECTORY_PREDICTION_ENABLED": True,
+        "TRAJECTORY_SEARCH_ERROR_MODE": "horizon_end",
+        "HEATING_CORRECTION_MODE": "physics",
+        "PV_TRAJ_FORECAST_MODE_ENABLED": False,
+        "OUTLET_REFERENCE_ENABLED": True,
+        "OUTLET_REFERENCE_ALWAYS_ACTIVE": True,
+        "OUTLET_REFERENCE_BAND_K": 2.0,
+        "OUTLET_REFERENCE_LAMBDA": 0.01,
+        "OUTLET_DEMAND_DEFICIT_K": 0.3,
+        "OUTLET_DEMAND_TREND_K_PER_H": 0.1,
+        "MAX_TEMP_CHANGE_PER_CYCLE": 2.0,
+        "OUTLET_CALM_SLEW_K": 1.0,
+        "OUTLET_SMOOTHING_ALPHA": 0.8,
+        "OUTLET_SMOOTHING_BYPASS": 2.0,
+        "SETPOINT_HOLD_ENABLED": True,
+        "MIN_SETPOINT_HOLD_CYCLES": 4,
+        "MAX_SETPOINT_HOLD_CYCLES": 20,
+        "OUTLET_HYSTERESIS_K": 0.3,
+        "SMART_ROUNDING_ENABLED": False,
+        "SHADOW_MODE": False,
+    }
+    for name, value in settings.items():
+        monkeypatch.setattr(cycle_routes.config, name, value)
+    monkeypatch.setattr(
+        cycle_routes.config, "get_outlet_bounds", lambda mode: (24.0, 35.0)
+    )
+    monkeypatch.setattr(
+        "src.model_wrapper.reference_outlet", lambda *args: 26.5
+    )
+    wrapper = EnhancedModelWrapper()
+    wrapper._climate_mode = "heating"
+    wrapper._current_indoor = 23.23
+    wrapper._price_info = {}
+    wrapper._current_features = {
+        "inlet_temp": 25.0, "delta_t": 2.68, "indoor_temp_delta_60m": 0.04,
+    }
+    wrapper._get_forecast_conditions = MagicMock(
+        return_value=(-0.93, 0.0, [-0.93] * 5, [0.0] * 5)
+    )
+    wrapper.thermal_model.predict_thermal_trajectory = MagicMock(
+        return_value={"trajectory": [23.2] * 24}
+    )
+    computed = wrapper._calculate_required_outlet_temp(
+        current_indoor=23.23, target_indoor=22.5, outdoor_temp=-0.93,
+        thermal_features={"pv_power": 0.0},
+    )
+    ctx = _make_ctx(
+        wrapper=wrapper, actual_outlet_temp=25.3, actual_indoor=23.23,
+        prediction_indoor_temp=23.23, target_indoor_temp=22.5,
+        final_temp=computed, features_dict=wrapper._current_features,
+    )
+    ctx.state = {
+        "last_final_temp": 25.3, "last_target_indoor_temp": 22.5,
+        "setpoint_hold_cycles_remaining": 2,
+    }
+    step_gradual_control(ctx)
+    step_ema_smoothing(ctx)
+    step_setpoint_hold(ctx)
+    cycle_routes.step_update_ha(ctx)
+
+    assert wrapper._search_sensitivity == 0.0
+    assert computed == 24.0
+    assert ctx.ha_client.set_state.call_args.args[1] == 24.5
+    assert 24.0 <= ctx.applied_outlet_temp < 25.3
+    assert ctx.new_hold_cycles == 0
+
+
+def test_price_sensor_receives_distinct_grid_and_effective_levels(monkeypatch):
+    monkeypatch.setattr(cycle_routes, "step_publish_features", lambda ctx: None)
+    monkeypatch.setattr(
+        cycle_routes, "step_publish_building_curves", lambda ctx: None
+    )
+    ctx = _make_ctx(
+        price_data={"current_price": 0.4074},
+        metadata={
+            "price_eur_kwh": 0.4074, "price_level": "expensive",
+            "grid_price_level": "normal", "price_target_offset": -0.1,
+        },
+    )
+    cycle_routes.step_publish_auxiliary_sensors(ctx)
+    info = ctx.ha_client.publish_price_level.call_args.args[0]
+    assert info["grid_price_level"] == "normal"
+    assert info["price_level"] == "expensive"
+    assert info["price_target_offset"] == -0.1
+
+
 def test_near_controller_snapshot_uses_published_target_and_skips_shadow(
     monkeypatch,
 ):
@@ -729,11 +821,11 @@ class TestOutletStabilisers:
         return ctx
 
     @patch("src.cycle_routes.config")
-    def test_calm_conditions_use_tighter_slew(self, mock_config):
+    def test_calm_surplus_does_not_raise_outlet(self, mock_config):
         self._config(mock_config)
         ctx = self._ctx(23.0, 22.5, 29.0, last_target_indoor_temp=22.5)
         step_gradual_control(ctx)
-        assert ctx.final_temp == 27.0
+        assert ctx.final_temp == 26.0
 
     @patch("src.cycle_routes.config")
     def test_demand_uses_full_slew(self, mock_config):
@@ -743,9 +835,40 @@ class TestOutletStabilisers:
         assert ctx.final_temp == 28.0
 
     @patch("src.cycle_routes.config")
-    def test_target_jump_uses_full_slew(self, mock_config):
+    def test_target_jump_does_not_override_surplus(self, mock_config):
         self._config(mock_config)
         ctx = self._ctx(23.0, 22.5, 29.0, last_target_indoor_temp=21.0)
+        step_gradual_control(ctx)
+        assert ctx.final_temp == 26.0
+
+    @pytest.mark.parametrize(
+        "mode,indoor,trend,suggested,expected",
+        [
+            ("heating", 23.23, 0.04, 26.5, 25.3),
+            ("heating", 23.23, 0.04, 25.5, 25.3),
+            ("heating", 23.23, 0.04, 24.0, 24.3),
+            ("heating", 22.6, -0.2, 28.0, 27.3),
+            ("cooling", 23.23, 0.04, 28.0, 27.3),
+        ],
+    )
+    @patch("src.cycle_routes.config")
+    def test_surplus_direction_and_existing_demand_behavior(
+        self, mock_config, mode, indoor, trend, suggested, expected
+    ):
+        self._config(mock_config)
+        ctx = self._ctx(
+            indoor, 22.5, suggested,
+            last_final_temp=25.3, last_target_indoor_temp=22.5,
+        )
+        ctx.climate_mode = mode
+        ctx.features_dict["indoor_temp_delta_60m"] = trend
+        step_gradual_control(ctx)
+        assert ctx.final_temp == pytest.approx(expected)
+
+    @patch("src.cycle_routes.config")
+    def test_target_jump_without_surplus_keeps_full_slew(self, mock_config):
+        self._config(mock_config)
+        ctx = self._ctx(22.5, 22.5, 29.0, last_target_indoor_temp=21.0)
         step_gradual_control(ctx)
         assert ctx.final_temp == 28.0
 
@@ -772,6 +895,34 @@ class TestOutletStabilisers:
         step_setpoint_hold(ctx)
         assert ctx.final_temp == 26.2
         assert ctx.new_hold_cycles == 3
+
+    @pytest.mark.parametrize(
+        "mode,indoor,trend,suggested,remaining,expected",
+        [
+            ("heating", 23.23, 0.04, 25.1, 2, 25.1),
+            ("heating", 23.23, 0.04, 25.1, 0, 25.1),
+            ("heating", 23.23, 0.04, 26.1, 2, 25.3),
+            ("heating", 22.6, -0.2, 25.1, 2, 25.3),
+            ("cooling", 23.23, 0.04, 25.1, 2, 25.3),
+            ("cooling", 23.23, 0.04, 25.1, 0, 25.1),
+        ],
+    )
+    @patch("src.cycle_routes.config")
+    def test_surplus_reduction_bypasses_hold_and_hysteresis_only(
+        self, mock_config, mode, indoor, trend, suggested, remaining, expected
+    ):
+        self._config(mock_config)
+        ctx = self._ctx(
+            indoor, 22.5, suggested,
+            last_final_temp=25.3, last_target_indoor_temp=22.5,
+            setpoint_hold_cycles_remaining=remaining,
+        )
+        ctx.climate_mode = mode
+        ctx.features_dict["indoor_temp_delta_60m"] = trend
+        step_setpoint_hold(ctx)
+        assert ctx.final_temp == expected
+        if expected == suggested and mode == "heating":
+            assert ctx.new_hold_cycles == 0
 
 
 class TestRunBlockingRoute:

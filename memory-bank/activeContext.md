@@ -1,5 +1,56 @@
 # Active Context - Current Work & Decision State
 
+### Accurate heating search and correction logs - 2026-11-14
+
+- **What/why:** Phase 2 step 6 distinguishes DEBUG search collapse from true boundary saturation and logs requested/clamped heating correction values. Interior discontinuities never receive false bound labels, as approved by the user.
+- **Scope:** Logging only; cooling search/correction logging and defaults are unchanged. Grace double-search and HA fetch errors remain report-only.
+- **Validation:** All 282 targeted tests, six Pylance syntax checks and whitespace checks pass. The deterministic flat-response 20:07 pipeline regression computes 24.0 C and publishes 24.5 C from baseline 25.3 C. Full suite: 2117 passed, identical baseline 2 failures and 8 Docker errors; all 30 new Phase-2 cases pass. The user explicitly accepted the baseline exception for Phase 2 and approved the final commit.
+- **Approved adjustments:** Four opposite-behavior test expectations updated; surplus-reduction hysteresis exception, existing grid-price attribute forwarding and qualified bound-log policy approved before implementation. The six requested steps are complete; no live deployment was tested.
+- **Files:** `src/model_wrapper.py`, the existing outlet-stability/FD-Newton/cycle-route tests, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### Separate grid-price label from cost-mode offset - 2026-11-14
+
+- **What/why:** Phase 2 step 5 logs the real grid classification with a separate cost-mode offset label; the existing `grid_price_level` is forwarded to HA with user approval.
+- **Scope:** Effective `price_level`, its HA attributes, price-aware correction thresholds and target offsets are unchanged.
+- **Validation:** All 186 wrapper, cycle-route, cost-mode and HA-client tests and whitespace checks pass after TDD reproduction.
+- **Files:** `src/model_wrapper.py`, `src/cycle_routes.py`, both existing wrapper/route test files, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### Surplus reductions bypass setpoint hold and hysteresis - 2026-11-14
+
+- **What/why:** Phase 2 step 4 allows necessary heating-surplus reductions through hold and, with explicit user approval, the otherwise conflicting hysteresis.
+- **Scope:** Only reductions above room target without heat demand clear the countdown; increases, demand and cooling keep prior behavior.
+- **Validation:** TDD reproduced blocked reductions in both hold states; all 84 cycle-route tests and whitespace checks pass.
+- **Files:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### No gradual outlet increase during heating surplus - 2026-11-14
+
+- **What/why:** Phase 2 step 3 prevents upward baseline changes when the control room is above target without heat demand. Target changes alone cannot override this condition.
+- **Scope:** Reuses `has_heat_demand`; downward slew, proven heat demand and cooling stay unchanged. Two old opposite-behavior test expectations were updated with user approval.
+- **Validation:** TDD reproduced unwanted increases above baseline; all 78 cycle-route tests and whitespace checks pass.
+- **Files:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### Zero-sensitivity heating reduction bound - 2026-11-14
+
+- **What/why:** Phase 2 step 2 lowers to the configured minimum instead of retaining an excessive heating outlet when FD-Newton has no simulated sensitivity; active bounds remain enforced by the caller.
+- **Scope:** Cooling is unchanged. The user approved replacing two existing keep-outlet test expectations with the configured lower bound.
+- **Validation:** All 41 FD-Newton/outlet-stability tests and whitespace checks pass after TDD reproduction.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_fd_newton_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### Directional heating outlet regularization - 2026-11-14
+
+- **What/why:** Phase 2 step 1 prevents the reference band from worsening a best candidate's overshoot or undershoot beyond tolerance; near-target behavior stays symmetric.
+- **Scope:** Only the existing heating search guard changes; `pick_regularized`, cooling and defaults remain unchanged.
+- **Validation:** Regression tests first reproduced both wrong-direction pulls; all 23 outlet-stability tests and whitespace checks pass.
+- **Files:** `src/model_wrapper.py`, `tests/unit/test_outlet_stability.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### Heating idle candidate start from degree minutes - 2026-11-14
+
+- **What:** Added heating-only candidate start extrapolation for degree-minute sensors reporting idle with no known start time. GM thresholds and candidate supply determine the delay; invalid attributes preserve the sensor window with DEBUG diagnostics.
+- **Why:** The idle no-start window previously disabled HP output for every candidate even when a higher candidate could create a start deficit. The user confirmed one-to-one NIBE setpoint mapping with offset 0 and approved this isolated prerequisite before the original overshoot fixes.
+- **Scope:** Known starts, running runtime handling, cooling, HA templates, defaults, learning, EMA, hold and the original six requested changes remain untouched. Unknown runtime still has no simulated stop before horizon end.
+- **Validation:** 49 targeted tests and Pylance syntax/whitespace checks pass. Approved isolated Python 3.13 full run: 2087 passed, 2 failed, 8 errors. Approved baseline run at `8e7d06e`: 2067 passed, identical 2 failures and 8 Docker errors. All 20 new cases pass. The user explicitly accepted the baseline exception and approved committing the isolated fix. Existing learning/grace failures and unavailable Docker were not changed.
+- **Files:** `src/hp_start_estimate.py`, `tests/unit/test_hp_start_estimate.py`, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Bounded setpoint hold and dashboard switch - 2026-11-14
 
 - **What:** Added `setpoint_hold_enabled` and `max_setpoint_hold_cycles` to Settings > Trajectory & Prediction. Forecast-driven holds use the configured minimum and maximum, with the maximum taking precedence on conflicts; disabling clears the countdown without disabling hysteresis or smoothing.

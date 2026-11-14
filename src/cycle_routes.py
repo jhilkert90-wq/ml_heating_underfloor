@@ -550,6 +550,30 @@ def _calm_conditions(ctx: CycleContext) -> bool:
         return False
 
 
+def _heating_surplus_without_demand(ctx: CycleContext) -> bool:
+    """Detect heating surplus independently of a recent target change."""
+    if ctx.climate_mode == "cooling":
+        return False
+    indoor = ctx.prediction_indoor_temp
+    if indoor is None:
+        indoor = ctx.actual_indoor
+    target = ctx.target_indoor_temp
+    if indoor is None or target is None:
+        logging.debug("Heating surplus check: indoor/target missing")
+        return False
+    try:
+        return float(indoor) > float(target) and not has_heat_demand(
+            float(indoor),
+            float(target),
+            (ctx.features_dict or {}).get("indoor_temp_delta_60m"),
+            float(getattr(config, "OUTLET_DEMAND_DEFICIT_K", 0.3)),
+            float(getattr(config, "OUTLET_DEMAND_TREND_K_PER_H", 0.1)),
+        )
+    except (TypeError, ValueError):
+        logging.debug("Heating surplus check: invalid indoor/target or thresholds")
+        return False
+
+
 def step_gradual_control(ctx: CycleContext) -> None:
     """Apply gradual temperature change limiting."""
     if ctx.actual_outlet_temp is None:
@@ -593,6 +617,13 @@ def step_gradual_control(ctx: CycleContext) -> None:
         "Gradual control: baseline=%.1f°C, limit=%.1f K (%s)",
         baseline, max_change, "calm" if calm else "demand/target change",
     )
+    if ctx.final_temp > baseline and _heating_surplus_without_demand(ctx):
+        logging.info(
+            "Heating surplus without heat demand: limiting outlet increase "
+            "%.1f°C to baseline %.1f°C",
+            ctx.final_temp, baseline,
+        )
+        ctx.final_temp = baseline
     delta = ctx.final_temp - baseline
     if abs(delta) > max_change:
         ctx.final_temp = baseline + np.clip(delta, -max_change, max_change)
@@ -642,6 +673,19 @@ def step_setpoint_hold(ctx: CycleContext) -> None:
         max(0, max_hold - 1),
     ) if hold_enabled else 0
     held_temp = ctx.state.get("last_final_temp")
+
+    if (
+        held_temp is not None
+        and ctx.final_temp < held_temp
+        and _heating_surplus_without_demand(ctx)
+    ):
+        logging.info(
+            "Heating surplus without heat demand: bypassing setpoint hold "
+            "and hysteresis for reduction %.1f°C → %.1f°C",
+            held_temp, ctx.final_temp,
+        )
+        ctx.new_hold_cycles = 0
+        return
 
     if hold_remaining > 0 and held_temp is not None:
         logging.info(
@@ -1171,6 +1215,7 @@ def step_publish_auxiliary_sensors(ctx: CycleContext) -> None:
                 for k in (
                     "price_eur_kwh",
                     "price_level",
+                    "grid_price_level",
                     "price_cheap_threshold",
                     "price_expensive_threshold",
                     "price_target_offset",

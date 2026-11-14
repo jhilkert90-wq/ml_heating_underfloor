@@ -579,9 +579,7 @@ class EnhancedModelWrapper:
                     )
                     offset = optimizer.get_target_offset(level) * _price_sign
                     price_info = optimizer.get_price_info()
-                    price_info["grid_price_level"] = price_info.get(
-                        "price_level", level.value
-                    )
+                    price_info["grid_price_level"] = level.value
                     if (
                         getattr(config, "PRICE_COST_MODE_ENABLED", False)
                         and "cost_target_offset" in price_data
@@ -604,11 +602,19 @@ class EnhancedModelWrapper:
                             price_info["price_level"] = "normal"
                     target_adjusted = target_indoor + offset
                     if offset != 0.0:
-                        logging.info(
-                            "💰 Price %s: target %.1f → %.1f°C (offset %+.1f)",
-                            price_info.get("price_level", level.value),
-                            target_indoor, target_adjusted, offset,
-                        )
+                        if cost_offset_applied:
+                            logging.info(
+                                "💰 Price %s (cost-mode offset %+.1f): "
+                                "target %.1f → %.1f°C",
+                                price_info["grid_price_level"], offset,
+                                target_indoor, target_adjusted,
+                            )
+                        else:
+                            logging.info(
+                                "💰 Price %s: target %.1f → %.1f°C (offset %+.1f)",
+                                price_info.get("price_level", level.value),
+                                target_indoor, target_adjusted, offset,
+                            )
 
             if self._climate_mode == "heating":
                 forecast_traj_state = (
@@ -1464,12 +1470,29 @@ class EnhancedModelWrapper:
                 )
                 if collapsed_candidate:
                     _consider_best(collapsed_candidate)
-                logging.info(
+                logging.log(
+                    logging.INFO
+                    if self._climate_mode == "cooling" else logging.DEBUG,
                     "🔄 Binary search early exit after %d iterations: "
                     "range collapsed to %.3f°C",
                     iteration + 1,
                     range_size,
                 )
+                if (
+                    self._climate_mode != "cooling"
+                    and collapsed_candidate is not None
+                    and abs(collapsed_candidate["end_error"]) > tolerance
+                ):
+                    bound = None
+                    if outlet_min == search_lower_bound:
+                        bound = "lower"
+                    elif outlet_max == search_upper_bound:
+                        bound = "upper"
+                    if bound is not None:
+                        logging.info(
+                            "search at %s bound, end_error=%+.3f",
+                            bound, collapsed_candidate["end_error"],
+                        )
                 break
 
             outlet_mid = (outlet_min + outlet_max) / 2.0
@@ -1669,6 +1692,10 @@ class EnhancedModelWrapper:
                         )
                         _lo = max(active_outlet_min, _ref - _band)
                         _hi = min(active_outlet_max, _ref + _band)
+                        if best_candidate["end_error"] > tolerance:
+                            _hi = min(_hi, best_candidate["outlet"])
+                        elif best_candidate["end_error"] < -tolerance:
+                            _lo = max(_lo, best_candidate["outlet"])
                         for _o in np.arange(_lo, _hi + 1e-9, 1.0).tolist():
                             _evaluate_outlet(_o, "Regularize(grid)")
                         _picked = pick_regularized(
@@ -1783,10 +1810,20 @@ class EnhancedModelWrapper:
                 pv_forecast=pv_forecast,
                 pv_history_for_buffer=pv_input,
             )
+            unclamped_outlet = final_outlet
             final_outlet = min(
                 active_outlet_max,
                 max(active_outlet_min, final_outlet),
             )
+            if (
+                self._climate_mode != "cooling"
+                and final_outlet != unclamped_outlet
+            ):
+                logging.info(
+                    "🎯 Trajectory correction → outlet %.1f°C, "
+                    "clamped to %.1f°C",
+                    unclamped_outlet, final_outlet,
+                )
             # Newton may raise the outlet again; the cap applies to the final
             # value as well.
             if _inlet_now is not None and final_outlet > _inlet_now + 5.0:
@@ -2799,6 +2836,14 @@ class EnhancedModelWrapper:
             # also rejects numerical noise in the pump-off branch.
             if max(sens) < 0.01:
                 if reducing_effort:
+                    if self._climate_mode != "cooling":
+                        logging.info(
+                            "🎯 [FD-Newton] No simulated outlet sensitivity "
+                            "(pump gate): reducing the outlet has no modelled "
+                            "effect — using lower bound %.1f°C",
+                            clamp_min,
+                        )
+                        return clamp_min
                     logging.info(
                         "🎯 [FD-Newton] No simulated outlet sensitivity "
                         "(pump gate): reducing the outlet has no modelled "
@@ -2825,9 +2870,19 @@ class EnhancedModelWrapper:
                 if abs(inc) < 0.02:
                     break
                 total = max(-max_correction, min(max_correction, total + inc))
+                unclamped_candidate = outlet_temp + total
                 candidate = max(
-                    clamp_min, min(clamp_max, outlet_temp + total)
+                    clamp_min, min(clamp_max, unclamped_candidate)
                 )
+                if (
+                    self._climate_mode != "cooling"
+                    and candidate != unclamped_candidate
+                ):
+                    logging.debug(
+                        "🎯 [FD-Newton] Candidate → outlet %.1f°C, "
+                        "clamped to %.1f°C",
+                        unclamped_candidate, candidate,
+                    )
                 total = candidate - outlet_temp
                 temps = simulate(candidate)
                 if len(temps) != n:
