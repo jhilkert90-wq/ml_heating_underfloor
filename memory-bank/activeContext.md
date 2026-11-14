@@ -1,5 +1,14 @@
 # Active Context - Current Work & Decision State
 
+### State-adjacent offline exports and empty forecast accuracy - 2026-11-14
+
+- **Changed:** Offline CSV/JSON and the new UTF-8 diagnostic log default to the effective `UNIFIED_STATE_FILE` directory, with `--output` preserved. Generated filenames are ignored by Git. Current reports were regenerated beside the workspace state without changing its checksum. There is still no automatic per-cycle export, live shadow optimizer or Pi deployment.
+- **Accuracy evidence:** The supplied sensor has consistent 48-slot component totals; its current 0.0481 kWh includes heating 0.0013 plus standby 0.0468. All accuracy counts are zero, independently of COP calibration. The source log records 23 pending-count messages but no closed hours.
+- **Reproduced defect:** `_record_interval()` replaces the old anchor with a partial one at hour rollover; `_refresh_hour_anchor()` can repair it from history without retrying accuracy or retaining the old hour for matching. A valid 0.5/2.0 kWh actual pair was available in an isolated reproduction, while `n` stayed zero until explicitly recorded.
+- **Additional limit:** Idle HA counter timestamps can be one hour stale. Forecast coverage still labels these `counter_anchor`, but accuracy rejects them beyond five minutes. Do not weaken alignment or invent measurements. No forecast/accuracy code was modified; exact production rejection reasons need the unsupplied `heat_forecast_state.json`.
+- **Validation:** 102 focused tests pass, including two new real CLI subprocess cases with state-file preservation. Full suite: 2131 passes plus unchanged known 2 baseline failures / 8 Docker errors. Comparison control outputs are unchanged.
+- **Files:** `validation/compare_trajectory_control.py`, its unit tests, `.gitignore`, `validation/README.md`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Offline joint-trajectory comparison (Phase 3) - 2026-11-14
 
 - **What/why:** Implemented the user-approved offline comparison with a +/-0.1 K comfort band and equal time-integrated squared under-/overshoot costs, using the existing simulator closure and unchanged gradual/EMA/hold steps. The new selector has no separate Newton correction.

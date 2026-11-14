@@ -8,7 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Persist UTF-8 offline comparison diagnostics alongside its CSV/JSON reports.
 - Add an offline-only comparison of the corrected heating controller and a joint trajectory comfort-band optimizer, with explicit missing-start scenarios, shared simulator/stabilizers, CSV/JSON results and reconstruction limits; no live-control or configuration changes.
+
+### Changed
+- Default offline comparison exports to the effective unified-state directory while retaining an explicit output override and leaving the existing state file unchanged.
 
 ### Fixed
 - Log heating search collapse at DEBUG, identify true boundary saturation with its signed end error, and show both requested and clamped correction outlets.

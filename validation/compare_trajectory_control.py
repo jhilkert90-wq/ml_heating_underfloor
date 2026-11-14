@@ -29,6 +29,7 @@ from src.cycle_routes import (
     step_setpoint_hold,
 )
 from src.model_wrapper import EnhancedModelWrapper
+from src.shadow_mode import get_effective_unified_state_file
 from src.thermal_equilibrium_model import ThermalEquilibriumModel
 from src.unified_thermal_state import ThermalStateManager
 
@@ -431,10 +432,28 @@ def compare_cycles(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("log", type=Path)
-    parser.add_argument("--output", type=Path, required=True, help="Output directory")
+    parser.add_argument(
+        "--output", type=Path,
+        help="Output directory (default: directory of the effective unified state file)",
+    )
     parser.add_argument("--comfort-band", type=float, default=0.1)
     args = parser.parse_args()
-    logging.basicConfig(level=logging.WARNING, force=True)
+    if args.output is None:
+        args.output = Path(get_effective_unified_state_file()).parent
+    args.output.mkdir(parents=True, exist_ok=True)
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARNING)
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[
+            logging.FileHandler(
+                args.output / "trajectory_control_comparison.log",
+                mode="w", encoding="utf-8",
+            ),
+            console,
+        ],
+        force=True,
+    )
     log_bytes = args.log.read_bytes()
     cycles, excluded = parse_log(log_bytes.decode("utf-8"))
     if not cycles:
@@ -499,13 +518,16 @@ def main() -> None:
                 default=None,
             ),
         }
-    args.output.mkdir(parents=True, exist_ok=True)
     with (args.output / "trajectory_control_comparison.csv").open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
     serialized = json.dumps(summary, indent=2, allow_nan=False)
     (args.output / "trajectory_control_summary.json").write_text(serialized + "\n", encoding="utf-8")
+    logging.info(
+        "Offline comparison complete: %d cycles, %d scenario rows; reports in %s",
+        len(cycles), len(rows), args.output,
+    )
     print(serialized)
 
 

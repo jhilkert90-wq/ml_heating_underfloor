@@ -37,8 +37,19 @@ Run [compare_trajectory_control.py](compare_trajectory_control.py) **in a separa
 offline process**, from the repository root:
 
 ```powershell
+python -m validation.compare_trajectory_control 'C:\path\production.log' --comfort-band 0.1
+# Optional override:
 python -m validation.compare_trajectory_control 'C:\path\production.log' --output 'C:\path\comparison' --comfort-band 0.1
 ```
+
+Without `--output`, all three files are written next to the effective
+`UNIFIED_STATE_FILE` (including the existing shadow-path resolution), not next
+to the input log or into a fixed session folder. For the supplied production
+configuration this is `/config/ml_heating/`. The directory setting is read
+without loading or changing the existing thermal state. An explicit `--output`
+still takes precedence. Output files replace the previous offline run and are
+ignored by Git. This is not an automatic per-cycle add-on export: files are
+generated only when the offline command is run.
 
 This tool has no live-control integration, HA client or publishing step. Model
 state is isolated in a temporary directory. Its explicit `OFFLINE_PROFILE`
@@ -58,6 +69,8 @@ otherwise they prefer the smallest baseline change. Both methods pass through
 the unchanged gradual-control, EMA and hold/hysteresis functions.
 
 Outputs:
+- `trajectory_control_comparison.log`: UTF-8 diagnostic log for the offline run,
+  including existing controller messages and a completion marker.
 - `trajectory_control_comparison.csv`: per-cycle raw and publishable outlets,
   separate under-/overshoot degree-hours and durations, squared violation scores,
   temperature extrema, execution timings and trajectory cross-check errors.

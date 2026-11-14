@@ -3,6 +3,46 @@
 Status after the 2026-11 forecast overhaul. Everything not listed here is
 implemented (see `HEAT_FORECAST_EOS_CONNECT.md`).
 
+## Confirmed accuracy ingestion issue (2026-11-14)
+
+The supplied `sensor.ml_heating_wp_load_forecast` snapshot has `n: 0` for every
+lead/window, not a sensor-rendering problem. Its 48-slot electrical components
+sum correctly: the current 0.0481 kWh is 0.0013 kWh heating plus 0.0468 kWh
+standby. COP calibration and forecast accuracy are separate histories; the
+reported 109.47 calibration hours do not establish add-on uptime or completed
+forecast/actual pairs. Accuracy compares heating electrical/thermal energy,
+not the total including standby and DHW.
+
+The following integration defect was reproduced against unchanged code using
+an isolated forecast engine and synthetic counter history:
+
+1. `_record_interval()` replaces the previous hour's anchor when crossing the
+   hour. A live reading seven minutes after the boundary creates a partial
+   anchor, so `actual_from_anchors()` cannot close the previous hour.
+2. `_refresh_hour_anchor()` can subsequently interpolate an exact boundary
+   from history, but does not retry the accuracy pairing or retain the replaced
+   previous anchor for that purpose.
+3. In the reproduction, accuracy stays at `n=0` after a successful repair.
+   Pairing the saved old anchor and repaired new anchor manually produces
+   valid actuals of 0.5 kWh electrical / 2.0 kWh thermal; explicitly recording
+   these changes `n` to 1.
+
+There is a second limitation: `coverage: counter_anchor` accepts some
+pre-boundary readings that accuracy correctly rejects outside its five-minute
+alignment tolerance. During idle periods, unchanged HA counters can have old
+`last_updated` timestamps. The supplied production log includes anchors whose
+readings are one hour old despite that coverage label. It has 23 pending-count
+messages and no closed-accuracy-hour messages. `degraded_reasons: []` does not
+certify accuracy-history coverage.
+
+**Analysis only; not fixed:** retain validated boundary data long enough to
+pair adjacent hours after history repair, and expose rejection reasons.
+Do not fabricate observations, widen the tolerance or replace missing actuals
+with predictions. The live `heat_forecast_state.json` was not supplied, so the
+exact rejection reason for each production hour remains unverified. Existing
+unit tests validate pairing of manually supplied anchors, but not this
+repair-to-accuracy handoff.
+
 ## Not implemented
 
 | Item | Description | Effect while missing |

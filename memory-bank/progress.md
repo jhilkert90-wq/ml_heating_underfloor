@@ -1,5 +1,17 @@
 # ML Heating System - Current Progress
 
+## State-adjacent offline exports and empty forecast accuracy analysis - 2026-11-14
+
+**Status:** EXPORT IMPLEMENTED; ACCURACY ANALYZED ONLY.
+
+**Implementation summary:** The offline comparison now defaults to the directory of the effective unified thermal state path; `--output` remains an override. A UTF-8 run log joins CSV/JSON, and the three generated filenames are ignored by Git. All three reports were regenerated beside the workspace's `unified_thermal_state.json` using an explicit process-local state-path setting; the existing state checksum remained unchanged. This is still a manually invoked offline command, not live add-on/shadow logging.
+
+**Sensor analysis:** The read-only WP load forecast snapshot has consistent 48-slot electrical totals but no completed accuracy pairs. Reproduced an unchanged-engine defect: a live partial anchor overwrites the previous hour; history repair produces a valid boundary but never hands it back to accuracy. With valid 0.5 kWh electrical / 2.0 kWh thermal actuals, `n` remains zero until the omitted pairing is explicitly performed. Stale idle-counter timestamps independently fail the five-minute accuracy gate despite `counter_anchor` coverage. The production log has 23 pending-count messages, zero closed-hour messages and stale anchor examples. Full production forecast state was not provided; exact per-hour rejection reasons are unknown. No forecast/accuracy logic or tolerances were changed.
+
+**Validation:** TDD reproduced the required-output argument and missing run log. Both new subprocess CLI cases pass, covering the default directory, explicit override and byte-identical existing state. All 102 comparison/forecast tests pass; full suite 2131 passed with unchanged two known baseline failures and eight unavailable-Docker errors. Existing comparison results remain unchanged.
+
+**Files changed:** `validation/compare_trajectory_control.py`, `tests/unit/test_compare_trajectory_control.py`, `.gitignore`, `validation/README.md`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Offline joint-trajectory comparison (Phase 3) - 2026-11-14
 
 **Status:** IMPLEMENTED AND COMPARED OFFLINE - no production path, configuration defaults, learning or cooling changes.

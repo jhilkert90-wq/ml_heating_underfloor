@@ -1,6 +1,11 @@
 """Offline control comparison: no Home Assistant or production-state writes."""
 
 import math
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -183,3 +188,39 @@ def test_offline_2007_comparison_uses_same_limits_and_has_no_network_or_state_io
     assert all(row["current_publishable"] <= row["baseline"] for row in rows)
     assert all(row["alternative_publishable"] <= row["baseline"] for row in rows)
     assert not [record for record in caplog.records if record.levelname == "ERROR"]
+
+
+@pytest.mark.parametrize("explicit_output", [False, True])
+def test_cli_saves_reports_and_log_beside_state_unless_output_is_explicit(
+    tmp_path, explicit_output,
+):
+    from src.unified_thermal_state import ThermalStateManager
+
+    state_dir = tmp_path / "persistent"
+    state_dir.mkdir()
+    state_file = state_dir / "unified_thermal_state.json"
+    original = json.dumps(ThermalStateManager(str(state_file)).state)
+    state_file.write_text(original, encoding="utf-8")
+    log = tmp_path / "input.log"
+    log.write_text(_log_cycle(_cycle()), encoding="utf-8")
+    output = tmp_path / "explicit" if explicit_output else state_dir
+    command = [
+        sys.executable, "-m", "validation.compare_trajectory_control", str(log),
+    ]
+    if explicit_output:
+        command.extend(["--output", str(output)])
+
+    result = subprocess.run(
+        command, cwd=Path(__file__).resolve().parents[2],
+        env={**os.environ, "UNIFIED_STATE_FILE": str(state_file), "PYTHONUTF8": "1"},
+        capture_output=True, encoding="utf-8", timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (output / "trajectory_control_comparison.csv").is_file()
+    assert (output / "trajectory_control_summary.json").is_file()
+    run_log = (output / "trajectory_control_comparison.log").read_text(encoding="utf-8")
+    assert "Offline comparison complete" in run_log
+    assert state_file.read_text(encoding="utf-8") == original
+    if explicit_output:
+        assert not (state_dir / "trajectory_control_comparison.csv").exists()
