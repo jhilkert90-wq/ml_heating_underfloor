@@ -1,5 +1,13 @@
 # ML Heating System - Current Progress
 
+## Bounded setpoint hold and dashboard switch - 2026-11-14
+
+**Status:** IMPLEMENTED - 142 targeted tests pass.
+
+**Implementation summary:** Added a default-enabled setpoint-hold switch and maximum cycle limit to Settings > Trajectory & Prediction. Forecast-driven hold durations are bounded by the configured minimum and maximum without changing the planning horizon. Disabling clears an active countdown; independent hysteresis and smoothing remain active. Add-on restart required.
+
+**Files changed:** `.env_sample`, `CHANGELOG.md`, `config_adapter.py`, `docs/PARAMETER_REFERENCE.md`, `ml_heating_underfloor/CHANGELOG.md`, `ml_heating_underfloor/config.yaml`, both add-on translation files, `src/config.py`, `src/cycle_context.py`, `src/cycle_routes.py`, `src/state_manager.py`, `tests/unit/test_config_adapter.py`, `tests/unit/test_cycle_routes.py`, `tests/unit/test_dashboard_settings.py`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Smart rounding dashboard switch - 2026-11-14
 
 **Status:** IMPLEMENTED - all 98 targeted cycle-route, configuration-adapter, dashboard-settings and HA-client tests pass on Python 3.13.

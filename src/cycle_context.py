@@ -67,6 +67,7 @@ class CycleContext:
 
     # --- Hold / smoothing state ---
     new_hold_cycles: int = 0
+    dynamic_hold_cycles: int | None = None
 
     # --- Pre-cooling state ---
     pre_cool_active: bool = False

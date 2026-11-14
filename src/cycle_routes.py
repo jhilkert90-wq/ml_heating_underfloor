@@ -315,7 +315,7 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
                 pv_forecast=_pv_forecast_traj,
             )
             config.TRAJECTORY_STEPS = _forecast_state.dynamic_steps
-            config.MIN_SETPOINT_HOLD_CYCLES = _forecast_state.dynamic_steps
+            ctx.dynamic_hold_cycles = _forecast_state.dynamic_steps
         except Exception as _exc:
             logging.warning("Dynamic trajectory scaling failed: %s", _exc)
 
@@ -625,11 +625,22 @@ def step_ema_smoothing(ctx: CycleContext) -> None:
 
 
 def step_setpoint_hold(ctx: CycleContext) -> None:
-    """Minimum setpoint hold logic."""
-    hold_remaining = ctx.state.get("setpoint_hold_cycles_remaining", 0) or 0
-    min_hold = int(
-        getattr(config, "MIN_SETPOINT_HOLD_CYCLES", config.TRAJECTORY_STEPS)
+    """Apply the bounded setpoint hold and independent demand hysteresis."""
+    hold_enabled = config.SETPOINT_HOLD_ENABLED
+    max_hold = config.MAX_SETPOINT_HOLD_CYCLES
+    min_hold = config.MIN_SETPOINT_HOLD_CYCLES
+    if hold_enabled and 0 < max_hold < min_hold:
+        logging.warning(
+            "Setpoint hold minimum (%d) exceeds maximum (%d); using maximum",
+            min_hold, max_hold,
+        )
+    hold_duration = min(
+        max_hold, max(min_hold, ctx.dynamic_hold_cycles or 0)
     )
+    hold_remaining = min(
+        ctx.state.get("setpoint_hold_cycles_remaining", 0) or 0,
+        max(0, max_hold - 1),
+    ) if hold_enabled else 0
     held_temp = ctx.state.get("last_final_temp")
 
     if hold_remaining > 0 and held_temp is not None:
@@ -664,7 +675,10 @@ def step_setpoint_hold(ctx: CycleContext) -> None:
             or abs(ctx.final_temp - held_temp)
             > PhysicsConstants.SETPOINT_CHANGE_THRESHOLD_C
         )
-        ctx.new_hold_cycles = max(0, min_hold - 1) if setpoint_changed else 0
+        ctx.new_hold_cycles = (
+            max(0, hold_duration - 1)
+            if hold_enabled and setpoint_changed else 0
+        )
 
 
 def step_update_ha(ctx: CycleContext) -> None:
@@ -1684,10 +1698,9 @@ def run_idle_route(ctx: CycleContext) -> None:
     step_publish_features(ctx)
 
     # Dynamic trajectory / price still calculated for feature completeness.
-    # NOTE: step_dynamic_trajectory mutates config.TRAJECTORY_STEPS and
-    # config.MIN_SETPOINT_HOLD_CYCLES and may trigger electricity-price
-    # network calls. These side effects are intentional so that the next
-    # HEATING/COOLING cycle begins with an up-to-date trajectory length.
+    # NOTE: step_dynamic_trajectory mutates config.TRAJECTORY_STEPS and may
+    # trigger electricity-price network calls. The trajectory mutation is
+    # intentional for the next HEATING/COOLING cycle.
     step_dynamic_trajectory(ctx)
 
     # Heating obs buffer: resolve labels even while idle so pending

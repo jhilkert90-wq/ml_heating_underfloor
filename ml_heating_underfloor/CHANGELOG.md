@@ -1,5 +1,10 @@
 # Changelog - ML Heating Underfloor
 
+## [Unreleased]
+
+### Added
+- Add a setpoint hold switch and maximum cycle limit under dashboard Settings > Trajectory & Prediction. Forecast-driven holds respect both configured bounds; smoothing and hysteresis remain independent. Restart the add-on after changing settings.
+
 ## [0.3.3] - 2026-11-13
 
 ### Added

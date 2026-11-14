@@ -832,8 +832,14 @@ def convert_addon_to_env(config):
         'PV_SURPLUS_CHEAP_THRESHOLD_W': str(
             config.get('pv_surplus_cheap_threshold_w', 3000)
         ),
+        'SETPOINT_HOLD_ENABLED': str(
+            config.get('setpoint_hold_enabled', True)
+        ).lower(),
         'MIN_SETPOINT_HOLD_CYCLES': str(
             config.get('min_setpoint_hold_cycles', 4)
+        ),
+        'MAX_SETPOINT_HOLD_CYCLES': str(
+            config.get('max_setpoint_hold_cycles', 20)
         ),
         'TRAJECTORY_SEARCH_ERROR_MODE': config.get(
             'trajectory_search_error_mode', 'horizon_end'

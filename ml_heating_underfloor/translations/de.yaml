@@ -1256,16 +1256,27 @@ configuration:
     description: 'PV power threshold in Watts above which surplus heating is activated.
       Roughly 20% of your rated capacity (e.g. 3000 W for a 15 kWp system). Default:
       3000 W.'
+  setpoint_hold_enabled:
+    name: '[Trajektorie] Sollwert-Haltezeit aktiv'
+    description: Hält den letzten Sollwert für eine begrenzte Anzahl Regelzyklen.
+      Beim Ausschalten wird eine laufende Haltezeit beendet; Glättung und Hysterese
+      bleiben aktiv. Nach Änderungen das Add-on neu starten.
   min_setpoint_hold_cycles:
-    name: '[Erweitert] Minimum Sollwert Hold Zyklen'
-    description: Minimum number of cycles a computed outlet setpoint is held before
-      the optimiser produces a new value. Defaults to trajectory_steps, keeping the
-      setpoint stable for the full planning horizon. Set to 0 to recompute every cycle.
+    name: '[Trajektorie] Minimale Sollwert-Haltezeit (Zyklen)'
+    description: Minimale Haltezeit in Regelzyklen. Im Prognosemodus wird die
+      dynamische Haltezeit durch Minimum und Maximum begrenzt. Ist das Minimum
+      größer als das Maximum, gilt das Maximum. Nach Änderungen neu starten.
+  max_setpoint_hold_cycles:
+    name: '[Trajektorie] Maximale Sollwert-Haltezeit (Zyklen)'
+    description: Maximale Haltezeit in Regelzyklen einschließlich des ersten Zyklus.
+      Nach Ablauf kann der Sollwert wegen Hysterese oder Glättung unverändert bleiben.
+      Nach Änderungen das Add-on neu starten.
   pv_traj_forecast_mode_enabled:
     name: '[Erweitert] Prognose-Driven Trajektorie Scaling Aktivierend'
     description: When enabled, the planning horizon (trajectory_steps) and setpoint
       hold duration are recomputed each cycle from remaining PV forecast hours plus
-      a reserved night buffer. Steps = clamp(remaining_pv_hours + pv_traj_min_steps,
+      a reserved night buffer. The hold is bounded by the setpoint hold limits.
+      Steps = clamp(remaining_pv_hours + pv_traj_min_steps,
       min, max). More forecast solar hours remaining = longer horizon = bolder pre-heating.
   pv_traj_min_steps:
     name: '[Erweitert] PV Trajektorie Minimum Stunden'

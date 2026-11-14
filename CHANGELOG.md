@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add a dashboard switch and maximum cycle limit for setpoint hold. Forecast-driven hold durations respect the configured minimum and maximum.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

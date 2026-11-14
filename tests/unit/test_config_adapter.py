@@ -1,4 +1,27 @@
+from unittest.mock import mock_open
+
+import pytest
+
+import config_adapter
 from config_adapter import convert_addon_to_env
+
+
+@pytest.fixture(autouse=True)
+def isolate_environment_file(monkeypatch):
+    monkeypatch.setattr(config_adapter, "open", mock_open(), raising=False)
+    monkeypatch.setattr(config_adapter.os, "makedirs", lambda *args, **kwargs: None)
+    monkeypatch.setattr(config_adapter.os, "chmod", lambda *args, **kwargs: None)
+
+
+def test_setpoint_hold_options_are_mapped():
+    defaults = convert_addon_to_env({})
+    assert defaults["SETPOINT_HOLD_ENABLED"] == "true"
+    assert defaults["MAX_SETPOINT_HOLD_CYCLES"] == "20"
+    options = convert_addon_to_env(
+        {"setpoint_hold_enabled": False, "max_setpoint_hold_cycles": 6}
+    )
+    assert options["SETPOINT_HOLD_ENABLED"] == "false"
+    assert options["MAX_SETPOINT_HOLD_CYCLES"] == "6"
 
 
 def test_smart_rounding_defaults_on_and_maps_disabled():

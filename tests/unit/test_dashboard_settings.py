@@ -37,6 +37,18 @@ class DummyResponse:
 
 
 class TestSettingsMetadata:
+    def test_setpoint_hold_controls_are_persistable_in_trajectory_group(self):
+        fields = load_settings_metadata().fields
+        for key in ("setpoint_hold_enabled", "min_setpoint_hold_cycles",
+                    "max_setpoint_hold_cycles"):
+            assert fields[key].group.slug == "trajectory"
+        assert fields["setpoint_hold_enabled"].widget_type == "bool"
+        assert fields["setpoint_hold_enabled"].default is True
+        assert fields["max_setpoint_hold_cycles"].widget_type == "int"
+        assert _sanitize_options({
+            "setpoint_hold_enabled": False, "max_setpoint_hold_cycles": 6
+        }) == {"setpoint_hold_enabled": False, "max_setpoint_hold_cycles": 6}
+
     def test_smart_rounding_is_persistable_checkbox_in_outlet_group(self):
         field = load_settings_metadata().fields["smart_rounding_enabled"]
         assert field.widget_type == "bool"
@@ -126,7 +138,8 @@ class TestSettingsMetadata:
 
 class TestSettingsService:
     @pytest.mark.parametrize(
-        "option", ["heat_forecast_include_dhw", "smart_rounding_enabled"]
+        "option", ["heat_forecast_include_dhw", "smart_rounding_enabled",
+                   "setpoint_hold_enabled"]
     )
     def test_boolean_option_round_trips_via_supervisor(self, monkeypatch, option):
         stored = {}

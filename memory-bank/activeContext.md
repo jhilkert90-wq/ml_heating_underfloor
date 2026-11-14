@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Bounded setpoint hold and dashboard switch - 2026-11-14
+
+- **What:** Added `setpoint_hold_enabled` and `max_setpoint_hold_cycles` to Settings > Trajectory & Prediction. Forecast-driven holds use the configured minimum and maximum, with the maximum taking precedence on conflicts; disabling clears the countdown without disabling hysteresis or smoothing.
+- **Why:** Limit the period during which a new computed outlet is suppressed, and allow the feature to be switched off. Settings require an add-on restart.
+- **Validation:** 142 targeted cycle-route, trajectory, dashboard, adapter and outlet-stability tests pass. No live Home Assistant deployment was tested.
+- **Files:** See the bounded setpoint hold milestone in `progress.md`.
+
 ### Smart rounding dashboard switch - 2026-11-14
 
 - **What:** Added the default-enabled Smart Rounding checkbox in Settings > Outlet Smoothing. `smart_rounding_enabled` maps to `SMART_ROUNDING_ENABLED`; disabling it sends the final cycle setpoint without additional rounding and skips the rounding predictions in heating and cooling. The applied-outlet value tracks the published value.
