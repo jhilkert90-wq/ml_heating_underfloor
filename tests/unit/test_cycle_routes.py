@@ -585,8 +585,92 @@ class TestStepEmaSmoothing:
 class TestStepSetpointHold:
     """Test minimum setpoint hold logic."""
 
+    @pytest.mark.parametrize("mode", ["heating", "cooling"])
+    def test_disabled_clears_pending_hold_but_keeps_hysteresis(self, monkeypatch, mode):
+        monkeypatch.setattr(cycle_routes.config, "SETPOINT_HOLD_ENABLED", False)
+        monkeypatch.setattr(cycle_routes.config, "OUTLET_HYSTERESIS_K", 0.3)
+        monkeypatch.setattr(cycle_routes, "_calm_conditions", lambda ctx: True)
+        ctx = _make_ctx(climate_mode=mode, final_temp=30.2)
+        ctx.state = {"last_final_temp": 30.0, "setpoint_hold_cycles_remaining": 3}
+        step_setpoint_hold(ctx)
+        assert ctx.final_temp == 30.0
+        assert ctx.new_hold_cycles == 0
+        ctx.final_temp = 32.0
+        step_setpoint_hold(ctx)
+        assert ctx.final_temp == 32.0
+        assert ctx.new_hold_cycles == 0
+
+    @pytest.mark.parametrize(
+        "dynamic, minimum, maximum, expected",
+        [(None, 4, 8, 3), (10, 4, 6, 5), (2, 4, 6, 3),
+         (10, 8, 3, 2), (10, 0, 0, 0)],
+    )
+    def test_hold_duration_obeys_bounds(
+        self, monkeypatch, dynamic, minimum, maximum, expected
+    ):
+        monkeypatch.setattr(cycle_routes.config, "SETPOINT_HOLD_ENABLED", True)
+        monkeypatch.setattr(cycle_routes.config, "MIN_SETPOINT_HOLD_CYCLES", minimum)
+        monkeypatch.setattr(cycle_routes.config, "MAX_SETPOINT_HOLD_CYCLES", maximum)
+        ctx = _make_ctx(final_temp=35.0, dynamic_hold_cycles=dynamic)
+        ctx.state = {"last_final_temp": 30.0}
+        step_setpoint_hold(ctx)
+        assert ctx.new_hold_cycles == expected
+
+    def test_existing_countdown_respects_maximum(self, monkeypatch):
+        monkeypatch.setattr(cycle_routes.config, "SETPOINT_HOLD_ENABLED", True)
+        monkeypatch.setattr(cycle_routes.config, "MAX_SETPOINT_HOLD_CYCLES", 2)
+        ctx = _make_ctx(final_temp=35.0)
+        ctx.state = {"last_final_temp": 30.0, "setpoint_hold_cycles_remaining": 8}
+        step_setpoint_hold(ctx)
+        assert ctx.final_temp == 30.0
+        assert ctx.new_hold_cycles == 0
+
+    @pytest.mark.parametrize("mode", ["heating", "cooling"])
+    def test_computed_value_is_accepted_after_maximum_cycles(self, monkeypatch, mode):
+        monkeypatch.setattr(cycle_routes.config, "SETPOINT_HOLD_ENABLED", True)
+        monkeypatch.setattr(cycle_routes.config, "MIN_SETPOINT_HOLD_CYCLES", 2)
+        monkeypatch.setattr(cycle_routes.config, "MAX_SETPOINT_HOLD_CYCLES", 3)
+        monkeypatch.setattr(cycle_routes.config, "OUTLET_HYSTERESIS_K", 0.0)
+        ctx = _make_ctx(climate_mode=mode, final_temp=30.0, dynamic_hold_cycles=8)
+        ctx.state = {"last_final_temp": 29.0}
+        step_setpoint_hold(ctx)
+        assert ctx.new_hold_cycles == 2
+        for remaining in (1, 0):
+            ctx.state = {
+                "last_final_temp": ctx.final_temp,
+                "setpoint_hold_cycles_remaining": ctx.new_hold_cycles,
+            }
+            ctx.final_temp = 32.0
+            step_setpoint_hold(ctx)
+            assert ctx.final_temp == 30.0
+            assert ctx.new_hold_cycles == remaining
+        ctx.state["setpoint_hold_cycles_remaining"] = ctx.new_hold_cycles
+        ctx.final_temp = 32.0
+        step_setpoint_hold(ctx)
+        assert ctx.final_temp == 32.0
+
+    def test_forecast_does_not_overwrite_configured_minimum(self, monkeypatch):
+        from types import SimpleNamespace
+        from src import pv_trajectory
+
+        monkeypatch.setattr(cycle_routes.config, "PV_TRAJ_FORECAST_MODE_ENABLED", True)
+        monkeypatch.setattr(cycle_routes.config, "ELECTRICITY_PRICE_ENABLED", False)
+        monkeypatch.setattr(cycle_routes.config, "MIN_SETPOINT_HOLD_CYCLES", 4)
+        monkeypatch.setattr(cycle_routes.config, "TRAJECTORY_STEPS", 4)
+        monkeypatch.setattr(
+            pv_trajectory, "get_forecast_trajectory_state",
+            lambda *args, **kwargs: SimpleNamespace(dynamic_steps=9),
+        )
+        ctx = _make_ctx()
+        cycle_routes.step_dynamic_trajectory(ctx)
+        assert cycle_routes.config.TRAJECTORY_STEPS == 9
+        assert cycle_routes.config.MIN_SETPOINT_HOLD_CYCLES == 4
+        assert ctx.dynamic_hold_cycles == 9
+
     @patch("src.cycle_routes.config")
     def test_holds_when_remaining_cycles(self, mock_config):
+        mock_config.SETPOINT_HOLD_ENABLED = True
+        mock_config.MAX_SETPOINT_HOLD_CYCLES = 20
         mock_config.TRAJECTORY_STEPS = 3
         mock_config.MIN_SETPOINT_HOLD_CYCLES = 3
         ctx = _make_ctx(final_temp=35.0)
@@ -600,6 +684,8 @@ class TestStepSetpointHold:
 
     @patch("src.cycle_routes.config")
     def test_starts_new_hold_on_change(self, mock_config):
+        mock_config.SETPOINT_HOLD_ENABLED = True
+        mock_config.MAX_SETPOINT_HOLD_CYCLES = 20
         mock_config.TRAJECTORY_STEPS = 3
         mock_config.MIN_SETPOINT_HOLD_CYCLES = 3
         ctx = _make_ctx(final_temp=35.0)
@@ -622,6 +708,8 @@ class TestOutletStabilisers:
         mock_config.OUTLET_DEMAND_DEFICIT_K = 0.3
         mock_config.OUTLET_DEMAND_TREND_K_PER_H = 0.1
         mock_config.MIN_SETPOINT_HOLD_CYCLES = 4
+        mock_config.SETPOINT_HOLD_ENABLED = True
+        mock_config.MAX_SETPOINT_HOLD_CYCLES = 20
         mock_config.TRAJECTORY_STEPS = 4
         mock_config.DHW_STATUS_ENTITY_ID = "binary_sensor.dhw"
         mock_config.DISINFECTION_STATUS_ENTITY_ID = "binary_sensor.disinfect"

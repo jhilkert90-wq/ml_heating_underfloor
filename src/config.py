@@ -605,12 +605,14 @@ CYCLE_INTERVAL_MINUTES: int = int(os.getenv("CYCLE_INTERVAL_MINUTES", "10"))
 MAX_TEMP_CHANGE_PER_CYCLE: int = int(
     os.getenv("MAX_TEMP_CHANGE_PER_CYCLE", "2")
 )
-# Minimum number of cycles a computed setpoint is held before the optimizer
-# is allowed to produce a different value.  Defaults to TRAJECTORY_STEPS so
-# the setpoint is stable for at least the full planning horizon.
-# Set to 0 to disable (recompute every cycle).
+SETPOINT_HOLD_ENABLED: bool = (
+    os.getenv("SETPOINT_HOLD_ENABLED", "true").lower() == "true"
+)
 MIN_SETPOINT_HOLD_CYCLES: int = max(
     0, int(os.getenv("MIN_SETPOINT_HOLD_CYCLES", str(TRAJECTORY_STEPS)))
+)
+MAX_SETPOINT_HOLD_CYCLES: int = max(
+    0, int(os.getenv("MAX_SETPOINT_HOLD_CYCLES", "20"))
 )
 TREND_DECAY_TAU_HOURS: float = max(
     0.1, float(os.getenv("TREND_DECAY_TAU_HOURS", "1.5"))

@@ -411,7 +411,9 @@ Requires the Tibber integration in Home Assistant.
 
 | Parameter | Env Var | Type | Default | Description |
 |---|---|---|---|---|
-| `min_setpoint_hold_cycles` | `MIN_SETPOINT_HOLD_CYCLES` | int (0–20) | `4` | Minimum cycles a computed outlet setpoint is held before the optimiser produces a new value. Defaults to `trajectory_steps` so the setpoint is stable for the full planning horizon. Set to 0 to recompute every cycle. |
+| `setpoint_hold_enabled` | `SETPOINT_HOLD_ENABLED` | bool | `true` | Enables the setpoint hold. Disabling clears an active hold; smoothing and hysteresis remain active. |
+| `min_setpoint_hold_cycles` | `MIN_SETPOINT_HOLD_CYCLES` | int (0–20) | `4` | Hold duration in control cycles without PV forecast scaling; minimum duration with scaling. If greater than the maximum, the maximum wins. |
+| `max_setpoint_hold_cycles` | `MAX_SETPOINT_HOLD_CYCLES` | int (0–20) | `20` | Caps the hold duration including the initial cycle. Zero disables the hold. After expiry, hysteresis or an unchanged calculation can still retain the setpoint. |
 
 ---
 
@@ -419,14 +421,14 @@ Requires the Tibber integration in Home Assistant.
 
 > 🧪 Scales the planning horizon based on remaining PV forecast hours. Disabled by default.
 
-When enabled, `trajectory_steps` and the setpoint hold duration are recomputed each cycle using:
+When enabled, `trajectory_steps` and the candidate setpoint hold duration are recomputed each cycle using:
 `steps = clamp(remaining_pv_hours + PV_TRAJ_MIN_STEPS, MIN, MAX)`
 
-This gives a long horizon in the morning (many forecast hours above `pv_traj_zero_w`) that naturally shrinks toward sunset, with `pv_traj_min_steps` always reserved as a post-sunset night buffer.
+This gives a long horizon in the morning (many forecast hours above `pv_traj_zero_w`) that naturally shrinks toward sunset, with `pv_traj_min_steps` always reserved as a post-sunset night buffer. When a new setpoint starts a hold, its duration is clamped to the setpoint hold minimum and maximum. Changing the forecast does not extend an existing countdown.
 
 | Parameter | Env Var | Type | Default | Description |
 |---|---|---|---|---|
-| `pv_traj_forecast_mode_enabled` | `PV_TRAJ_FORECAST_MODE_ENABLED` | bool | `false` | 🧪 When enabled, `trajectory_steps` and setpoint hold duration are recomputed each cycle from remaining PV forecast hours plus a night buffer. |
+| `pv_traj_forecast_mode_enabled` | `PV_TRAJ_FORECAST_MODE_ENABLED` | bool | `false` | 🧪 When enabled, `trajectory_steps` and setpoint hold duration are recomputed each cycle from remaining PV forecast hours plus a night buffer. The hold duration is bounded by the configured minimum and maximum. |
 | `pv_traj_min_steps` | `PV_TRAJ_MIN_STEPS` | int (2–12) | `2` | 🧪 Minimum planning horizon in hours (night buffer and lower clamp). Must be ≤ `pv_traj_max_steps`. |
 | `pv_traj_max_steps` | `PV_TRAJ_MAX_STEPS` | int (2–12) | `12` | 🧪 Maximum planning horizon in hours. |
 | `pv_traj_threshold_w` | `PV_TRAJ_THRESHOLD_W` | float (0–20000) | `3000.0` | 🧪 Minimum current PV power (W) required to activate forecast mode. Below this `pv_traj_min_steps` is used. |

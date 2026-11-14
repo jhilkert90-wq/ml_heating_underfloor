@@ -743,11 +743,13 @@ options:
   pv_surplus_cheap_threshold_w: 3000
 
   # === Setpoint Stability ===
-  # Minimum number of cycles a computed setpoint is held before the optimizer
-  # produces a new value.  Defaults to trajectory_steps so the setpoint
-  # remains stable for the full planning horizon (e.g., 4 × 10 min = 40 min).
-  # Set to 0 to recompute every cycle.
+  # Hold the last setpoint before accepting a newly computed value.
+  # Hysteresis and smoothing remain active when hold is disabled.
+  setpoint_hold_enabled: true
+  # Forecast-driven hold durations are clamped to these bounds; the maximum
+  # wins if it is less than the minimum. One cycle is cycle_interval_minutes.
   min_setpoint_hold_cycles: 4
+  max_setpoint_hold_cycles: 20
 
   # === Forecast-Driven Trajectory Scaling ===
   # When enabled, TRAJECTORY_STEPS and the setpoint hold duration are
@@ -1247,7 +1249,9 @@ schema:
   pv_surplus_cheap_enabled: "bool"
   pv_surplus_cheap_threshold_w: "int(100,20000)"
   # Setpoint Stability
+  setpoint_hold_enabled: "bool"
   min_setpoint_hold_cycles: "int(0,20)"
+  max_setpoint_hold_cycles: "int(0,20)"
   # Forecast-Driven Trajectory Scaling
   pv_traj_forecast_mode_enabled: "bool"
   pv_traj_min_steps: "int(2,12)"

@@ -1339,16 +1339,27 @@ configuration:
     description: 'PV power threshold in Watts above which surplus heating is activated.
       Roughly 20% of your rated capacity (e.g. 3000 W for a 15 kWp system). Default:
       3000 W.'
+  setpoint_hold_enabled:
+    name: '[Trajectory] Setpoint Hold Enabled'
+    description: Hold the last setpoint for a bounded number of control cycles.
+      Disabling clears an existing hold; smoothing and hysteresis remain active.
+      Restart the add-on after changing this option.
   min_setpoint_hold_cycles:
-    name: '[Advanced] Minimum Setpoint Hold Cycles'
-    description: Minimum number of cycles a computed outlet setpoint is held before
-      the optimiser produces a new value. Defaults to trajectory_steps, keeping the
-      setpoint stable for the full planning horizon. Set to 0 to recompute every cycle.
+    name: '[Trajectory] Minimum Setpoint Hold Cycles'
+    description: Minimum hold duration in control cycles. In forecast mode the
+      dynamic duration is bounded by this minimum and the maximum. If the minimum
+      exceeds the maximum, the maximum takes precedence. Restart after changing.
+  max_setpoint_hold_cycles:
+    name: '[Trajectory] Maximum Setpoint Hold Cycles'
+    description: Maximum hold duration in control cycles, including the cycle that
+      first sets the value. The optimizer runs every cycle; after the hold expires
+      its value may still be unchanged due to hysteresis or smoothing. Restart after changing.
   pv_traj_forecast_mode_enabled:
     name: '[Advanced] Forecast-Driven Trajectory Scaling Enabled'
     description: When enabled, the planning horizon (trajectory_steps) and setpoint
       hold duration are recomputed each cycle from remaining PV forecast hours plus
-      a reserved night buffer. Steps = clamp(remaining_pv_hours + pv_traj_min_steps,
+      a reserved night buffer. The hold is bounded by the setpoint hold limits.
+      Steps = clamp(remaining_pv_hours + pv_traj_min_steps,
       min, max). More forecast solar hours remaining = longer horizon = bolder pre-heating.
   pv_traj_min_steps:
     name: '[Advanced] PV Trajectory Minimum Hours'
