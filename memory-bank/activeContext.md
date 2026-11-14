@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Separate grid-price label from cost-mode offset - 2026-11-14
+
+- **What/why:** Phase 2 step 5 logs the real grid classification with a separate cost-mode offset label; the existing `grid_price_level` is forwarded to HA with user approval.
+- **Scope:** Effective `price_level`, its HA attributes, price-aware correction thresholds and target offsets are unchanged.
+- **Validation:** All 186 wrapper, cycle-route, cost-mode and HA-client tests and whitespace checks pass after TDD reproduction.
+- **Files:** `src/model_wrapper.py`, `src/cycle_routes.py`, both existing wrapper/route test files, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Surplus reductions bypass setpoint hold and hysteresis - 2026-11-14
 
 - **What/why:** Phase 2 step 4 allows necessary heating-surplus reductions through hold and, with explicit user approval, the otherwise conflicting hysteresis.

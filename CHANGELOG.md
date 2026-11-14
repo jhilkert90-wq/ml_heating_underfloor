@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Log the classified grid price separately from cost-mode target offsets and forward the grid level to its existing HA attribute without changing effective price-level semantics.
 - Let heating surplus reductions without heat demand bypass setpoint hold and outlet hysteresis, while preserving holds on increases and existing cooling behavior.
 - Prevent gradual control from increasing the heating outlet above its baseline during room surplus without heat demand, including after target changes.
 - Use the lower heating bound for zero-sensitivity FD-Newton reductions instead of retaining an excessive outlet; the caller continues to enforce active search bounds.

@@ -1215,6 +1215,7 @@ def step_publish_auxiliary_sensors(ctx: CycleContext) -> None:
                 for k in (
                     "price_eur_kwh",
                     "price_level",
+                    "grid_price_level",
                     "price_cheap_threshold",
                     "price_expensive_threshold",
                     "price_target_offset",

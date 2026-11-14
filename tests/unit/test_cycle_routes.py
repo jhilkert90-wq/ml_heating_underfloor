@@ -51,6 +51,25 @@ def _make_ctx(**kwargs) -> CycleContext:
     return ctx
 
 
+def test_price_sensor_receives_distinct_grid_and_effective_levels(monkeypatch):
+    monkeypatch.setattr(cycle_routes, "step_publish_features", lambda ctx: None)
+    monkeypatch.setattr(
+        cycle_routes, "step_publish_building_curves", lambda ctx: None
+    )
+    ctx = _make_ctx(
+        price_data={"current_price": 0.4074},
+        metadata={
+            "price_eur_kwh": 0.4074, "price_level": "expensive",
+            "grid_price_level": "normal", "price_target_offset": -0.1,
+        },
+    )
+    cycle_routes.step_publish_auxiliary_sensors(ctx)
+    info = ctx.ha_client.publish_price_level.call_args.args[0]
+    assert info["grid_price_level"] == "normal"
+    assert info["price_level"] == "expensive"
+    assert info["price_target_offset"] == -0.1
+
+
 def test_near_controller_snapshot_uses_published_target_and_skips_shadow(
     monkeypatch,
 ):

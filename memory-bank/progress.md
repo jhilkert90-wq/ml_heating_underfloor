@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Separate grid-price label from cost-mode offset - 2026-11-14
+
+**Status:** IMPLEMENTED - all 186 wrapper, cycle-route, cost-mode and HA-client tests pass.
+
+**Implementation summary:** Phase 2 step 5 stores the classifier's level directly in `grid_price_level` and logs cost-mode offsets separately from that grid label. `price_level` remains the effective cost-mode classification used by trajectory overshoot thresholds and HA `price_level`/`effective_price_level` attributes. With user approval, the existing grid field is also forwarded through auxiliary publication instead of being dropped and falling back to the effective level.
+
+**Validation:** TDD reproduced a normal-grid negative cost offset logged as expensive and missing grid metadata at publication. Positive/negative offsets retain effective classifications and target offsets. No control calculation changed.
+
+**Files changed:** `src/model_wrapper.py`, `src/cycle_routes.py`, `tests/unit/test_model_wrapper.py`, `tests/unit/test_cycle_routes.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Surplus reductions bypass setpoint hold and hysteresis - 2026-11-14
 
 **Status:** IMPLEMENTED - all 84 cycle-route tests pass.

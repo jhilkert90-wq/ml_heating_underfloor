@@ -1245,6 +1245,44 @@ class TestForecastTrajectoryHeatingOffset:
         assert meta["price_target_offset"] == pytest.approx(-0.2)
         assert meta["price_cost_mode"] is True
 
+    @pytest.mark.parametrize("offset,effective_level", [
+        (-0.1, "expensive"), (0.1, "cheap"),
+    ])
+    def test_cost_log_keeps_grid_level_and_effective_metadata(
+        self, wrapper, monkeypatch, caplog, offset, effective_level
+    ):
+        from src.price_optimizer import PriceLevel
+
+        monkeypatch.setattr(config, "PV_TRAJ_FORECAST_MODE_ENABLED", False)
+        monkeypatch.setattr(config, "PV_SURPLUS_CHEAP_ENABLED", False)
+        monkeypatch.setattr(config, "ELECTRICITY_PRICE_ENABLED", True)
+        monkeypatch.setattr(config, "PRICE_COST_MODE_ENABLED", True)
+        optimizer = MagicMock()
+        optimizer.classify_price.return_value = PriceLevel.NORMAL
+        optimizer.get_target_offset.return_value = 0.0
+        optimizer.get_price_info.return_value = {
+            "price_level": "cheap", "price_eur_kwh": 0.4074,
+        }
+        features = self._features(0.0, target=22.5)
+        features["_electricity_price"] = {
+            "current_price": 0.4074, "today": [0.3, 0.4074, 0.5],
+            "cost_target_offset": offset,
+        }
+
+        with patch(
+            "src.price_optimizer.get_price_optimizer", return_value=optimizer
+        ), caplog.at_level("INFO"):
+            _, metadata = wrapper.calculate_optimal_outlet_temp(features)
+
+        assert metadata["grid_price_level"] == "normal"
+        assert metadata["price_level"] == effective_level
+        assert metadata["price_target_offset"] == offset
+        assert (
+            f"Price normal (cost-mode offset {offset:+.1f}): target 22.5"
+            in caplog.text
+        )
+        assert "Price expensive:" not in caplog.text
+
     def test_target_rt_still_drives_outlet_when_overshoot_correction_disabled(
         self, wrapper, monkeypatch
     ):
