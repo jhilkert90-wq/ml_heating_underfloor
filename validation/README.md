@@ -31,6 +31,103 @@ validation/
 
 ## Usage
 
+### Offline trajectory-control comparison (Phase 3)
+
+Run [compare_trajectory_control.py](compare_trajectory_control.py) **in a separate
+offline process**, from the repository root:
+
+```powershell
+python -m validation.compare_trajectory_control 'C:\path\production.log' --comfort-band 0.1
+# Optional override:
+python -m validation.compare_trajectory_control 'C:\path\production.log' --output 'C:\path\comparison' --comfort-band 0.1
+```
+
+Without `--output`, all three files are written next to the effective
+`UNIFIED_STATE_FILE` (including the existing shadow-path resolution), not next
+to the input log or into a fixed session folder. For the supplied production
+configuration this is `/config/ml_heating/`. The directory setting is read
+without loading or changing the existing thermal state. An explicit `--output`
+still takes precedence. Output files replace the previous offline run and are
+ignored by Git. This is not an automatic per-cycle add-on export: files are
+generated only when the offline command is run.
+
+This tool has no live-control integration, HA client or publishing step. Model
+state is isolated in a temporary directory. Its explicit `OFFLINE_PROFILE`
+temporarily replaces process-local settings and restores them afterwards; never
+call it inside a running add-on. It does not edit production configuration,
+learn channel parameters, change cooling, or remove production stabilizers.
+
+The comparison distinguishes the recorded production output, the current
+corrected search plus FD-Newton, and a sampled one-dimensional alternative.
+The alternative evaluates the **same existing simulator closure** over a 0.1 K
+grid, including exact bounds and the recorded baseline. Its objective is
+`sum(dt_h * (below_band_K**2 + above_band_K**2))` over four hours in ten-minute
+steps, with equal under-/overshoot weights and a +/-0.1 K comfort band around the
+price-adjusted target. There is no separate Newton post-correction. Equal-cost
+candidates prefer the lower outlet when currently above the comfort band;
+otherwise they prefer the smallest baseline change. Both methods pass through
+the unchanged gradual-control, EMA and hold/hysteresis functions.
+
+Outputs:
+- `trajectory_control_comparison.log`: UTF-8 diagnostic log for the offline run,
+  including existing controller messages and a completion marker.
+- `trajectory_control_comparison.csv`: per-cycle raw and publishable outlets,
+  separate under-/overshoot degree-hours and durations, squared violation scores,
+  temperature extrema, execution timings and trajectory cross-check errors.
+- `trajectory_control_summary.json`: input/script hashes, full offline profile,
+  aggregate metrics, excluded cycles and reconstruction limitations.
+
+#### Production-log comparison: 2026-11-14
+
+The supplied log has 23 feature snapshots, all above room target; it contains no
+real undershoot case. Twenty-one cycles from 19:01 to 22:27 were reconstructable.
+Excluded: the initial partial 18:41 cycle, 18:51 without a same-cycle model
+snapshot, and the 19:31 grace cycle without features. No previous/future cycle's
+missing data is silently substituted.
+
+GM and required/actual-supply attributes are absent. Sensor start/runtime windows
+are therefore **frozen for both methods**, including known starts and runtimes.
+For unknown idle starts at 19:57 and 20:07, an immediate-start/unlimited-runtime
+scenario supplements the historical no-start window. These are explicit
+conditional scenarios, not a reconstruction of Phase 1's candidate-dependent
+start/runtime adjustments. Other assumptions include cloud cover 50%, rounded
+search bounds, unchanged previous room target and zero remaining hold unless an
+explicit hold line supplies the count. The profile includes assumptions where
+the original configuration is not available.
+
+| Cycle / historical window | Logged published | Corrected raw / publishable | Alternative raw / publishable |
+|---|---:|---:|---:|
+| 19:21 | 24.6 C | 23.4 / 24.3 C | 24.5 / 24.6 C |
+| 19:47 | 25.3 C | 24.0 / 24.1 C | 25.1 / 24.6 C |
+| 20:07 | 26.1 C | 24.0 / 24.5 C | 24.0 / 24.5 C |
+| 21:07 | 25.3 C | 23.9 / 24.5 C | 23.9 / 24.5 C |
+
+Across the 21 historical-window scenarios, 7 raw selections and 4 publishable
+values differ; 17 publishable values agree. Neither method increases above the
+recorded baseline in any of the 23 cycle/scenario rows. Mean simulated squared
+comfort violation is 2.122112 versus 2.100186 K^2 h before stabilization
+(1.03% lower for the alternative), and 2.139637 versus 2.134692 K^2 h after
+stabilization (0.23% lower). These are means of overlapping, constant-outlet
+four-hour predictions, **not measured comfort or energy savings**. Desktop
+execution was approximately 14-16 ms for the current search/correction and
+31-35 ms for the alternative; this is not a Pi benchmark.
+
+The model is not monotonically warmer for every higher outlet near its pump
+gate. For example, at 19:21 a constant 23.4 C outlet predicts 23.348 C after four
+hours, whereas 24.5 C predicts 23.294 C with the same frozen 43-minute HP runtime
+and 2.08 K loop delta. The optimizer can exploit this model response; it is not
+proof that raising the real outlet during surplus improves comfort. The logged
+trajectory cross-check differs by up to 0.0403 K, even when using its own logged
+verification outlet rather than the post-correction output. Missing candidate
+windows and rounded telemetry still prevent an exact replay.
+
+**Conclusion:** the new objective is simpler, but this log demonstrates little
+additional simulated benefit over the bugfixed controller and does not justify
+a live switch or removing EMA/hold/gates. Next evidence needed: real undershoot
+logs, complete decision-time HP sensor attributes/configuration, and validation
+of the model response near the pump gate. Grace double-search and HA fetch
+errors remain report-only and unchanged.
+
 ### Running Individual Scripts
 
 ```bash

@@ -1,5 +1,32 @@
 # Active Context - Current Work & Decision State
 
+### Forecast accuracy ingestion fixed - 2026-11-15
+
+- **What/why:** User approved repairing the empty-accuracy defect. Forecast state now retains the previous hourly anchor; the same actual-pair handoff runs after live rollover and history repair. Repairs and completed comparisons are persisted immediately, including across restart.
+- **Recovery:** Stale/incomplete anchors no longer suppress retries merely through a `counter_anchor` label or a once-per-hour refresh marker. A stale previous boundary can be reconstructed from two hours of history. HA fallback also runs when Influx has readings but lacks aligned boundaries. Fully aligned live anchors still require no history query.
+- **Unchanged:** Alignment tolerance, maximum interpolation gap, reset/finite-value/defrost checks, first-write-wins prediction semantics, COP learning/calibration, model parameters and outlet/cooling control. Shared validation now reports concrete rejection reasons at INFO.
+- **Verified:** Four pre-fix regression failures; five new cases now green, 123 focused passes, 412 baseline-validity parity checks and Pylance syntax validation. Full suite: 2136 passed plus the same accepted 2 baseline failures / 8 unavailable-Docker errors.
+- **Operational limit:** Not deployed or pushed. Repaired accuracy is included at the next normal sensor publication; valid adjacent-hour counters and a stored prediction are still necessary. Missing/invalid observations remain excluded, not invented; the historical production forecast state was not supplied.
+- **Files:** `src/forecast_accuracy.py`, `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### State-adjacent offline exports and empty forecast accuracy - 2026-11-14
+
+- **Changed:** Offline CSV/JSON and the new UTF-8 diagnostic log default to the effective `UNIFIED_STATE_FILE` directory, with `--output` preserved. Generated filenames are ignored by Git. Current reports were regenerated beside the workspace state without changing its checksum. There is still no automatic per-cycle export, live shadow optimizer or Pi deployment.
+- **Accuracy evidence:** The supplied sensor has consistent 48-slot component totals; its current 0.0481 kWh includes heating 0.0013 plus standby 0.0468. All accuracy counts are zero, independently of COP calibration. The source log records 23 pending-count messages but no closed hours.
+- **Reproduced defect:** `_record_interval()` replaces the old anchor with a partial one at hour rollover; `_refresh_hour_anchor()` can repair it from history without retrying accuracy or retaining the old hour for matching. A valid 0.5/2.0 kWh actual pair was available in an isolated reproduction, while `n` stayed zero until explicitly recorded.
+- **Additional limit:** Idle HA counter timestamps can be one hour stale. Forecast coverage still labels these `counter_anchor`, but accuracy rejects them beyond five minutes. Do not weaken alignment or invent measurements. No forecast/accuracy code was modified; exact production rejection reasons need the unsupplied `heat_forecast_state.json`.
+- **Validation:** 102 focused tests pass, including two new real CLI subprocess cases with state-file preservation. Full suite: 2131 passes plus unchanged known 2 baseline failures / 8 Docker errors. Comparison control outputs are unchanged.
+- **Files:** `validation/compare_trajectory_control.py`, its unit tests, `.gitignore`, `validation/README.md`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+### Offline joint-trajectory comparison (Phase 3) - 2026-11-14
+
+- **What/why:** Implemented the user-approved offline comparison with a +/-0.1 K comfort band and equal time-integrated squared under-/overshoot costs, using the existing simulator closure and unchanged gradual/EMA/hold steps. The new selector has no separate Newton correction.
+- **Scope/approval:** User approved conditional start scenarios instead of supplying missing historical GM/supply attributes. All candidate windows remain frozen for this comparison; unknown idle starts get no-start and immediate-start/unlimited-runtime variants. No production module, config default, model/learning parameter or cooling path was modified; no live shadow controller or HA publish was added.
+- **Findings:** 21 historical-window cycles plus two extra scenarios. At 20:07 logged publication was 26.1 C; both computed methods select raw 24.0 C / publishable 24.5 C. Seventeen of 21 publishable values agree; mean simulated comfort-cost benefit is only 0.23% after stabilization (1.03% raw). No above-baseline increases occur. Some higher alternative outlets exploit non-monotonic simulated pump-gate behavior, not demonstrated real-world cooling. The trajectory cross-check mismatch reaches 0.0403 K.
+- **Limits/next:** No real undershoot in the log; missing start/runtime attributes and full original settings prevent exact replay. Hold/cloud/bound assumptions and excluded cycles are explicit in the report. Validate decision-time state, physical pump response and real undershoot before considering a live switch or removing stabilizers. Grace double-search and HA fetch errors remain report-only.
+- **Validation:** 12 new tests, 294 targeted passes; full suite 2129 passes plus unchanged known 2 baseline failures / 8 unavailable-Docker errors. No existing expectations changed. Pylance has no error diagnostics for the two new Python files.
+- **Files:** `validation/compare_trajectory_control.py`, `tests/unit/test_compare_trajectory_control.py`, `validation/README.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Accurate heating search and correction logs - 2026-11-14
 
 - **What/why:** Phase 2 step 6 distinguishes DEBUG search collapse from true boundary saturation and logs requested/clamped heating correction values. Interior discontinuities never receive false bound labels, as approved by the user.

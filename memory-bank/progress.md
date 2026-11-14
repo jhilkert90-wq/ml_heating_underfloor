@@ -1,5 +1,41 @@
 # ML Heating System - Current Progress
 
+## Repair forecast accuracy hour ingestion - 2026-11-15
+
+**Status:** IMPLEMENTED AND VERIFIED; NOT DEPLOYED.
+
+**Implementation summary:** Retain the previous hourly counter anchor in forecast state and reuse the same accuracy handoff after both live rollover and history repair. Reconstruct a stale previous boundary when needed, retry incomplete/stale history on subsequent forecast cycles, and fall back to HA when Influx contains readings but cannot supply aligned anchors. Save repaired anchors and completed pairs immediately, so restarting between rollover/repair or after repair does not lose the comparison. Already aligned live anchors retain the no-history-query fast path; pending predictions remain first-write-wins and close once.
+
+**Validity and limits:** Shared anchor validation supplies INFO rejection reasons for partial coverage, missing counters and stale timestamps. Counter resets and incomplete pairs remain rejected. No alignment tolerance, interpolation-gap default, COP learning/calibration, model parameter, outlet control or cooling behavior changed. The 48-slot electrical total still differs intentionally from the heating-only accuracy series. After deployment, repaired actuals appear in the sensor's next normal publication; a valid completed forecast hour is still required. No historical predictions or measurements are fabricated.
+
+**Validation:** Four new regression cases failed before the production fix; five new cases now cover rollover/repair across restart (including a stale previous anchor), delayed history, stale-Influx/valid-HA fallback and the unchanged aligned-live fast path. All 123 targeted tests pass. A separate 412-case comparison with pre-fix accuracy validation confirms unchanged acceptance/normalization for timestamp offsets, missing/non-finite/reset counters and defrost modes. Pylance syntax checks pass for all three Python files with no error diagnostics in the changed production files. Full suite: 2136 passed, unchanged two accepted baseline failures and eight missing-Docker errors; no existing test expectations changed.
+
+**Files changed:** `src/forecast_accuracy.py`, `src/heat_forecast.py`, `tests/unit/test_heat_forecast.py`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## State-adjacent offline exports and empty forecast accuracy analysis - 2026-11-14
+
+**Status:** EXPORT IMPLEMENTED; ACCURACY ANALYZED ONLY.
+
+**Implementation summary:** The offline comparison now defaults to the directory of the effective unified thermal state path; `--output` remains an override. A UTF-8 run log joins CSV/JSON, and the three generated filenames are ignored by Git. All three reports were regenerated beside the workspace's `unified_thermal_state.json` using an explicit process-local state-path setting; the existing state checksum remained unchanged. This is still a manually invoked offline command, not live add-on/shadow logging.
+
+**Sensor analysis:** The read-only WP load forecast snapshot has consistent 48-slot electrical totals but no completed accuracy pairs. Reproduced an unchanged-engine defect: a live partial anchor overwrites the previous hour; history repair produces a valid boundary but never hands it back to accuracy. With valid 0.5 kWh electrical / 2.0 kWh thermal actuals, `n` remains zero until the omitted pairing is explicitly performed. Stale idle-counter timestamps independently fail the five-minute accuracy gate despite `counter_anchor` coverage. The production log has 23 pending-count messages, zero closed-hour messages and stale anchor examples. Full production forecast state was not provided; exact per-hour rejection reasons are unknown. No forecast/accuracy logic or tolerances were changed.
+
+**Validation:** TDD reproduced the required-output argument and missing run log. Both new subprocess CLI cases pass, covering the default directory, explicit override and byte-identical existing state. All 102 comparison/forecast tests pass; full suite 2131 passed with unchanged two known baseline failures and eight unavailable-Docker errors. Existing comparison results remain unchanged.
+
+**Files changed:** `validation/compare_trajectory_control.py`, `tests/unit/test_compare_trajectory_control.py`, `.gitignore`, `validation/README.md`, `docs/HEAT_FORECAST_OPEN_ITEMS.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
+## Offline joint-trajectory comparison (Phase 3) - 2026-11-14
+
+**Status:** IMPLEMENTED AND COMPARED OFFLINE - no production path, configuration defaults, learning or cooling changes.
+
+**Implementation summary:** With user approval, compare the corrected search/FD controller against a 0.1 K sampled optimizer minimizing time-integrated squared deviations outside a +/-0.1 K comfort band, equally weighting under-/overshoot. The alternative reuses the current controller's exact simulator closure, omits Newton post-correction, and runs through identical existing gradual/EMA/hold functions. Parsing isolates cycle boundaries and decision-time start-window reads, explicitly excludes incomplete cycles, and writes reusable CSV/JSON reports. Missing GM/supply attributes require frozen sensor windows for both methods; unknown idle starts also receive an immediate-start scenario. This is a conditional, one-cycle comparison, not live shadow control or an exact Phase-1 replay.
+
+**Results:** 21 reconstructed historical-window cycles, plus two immediate-start scenarios. At 20:07 both computed methods return raw 24.0 C and publishable 24.5 C versus logged 26.1 C. Seven raw and four publishable selections differ over the 21 historical windows; mean simulated comfort cost improves only 1.03% raw / 0.23% after stabilization. No publishable output exceeds its recorded baseline. Non-monotonic pump-gate response explains why some higher alternatives score better; no physical improvement or energy savings is established. Maximum logged-trajectory cross-check mismatch is 0.0403 K. Real undershoot evidence is absent.
+
+**Validation:** TDD covers whole-horizon scoring, symmetric/time-weighted band violations, flat-response selection, responsive undershoot, invalid trajectories, cycle isolation, decision-time sensor alignment and the no-network/no-production-state 20:07 pipeline. All 294 targeted tests pass (12 new). Full Python 3.13 suite: 2129 passed, the same two known baseline failures and eight missing-Docker errors; no existing test expectations changed. Pylance reports no errors in either new Python file. See `validation/README.md` for method, example results and all assumptions. Live switch, stabilization ablation, start-state reconstruction and real undershoot validation remain open.
+
+**Files changed:** `validation/compare_trajectory_control.py`, `tests/unit/test_compare_trajectory_control.py`, `validation/README.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Accurate heating search and correction logs - 2026-11-14
 
 **Status:** IMPLEMENTED AND ACCEPTED - all 282 targeted tests pass; the user explicitly accepted the unchanged baseline/full-suite limitations for Phase 2.

@@ -15,3 +15,6 @@ tmpib_fd2s7.tmp
 Logs/74f4b7ef_ml_heating_underfloor_2026-05-05T04-23-13.693Z
 Logs_and_models/
 Logs_and_models/unified_thermal_state.json
+trajectory_control_comparison.csv
+trajectory_control_summary.json
+trajectory_control_comparison.log

@@ -1433,7 +1433,7 @@ class HeatForecastEngine:
                     )
                 except (KeyError, TypeError, ValueError):
                     LOGGER.info("Ignoring malformed heating counter anchor timestamp")
-            previous_anchor = self.state.get("hour_anchor")
+            self.state["previous_hour_anchor"] = hour_anchor
             self.state["hour_anchor"] = {
                 "hour_utc": hour_key,
                 "sample_time_utc": now_utc.isoformat(),
@@ -1446,22 +1446,26 @@ class HeatForecastEngine:
                     "counter_anchor" if usable_counter_anchor else "partial"
                 ),
             }
-            actual = forecast_accuracy.actual_from_anchors(
-                previous_anchor,
-                self.state["hour_anchor"],
-                defrost_handling=config.COP_DEFROST_HANDLING,
-                defrost_el_in_heating_counter=(
-                    config.COP_DEFROST_EL_IN_HEATING_COUNTER == "true"
-                    or (
-                        config.COP_DEFROST_EL_IN_HEATING_COUNTER == "auto"
-                        and self.state.get("defrost_el_in_heating_counter")
-                        != "false"
-                    )
-                ),
-            )
-            if actual:
-                forecast_accuracy.record_actual(self.state, *actual)
+            self._record_hour_accuracy()
         return deltas
+
+    def _record_hour_accuracy(self) -> None:
+        from . import config
+
+        actual = forecast_accuracy.actual_from_anchors(
+            self.state.get("previous_hour_anchor"),
+            self.state.get("hour_anchor"),
+            defrost_handling=config.COP_DEFROST_HANDLING,
+            defrost_el_in_heating_counter=(
+                config.COP_DEFROST_EL_IN_HEATING_COUNTER == "true"
+                or (
+                    config.COP_DEFROST_EL_IN_HEATING_COUNTER == "auto"
+                    and self.state.get("defrost_el_in_heating_counter") != "false"
+                )
+            ),
+        )
+        if actual:
+            forecast_accuracy.record_actual(self.state, *actual)
 
     def _record_daily_energy(
         self,
@@ -1833,15 +1837,20 @@ class HeatForecastEngine:
         )
         hour_key = hour_start.isoformat()
         anchor = self.state.get("hour_anchor")
-        if (
+        previous = self.state.get("previous_hour_anchor")
+        previous_start = hour_start - timedelta(hours=1)
+        repair_previous = (
+            isinstance(previous, dict)
+            and previous.get("hour_utc") == previous_start.isoformat()
+            and forecast_accuracy.anchor_rejection_reason(previous) is not None
+        )
+        current_usable = (
             isinstance(anchor, dict)
             and anchor.get("hour_utc") == hour_key
-            and anchor.get("coverage") == "counter_anchor"
-        ):
+            and forecast_accuracy.anchor_rejection_reason(anchor) is None
+        )
+        if current_usable and not repair_previous:
             return
-        if self.state.get("hour_anchor_refresh_hour") == hour_key:
-            return
-        self.state["hour_anchor_refresh_hour"] = hour_key
 
         counters = (
             ("heating_el", config.HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID),
@@ -1853,7 +1862,7 @@ class HeatForecastEngine:
         )
         entity_ids = list(dict.fromkeys(entity for _, entity in counters if entity))
         history = {entity: [] for entity in entity_ids}
-        start = hour_start - timedelta(hours=1)
+        start = hour_start - timedelta(hours=2 if repair_previous else 1)
         if influx_service is not None:
             history = _fetch_influx_history_in_blocks(
                 influx_service,
@@ -1871,6 +1880,7 @@ class HeatForecastEngine:
 
         def latest_anchor(
             samples: Sequence[tuple[datetime, float]],
+            boundary: datetime,
         ) -> tuple[datetime, float] | None:
             normalized = sorted(
                 (stamp.astimezone(timezone.utc), value) for stamp, value in samples
@@ -1878,22 +1888,56 @@ class HeatForecastEngine:
             before = [
                 item
                 for item in normalized
-                if item[0] <= hour_start and hour_start - item[0] <= timedelta(hours=1)
+                if item[0] <= boundary and boundary - item[0] <= timedelta(hours=1)
             ]
             latest = before[-1] if before else None
-            if latest is None or latest[0] == hour_start:
+            if latest is None or latest[0] == boundary:
                 return latest
-            after = next((item for item in normalized if item[0] > hour_start), None)
+            after = next((item for item in normalized if item[0] > boundary), None)
             if after is None or after[0] - latest[0] > max_gap:
                 return latest
             if after[1] < latest[1]:
                 return latest
             # Counter value at the full hour, interpolated between neighbours.
-            fraction = (hour_start - latest[0]) / (after[0] - latest[0])
-            return hour_start, latest[1] + (after[1] - latest[1]) * fraction
+            fraction = (boundary - latest[0]) / (after[0] - latest[0])
+            return boundary, latest[1] + (after[1] - latest[1]) * fraction
 
-        heating_entity = config.HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID
-        if not latest_anchor(history.get(heating_entity, [])) and ha_client is not None:
+        def history_anchor(boundary: datetime) -> dict[str, Any]:
+            key = boundary.isoformat()
+            readings: dict[str, float | None] = {}
+            reading_times: dict[str, str] = {}
+            energy_coverage: dict[str, bool] = {}
+            for name, entity_id in counters:
+                sample = (
+                    latest_anchor(history.get(entity_id, []), boundary)
+                    if entity_id else None
+                )
+                readings[name] = sample[1] if sample else None
+                reading_times[name] = sample[0].isoformat() if sample else key
+                energy_coverage[name] = bool(sample and sample[0] == boundary)
+            return {
+                "hour_utc": key,
+                "sample_time_utc": key,
+                "reading_times_utc": reading_times,
+                "readings": readings,
+                "energy_so_far": {name: 0.0 for name in readings},
+                "energy_coverage_hours": {name: 0.0 for name in readings},
+                "energy_coverage": energy_coverage,
+                "coverage": (
+                    "counter_anchor" if readings["heating_el"] is not None else "partial"
+                ),
+            }
+
+        candidate = history_anchor(hour_start)
+        previous_candidate = history_anchor(previous_start) if repair_previous else None
+        if ha_client is not None and (
+            forecast_accuracy.anchor_rejection_reason(candidate) is not None
+            or (
+                repair_previous
+                and forecast_accuracy.anchor_rejection_reason(previous_candidate)
+                is not None
+            )
+        ):
             ha_history = _fetch_ha_history(ha_client, entity_ids, start, now)
             history = {
                 entity: _merge_samples(
@@ -1901,45 +1945,31 @@ class HeatForecastEngine:
                 )
                 for entity in entity_ids
             }
-
-        readings: dict[str, float | None] = {}
-        reading_times: dict[str, str] = {}
-        energy_coverage: dict[str, bool] = {}
-        for name, entity_id in counters:
-            sample = latest_anchor(history.get(entity_id, [])) if entity_id else None
-            readings[name] = sample[1] if sample else None
-            reading_times[name] = sample[0].isoformat() if sample else hour_key
-            energy_coverage[name] = bool(sample and sample[0] == hour_start)
+            candidate = history_anchor(hour_start)
+            previous_candidate = history_anchor(previous_start) if repair_previous else None
 
         LOGGER.info(
             "Hour anchor %s: heating_el=%s at %s (exact boundary=%s)",
             hour_key,
-            readings.get("heating_el"),
-            reading_times.get("heating_el"),
-            energy_coverage.get("heating_el"),
+            candidate["readings"].get("heating_el"),
+            candidate["reading_times_utc"].get("heating_el"),
+            candidate["energy_coverage"].get("heating_el"),
         )
-        if readings.get("heating_el") is not None:
-            self.state["hour_anchor"] = {
-                "hour_utc": hour_key,
-                "sample_time_utc": hour_key,
-                "reading_times_utc": reading_times,
-                "readings": readings,
-                "energy_so_far": {key: 0.0 for key in readings},
-                "energy_coverage_hours": {key: 0.0 for key in readings},
-                "energy_coverage": energy_coverage,
-                "coverage": "counter_anchor",
-            }
+        if candidate["readings"].get("heating_el") is not None and (
+            not current_usable
+            or forecast_accuracy.anchor_rejection_reason(candidate) is None
+        ):
+            self.state["hour_anchor"] = candidate
         elif not isinstance(anchor, dict) or anchor.get("hour_utc") != hour_key:
-            self.state["hour_anchor"] = {
-                "hour_utc": hour_key,
-                "sample_time_utc": now.astimezone(timezone.utc).isoformat(),
-                "reading_times_utc": reading_times,
-                "readings": readings,
-                "energy_so_far": {key: 0.0 for key in readings},
-                "energy_coverage_hours": {key: 0.0 for key in readings},
-                "energy_coverage": energy_coverage,
-                "coverage": "partial",
-            }
+            candidate["sample_time_utc"] = now.astimezone(timezone.utc).isoformat()
+            self.state["hour_anchor"] = candidate
+        if (
+            repair_previous
+            and forecast_accuracy.anchor_rejection_reason(previous_candidate) is None
+        ):
+            self.state["previous_hour_anchor"] = previous_candidate
+        self._record_hour_accuracy()
+        self.store.save(self.state)
 
     def _backfill_defrost_power_history(
         self,

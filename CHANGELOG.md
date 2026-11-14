@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Persist UTF-8 offline comparison diagnostics alongside its CSV/JSON reports.
+- Add an offline-only comparison of the corrected heating controller and a joint trajectory comfort-band optimizer, with explicit missing-start scenarios, shared simulator/stabilizers, CSV/JSON results and reconstruction limits; no live-control or configuration changes.
+
+### Changed
+- Default offline comparison exports to the effective unified-state directory while retaining an explicit output override and leaving the existing state file unchanged.
+
+### Fixed
+- Close forecast accuracy hours after counter-history repair, retain the previous anchor across restarts, retry stale/incomplete history with HA fallback and log rejection reasons without weakening counter validity checks.
+- Log heating search collapse at DEBUG, identify true boundary saturation with its signed end error, and show both requested and clamped correction outlets.
+- Log the classified grid price separately from cost-mode target offsets and forward the grid level to its existing HA attribute without changing effective price-level semantics.
+- Let heating surplus reductions without heat demand bypass setpoint hold and outlet hysteresis, while preserving holds on increases and existing cooling behavior.
+- Prevent gradual control from increasing the heating outlet above its baseline during room surplus without heat demand, including after target changes.
+- Use the lower heating bound for zero-sensitivity FD-Newton reductions instead of retaining an excessive outlet; the caller continues to enforce active search bounds.
+- Keep heating outlet reference regularization one-sided outside the search tolerance, preventing reference-driven increases during overshoot and decreases during undershoot.
+- Derive heating candidate start delays from degree minutes when the external sensor is idle without a known start time, rather than suppressing heat-pump output for every candidate. Preserve existing start/runtime handling in other cases.
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

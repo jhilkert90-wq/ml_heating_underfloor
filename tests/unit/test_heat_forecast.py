@@ -2194,6 +2194,167 @@ def test_forecast_accuracy_rejects_unaligned_thermal_anchors_and_normalizes_defr
     assert actual_from_anchors(old, new) is None
 
 
+def _accuracy_rollover(
+    monkeypatch, tmp_path, *, stale_previous=False, rollover_minutes=67
+):
+    from src import config, forecast_accuracy as fa
+
+    entities = {
+        "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID": "el",
+        "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID": "th",
+        "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID": "",
+        "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID": "",
+        "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID": "",
+        "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID": "",
+    }
+    for key, entity in entities.items():
+        monkeypatch.setattr(config, key, entity)
+    monkeypatch.setattr(config, "COP_CALIBRATION_ENABLED", False)
+    hour = datetime(2026, 11, 14, 10, tzinfo=timezone.utc)
+    engine = HeatForecastEngine(str(tmp_path / "accuracy.json"))
+    for lead in fa.LEADS:
+        start = hour - timedelta(hours=lead)
+        fa.record_predictions(
+            engine.state, now=start,
+            starts=[start + timedelta(hours=i) for i in range(25)],
+            el_kwh=[0.4] * 25, th_kwh=[1.8] * 25,
+        )
+    history = {"el": [], "th": []}
+    for minutes in (-3, 7, 57, 67):
+        stamp = hour + timedelta(minutes=minutes)
+        history["el"].append((stamp, 100.0 + minutes / 120.0))
+        history["th"].append((stamp, 300.0 + minutes / 30.0))
+    for minutes in (0, 57, rollover_minutes):
+        now = hour + timedelta(minutes=minutes)
+        stamp = hour - timedelta(hours=1) if stale_previous and minutes == 0 else now
+        engine._record_interval(
+            now=now,
+            states={
+                entity: {"state": str(base + minutes / divisor),
+                         "last_updated": stamp.isoformat()}
+                for entity, base, divisor in (("el", 100.0, 120.0), ("th", 300.0, 30.0))
+            },
+            outdoor_c=4.0,
+        )
+    engine.state["last_backfill_at"] = hour.isoformat()
+    engine.state["defrost_power_history_attempted_at"] = hour.isoformat()
+    engine.store.save(engine.state)
+    return engine, hour, history
+
+
+def test_accuracy_keeps_live_boundary_fast_path(monkeypatch, tmp_path):
+    from src import forecast_accuracy as fa
+
+    engine, hour, _ = _accuracy_rollover(
+        monkeypatch, tmp_path, rollover_minutes=60
+    )
+    influx = SimpleNamespace(
+        fetch_counter_history=lambda *a, **kw: pytest.fail(
+            "Aligned live anchors must not require a history query"
+        )
+    )
+
+    engine._refresh_hour_anchor(
+        now=hour + timedelta(hours=1), influx_service=influx, ha_client=None
+    )
+
+    assert fa.summary(engine.state, hour)["lead_1h"]["24h"]["el"]["n"] == 1
+    assert len(engine.state["forecast_accuracy"]["history"]) == 3
+
+
+@pytest.mark.parametrize("stale_previous", [False, True])
+def test_accuracy_closes_repaired_hour_across_restart(
+    monkeypatch, tmp_path, stale_previous
+):
+    from src import forecast_accuracy as fa
+
+    original, hour, history = _accuracy_rollover(
+        monkeypatch, tmp_path, stale_previous=stale_previous
+    )
+    engine = HeatForecastEngine(str(original.store.path))
+    now = hour + timedelta(hours=1, minutes=7)
+    influx = SimpleNamespace(
+        fetch_counter_history=lambda requested, start, stop, **kw: {
+            entity: [(stamp, value) for stamp, value in history[entity]
+                     if start <= stamp <= stop]
+            for entity in requested
+        }
+    )
+    assert fa.summary(engine.state, now)["lead_1h"]["24h"]["el"]["n"] == 0
+
+    engine._backfill(
+        now=now, influx_service=influx, outdoor_entity_id="outdoor"
+    )
+    engine._backfill(
+        now=now + timedelta(minutes=10), influx_service=influx,
+        outdoor_entity_id="outdoor",
+    )
+
+    restarted = HeatForecastEngine(str(engine.store.path))
+    for lead in fa.LEADS:
+        metrics = fa.summary(restarted.state, now)[f"lead_{lead}h"]["24h"]
+        assert metrics["el"]["n"] == 1
+        assert metrics["el"]["bias_kwh"] == pytest.approx(-0.1)
+        assert metrics["th"]["bias_kwh"] == pytest.approx(-0.2)
+    assert len(restarted.state["forecast_accuracy"]["history"]) == 3
+
+
+def test_accuracy_retries_stale_history_without_relaxing_alignment(
+    monkeypatch, tmp_path, caplog
+):
+    from src import forecast_accuracy as fa
+
+    engine, hour, complete = _accuracy_rollover(monkeypatch, tmp_path)
+    now = hour + timedelta(hours=1, minutes=7)
+    history = {
+        entity: [(hour + timedelta(minutes=40), base)]
+        for entity, base in (("el", 100.0 + 40 / 120), ("th", 300.0 + 40 / 30))
+    }
+    influx = SimpleNamespace(
+        fetch_counter_history=lambda requested, *a, **kw: {
+            entity: history[entity] for entity in requested
+        }
+    )
+    with caplog.at_level("INFO", logger="src.forecast_accuracy"):
+        engine._refresh_hour_anchor(now=now, influx_service=influx, ha_client=None)
+    assert fa.summary(engine.state, now)["lead_1h"]["24h"]["el"]["n"] == 0
+    assert "heating_el" in caplog.text and "timestamp" in caplog.text
+
+    history = complete
+    engine._refresh_hour_anchor(
+        now=now + timedelta(minutes=10), influx_service=influx, ha_client=None
+    )
+    assert fa.summary(engine.state, now)["lead_1h"]["24h"]["el"]["n"] == 1
+
+
+def test_accuracy_repairs_stale_influx_with_aligned_ha_history(
+    monkeypatch, tmp_path
+):
+    from src import forecast_accuracy as fa
+
+    engine, hour, history = _accuracy_rollover(monkeypatch, tmp_path)
+    now = hour + timedelta(hours=1, minutes=7)
+    influx = SimpleNamespace(
+        fetch_counter_history=lambda requested, *a, **kw: {
+            entity: [(hour, samples[0][1])]
+            for entity, samples in history.items() if entity in requested
+        }
+    )
+    ha = SimpleNamespace(
+        get_history_bulk=lambda requested, *a: [
+            [{"entity_id": entity, "state": str(value),
+              "last_updated": stamp.isoformat()}
+             for stamp, value in history[entity]]
+            for entity in requested
+        ]
+    )
+
+    engine._refresh_hour_anchor(now=now, influx_service=influx, ha_client=ha)
+
+    assert fa.summary(engine.state, now)["lead_1h"]["24h"]["el"]["n"] == 1
+    assert engine.state["forecast_accuracy"]["history"][0]["act_el"] == pytest.approx(0.5)
+
+
 def test_near_controller_converts_measured_thermal_watts_to_kw(
     monkeypatch, tmp_path
 ):
