@@ -1,5 +1,13 @@
 # Active Context - Current Work & Decision State
 
+### Heating idle candidate start from degree minutes - 2026-11-14
+
+- **What:** Added heating-only candidate start extrapolation for degree-minute sensors reporting idle with no known start time. GM thresholds and candidate supply determine the delay; invalid attributes preserve the sensor window with DEBUG diagnostics.
+- **Why:** The idle no-start window previously disabled HP output for every candidate even when a higher candidate could create a start deficit. The user confirmed one-to-one NIBE setpoint mapping with offset 0 and approved this isolated prerequisite before the original overshoot fixes.
+- **Scope:** Known starts, running runtime handling, cooling, HA templates, defaults, learning, EMA, hold and the original six requested changes remain untouched. Unknown runtime still has no simulated stop before horizon end.
+- **Validation:** 49 targeted tests and Pylance syntax/whitespace checks pass. Approved isolated Python 3.13 full run: 2087 passed, 2 failed, 8 errors. Approved baseline run at `8e7d06e`: 2067 passed, identical 2 failures and 8 Docker errors. All 20 new cases pass. The user explicitly accepted the baseline exception and approved committing the isolated fix. Existing learning/grace failures and unavailable Docker were not changed.
+- **Files:** `src/hp_start_estimate.py`, `tests/unit/test_hp_start_estimate.py`, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Bounded setpoint hold and dashboard switch - 2026-11-14
 
 - **What:** Added `setpoint_hold_enabled` and `max_setpoint_hold_cycles` to Settings > Trajectory & Prediction. Forecast-driven holds use the configured minimum and maximum, with the maximum taking precedence on conflicts; disabling clears the countdown without disabling hysteresis or smoothing.

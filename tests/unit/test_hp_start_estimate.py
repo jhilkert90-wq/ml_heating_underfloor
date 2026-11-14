@@ -262,6 +262,135 @@ def test_candidate_window_shortens_delay_for_higher_outlet_only():
     ) == window
 
 
+@pytest.mark.parametrize(
+    "outlet,required,reference,gm,expected_delay_h",
+    [
+        (24.0, 24.5, 24.5, -100.0, 1e6),
+        (25.0, 24.5, 24.5, -100.0, 1e6),
+        (25.04, 24.5, 24.5, -100.0, 1e6),
+        (26.0, 24.5, 24.5, -100.0, 100 / 60),
+        (27.0, 24.5, 24.5, -100.0, 50 / 60),
+        (26.0, 24.5, 24.5, 1000.0, 20.0),
+        (24.0, 26.5, 24.5, -100.0, 100 / 60),
+        (26.0, 24.5, 24.5, -200.0, 0.0),
+        (26.0, 24.5, 24.5, -250.0, 0.0),
+    ],
+)
+def test_idle_candidate_derives_start_from_degree_minutes(
+    outlet, required, reference, gm, expected_delay_h,
+):
+    estimate = hse.read_hp_start_estimate(
+        _states(
+            "unknown", expected_runtime_min=None,
+            required_supply_c=required, supply_actual_c=25.0,
+            gm_now=gm, gm_start=-200.0,
+        ),
+        "heating", now=NOW, cfg=_cfg(),
+    )
+    window = hse.trajectory_window(estimate)
+
+    result = hse.candidate_window(
+        estimate, window, candidate_outlet=outlet,
+        reference_outlet=reference, mode="heating",
+    )
+
+    assert result["delay_h"] == pytest.approx(expected_delay_h)
+    assert result["runtime_h"] is None
+    assert window["delay_h"] == 1e6
+
+
+@pytest.mark.parametrize("attribute,value", [
+    ("gm_now", None),
+    ("gm_now", float("nan")),
+    ("gm_start", None),
+    ("gm_start", float("inf")),
+    ("supply_actual_c", "invalid"),
+    ("required_supply_c", None),
+])
+def test_idle_candidate_preserves_window_with_invalid_attributes(
+    attribute, value, caplog,
+):
+    attrs = dict(
+        required_supply_c=24.5, supply_actual_c=25.0,
+        gm_now=-100.0, gm_start=-200.0,
+    )
+    attrs[attribute] = value
+    estimate = hse.read_hp_start_estimate(
+        _states("unknown", expected_runtime_min=None, **attrs),
+        "heating", now=NOW, cfg=_cfg(),
+    )
+    window = hse.trajectory_window(estimate)
+
+    with caplog.at_level("DEBUG", logger=hse.LOGGER.name):
+        result = hse.candidate_window(
+            estimate, window, candidate_outlet=26.0,
+            reference_outlet=24.5, mode="heating",
+        )
+
+    assert result == window
+    assert "Idle candidate start unavailable" in caplog.text
+
+
+@pytest.mark.parametrize("mode,method,status", [
+    ("cooling", "degree_minutes", "idle"),
+    ("heating", "hysteresis", "idle"),
+    ("heating", "degree_minutes", "blocked"),
+    ("heating", "degree_minutes", "unknown"),
+])
+def test_idle_candidate_does_not_change_other_modes_methods_or_statuses(
+    mode, method, status,
+):
+    estimate = hse.read_hp_start_estimate(
+        _states(
+            "unknown", method=method, status=status,
+            required_supply_c=24.5, supply_actual_c=25.0,
+            gm_now=-100.0, gm_start=-200.0,
+        ),
+        "heating", now=NOW, cfg=_cfg(),
+    )
+    window = hse.trajectory_window(estimate)
+
+    assert hse.candidate_window(
+        estimate, window, candidate_outlet=26.0,
+        reference_outlet=24.5, mode=mode,
+    ) == window
+
+
+def test_idle_candidate_start_restores_trajectory_response_after_delay():
+    from src.thermal_equilibrium_model import ThermalEquilibriumModel
+
+    estimate = hse.read_hp_start_estimate(
+        _states(
+            "unknown", expected_runtime_min=None,
+            required_supply_c=24.5, supply_actual_c=25.0,
+            gm_now=-100.0, gm_start=-200.0,
+        ),
+        "heating", now=NOW, cfg=_cfg(),
+    )
+    window = hse.trajectory_window(estimate)
+    candidate = hse.candidate_window(
+        estimate, window, candidate_outlet=26.0,
+        reference_outlet=24.5, mode="heating",
+    )
+    model = ThermalEquilibriumModel()
+    kwargs = dict(
+        current_indoor=23.23, target_indoor=22.5, outlet_temp=26.0,
+        outdoor_temp=-0.93, time_horizon_hours=4, time_step_minutes=10,
+        inlet_temp=25.0, delta_t_floor=2.68,
+    )
+    passive = model.predict_thermal_trajectory(
+        **kwargs, hp_start_delay_h=window["delay_h"],
+        hp_runtime_h=window["runtime_h"],
+    )["trajectory"]
+    started = model.predict_thermal_trajectory(
+        **kwargs, hp_start_delay_h=candidate["delay_h"],
+        hp_runtime_h=candidate["runtime_h"],
+    )["trajectory"]
+
+    assert started[:10] == pytest.approx(passive[:10])
+    assert started[-1] > passive[-1]
+
+
 def test_running_candidate_extends_runtime_with_higher_outlet():
     est = hse.read_hp_start_estimate(
         _states("0", status="running", expected_runtime_min=60,

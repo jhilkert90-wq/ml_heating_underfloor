@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Heating idle candidate start from degree minutes - 2026-11-14
+
+**Status:** IMPLEMENTED AND ACCEPTED - 49 targeted tests pass; the user explicitly accepted the confirmed baseline failures and missing Docker as a full-suite exception.
+
+**Implementation summary:** With explicit approval for this prerequisite before the original overshoot fixes, heating degree-minute candidates derive a start delay from GM thresholds when the external sensor is idle with no known start. Candidate supply follows the existing one-to-one offset mapping, confirmed by the user with offset 0. Insufficient demand preserves no-start; invalid inputs preserve the sensor window with DEBUG diagnostics. Known start times, running runtime handling, cooling, HA templates, defaults, learning and downstream limiters are unchanged.
+
+**Validation:** TDD reproduced five incorrect no-start results and six missing diagnostic cases before implementation. The 49 focused tests cover offsets, non-positive demand, exhausted GM deficit, starts beyond 720 minutes, invalid attributes, unchanged modes/statuses and delayed response in the real trajectory simulator. Pylance syntax and whitespace checks pass. With approved isolated Python 3.13 dependencies, the full suite reports 2087 passed, 2 failed and 8 errors. A user-approved detached baseline run at `8e7d06e`, with the same interpreter and environment settings, reports 2067 passed and the identical failures/errors: TV source-attribution learning, grace-poll StopIteration, and Docker-dependent image checks (Docker unavailable). All 20 added cases pass; no new failing test is observed. The user accepted these baseline limitations and approved committing this isolated prerequisite; unrelated fixes and the original six steps remain deferred.
+
+**Files changed:** `src/hp_start_estimate.py`, `tests/unit/test_hp_start_estimate.py`, `docs/HA_WP_START_ESTIMATE_GUIDE.md`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Bounded setpoint hold and dashboard switch - 2026-11-14
 
 **Status:** IMPLEMENTED - 142 targeted tests pass.

@@ -250,8 +250,50 @@ def candidate_window(
     follows the outlet one to one. A candidate ``d`` K above (heating) or below
     (cooling) the reference outlet raises the deficit rate from ``need`` to
     ``need + d`` and shortens the delay proportionally. The sensor's delay is
-    an upper bound; everything else keeps the sensor window unchanged.
+    an upper bound. In heating idle with no known start, the candidate's
+    degree-minute deficit rate and the sensor's GM thresholds determine a
+    new delay. Other cases keep the sensor window unchanged.
     """
+    if (
+        mode == "heating"
+        and estimate is not None
+        and isinstance(window, dict)
+        and estimate.method == "degree_minutes"
+        and estimate.status == "idle"
+        and estimate.minutes_to_start is None
+    ):
+        required = _number(estimate.attributes.get("required_supply_c"))
+        supply = _number(estimate.attributes.get("supply_actual_c"))
+        gm = _number(estimate.attributes.get("gm_now"))
+        gm_start = _number(estimate.attributes.get("gm_start"))
+        reference = _number(reference_outlet)
+        candidate = _number(candidate_outlet)
+        if (
+            required is None or supply is None
+            or gm is None or gm_start is None
+            or reference is None or candidate is None
+        ):
+            LOGGER.debug(
+                "Idle candidate start unavailable: missing or invalid "
+                "degree-minute attributes, reference or candidate; "
+                "keeping sensor window"
+            )
+            return window
+        need = required + (candidate - reference) - supply
+        if need <= 0.05:
+            LOGGER.debug(
+                "Idle candidate: outlet %.1f C, need=%.3f K; "
+                "no start extrapolatable",
+                candidate, need,
+            )
+            return window
+        delay_h = max(0.0, (gm - gm_start) / need) / 60.0
+        LOGGER.debug(
+            "Idle candidate window: outlet %.1f (ref %.1f), need=%.2f K, "
+            "GM %.1f (start %.1f) -> delay %.2f h",
+            candidate, reference, need, gm, gm_start, delay_h,
+        )
+        return {**window, "delay_h": delay_h}
     if (
         estimate is not None
         and isinstance(window, dict)

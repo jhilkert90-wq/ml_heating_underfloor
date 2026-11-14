@@ -187,6 +187,27 @@ template:
 - `unknown` bedeutet "startet unter den aktuellen Bedingungen nicht" (Soll ≤ Ist), "blockiert" (Warmwasser/Abtauen) oder falscher Modus.
 - Läuft die WP und Ist ≈ Soll, wird die Laufzeit auf den Deckel gesetzt und `runtime_unbounded` ist `true`.
 
+### Kandidatenrechnung im Add-on bei unbekanntem Heizstart
+
+Bei `method: degree_minutes`, `status: idle` und unbekannter Startzeit kann
+die Heizungs-Vorlaufsuche einen Start für einen neuen Kandidaten berechnen:
+
+- `Kandidaten-Soll = required_supply_c + (Kandidat - Referenzvorlauf)`.
+- `Referenzvorlauf = required_supply_c - HP_START_ESTIMATE_REQUIRED_OFFSET_K`.
+  Das setzt eine Eins-zu-eins-Wirkung des Add-on-Vorlaufs auf das WP-Soll
+  mit konstantem Offset voraus; bei Offset 0 ist das Kandidaten-Soll der Kandidat.
+- Bei `Kandidaten-Soll - supply_actual_c > 0,05 K` gilt:
+  `Startzeit_min = max(0, (gm_now - gm_start) / (Kandidaten-Soll - supply_actual_c))`.
+- Sonst bleibt der Start nicht extrapolierbar. Fehlende oder ungültige Attribute
+  behalten das bisherige Sensorfenster bei und werden auf DEBUG protokolliert.
+
+Die Rechnung nimmt wie das Template konstante Vorlauftemperaturen an.
+Sie verändert weder den HA-Sensor noch bekannte Startzeiten, laufende WP,
+andere Verfahren oder Kühlen. Der 720-Minuten-Deckel gilt weiterhin nur
+für die Laufzeit im HA-Template, nicht für die Startzeit. Eine unbekannte
+Laufzeit bleibt im Simulator nach dem prognostizierten Start bis zum
+Horizontende unbegrenzt; dies ist keine neu berechnete Laufzeitprognose.
+
 ## 5. Schritt 3: Template-Sensor Kühlen
 
 Gleicher Aufbau, Vorzeichen gespiegelt. Als weiteren Block unter `template:` einfügen. Die Namen enthalten bewusst "Kuehlen" ohne Umlaut, damit die Entity-IDs sicher auf `..._kuehlen` enden (HA wandelt "ü" sonst in "u" um):
