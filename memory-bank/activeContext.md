@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Setpoint hold switch releases hysteresis and surplus limit - 2026-11-15
+
+- **What/why:** User reported outlets held back although `setpoint_hold_enabled: false`. Option mapping and hold disable were verified working; the hold-back came from the heating-surplus increase limiter in `step_gradual_control` and the hysteresis in `step_setpoint_hold`. User chose: both inactive when the hold is disabled.
+- **Unchanged:** EMA smoothing, slew limit, surplus-reduction bypass, cooling path, config defaults, everything with the hold enabled.
+- **Verified:** New/updated tests in `tests/unit/test_cycle_routes.py` red before, green after; full suite unchanged apart from the known 2 baseline failures / 8 Docker errors.
+- **Files:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `docs/PARAMETER_REFERENCE.md`, add-on translations `en.yaml`/`de.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ### Forecast accuracy ingestion fixed - 2026-11-15
 
 - **What/why:** User approved repairing the empty-accuracy defect. Forecast state now retains the previous hourly anchor; the same actual-pair handoff runs after live rollover and history repair. Repairs and completed comparisons are persisted immediately, including across restart.

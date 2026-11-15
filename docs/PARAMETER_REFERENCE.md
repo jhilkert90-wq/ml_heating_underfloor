@@ -411,7 +411,7 @@ Requires the Tibber integration in Home Assistant.
 
 | Parameter | Env Var | Type | Default | Description |
 |---|---|---|---|---|
-| `setpoint_hold_enabled` | `SETPOINT_HOLD_ENABLED` | bool | `true` | Enables the setpoint hold. Disabling clears an active hold; smoothing and hysteresis remain active. |
+| `setpoint_hold_enabled` | `SETPOINT_HOLD_ENABLED` | bool | `true` | Enables the setpoint hold. Disabling clears an active hold and also disables the setpoint hysteresis (`outlet_hysteresis_k`) and the heating-surplus increase limit; EMA smoothing and the slew limit remain active. |
 | `min_setpoint_hold_cycles` | `MIN_SETPOINT_HOLD_CYCLES` | int (0–20) | `4` | Hold duration in control cycles without PV forecast scaling; minimum duration with scaling. If greater than the maximum, the maximum wins. |
 | `max_setpoint_hold_cycles` | `MAX_SETPOINT_HOLD_CYCLES` | int (0–20) | `20` | Caps the hold duration including the initial cycle. Zero disables the hold. After expiry, hysteresis or an unchanged calculation can still retain the setpoint. |
 
