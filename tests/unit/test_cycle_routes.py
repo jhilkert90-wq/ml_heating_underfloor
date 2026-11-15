@@ -678,14 +678,14 @@ class TestStepSetpointHold:
     """Test minimum setpoint hold logic."""
 
     @pytest.mark.parametrize("mode", ["heating", "cooling"])
-    def test_disabled_clears_pending_hold_but_keeps_hysteresis(self, monkeypatch, mode):
+    def test_disabled_clears_pending_hold_and_hysteresis(self, monkeypatch, mode):
         monkeypatch.setattr(cycle_routes.config, "SETPOINT_HOLD_ENABLED", False)
         monkeypatch.setattr(cycle_routes.config, "OUTLET_HYSTERESIS_K", 0.3)
         monkeypatch.setattr(cycle_routes, "_calm_conditions", lambda ctx: True)
         ctx = _make_ctx(climate_mode=mode, final_temp=30.2)
         ctx.state = {"last_final_temp": 30.0, "setpoint_hold_cycles_remaining": 3}
         step_setpoint_hold(ctx)
-        assert ctx.final_temp == 30.0
+        assert ctx.final_temp == 30.2
         assert ctx.new_hold_cycles == 0
         ctx.final_temp = 32.0
         step_setpoint_hold(ctx)
@@ -826,6 +826,14 @@ class TestOutletStabilisers:
         ctx = self._ctx(23.0, 22.5, 29.0, last_target_indoor_temp=22.5)
         step_gradual_control(ctx)
         assert ctx.final_temp == 26.0
+
+    @patch("src.cycle_routes.config")
+    def test_surplus_limit_disabled_with_setpoint_hold(self, mock_config):
+        self._config(mock_config)
+        mock_config.SETPOINT_HOLD_ENABLED = False
+        ctx = self._ctx(23.0, 22.5, 29.0, last_target_indoor_temp=22.5)
+        step_gradual_control(ctx)
+        assert ctx.final_temp == 27.0
 
     @patch("src.cycle_routes.config")
     def test_demand_uses_full_slew(self, mock_config):

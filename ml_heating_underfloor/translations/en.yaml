@@ -1342,7 +1342,8 @@ configuration:
   setpoint_hold_enabled:
     name: '[Trajectory] Setpoint Hold Enabled'
     description: Hold the last setpoint for a bounded number of control cycles.
-      Disabling clears an existing hold; smoothing and hysteresis remain active.
+      Disabling clears an existing hold and also disables the hysteresis and the
+      surplus increase limit; EMA smoothing and the slew limit remain active.
       Restart the add-on after changing this option.
   min_setpoint_hold_cycles:
     name: '[Trajectory] Minimum Setpoint Hold Cycles'
@@ -1452,7 +1453,7 @@ configuration:
     description: 'Per-cycle setpoint change limit without demand or target change (never above max_temp_change_per_cycle). Default: 1.0 K.'
   outlet_hysteresis_k:
     name: '[Advanced] Outlet Hysteresis (K)'
-    description: 'Setpoint changes smaller than this are discarded without demand or target change. 0 disables. Default: 0.3 K.'
+    description: 'Setpoint changes smaller than this are discarded without demand or target change. 0 disables; inactive while the setpoint hold is disabled. Default: 0.3 K.'
   fd_newton_min_sensitivity:
     name: '[Advanced] FD-Newton Min Sensitivity (K/K)'
     description: 'Below this sensitivity FD-Newton raise corrections are scaled down proportionally; reductions stay unlimited. Default: 0.1.'

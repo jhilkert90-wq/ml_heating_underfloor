@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Disabling the setpoint hold (`setpoint_hold_enabled: false`) now also disables the setpoint hysteresis and the heating-surplus outlet-increase limit, so the computed outlet is no longer held back at the previous value; EMA smoothing and the slew limit remain active. Behavior with the hold enabled is unchanged.
+- The AI code review workflow no longer runs automatically on pull requests; the trigger is disabled (restorable in `.github/workflows/ai-code-review.yaml`).
+
 ## [0.2.0] - 2026-02-10
 
 ### Added

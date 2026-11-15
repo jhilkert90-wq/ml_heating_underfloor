@@ -1259,8 +1259,9 @@ configuration:
   setpoint_hold_enabled:
     name: '[Trajektorie] Sollwert-Haltezeit aktiv'
     description: Hält den letzten Sollwert für eine begrenzte Anzahl Regelzyklen.
-      Beim Ausschalten wird eine laufende Haltezeit beendet; Glättung und Hysterese
-      bleiben aktiv. Nach Änderungen das Add-on neu starten.
+      Beim Ausschalten werden eine laufende Haltezeit, die Hysterese und die
+      Überschuss-Erhöhungssperre deaktiviert; EMA-Glättung und Slew-Limit bleiben
+      aktiv. Nach Änderungen das Add-on neu starten.
   min_setpoint_hold_cycles:
     name: '[Trajektorie] Minimale Sollwert-Haltezeit (Zyklen)'
     description: Minimale Haltezeit in Regelzyklen. Im Prognosemodus wird die
@@ -1367,7 +1368,7 @@ configuration:
     description: 'Änderungslimit pro Zyklus ohne Bedarf oder Sollwertänderung (nie über max_temp_change_per_cycle). Standard: 1.0 K.'
   outlet_hysteresis_k:
     name: '[Erweitert] Vorlauf-Hysterese (K)'
-    description: 'Sollwertänderungen unter diesem Wert werden ohne Bedarf oder Sollwertänderung verworfen. 0 deaktiviert. Standard: 0.3 K.'
+    description: 'Sollwertänderungen unter diesem Wert werden ohne Bedarf oder Sollwertänderung verworfen. 0 deaktiviert; inaktiv bei deaktivierter Sollwert-Haltezeit. Standard: 0.3 K.'
   fd_newton_min_sensitivity:
     name: '[Erweitert] FD-Newton Mindest-Sensitivität (K/K)'
     description: 'Unterhalb dieser Sensitivität werden FD-Newton-Anhebungen proportional verkleinert; Absenkungen bleiben unbegrenzt. Standard: 0.1.'

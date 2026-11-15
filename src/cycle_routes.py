@@ -622,7 +622,11 @@ def step_gradual_control(ctx: CycleContext) -> None:
         "Gradual control: baseline=%.1f°C, limit=%.1f K (%s)",
         baseline, max_change, "calm" if calm else "demand/target change",
     )
-    if ctx.final_temp > baseline and _heating_surplus_without_demand(ctx):
+    if (
+        config.SETPOINT_HOLD_ENABLED
+        and ctx.final_temp > baseline
+        and _heating_surplus_without_demand(ctx)
+    ):
         logging.info(
             "Heating surplus without heat demand: limiting outlet increase "
             "%.1f°C to baseline %.1f°C",
@@ -661,7 +665,10 @@ def step_ema_smoothing(ctx: CycleContext) -> None:
 
 
 def step_setpoint_hold(ctx: CycleContext) -> None:
-    """Apply the bounded setpoint hold and independent demand hysteresis."""
+    """Apply the bounded setpoint hold and its demand hysteresis.
+
+    Disabling the hold also disables the hysteresis; EMA smoothing stays.
+    """
     hold_enabled = config.SETPOINT_HOLD_ENABLED
     max_hold = config.MAX_SETPOINT_HOLD_CYCLES
     min_hold = config.MIN_SETPOINT_HOLD_CYCLES
@@ -703,7 +710,10 @@ def step_setpoint_hold(ctx: CycleContext) -> None:
         ctx.final_temp = held_temp
         ctx.new_hold_cycles = hold_remaining - 1
     else:
-        hysteresis = float(getattr(config, "OUTLET_HYSTERESIS_K", 0.0))
+        hysteresis = (
+            float(getattr(config, "OUTLET_HYSTERESIS_K", 0.0))
+            if hold_enabled else 0.0
+        )
         if (
             held_temp is not None
             and abs(ctx.final_temp - held_temp) < hysteresis
