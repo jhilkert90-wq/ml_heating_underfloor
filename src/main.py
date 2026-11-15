@@ -160,6 +160,15 @@ def main():
     logging.getLogger("requests").setLevel(logging.INFO)
     logging.getLogger("urllib3").setLevel(logging.INFO)
 
+    # Update the offline trajectory comparison files after every cycle
+    # (separate subprocess; disable with TRAJECTORY_COMPARISON_EXPORT=false).
+    try:
+        from .live_comparison_export import install_live_export
+
+        install_live_export()
+    except Exception as _export_exc:  # never block startup
+        logging.warning("Live comparison export not installed: %s", _export_exc)
+
     # --- Initialization ---
     # ThermalEquilibriumModel is now loaded directly in model_wrapper.py
     # Shadow mode comparison metrics (no longer tracking MAE/RMSE)
