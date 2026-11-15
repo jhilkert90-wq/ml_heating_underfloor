@@ -1,5 +1,15 @@
 # ML Heating System - Current Progress
 
+## Trajectory heating correction mode - 2026-11-15
+
+**Status:** IMPLEMENTED AND VERIFIED; NOT DEPLOYED.
+
+**Implementation summary:** Offline tests of stored-solar/base-gain terms were not robust across seasons, and the runtime check explained only ≈0.1–0.17 K of the −0.4 K bias, so the model was left unchanged. Instead, the offline joint trajectory selector is now live as the option `heating_correction_mode: trajectory`. New module `src/trajectory_selector.py` provides the squared comfort-band cost (±0.1 K, K²h) and the grid search. `_calculate_required_outlet_temp` runs it in heating after the existing pipeline and reuses the cached `_evaluate_outlet` simulations. Candidate bounds: `active_outlet_min` up to min(`active_outlet_max`, inlet + 5). The tie-break anchor is the last published outlet, passed via `simplified_outlet_prediction(baseline_outlet=…)` from `step_prediction` (`last_final_temp`, falling back to the actual outlet). It always logs the comparison and replaces the result only in trajectory mode. Inside the internal pipeline, trajectory mode uses the physics Newton correction. Cooling and config defaults are unchanged.
+
+**Validation:** New `tests/unit/test_trajectory_selector.py` (selector, wrapper integration, cooling exclusion, failure fallback, baseline plumbing) failed before the module existed. The physics dispatch test is parametrised with trajectory. Full suite: 2154 passed plus the known 2 baseline failures / 8 Docker errors.
+
+**Files changed:** `src/trajectory_selector.py`, `src/model_wrapper.py`, `src/cycle_routes.py`, `src/config.py` (comment only), `ml_heating_underfloor/config.yaml`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `README.md`, `tests/unit/test_trajectory_selector.py`, `tests/unit/test_heating_correction.py`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+
 ## Setpoint hold switch releases hysteresis and surplus limit - 2026-11-15
 
 **Status:** IMPLEMENTED AND VERIFIED; NOT DEPLOYED.

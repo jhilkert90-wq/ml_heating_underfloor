@@ -401,11 +401,16 @@ def step_prediction(ctx: CycleContext) -> None:
     """Run simplified_outlet_prediction."""
     error_target_vs_actual = ctx.target_indoor_temp - ctx.prediction_indoor_temp
 
+    baseline_outlet = ctx.state.get("last_final_temp")
+    if baseline_outlet is None:
+        baseline_outlet = getattr(ctx, "actual_outlet_temp", None)
+
     suggested_temp, confidence, metadata = simplified_outlet_prediction(
         ctx.features,
         ctx.prediction_indoor_temp,
         ctx.target_indoor_temp,
         price_data=ctx.price_data,
+        baseline_outlet=baseline_outlet,
     )
     ctx.suggested_temp = suggested_temp
     ctx.final_temp = suggested_temp

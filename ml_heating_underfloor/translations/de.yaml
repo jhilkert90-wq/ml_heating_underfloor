@@ -1380,6 +1380,9 @@ configuration:
       ε / S(t_worst), where S is evaluated at the worst trajectory violation time
       (recommended after calibration, ~2× more accurate — symmetric for over- and
       undershoot, corrects PV-driven mid-horizon errors). ''ml'' = LightGBM regressor
-      (future feature, currently falls back to physics Newton step).
+      (future feature, currently falls back to physics Newton step). ''trajectory''
+      = heating only: simulates every outlet up to inlet + 5 °C over the full horizon
+      and picks the smallest squared deviation outside target ±0.1 K; the physics
+      result is logged for comparison.
 
       '

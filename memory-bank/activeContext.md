@@ -1,5 +1,12 @@
 # Active Context - Current Work & Decision State
 
+### Trajectory heating correction mode - 2026-11-15
+
+- **What/why:** Overshoot/undershoot handling stacks many gates. User chose to bring the offline joint trajectory selector live as a switchable `heating_correction_mode: trajectory` instead of changing the bias model, because stored-solar/base-gain terms were not robust offline and runtime underestimation explains only ≈0.1–0.17 K.
+- **Design (user decisions):** fixed comfort band ±0.1 K; candidates `active_outlet_min`…min(max, inlet + 5) in 0.1 K steps; ties go to the lowest outlet above the band, otherwise to the outlet nearest the last published one (`last_final_temp`). Physics stays computed and is logged each heating cycle ("🧭 Trajectory selector … → using …"); the result is replaced only in trajectory mode. Any selector failure keeps the physics result. Downstream gradual control/EMA/hold are unchanged; cooling is untouched.
+- **Files:** `src/trajectory_selector.py` (new), `src/model_wrapper.py`, `src/cycle_routes.py`, `src/config.py` (comment), add-on `config.yaml` + translations, `README.md`, `tests/unit/test_trajectory_selector.py`, `tests/unit/test_heating_correction.py`, `CHANGELOG.md`, memory bank.
+- **Open:** Pi runtime cost (≈60–110 cached simulations per cycle; ≈86 ms offline on PC) to observe in production; the 4 h horizon cannot reach the target when only cooling would help (outlet near the return temperature) — the selector then picks the lowest outlet, which is the physical limit.
+
 ### Setpoint hold switch releases hysteresis and surplus limit - 2026-11-15
 
 - **What/why:** User reported outlets held back although `setpoint_hold_enabled: false`. Option mapping and hold disable were verified working; the hold-back came from the heating-surplus increase limiter in `step_gradual_control` and the hysteresis in `step_setpoint_hold`. User chose: both inactive when the hold is disabled.

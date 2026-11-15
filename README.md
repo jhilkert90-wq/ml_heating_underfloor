@@ -45,7 +45,7 @@ The primary goal is to improve upon traditional heat curves by creating a **self
 ### Intelligent Control
 
 -   **Enhanced Model Wrapper:** Intelligent prediction system that replaces complex control logic with simplified outlet temperature prediction
--   **Selectable Heating Correction Modes:** `HEATING_CORRECTION_MODE` supports `legacy`, `physics`, and `ml` (in cooling mode, the `ml` setting is automatically overridden to use physics/Newton correction)
+-   **Selectable Heating Correction Modes:** `HEATING_CORRECTION_MODE` supports `legacy`, `physics`, `ml` and `trajectory` (heating-only joint trajectory selector; in cooling mode, the `ml` setting is automatically overridden to use physics/Newton correction)
 -   **ML Correction Blend:** In `ml` mode, correction uses confidence-weighted blending between physics Newton delta and LightGBM delta (`HEATING_ML_BLEND_MIN_R2` gate)
 -   **Gentle Trajectory Correction:** Intelligent additive correction system that prevents outlet temperature spikes during thermal trajectory deviations, using proven heat curve automation logic (5°C/8°C/12°C per degree) instead of aggressive multiplicative factors
 -   **Overshoot & Undershoot Gates:** Projected-temperature gates that skip corrections when indoor temperature is already moving in the right direction, preventing overcorrection oscillation
@@ -406,7 +406,7 @@ flowchart TD
    - **Options:** cycle time (`CYCLE_INTERVAL_MINUTES`), horizon length.
 4. **Correction decision**
    - If trajectory violates target band, applies configured correction path.
-   - **Options:** `HEATING_CORRECTION_MODE=legacy|physics|ml`; in ML mode the blend is enabled only above `HEATING_ML_BLEND_MIN_R2`.
+   - **Options:** `HEATING_CORRECTION_MODE=legacy|physics|ml|trajectory`; in ML mode the blend is enabled only above `HEATING_ML_BLEND_MIN_R2`. `trajectory` (heating only) replaces the result with the outlet whose simulated horizon deviates least (squared) from target ±0.1 K and logs the physics result for comparison.
 5. **Actuation / publishing**
    - Applies outlet clamps and change-rate limits, then either writes the value (active mode) or publishes only shadow output.
    - **Options:** `CLAMP_MIN_ABS`, `CLAMP_MAX_ABS`, `MAX_TEMP_CHANGE_PER_CYCLE`.

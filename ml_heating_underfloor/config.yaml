@@ -828,6 +828,12 @@ options:
   #             symmetric, corrects PV-driven mid-horizon errors, ~2× more
   #             accurate after calibration.
   # "ml"      = LightGBM regressor (future feature, falls back to physics).
+  # "trajectory" = heating only: every outlet between the current minimum and
+  #             min(max, inlet + 5) is simulated over the full trajectory
+  #             horizon; the one with the smallest squared deviation outside
+  #             target ±0.1 K wins (ties: lowest outlet above the band,
+  #             otherwise nearest the last published outlet). The physics
+  #             result is still computed and logged for comparison.
   heating_correction_mode: "legacy"  # Default: legacy (preserves existing behaviour)
 
   # === Mode Profiles ===
@@ -1279,7 +1285,7 @@ schema:
   outlet_hysteresis_k: "float(0.0,2.0)"
   fd_newton_min_sensitivity: "float(0.01,1.0)"
   # Heating Correction Mode
-  heating_correction_mode: "list(legacy|physics|ml)"
+  heating_correction_mode: "list(legacy|physics|ml|trajectory)"
   # Mode Profiles
   heating_profile:
     electricity_price_enabled: "bool?"
