@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- New `heating_correction_mode: trajectory` (heating only): every outlet between the current minimum and min(max, inlet + 5 °C) is simulated over the full trajectory horizon in 0.1 K steps and the one with the smallest squared deviation outside target ±0.1 K is used (ties: lowest outlet when the room is above the band, otherwise nearest the last published outlet). Each heating cycle logs a comparison of the physics and trajectory results, in shadow form for the other modes. Selector failures fall back to the physics result. Gradual control, EMA and the hold remain downstream; cooling is unchanged. Switch back by selecting another mode.
-
-### Changed
-- Disabling the setpoint hold (`setpoint_hold_enabled: false`) now also disables the setpoint hysteresis and the heating-surplus outlet-increase limit, so the computed outlet is no longer held back at the previous value; EMA smoothing and the slew limit remain active. Behavior with the hold enabled is unchanged.
-- The AI code review workflow no longer runs automatically on pull requests; the trigger is disabled (restorable in `.github/workflows/ai-code-review.yaml`).
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
