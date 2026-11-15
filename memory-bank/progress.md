@@ -10,6 +10,10 @@
 
 **Files changed:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `docs/PARAMETER_REFERENCE.md`, `ml_heating_underfloor/translations/en.yaml`, `ml_heating_underfloor/translations/de.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
 
+**CI:** Per user request the automatic `pull_request` trigger of `.github/workflows/ai-code-review.yaml` is disabled (manual dispatch skips; restore the commented trigger to re-enable).
+
+**Bias analysis (no code change):** Model predicts too much cooling (≈0.4 K/4 h). Evidence: solar heat vanishes from the trajectory ≈10 min after PV drops (`solar_lag_minutes`; `solar_decay_tau_hours` is unused in trajectories); `stable_periods.json` nights after sunny days need +0.4…0.8 kW extra gain for 12–24 h, plus a constant base gain ≈0.4–0.6 kW absent from the control model. User approved offline testing of both terms behind an option before any live change.
+
 ## Repair forecast accuracy hour ingestion - 2026-11-15
 
 **Status:** IMPLEMENTED AND VERIFIED; NOT DEPLOYED.

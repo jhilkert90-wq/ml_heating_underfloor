@@ -1,8 +1,10 @@
 name: AI Code Review (GitHub Copilot)
 
 on:
-  pull_request:
-    types: [opened, synchronize]
+  # Automatic review on pull requests is disabled. To re-enable, restore:
+  # pull_request:
+  #   types: [opened, synchronize]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,8 +14,9 @@ permissions:
 jobs:
   ai-review:
     runs-on: ubuntu-latest
-    # Skip draft PRs and bot-generated PRs
-    if: "!github.event.pull_request.draft && github.event.pull_request.user.login != 'github-actions[bot]'"
+    # Runs only for pull_request events (currently not triggered); skip draft
+    # PRs and bot-generated PRs
+    if: "github.event_name == 'pull_request' && !github.event.pull_request.draft && github.event.pull_request.user.login != 'github-actions[bot]'"
 
     steps:
       - name: Checkout repository

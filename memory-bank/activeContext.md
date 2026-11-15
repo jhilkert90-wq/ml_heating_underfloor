@@ -6,6 +6,8 @@
 - **Unchanged:** EMA smoothing, slew limit, surplus-reduction bypass, cooling path, config defaults, everything with the hold enabled.
 - **Verified:** New/updated tests in `tests/unit/test_cycle_routes.py` red before, green after; full suite unchanged apart from the known 2 baseline failures / 8 Docker errors.
 - **Files:** `src/cycle_routes.py`, `tests/unit/test_cycle_routes.py`, `docs/PARAMETER_REFERENCE.md`, add-on translations `en.yaml`/`de.yaml`, `CHANGELOG.md`, `memory-bank/progress.md`, `memory-bank/activeContext.md`.
+- **CI:** Automatic AI review on pull requests disabled in `.github/workflows/ai-code-review.yaml` (user request).
+- **Next:** Bias root cause = missing stored-solar heat (long decay) and constant base gain in the trajectory model. Offline test of both terms (behind an option, default off) against `stable_periods.json` and the 15.11 replay before the live trajectory method.
 
 ### Forecast accuracy ingestion fixed - 2026-11-15
 
