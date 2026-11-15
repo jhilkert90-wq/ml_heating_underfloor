@@ -67,6 +67,7 @@ RUN pip3 install --no-cache-dir --upgrade pip \
 
 # Copy the ML heating system source code
 COPY src/ /app/src/
+COPY validation/ /app/validation/
 COPY notebooks/ /app/notebooks/
 COPY dashboard/ /app/dashboard/
 COPY ml_heating_underfloor/ /app/ml_heating_underfloor/
