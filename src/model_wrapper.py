@@ -39,6 +39,11 @@ from src.outlet_stability import (
     reference_band,
     reference_outlet,
 )
+from src.trajectory_selector import (
+    COMFORT_BAND_K,
+    comfort_cost,
+    select_trajectory_outlet,
+)
 
 _TRAJECTORY_SENSOR_PRECISION_TOLERANCE_C = 0.1
 _INLET_TEMP_UNSET = object()
@@ -95,6 +100,9 @@ class EnhancedModelWrapper:
         )
 
         self.learning_enabled = True
+
+        # Last published outlet; tie-break anchor for the trajectory selector.
+        self._trajectory_baseline_outlet: float | None = None
 
         # Climate mode: "heating" (default) or "cooling".
         # Set each cycle by main.py via set_climate_mode().
@@ -1836,7 +1844,97 @@ class EnhancedModelWrapper:
                 )
                 final_outlet = _inlet_now + 5.0
 
+        if self._climate_mode != "cooling":
+            final_outlet = self._apply_trajectory_selector(
+                final_outlet,
+                lambda outlet: _evaluate_outlet(outlet, "Trajectory selector"),
+                lower=active_outlet_min,
+                upper=(
+                    active_outlet_max
+                    if _inlet is None
+                    else min(active_outlet_max, _inlet + 5.0)
+                ),
+                current_indoor=current_indoor,
+                target_indoor=target_indoor,
+            )
+
         return final_outlet
+
+    def _apply_trajectory_selector(
+        self,
+        legacy_outlet: float,
+        evaluate: Any,
+        *,
+        lower: float,
+        upper: float,
+        current_indoor: float,
+        target_indoor: float,
+    ) -> float:
+        """Compare the legacy outlet with the joint trajectory selector.
+
+        The selector result is only used when HEATING_CORRECTION_MODE is
+        "trajectory"; otherwise it is logged as a shadow comparison.
+        """
+        use_trajectory = (
+            getattr(config, "HEATING_CORRECTION_MODE", "legacy")
+            == "trajectory"
+        )
+        try:
+            def _simulate(outlet: float) -> list:
+                candidate = evaluate(outlet)
+                if candidate is None:
+                    return []
+                return candidate["trajectory"]["trajectory"]
+
+            baseline = getattr(self, "_trajectory_baseline_outlet", None)
+            if baseline is None:
+                baseline = legacy_outlet
+            step_hours = config.CYCLE_INTERVAL_MINUTES / 60.0
+            result = select_trajectory_outlet(
+                _simulate,
+                lower=lower,
+                upper=max(lower, upper),
+                baseline=float(baseline),
+                current_indoor=current_indoor,
+                target=target_indoor,
+                step_hours=step_hours,
+            )
+            if result is None:
+                logging.warning(
+                    "🧭 Trajectory selector: no valid candidate; "
+                    "keeping legacy %.1f°C",
+                    legacy_outlet,
+                )
+                return legacy_outlet
+            legacy_traj = _simulate(legacy_outlet)
+            legacy_cost = (
+                comfort_cost(
+                    legacy_traj, target_indoor, COMFORT_BAND_K, step_hours
+                )
+                if legacy_traj
+                else float("nan")
+            )
+            logging.info(
+                "🧭 Trajectory selector%s: legacy %.1f°C (cost %.3f K²h) vs "
+                "trajectory %.1f°C (cost %.3f K²h, indoor %.2f–%.2f°C) "
+                "→ using %s",
+                "" if use_trajectory else " (shadow)",
+                legacy_outlet,
+                legacy_cost,
+                result["outlet"],
+                result["cost"],
+                result["min_indoor"],
+                result["max_indoor"],
+                "trajectory" if use_trajectory else "legacy",
+            )
+            return result["outlet"] if use_trajectory else legacy_outlet
+        except Exception as exc:
+            logging.warning(
+                "🧭 Trajectory selector failed (%s); keeping legacy %.1f°C",
+                exc,
+                legacy_outlet,
+            )
+            return legacy_outlet
 
     def _log_multi_horizon_predictions(
         self,
@@ -2445,6 +2543,10 @@ class EnhancedModelWrapper:
             _correction_mode = getattr(
                 config, "HEATING_CORRECTION_MODE", "legacy"
             )
+            # Trajectory mode replaces the result afterwards; the internal
+            # pipeline it is compared against uses the physics correction.
+            if _correction_mode == "trajectory":
+                _correction_mode = "physics"
             if self._climate_mode == "cooling":
                 _cooling_correction_mode = getattr(
                     config, "COOLING_CORRECTION_MODE", "physics"
@@ -4133,6 +4235,7 @@ def get_enhanced_model_wrapper() -> EnhancedModelWrapper:
 def simplified_outlet_prediction(
     features: pd.DataFrame, current_temp: float, target_temp: float,
     price_data: Optional[Dict] = None,
+    baseline_outlet: Optional[float] = None,
 ) -> Tuple[float, float, Dict]:
     """
     SIMPLIFIED outlet temperature prediction using Enhanced Model Wrapper.
@@ -4145,6 +4248,8 @@ def simplified_outlet_prediction(
         current_temp: Current indoor temperature
         target_temp: Target indoor temperature
         price_data: Optional electricity price dict from ha_client
+        baseline_outlet: Last published outlet, used as tie-break anchor by
+            the trajectory selector
 
     Returns:
         Tuple of (outlet_temp, confidence, metadata)
@@ -4153,6 +4258,7 @@ def simplified_outlet_prediction(
     try:
         # Create enhanced model wrapper
         wrapper = get_enhanced_model_wrapper()
+        wrapper._trajectory_baseline_outlet = baseline_outlet
 
         # Convert features to dict format - handle empty DataFrame
         records = features.to_dict(orient="records")

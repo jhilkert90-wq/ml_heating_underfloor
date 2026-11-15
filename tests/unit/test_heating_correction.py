@@ -456,12 +456,15 @@ class TestCorrectionModeDispatch:
         self._clamp_min_patcher.stop()
         self._clamp_max_patcher.stop()
 
-    # 5. "physics" mode routes to Newton method --------------------------------
+    # 5. "physics" (and "trajectory") mode routes to Newton method -----------
+    @pytest.mark.parametrize('mode', ['physics', 'trajectory'])
     @patch('src.model_wrapper.config.TRAJECTORY_PREDICTION_ENABLED', True)
-    @patch('src.model_wrapper.config.HEATING_CORRECTION_MODE', 'physics')
     @patch('src.model_wrapper.config.TRAJECTORY_STEPS', 4)
-    def test_physics_mode_routes_to_newton(self):
-        """HEATING_CORRECTION_MODE='physics' must call Newton method."""
+    def test_physics_mode_routes_to_newton(self, mode, monkeypatch):
+        """'physics' and 'trajectory' must call the Newton method."""
+        monkeypatch.setattr(
+            'src.model_wrapper.config.HEATING_CORRECTION_MODE', mode
+        )
         self.wrapper._current_indoor = 21.0
         self.wrapper._current_features = {'indoor_temp_delta_60m': -0.1}
 

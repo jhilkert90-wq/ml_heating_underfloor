@@ -675,6 +675,9 @@ FD_NEWTON_MIN_SENSITIVITY: float = max(
 #             S(t) = [η/(η+U)] × [1 − exp(−t/τ)] is evaluated at the time of
 #             the worst trajectory violation (recommended after calibration).
 # "ml"      — LightGBM regressor (requires calibration run, future feature).
+# "trajectory" — heating only: joint trajectory selector (src/trajectory_selector.py)
+#             picks the outlet with the smallest squared comfort-band violation
+#             over the full horizon; the physics result is logged as comparison.
 HEATING_CORRECTION_MODE: str = os.getenv("HEATING_CORRECTION_MODE", "legacy")
 # Maximum minutes to wait during the grace period after blocking ends.
 GRACE_PERIOD_MAX_MINUTES: int = int(
