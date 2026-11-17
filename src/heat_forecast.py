@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
-from . import forecast_accuracy
+from . import forecast_accuracy, forecast_accuracy_debug
 
 BERLIN = ZoneInfo("Europe/Berlin")
 LOGGER = logging.getLogger(__name__)
@@ -916,6 +916,7 @@ class HeatForecastEngine:
         self.state = self.store.load()
         self._backfill_attempted = False
         self._price_optimizer = None
+        self._anchor_debug: dict[str, Any] = {}
 
     @staticmethod
     def _number(ha_client: Any, states: Mapping[str, Any], entity_id: str) -> float | None:
@@ -1416,6 +1417,25 @@ class HeatForecastEngine:
                 energy_so_far[name] = covered_energy
                 energy_coverage[name] = valid
                 energy_coverage_hours[name] = covered_hours
+            reading_methods: dict[str, str] = {}
+            for name, reading_value in readings.items():
+                # Event-driven counters only change while energy flows. A
+                # reading whose last update is not after the full hour is
+                # therefore still the value that stood at the boundary.
+                if reading_value is None or name not in reading_times:
+                    continue
+                try:
+                    stamp = datetime.fromisoformat(
+                        reading_times[name]
+                    ).astimezone(timezone.utc)
+                except (TypeError, ValueError):
+                    continue
+                if stamp == hour_start:
+                    reading_methods[name] = "exact"
+                elif stamp < hour_start:
+                    reading_times[name] = hour_start.isoformat()
+                    energy_coverage[name] = True
+                    reading_methods[name] = "held_live"
             usable_counter_anchor = False
             if readings.get("heating_el") is not None:
                 try:
@@ -1442,10 +1462,12 @@ class HeatForecastEngine:
                 "energy_so_far": energy_so_far,
                 "energy_coverage_hours": energy_coverage_hours,
                 "energy_coverage": energy_coverage,
+                "reading_methods": reading_methods,
                 "coverage": (
                     "counter_anchor" if usable_counter_anchor else "partial"
                 ),
             }
+            self._anchor_debug = {"source": "live_sample"}
             self._record_hour_accuracy()
         return deltas
 
@@ -1466,6 +1488,15 @@ class HeatForecastEngine:
         )
         if actual:
             forecast_accuracy.record_actual(self.state, *actual)
+        forecast_accuracy_debug.write_snapshot(
+            self.store.path,
+            self.state,
+            now=datetime.now(timezone.utc),
+            reason_fn=forecast_accuracy.anchor_rejection_reason,
+            fetch_debug=getattr(self, "_anchor_debug", None),
+            outcome="hour_closed" if actual else "no_hour_closed",
+            summary_fn=forecast_accuracy.summary,
+        )
 
     def _record_daily_energy(
         self,
@@ -1873,52 +1904,97 @@ class HeatForecastEngine:
                 block_days=14,
                 timeout_seconds=config.HEAT_FORECAST_INFLUX_TIMEOUT_SECONDS,
             )
+        influx_samples = {entity: list(rows) for entity, rows in history.items()}
+        ha_samples: dict[str, list[tuple[datetime, float]]] | None = None
+        live_counters = self.state.get("counter_snapshots", {})
 
         max_gap = timedelta(
             minutes=getattr(config, "HEAT_FORECAST_ANCHOR_MAX_GAP_MINUTES", 30)
         )
 
+        hold_max = timedelta(
+            hours=getattr(config, "HEAT_FORECAST_ANCHOR_HOLD_MAX_HOURS", 24)
+        )
+
         def latest_anchor(
             samples: Sequence[tuple[datetime, float]],
             boundary: datetime,
-        ) -> tuple[datetime, float] | None:
+            name: str = "",
+        ) -> tuple[datetime, float, str] | None:
+            """Counter value at ``boundary`` and how it was derived.
+
+            Counters are event-driven: Home Assistant and Influx only store a
+            new point when the value changes, so an idle heat pump leaves no
+            sample near the full hour. The value then stays that of the last
+            sample before the boundary ("held"); that is proven either by a
+            later sample after a gap longer than ``max_gap`` or by the live
+            counter still showing the same value.
+            """
             normalized = sorted(
                 (stamp.astimezone(timezone.utc), value) for stamp, value in samples
             )
             before = [
                 item
                 for item in normalized
-                if item[0] <= boundary and boundary - item[0] <= timedelta(hours=1)
+                if item[0] <= boundary and boundary - item[0] <= hold_max
             ]
             latest = before[-1] if before else None
-            if latest is None or latest[0] == boundary:
-                return latest
+            if latest is None:
+                return None
+            if latest[0] == boundary:
+                return latest[0], latest[1], "exact"
             after = next((item for item in normalized if item[0] > boundary), None)
-            if after is None or after[0] - latest[0] > max_gap:
-                return latest
-            if after[1] < latest[1]:
-                return latest
-            # Counter value at the full hour, interpolated between neighbours.
-            fraction = (boundary - latest[0]) / (after[0] - latest[0])
-            return boundary, latest[1] + (after[1] - latest[1]) * fraction
+            if after is not None:
+                if after[1] < latest[1]:
+                    return latest[0], latest[1], "stale_before_reset"
+                if after[0] - latest[0] <= max_gap:
+                    # Counter value at the full hour, interpolated.
+                    fraction = (boundary - latest[0]) / (after[0] - latest[0])
+                    return (
+                        boundary,
+                        latest[1] + (after[1] - latest[1]) * fraction,
+                        "interpolated",
+                    )
+                return boundary, latest[1], "held_gap"
+            live = live_counters.get(name) if name else None
+            try:
+                live_unchanged = (
+                    isinstance(live, Mapping)
+                    and abs(float(live["value_kwh"]) - latest[1]) < 1e-9
+                    and datetime.fromisoformat(live["time_utc"]).astimezone(
+                        timezone.utc
+                    ) <= boundary
+                )
+            except (KeyError, TypeError, ValueError):
+                live_unchanged = False
+            if live_unchanged:
+                return boundary, latest[1], "held_live"
+            if boundary - latest[0] <= timedelta(hours=1):
+                return latest[0], latest[1], "latest_before_boundary"
+            return None
 
         def history_anchor(boundary: datetime) -> dict[str, Any]:
             key = boundary.isoformat()
             readings: dict[str, float | None] = {}
             reading_times: dict[str, str] = {}
+            reading_methods: dict[str, str] = {}
             energy_coverage: dict[str, bool] = {}
             for name, entity_id in counters:
                 sample = (
-                    latest_anchor(history.get(entity_id, []), boundary)
+                    latest_anchor(history.get(entity_id, []), boundary, name)
                     if entity_id else None
                 )
                 readings[name] = sample[1] if sample else None
                 reading_times[name] = sample[0].isoformat() if sample else key
+                reading_methods[name] = (
+                    sample[2] if sample else ("no_entity" if not entity_id else "no_sample")
+                )
                 energy_coverage[name] = bool(sample and sample[0] == boundary)
             return {
                 "hour_utc": key,
                 "sample_time_utc": key,
                 "reading_times_utc": reading_times,
+                "reading_methods": reading_methods,
                 "readings": readings,
                 "energy_so_far": {name: 0.0 for name in readings},
                 "energy_coverage_hours": {name: 0.0 for name in readings},
@@ -1939,6 +2015,7 @@ class HeatForecastEngine:
             )
         ):
             ha_history = _fetch_ha_history(ha_client, entity_ids, start, now)
+            ha_samples = {entity: list(rows) for entity, rows in ha_history.items()}
             history = {
                 entity: _merge_samples(
                     history.get(entity, []), ha_history.get(entity, [])
@@ -1970,6 +2047,51 @@ class HeatForecastEngine:
             and forecast_accuracy.anchor_rejection_reason(previous_candidate) is None
         ):
             self.state["previous_hour_anchor"] = previous_candidate
+        self._anchor_debug = {
+            "source": "history_refresh",
+            "now_utc": now.astimezone(timezone.utc).isoformat(),
+            "fetch_start_utc": start.isoformat(),
+            "repair_previous": repair_previous,
+            "current_usable_before": current_usable,
+            "tolerance_min": getattr(config, "HEAT_FORECAST_ANCHOR_TOLERANCE_MINUTES", 5),
+            "max_gap_min": getattr(config, "HEAT_FORECAST_ANCHOR_MAX_GAP_MINUTES", 30),
+            "hold_max_hours": hold_max.total_seconds() / 3600.0,
+            "ha_fallback_used": ha_samples is not None,
+            "counters": {
+                name: {
+                    "entity": entity_id or None,
+                    "influx": forecast_accuracy_debug.summarize_samples(
+                        influx_samples.get(entity_id)
+                    ),
+                    "home_assistant": (
+                        forecast_accuracy_debug.summarize_samples(
+                            ha_samples.get(entity_id)
+                        )
+                        if ha_samples is not None else "not queried"
+                    ),
+                    "live_snapshot": live_counters.get(name),
+                }
+                for name, entity_id in counters
+            },
+            "candidate": {
+                "hour_utc": candidate.get("hour_utc"),
+                "rejection": forecast_accuracy.anchor_rejection_reason(candidate),
+                "readings": candidate.get("readings"),
+                "methods": candidate.get("reading_methods"),
+                "times": candidate.get("reading_times_utc"),
+            },
+            "previous_candidate": (
+                None if previous_candidate is None else {
+                    "hour_utc": previous_candidate.get("hour_utc"),
+                    "rejection": forecast_accuracy.anchor_rejection_reason(
+                        previous_candidate
+                    ),
+                    "readings": previous_candidate.get("readings"),
+                    "methods": previous_candidate.get("reading_methods"),
+                    "times": previous_candidate.get("reading_times_utc"),
+                }
+            ),
+        }
         self._record_hour_accuracy()
         self.store.save(self.state)
 

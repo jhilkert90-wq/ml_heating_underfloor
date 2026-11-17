@@ -1,6 +1,8 @@
 """Tests for the WP load forecast stabilisation (Prompt 1 steps 1-6)."""
 
+import json
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -79,9 +81,115 @@ class TestAnchors:
         wide = HeatForecastEngine(str(tmp_path / "w.json"))
         influx.gap = 90
         wide._refresh_hour_anchor(now=now, influx_service=influx, ha_client=None)
-        assert wide.state["hour_anchor"]["reading_times_utc"][
-            "heating_el"
-        ] == (HOUR - timedelta(minutes=10)).isoformat()
+        # Counters are event-driven: a >30 min gap without samples means the
+        # value did not change, so the boundary holds the earlier reading.
+        anchor = wide.state["hour_anchor"]
+        assert anchor["readings"]["heating_el"] == pytest.approx(10.0)
+        assert anchor["reading_times_utc"]["heating_el"] == HOUR.isoformat()
+        assert anchor["reading_methods"]["heating_el"] == "held_gap"
+
+    def _single_counter_engine(self, monkeypatch, tmp_path):
+        from src import config
+
+        monkeypatch.setattr(config, "HEAT_FORECAST_ELECTRICITY_COUNTER_ENTITY_ID", "el")
+        monkeypatch.setattr(config, "HEAT_FORECAST_THERMAL_COUNTER_ENTITY_ID", "th")
+        for key in (
+            "HEAT_FORECAST_DHW_COUNTER_ENTITY_ID",
+            "HEAT_FORECAST_STANDBY_COUNTER_ENTITY_ID",
+            "HEAT_FORECAST_DEFROST_ELECTRICITY_COUNTER_ENTITY_ID",
+            "HEAT_FORECAST_DEFROST_THERMAL_COUNTER_ENTITY_ID",
+        ):
+            monkeypatch.setattr(config, key, "")
+        return HeatForecastEngine(str(tmp_path / "s.json"))
+
+    def test_idle_hours_close_with_zero_energy(self, monkeypatch, tmp_path):
+        """Heat pump idle for hours: no sample near any boundary (log case)."""
+        engine = self._single_counter_engine(monkeypatch, tmp_path)
+        for lead in fa.LEADS:
+            start = HOUR - timedelta(hours=lead)
+            fa.record_predictions(
+                engine.state, now=start,
+                starts=[start + timedelta(hours=i) for i in range(25)],
+                el_kwh=[0.03] * 25, th_kwh=[0.1] * 25,
+            )
+        # Last change 3 h before HOUR, next change 70 min after HOUR+1h.
+        last_change = HOUR - timedelta(hours=3)
+        restart = HOUR + timedelta(hours=1, minutes=10)
+        samples = {
+            "el": [(last_change, 1494.6), (restart, 1495.1)],
+            "th": [(last_change, 3000.0), (restart, 3002.0)],
+        }
+        influx = SimpleNamespace(
+            fetch_counter_history=lambda requested, *a, **k: {
+                e: [] for e in requested
+            }
+        )
+        ha = SimpleNamespace(
+            get_history_bulk=lambda requested, *a: [
+                [
+                    {"entity_id": e, "state": str(v),
+                     "last_changed": t.isoformat()}
+                    for t, v in samples[e]
+                ]
+                for e in requested
+            ]
+        )
+        now = HOUR + timedelta(hours=1, minutes=20)
+        engine.state["previous_hour_anchor"] = {
+            "hour_utc": HOUR.isoformat(), "coverage": "partial",
+            "reading_times_utc": {}, "readings": {"heating_el": None},
+        }
+        engine.state["hour_anchor"] = {
+            "hour_utc": (HOUR + timedelta(hours=1)).isoformat(),
+            "coverage": "partial", "reading_times_utc": {},
+            "readings": {"heating_el": None},
+        }
+        engine._refresh_hour_anchor(now=now, influx_service=influx, ha_client=ha)
+
+        metrics = fa.summary(engine.state, now)["lead_1h"]["24h"]
+        assert metrics["el"]["n"] == 1
+        assert engine.state["forecast_accuracy"]["history"][0]["act_el"] == 0.0
+        assert engine.state["hour_anchor"]["reading_methods"]["heating_el"] == "held_gap"
+
+        dump = json.loads((tmp_path / "forecast_accuracy_debug.json").read_text())
+        assert dump["history_rows"] >= 1
+        assert dump["fetch"]["counters"]["heating_el"]["home_assistant"]["n"] == 2
+        assert dump["events"][-1]["outcome"] == "hour_closed"
+
+    def test_live_counter_unchanged_since_before_boundary_is_held(
+        self, monkeypatch, tmp_path
+    ):
+        engine = self._single_counter_engine(monkeypatch, tmp_path)
+        now = HOUR + timedelta(minutes=7)
+        stamp = (HOUR - timedelta(minutes=26)).isoformat()
+        engine._record_interval(
+            now=now,
+            states={
+                "el": {"state": "1494.637", "last_updated": stamp},
+                "th": {"state": "3000.0", "last_updated": stamp},
+            },
+            outdoor_c=8.0,
+        )
+        anchor = engine.state["hour_anchor"]
+        assert anchor["coverage"] == "counter_anchor"
+        assert anchor["reading_times_utc"]["heating_el"] == HOUR.isoformat()
+        assert anchor["reading_methods"]["heating_el"] == "held_live"
+        assert fa.anchor_rejection_reason(anchor) is None
+
+    def test_stale_history_without_live_proof_is_not_held(
+        self, monkeypatch, tmp_path
+    ):
+        engine = self._single_counter_engine(monkeypatch, tmp_path)
+        now = HOUR + timedelta(minutes=7)
+        influx = SimpleNamespace(
+            fetch_counter_history=lambda requested, *a, **k: {
+                e: [(HOUR - timedelta(minutes=26), 10.0)] for e in requested
+            }
+        )
+        engine._refresh_hour_anchor(now=now, influx_service=influx, ha_client=None)
+        anchor = engine.state["hour_anchor"]
+        assert anchor["reading_methods"]["heating_el"] == "latest_before_boundary"
+        assert fa.anchor_rejection_reason(anchor) is not None
 
 
 class TestStartWindow:
