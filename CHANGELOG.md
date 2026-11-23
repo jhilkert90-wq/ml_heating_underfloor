@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Add `price_cost_pv_target_offset_k` (default +0.5 K) as the only new cost-aware setting. PV pre-heating starts at a fixed 30% load coverage and scales linearly to the configured maximum at full coverage.
-- Publish separate cheap-grid, PV and expensive-grid offset diagnostics on the cost-offset sensor.
-
-### Changed
-- Keep the existing `price_band_up_c` as the maximum cheap-grid pre-heat band. Cheap-grid and PV offsets are combined with `max`, not added.
-- Combine cost-aware PV and forecast-trajectory PV with `max`, so their effective ceiling is the larger of `price_cost_pv_target_offset_k` and `pv_traj_heating_target_offset`.
-
 ## [0.2.0] - 2026-02-10
 
 ### Added
