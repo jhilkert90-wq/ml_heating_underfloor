@@ -5,8 +5,10 @@ This module contains the main heating control logic extracted from main.py
 to improve code organization and maintainability.
 """
 
+import copy
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional, TYPE_CHECKING
 
@@ -17,6 +19,35 @@ from . import config
 from .ha_client import HAClient, get_sensor_attributes
 from .shadow_mode import get_shadow_output_entity_id
 from .state_manager import save_state, SystemState
+
+
+@dataclass(frozen=True)
+class CycleSnapshot:
+    """Immutable Home Assistant state snapshot used for one control decision."""
+
+    captured_at: datetime
+    all_states: object
+
+    @classmethod
+    def capture(cls, ha_client: HAClient) -> "CycleSnapshot":
+        states = ha_client.get_all_states()
+        return cls(
+            captured_at=datetime.now(timezone.utc),
+            all_states=copy.deepcopy(states),
+        )
+
+    def state(self, ha_client: HAClient, entity_id: str, *, is_binary: bool = False):
+        return ha_client.get_state(entity_id, self.all_states, is_binary=is_binary)
+
+    def delta_t(self, ha_client: HAClient) -> Optional[float]:
+        outlet = self.state(ha_client, config.ACTUAL_OUTLET_TEMP_ENTITY_ID)
+        inlet = self.state(ha_client, config.INLET_TEMP_ENTITY_ID)
+        try:
+            if outlet is None or inlet is None:
+                return None
+            return float(outlet) - float(inlet)
+        except (TypeError, ValueError):
+            return None
 
 
 class BlockingStateManager:
@@ -136,9 +167,10 @@ class BlockingStateManager:
         if not last_is_blocking:
             return False  # No grace period needed
             
-        # Check if blocking just ended
+        # Use one immutable HA payload for the entire grace decision.
+        snapshot = CycleSnapshot.capture(ha_client)
         is_blocking, _ = self.check_blocking_state(
-            ha_client, ha_client.get_all_states()
+            ha_client, snapshot.all_states
         )
         
         if is_blocking:
@@ -166,16 +198,20 @@ class BlockingStateManager:
             return False
             
         # An aborted grace wait resumes normal control in this cycle.
-        resume_control = self._execute_grace_period(ha_client, state, age)
+        resume_control = self._execute_grace_period(
+            ha_client, state, age, snapshot=snapshot
+        )
         
         # Clear blocking state after grace period
         self._clear_blocking_state(state)
 
         if resume_control:
             logging.info(
-                "Grace-period wait aborted; resuming normal control."
+                "Grace-period wait aborted; deferring normal control to the "
+                "next cycle so recovery and regular prediction cannot use "
+                "different HA snapshots in one cycle."
             )
-            return False
+            return True
 
         return True  # Skip cycle
 
@@ -192,9 +228,17 @@ class BlockingStateManager:
         state.last_blocking_reasons = []
     
     def _execute_grace_period(
-        self, ha_client: HAClient, state: SystemState, age: float
+        self,
+        ha_client: HAClient,
+        state: SystemState,
+        age: float,
+        *,
+        snapshot: Optional[CycleSnapshot] = None,
     ) -> bool:
-        """Execute the grace period temperature restoration logic"""
+        """Execute the grace period temperature restoration logic."""
+        if snapshot is None:
+            snapshot = CycleSnapshot.capture(ha_client)
+
         logging.info("--- Grace Period Started ---")
         logging.info(
             "Blocking event ended %.1f min ago. Entering grace period to "
@@ -202,8 +246,12 @@ class BlockingStateManager:
             age / 60.0,
         )
 
-        # Fetch current state for intelligent recovery
-        all_states = ha_client.get_all_states()
+        # Every initial grace read comes from the same captured HA payload.
+        all_states = snapshot.all_states
+        logging.debug(
+            "Grace CycleSnapshot captured_at=%s",
+            snapshot.captured_at.isoformat(),
+        )
         current_indoor = ha_client.get_state(
             config.INDOOR_TEMP_ENTITY_ID, all_states
         )
@@ -286,9 +334,8 @@ class BlockingStateManager:
                     raw_grace_target,
                     grace_target,
                 )
-        actual_outlet_temp_start = ha_client.get_state(
-            config.ACTUAL_OUTLET_TEMP_ENTITY_ID,
-            ha_client.get_all_states(),
+        actual_outlet_temp_start = snapshot.state(
+            ha_client, config.ACTUAL_OUTLET_TEMP_ENTITY_ID
         )
 
         if actual_outlet_temp_start is None:
@@ -305,7 +352,7 @@ class BlockingStateManager:
             )
         )
         if requires_heating_spread and self._has_minimum_heating_spread(
-            ha_client, ha_client.get_all_states()
+            ha_client, snapshot.all_states
         ):
             logging.info(
                 "Blocking recovery detected outlet-inlet spread above "
