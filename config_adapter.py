@@ -772,6 +772,9 @@ def convert_addon_to_env(config):
         'PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW': str(
             config.get('price_cost_household_power_offset_kw', 0.7)
         ),
+        'PRICE_COST_PV_TARGET_OFFSET_K': str(
+            config.get('price_cost_pv_target_offset_k', 0.5)
+        ),
         'HP_START_ESTIMATE_ENABLED': str(
             config.get('hp_start_estimate_enabled', False)
         ).lower(),

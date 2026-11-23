@@ -628,24 +628,50 @@ class EnhancedModelWrapper:
                 forecast_traj_state = (
                     self._get_forecast_trajectory_state_from_features(features)
                 )
-                if forecast_traj_state.active and not cost_offset_applied:
+                if forecast_traj_state.active:
                     forecast_offset = float(
                         getattr(config, "PV_TRAJ_HEATING_TARGET_OFFSET", 0.0)
                     )
-                    forecast_adjusted = target_indoor + forecast_offset
-                    if forecast_adjusted > target_adjusted:
-                        target_adjusted = forecast_adjusted
-                        price_info["forecast_trajectory_active"] = True
-                        price_info["forecast_trajectory_target_offset"] = (
-                            forecast_offset
-                        )
-                        logging.info(
-                            "☀️ Forecast trajectory heating: target %.1f → %.1f°C "
-                            "(offset +%.2f)",
-                            target_indoor,
-                            target_adjusted,
+
+                    feature_price_data = features.get("_electricity_price") or {}
+                    cost_info = feature_price_data.get("cost_info") or {}
+                    cost_pv_offset = max(
+                        0.0,
+                        float(cost_info.get("pv_offset", 0.0)),
+                    )
+
+                    # Keep an explicit negative cost-mode setback. Forecast PV may
+                    # supplement a positive cost-aware PV offset, but it must not
+                    # overwrite an expensive-grid setback when no cost-PV component
+                    # is active.
+                    apply_forecast_offset = (
+                        not cost_offset_applied
+                        or cost_pv_offset > 0.0
+                    )
+
+                    if apply_forecast_offset:
+                        combined_pv_offset = max(
+                            cost_pv_offset,
                             forecast_offset,
                         )
+                        forecast_adjusted = (
+                            target_indoor + combined_pv_offset
+                        )
+
+                        if forecast_adjusted > target_adjusted:
+                            target_adjusted = forecast_adjusted
+                            price_info["forecast_trajectory_active"] = True
+                            price_info[
+                                "forecast_trajectory_target_offset"
+                            ] = combined_pv_offset
+                            logging.info(
+                                "☀️ Forecast trajectory heating: "
+                                "target %.1f → %.1f°C (offset +%.2f)",
+                                target_indoor,
+                                target_adjusted,
+                                combined_pv_offset,
+                            )
+
 
             # --- PV Surplus CHEAP Override ---
             # When current PV production exceeds the configured threshold the

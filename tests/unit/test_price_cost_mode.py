@@ -26,6 +26,7 @@ def _patches(**extra):
         FEED_IN_TARIFF_EUR_KWH=0.079,
         PRICE_BAND_UP_C=0.5,
         PRICE_BAND_DOWN_C=0.2,
+        PRICE_COST_PV_TARGET_OFFSET_K=0.5,
         PRICE_COST_LOOKAHEAD_HOURS=24,
         PRICE_COST_MIN_SPREAD_EUR_KWH=0.02,
     )
@@ -51,7 +52,42 @@ class TestCostOffset:
         pv_hourly = [0.0] * 8 + [5000.0] * 16  # PV from 06:00 (h=8 from 22:00)
         with _patches():
             res = opt.compute_cost_target_offset(pv_hourly, 1.5, NOW)
-        assert res["offset"] <= 0.0
+        assert res["cheap_offset"] > 0.0
+        assert res["pv_offset"] == 0.0
+        assert res["offset"] <= 0.5
+
+    def test_pv_offset_starts_at_thirty_percent_and_scales(self):
+        opt = _optimizer([0.25] * 48)
+        with _patches(PRICE_COST_MIN_SPREAD_EUR_KWH=0.0):
+            below = opt.compute_cost_target_offset([299.0], 1.0, NOW)
+            at_start = opt.compute_cost_target_offset([300.0], 1.0, NOW)
+            half = opt.compute_cost_target_offset([500.0], 1.0, NOW)
+            full = opt.compute_cost_target_offset([1000.0], 1.0, NOW)
+        assert below["pv_offset"] == pytest.approx(0.0)
+        assert at_start["pv_offset"] == pytest.approx(0.0)
+        assert half["pv_offset"] == pytest.approx(
+            0.5 * (0.5 - 0.3) / 0.7
+        )
+        assert full["pv_offset"] == pytest.approx(0.5)
+
+    def test_cheap_and_pv_use_max_not_sum(self):
+        opt = _optimizer(_day_prices(0.10, 0.40))
+        with _patches(PRICE_BAND_UP_C=0.2):
+            result = opt.compute_cost_target_offset(
+                [1000.0] + [0.0] * 23, 1.0, NOW
+            )
+        assert result["cheap_offset"] <= 0.2
+        assert result["pv_offset"] == pytest.approx(0.5)
+        assert result["offset"] == pytest.approx(0.5)
+
+    def test_existing_price_band_is_cheap_grid_maximum(self):
+        opt = _optimizer(_day_prices(0.10, 0.40))
+        with _patches(PRICE_BAND_UP_C=0.2):
+            result = opt.compute_cost_target_offset(
+                [0.0] * 24, 1.0, NOW
+            )
+        assert 0.0 < result["cheap_offset"] <= 0.2
+        assert result["offset"] == result["cheap_offset"]
 
     def test_expensive_day_no_sun_cheap_night_preheats(self):
         opt = _optimizer(_day_prices(0.10, 0.40))

@@ -872,6 +872,14 @@ class HAClient:
             {
                 "band_up_c": getattr(config, "PRICE_BAND_UP_C", None),
                 "band_down_c": getattr(config, "PRICE_BAND_DOWN_C", None),
+                "cheap_offset_k": cost_info.get("cheap_offset", 0.0),
+                "pv_offset_k": cost_info.get("pv_offset", 0.0),
+                "negative_grid_offset_k": cost_info.get(
+                    "negative_grid_offset", 0.0
+                ),
+                "offset_source": cost_info.get("offset_source", "neutral"),
+                "pv_scale": cost_info.get("pv_scale", 0.0),
+                "cheap_scale": cost_info.get("cheap_scale", 0.0),
                 "min_spread_eur_kwh": getattr(
                     config, "PRICE_COST_MIN_SPREAD_EUR_KWH", None
                 ),
