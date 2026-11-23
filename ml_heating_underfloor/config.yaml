@@ -698,6 +698,8 @@ options:
   price_band_up_c: 0.5
   # Max setback (°C) in expensive hours
   price_band_down_c: 0.2
+
+  price_cost_pv_target_offset_k: 0.5
   # Look-ahead window (hours) for the effective price comparison
   price_cost_lookahead_hours: 24
   # Minimum spread (EUR/kWh) between cheapest and dearest hour for any shift
@@ -853,6 +855,7 @@ options:
     price_cost_disable_overshoot_correction: false
     price_band_up_c: 0.5
     price_band_down_c: 0.2
+    price_cost_pv_target_offset_k: 0.5
     pv_surplus_cheap_enabled: false
     pv_traj_forecast_mode_enabled: false
     pv_traj_disable_price_in_forecast_mode: true
@@ -873,7 +876,6 @@ options:
     price_cost_disable_overshoot_correction: false
     price_band_up_c: 0.5
     price_band_down_c: 0.2
-    price_cost_pv_target_offset_k: 0.5
     pv_surplus_cheap_enabled: false
     pv_traj_forecast_mode_enabled: false
     pv_traj_disable_price_in_forecast_mode: true
@@ -1295,6 +1297,7 @@ schema:
     price_cost_disable_overshoot_correction: "bool?"
     price_band_up_c: "float(0.0,2.0)?"
     price_band_down_c: "float(0.0,2.0)?"
+    price_cost_pv_target_offset_k: "float(0,1.5)?"
     pv_surplus_cheap_enabled: "bool?"
     pv_traj_forecast_mode_enabled: "bool?"
     pv_traj_disable_price_in_forecast_mode: "bool?"
