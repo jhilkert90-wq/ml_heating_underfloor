@@ -873,6 +873,7 @@ options:
     price_cost_disable_overshoot_correction: false
     price_band_up_c: 0.5
     price_band_down_c: 0.2
+    price_cost_pv_target_offset_k: 0.5
     pv_surplus_cheap_enabled: false
     pv_traj_forecast_mode_enabled: false
     pv_traj_disable_price_in_forecast_mode: true
@@ -1229,6 +1230,7 @@ schema:
   feed_in_tariff_eur_kwh: "float(0.0,1.0)"
   price_band_up_c: "float(0.0,2.0)"
   price_band_down_c: "float(0.0,2.0)"
+  price_cost_pv_target_offset_k: "float(0,1.5)"
   price_cost_lookahead_hours: "int(2,48)"
   price_cost_min_spread_eur_kwh: "float(0.0,0.5)"
   price_cost_max_overshoot_k: "float(0.0,5.0)"

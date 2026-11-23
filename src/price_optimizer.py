@@ -333,24 +333,13 @@ class PriceOptimizer:
         hp_power_kw: float,
         now: Optional[datetime] = None,
     ) -> Optional[Dict[str, float]]:
-        """Compute a heating-direction target offset from effective prices.
+        """Compute separate cheap-grid and PV target offsets.
 
-        The effective price of each hour blends the grid price with the
-        feed-in tariff according to the share ``f`` of the heat pump demand
-        that PV can cover::
-
-            p_eff = (1 - f) * p_grid + f * min(p_grid, feed_in)
-
-        The current hour is compared with the mean effective price of the
-        look-ahead window.  Cheaper than average → positive offset (pre-heat,
-        up to ``PRICE_BAND_UP_C``); more expensive → negative offset (up to
-        ``PRICE_BAND_DOWN_C``).  Scaling is linear between the mean and the
-        window extreme.  *pv_hourly_w* is the PV forecast [W] per hour with
-        index 0 = current hour; the window is cut to the hours for which a PV
-        forecast exists (all hours assume no PV if no forecast is given).
-
-        Returns ``None`` when no prices are available; otherwise a dict with
-        ``offset`` and diagnostics.
+        Cheap grid power keeps using ``PRICE_BAND_UP_C``. PV starts
+        contributing at 30 percent load coverage and scales linearly to
+        ``PRICE_COST_PV_TARGET_OFFSET_K`` at full coverage. Positive
+        components are combined with ``max`` rather than added. Expensive-hour
+        setback continues to use the PV-adjusted effective price.
         """
         lookahead = max(
             1, int(getattr(config, "PRICE_COST_LOOKAHEAD_HOURS", 24))
@@ -361,31 +350,99 @@ class PriceOptimizer:
         price_hours = len(grid)
         if len(pv_hourly_w) > 1:
             grid = grid[: len(pv_hourly_w)]
-        feed_in = float(getattr(config, "FEED_IN_TARIFF_EUR_KWH", 0.079))
+        feed_in = float(
+            getattr(config, "FEED_IN_TARIFF_EUR_KWH", 0.079)
+        )
         demand_w = max(1.0, float(hp_power_kw) * 1000.0)
+        pv_shares: List[float] = []
         eff: List[float] = []
         for h, p_grid in enumerate(grid):
             pv_w = pv_hourly_w[h] if h < len(pv_hourly_w) else 0.0
-            f = min(1.0, max(0.0, float(pv_w)) / demand_w)
-            eff.append((1.0 - f) * p_grid + f * min(p_grid, feed_in))
+            pv_share = min(1.0, max(0.0, float(pv_w)) / demand_w)
+            pv_shares.append(pv_share)
+            eff.append(
+                (1.0 - pv_share) * p_grid
+                + pv_share * min(p_grid, feed_in)
+            )
 
         p_now = eff[0]
         p_ref = sum(eff) / len(eff)
         p_min, p_max = min(eff), max(eff)
+        g_now = grid[0]
+        g_ref = sum(grid) / len(grid)
+        g_min, g_max = min(grid), max(grid)
         min_spread = float(
             getattr(config, "PRICE_COST_MIN_SPREAD_EUR_KWH", 0.02)
         )
-        band_up = float(getattr(config, "PRICE_BAND_UP_C", 0.5))
-        band_down = float(getattr(config, "PRICE_BAND_DOWN_C", 0.2))
 
-        offset = 0.0
-        if (p_max - p_min) >= min_spread:
-            if p_now < p_ref and p_ref - p_min > 1e-9:
-                offset = band_up * (p_ref - p_now) / (p_ref - p_min)
-            elif p_now > p_ref and p_max - p_ref > 1e-9:
-                offset = -band_down * (p_now - p_ref) / (p_max - p_ref)
+        # Existing cost-mode pre-heat band remains the cheap-grid maximum.
+        cheap_scale = 0.0
+        if (
+            g_max - g_min >= min_spread
+            and g_now < g_ref
+            and g_ref - g_min > 1e-9
+        ):
+            cheap_scale = min(
+                1.0, max(0.0, (g_ref - g_now) / (g_ref - g_min))
+            )
+        cheap_offset = max(
+            0.0, float(getattr(config, "PRICE_BAND_UP_C", 0.5))
+        ) * cheap_scale
+
+        # Deliberately fixed policy threshold to avoid another user setting.
+        pv_offset_start_share = 0.30
+        pv_share_now = pv_shares[0]
+        pv_scale = min(
+            1.0,
+            max(
+                0.0,
+                (pv_share_now - pv_offset_start_share)
+                / (1.0 - pv_offset_start_share),
+            ),
+        )
+        pv_offset = max(
+            0.0,
+            float(
+                getattr(config, "PRICE_COST_PV_TARGET_OFFSET_K", 0.5)
+            ),
+        ) * pv_scale
+
+        negative_grid_offset = 0.0
+        band_down = max(
+            0.0, float(getattr(config, "PRICE_BAND_DOWN_C", 0.2))
+        )
+        if (
+            p_max - p_min >= min_spread
+            and p_now > p_ref
+            and p_max - p_ref > 1e-9
+        ):
+            negative_grid_offset = (
+                -band_down * (p_now - p_ref) / (p_max - p_ref)
+            )
+
+        positive_offset = max(cheap_offset, pv_offset)
+        offset = (
+            positive_offset
+            if positive_offset > 0.0
+            else negative_grid_offset
+        )
+        if pv_offset >= cheap_offset and pv_offset > 0.0:
+            offset_source = "pv"
+        elif cheap_offset > 0.0:
+            offset_source = "cheap_grid"
+        elif negative_grid_offset < 0.0:
+            offset_source = "expensive_grid"
+        else:
+            offset_source = "neutral"
+
         return {
             "offset": offset,
+            "cheap_offset": cheap_offset,
+            "pv_offset": pv_offset,
+            "negative_grid_offset": negative_grid_offset,
+            "cheap_scale": cheap_scale,
+            "pv_scale": pv_scale,
+            "offset_source": offset_source,
             "p_eff_now": p_now,
             "p_eff_mean": p_ref,
             "p_eff_min": p_min,
@@ -394,11 +451,7 @@ class PriceOptimizer:
             "hours": float(len(eff)),
             "price_hours_available": float(price_hours),
             "pv_hours_available": float(len(pv_hourly_w)),
-            "pv_share_now": min(
-                1.0,
-                max(0.0, float(pv_hourly_w[0] if pv_hourly_w else 0.0))
-                / demand_w,
-            ),
+            "pv_share_now": pv_share_now,
             "p_grid_now": grid[0],
         }
 

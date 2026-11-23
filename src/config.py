@@ -442,6 +442,11 @@ PRICE_COST_MAX_OVERSHOOT_K: float = float(
 PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
     os.getenv("PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW", "0.7")
 )
+# Maximum heating target increase [K] from cost-aware PV coverage.
+# PV contribution starts at a fixed 30% load-coverage threshold.
+PRICE_COST_PV_TARGET_OFFSET_K: float = float(
+    os.getenv("PRICE_COST_PV_TARGET_OFFSET_K", "0.5")
+)
 # Expected HP electrical power: rolling mean of power_consumption while the HP
 # is heating (no DHW / defrost). Fallback [kW] when no samples exist.
 HP_EXPECTED_POWER_FALLBACK_KW: float = float(
