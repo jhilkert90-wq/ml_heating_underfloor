@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import ANY, Mock, patch
 from src import config
 from src.heating_controller import (
-    BlockingStateManager, SensorDataManager, HeatingSystemStateChecker
+    BlockingStateManager, SensorDataManager, HeatingSystemStateChecker, CycleSnapshot
 )
 from src.state_manager import SystemState
 
@@ -139,7 +139,7 @@ class TestBlockingStateManager:
         )
 
     @patch("src.heating_controller.time.time", return_value=100)
-    def test_stagnation_abort_resumes_normal_cycle(
+    def test_stagnation_abort_defers_normal_control_to_next_cycle(
         self, mock_time, blocking_manager, mock_ha_client
     ):
         state = SystemState(last_is_blocking=True, last_blocking_end_time=90)
@@ -151,7 +151,10 @@ class TestBlockingStateManager:
                 mock_ha_client, state, shadow_mode=False
             )
 
-        assert is_grace_period is False
+        assert is_grace_period is True
+        blocking_manager._execute_grace_period.assert_called_once()
+        call_kwargs = blocking_manager._execute_grace_period.call_args.kwargs
+        assert isinstance(call_kwargs["snapshot"], CycleSnapshot)
         mock_save.assert_called_once_with(
             last_is_blocking=False, last_blocking_end_time=None
         )

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add an immutable `CycleSnapshot` for post-blocking grace decisions and log its capture time, outlet, inlet, loop ΔT and defrost state for diagnostics.
+
+### Fixed
+- Use one Home Assistant state payload throughout the initial grace decision instead of mixing repeated state fetches.
+- When grace recovery aborts because the heating spread has returned or the wait stagnates, defer regular prediction to the next controller cycle instead of running a second outlet search seconds later with a different sensor snapshot. This prevents the observed post-defrost double search (for example 6.84 K followed by 2.73 K ΔT in the same cycle).
+
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
