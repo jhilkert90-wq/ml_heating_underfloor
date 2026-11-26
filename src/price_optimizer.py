@@ -336,7 +336,8 @@ class PriceOptimizer:
         """Compute separate cheap-grid and PV target offsets.
 
         Cheap grid power keeps using ``PRICE_BAND_UP_C``. PV starts
-        contributing at 30 percent load coverage and scales linearly to
+        contributing at 30 percent load coverage (averaged over the current
+        hour and ``PRICE_COST_PV_LOOKAHEAD_HOURS`` forecast hours) and scales linearly to
         ``PRICE_COST_PV_TARGET_OFFSET_K`` at full coverage. Positive
         components are combined with ``max`` rather than added. Expensive-hour
         setback continues to use the PV-adjusted effective price.
@@ -392,11 +393,19 @@ class PriceOptimizer:
         # Deliberately fixed policy threshold to avoid another user setting.
         pv_offset_start_share = 0.30
         pv_share_now = pv_shares[0]
+        # Average the coverage over the current hour and the PV forecast so
+        # the upward offset anticipates sun and does not jump with clouds.
+        pv_window = max(
+            1, int(getattr(config, "PRICE_COST_PV_LOOKAHEAD_HOURS", 3))
+        )
+        pv_share_offset = sum(pv_shares[:pv_window]) / len(
+            pv_shares[:pv_window]
+        )
         pv_scale = min(
             1.0,
             max(
                 0.0,
-                (pv_share_now - pv_offset_start_share)
+                (pv_share_offset - pv_offset_start_share)
                 / (1.0 - pv_offset_start_share),
             ),
         )
@@ -452,6 +461,7 @@ class PriceOptimizer:
             "price_hours_available": float(price_hours),
             "pv_hours_available": float(len(pv_hourly_w)),
             "pv_share_now": pv_share_now,
+            "pv_share_offset": pv_share_offset,
             "p_grid_now": grid[0],
         }
 

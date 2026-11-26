@@ -1314,9 +1314,6 @@ configuration:
   hp_start_estimate_use_for_learning:
     name: '[Advanced] HP Start Estimate: Use for learning'
     description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
-  hp_start_estimate_use_for_cost_mode:
-    name: '[Advanced] HP Start Estimate: Use for cost_mode'
-    description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'
   hp_start_estimate_use_for_grace:
     name: '[Advanced] HP Start Estimate: Use for grace'
     description: 'Optional; off by default. See docs/HA_WP_START_ESTIMATE_GUIDE.md.'

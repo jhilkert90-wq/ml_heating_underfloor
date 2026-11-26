@@ -447,6 +447,11 @@ PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
 PRICE_COST_PV_TARGET_OFFSET_K: float = float(
     os.getenv("PRICE_COST_PV_TARGET_OFFSET_K", "0.5")
 )
+# Number of hours (current hour + forecast) over which the PV coverage share
+# is averaged for the upward PV target offset. 1 = current hour only.
+PRICE_COST_PV_LOOKAHEAD_HOURS: int = int(
+    os.getenv("PRICE_COST_PV_LOOKAHEAD_HOURS", "3")
+)
 # Expected HP electrical power: rolling mean of power_consumption while the HP
 # is heating (no DHW / defrost). Fallback [kW] when no samples exist.
 HP_EXPECTED_POWER_FALLBACK_KW: float = float(
@@ -492,9 +497,6 @@ HP_START_ESTIMATE_USE_FOR_TRAJECTORY: bool = (
 )
 HP_START_ESTIMATE_USE_FOR_LEARNING: bool = (
     os.getenv("HP_START_ESTIMATE_USE_FOR_LEARNING", "false").lower() == "true"
-)
-HP_START_ESTIMATE_USE_FOR_COST_MODE: bool = (
-    os.getenv("HP_START_ESTIMATE_USE_FOR_COST_MODE", "false").lower() == "true"
 )
 HP_START_ESTIMATE_USE_FOR_GRACE: bool = (
     os.getenv("HP_START_ESTIMATE_USE_FOR_GRACE", "false").lower() == "true"

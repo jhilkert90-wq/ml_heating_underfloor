@@ -1231,9 +1231,6 @@ configuration:
   hp_start_estimate_use_for_learning:
     name: '[Erweitert] WP-Startschätzung: Nutzen für learning'
     description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
-  hp_start_estimate_use_for_cost_mode:
-    name: '[Erweitert] WP-Startschätzung: Nutzen für cost_mode'
-    description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
   hp_start_estimate_use_for_grace:
     name: '[Erweitert] WP-Startschätzung: Nutzen für grace'
     description: 'Optional; standardmäßig aus. Siehe docs/HA_WP_START_ESTIMATE_GUIDE.md.'
