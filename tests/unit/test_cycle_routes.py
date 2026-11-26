@@ -1416,3 +1416,18 @@ def test_cost_mode_without_price_enabled_warns(caplog):
     ):
         cycle_routes.step_dynamic_trajectory(ctx)
     assert "PRICE_COST_MODE_ENABLED has no effect" in caplog.text
+
+
+def test_calm_check_uses_adjusted_target_for_demand():
+    """Cost-mode offset must not turn a satisfied room into 'demand'."""
+    ctx = _make_ctx(
+        prediction_indoor_temp=22.5,
+        target_indoor_temp=22.6,
+        features_dict={"indoor_temp_delta_60m": 0.0},
+    )
+    ctx.state = {"last_target_indoor_temp": 22.6}
+    ctx.metadata = {"target_temp_adjusted": 22.6}
+    assert cycle_routes._calm_conditions(ctx) is True
+    # shifted target 22.9: deficit 0.4 K >= OUTLET_DEMAND_DEFICIT_K -> demand
+    ctx.metadata = {"target_temp_adjusted": 22.9}
+    assert cycle_routes._calm_conditions(ctx) is False

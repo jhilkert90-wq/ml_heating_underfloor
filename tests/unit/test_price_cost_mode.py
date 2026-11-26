@@ -58,7 +58,9 @@ class TestCostOffset:
 
     def test_pv_offset_starts_at_thirty_percent_and_scales(self):
         opt = _optimizer([0.25] * 48)
-        with _patches(PRICE_COST_MIN_SPREAD_EUR_KWH=0.0):
+        with _patches(
+            PRICE_COST_MIN_SPREAD_EUR_KWH=0.0, PRICE_COST_PV_LOOKAHEAD_HOURS=1
+        ):
             below = opt.compute_cost_target_offset([299.0], 1.0, NOW)
             at_start = opt.compute_cost_target_offset([300.0], 1.0, NOW)
             half = opt.compute_cost_target_offset([500.0], 1.0, NOW)
@@ -70,9 +72,28 @@ class TestCostOffset:
         )
         assert full["pv_offset"] == pytest.approx(0.5)
 
+    def test_pv_forecast_enters_upward_offset(self):
+        opt = _optimizer([0.25] * 48)
+        with _patches(
+            PRICE_COST_MIN_SPREAD_EUR_KWH=0.0, PRICE_COST_PV_LOOKAHEAD_HOURS=3
+        ):
+            # cloud now, sun forecast: anticipates; sun now, clouds: damped
+            rising = opt.compute_cost_target_offset(
+                [0.0, 1000.0, 1000.0, 0.0], 1.0, NOW
+            )
+            falling = opt.compute_cost_target_offset(
+                [1000.0, 0.0, 0.0, 0.0], 1.0, NOW
+            )
+        assert rising["pv_share_now"] == 0.0
+        assert rising["pv_share_offset"] == pytest.approx(2 / 3)
+        assert rising["pv_offset"] > 0.0
+        assert falling["pv_share_now"] == 1.0
+        assert falling["pv_offset"] == pytest.approx(0.5 * (1 / 3 - 0.3) / 0.7)
+        assert falling["pv_offset"] < rising["pv_offset"]
+
     def test_cheap_and_pv_use_max_not_sum(self):
         opt = _optimizer(_day_prices(0.10, 0.40))
-        with _patches(PRICE_BAND_UP_C=0.2):
+        with _patches(PRICE_BAND_UP_C=0.2, PRICE_COST_PV_LOOKAHEAD_HOURS=1):
             result = opt.compute_cost_target_offset(
                 [1000.0] + [0.0] * 23, 1.0, NOW
             )

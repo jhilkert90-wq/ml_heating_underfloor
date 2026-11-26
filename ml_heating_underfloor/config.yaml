@@ -700,6 +700,8 @@ options:
   price_band_down_c: 0.2
 
   price_cost_pv_target_offset_k: 0.5
+  # Hours (now + PV forecast) averaged for the PV target offset; 1 = now only
+  price_cost_pv_lookahead_hours: 3
   # Look-ahead window (hours) for the effective price comparison
   price_cost_lookahead_hours: 24
   # Minimum spread (EUR/kWh) between cheapest and dearest hour for any shift
@@ -730,7 +732,6 @@ options:
   hp_start_estimate_use_for_forecast: false
   hp_start_estimate_use_for_trajectory: false
   hp_start_estimate_use_for_learning: false
-  hp_start_estimate_use_for_cost_mode: false
   hp_start_estimate_use_for_grace: false
   # Start the forecast ramp limiter from the measured HP power (opt-in)
   heat_forecast_ramp_start_from_measured: false
@@ -1233,6 +1234,7 @@ schema:
   price_band_up_c: "float(0.0,2.0)"
   price_band_down_c: "float(0.0,2.0)"
   price_cost_pv_target_offset_k: "float(0,1.5)"
+  price_cost_pv_lookahead_hours: "int(1,12)"
   price_cost_lookahead_hours: "int(2,48)"
   price_cost_min_spread_eur_kwh: "float(0.0,0.5)"
   price_cost_max_overshoot_k: "float(0.0,5.0)"
@@ -1250,7 +1252,6 @@ schema:
   hp_start_estimate_use_for_forecast: "bool"
   hp_start_estimate_use_for_trajectory: "bool"
   hp_start_estimate_use_for_learning: "bool"
-  hp_start_estimate_use_for_cost_mode: "bool"
   hp_start_estimate_use_for_grace: "bool"
   heat_forecast_ramp_start_from_measured: "bool"
   hp_power_window_hours: "float(1.0,48.0)"

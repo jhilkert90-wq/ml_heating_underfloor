@@ -1,5 +1,20 @@
 # Changelog - ML Heating Underfloor
 
+## [Unreleased]
+
+### Added
+- `price_cost_pv_lookahead_hours` (default 3): the cost-mode PV target offset now averages the PV coverage over the current hour and the PV forecast (1 = old behaviour, current hour only). Anticipates sun and damps cloud-induced jumps. `cost_pv_share_now` (overshoot-skip condition) stays current-hour only.
+
+### Changed
+- Calm check now judges heat demand against the price/PV-adjusted target (same as the surplus check); the raw target is only used to detect user target changes.
+- Heat forecast cost offset uses the measured HP power mean (`HPPowerTracker`) instead of the fixed fallback.
+
+### Removed
+- `hp_start_estimate_use_for_cost_mode` and the "HP starts within 4 cycles" gate on the cost-mode overshoot skip. The skip now only depends on `price_cost_disable_overshoot_correction`, a positive offset and full PV coverage.
+
+### Known
+- PV coverage uses gross PV against HP power + the flat `price_cost_household_power_offset_kw` (0.7 kW); no measured household load yet.
+
 ## [0.3.13] - 2026-11-23
 
 ### Added

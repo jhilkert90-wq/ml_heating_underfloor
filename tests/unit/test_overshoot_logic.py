@@ -214,6 +214,13 @@ class TestDisableOvershootCorrectionInCostMode(unittest.TestCase):
         self.assertEqual(self._call(), 35.0)
         self.wrapper._calculate_physics_based_correction.assert_not_called()
 
+    def test_no_hp_start_gate_on_skip(self):
+        # the old HP-start sensor gate was removed: a stale attribute must
+        # not re-enable the correction
+        self.wrapper._hp_cost_skip_allowed = False
+        self.assertEqual(self._call(), 35.0)
+        self.wrapper._calculate_physics_based_correction.assert_not_called()
+
     def test_corrects_when_overshoot_exceeds_cost_limit(self):
         config.PRICE_COST_MAX_OVERSHOOT_K = 0.3  # predicted overshoot 0.4 K
         self._call()

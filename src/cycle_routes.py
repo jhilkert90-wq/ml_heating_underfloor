@@ -145,29 +145,6 @@ def step_build_features(ctx: CycleContext) -> bool:
     return True
 
 
-def _attach_hp_cost_skip_hint(ctx: CycleContext) -> None:
-    """Tell the wrapper whether the cost-mode overshoot skip is still useful."""
-    if ctx.wrapper is None:
-        return
-    ctx.wrapper._hp_cost_skip_allowed = True
-    if not (
-        getattr(config, "HP_START_ESTIMATE_ENABLED", False)
-        and getattr(config, "HP_START_ESTIMATE_USE_FOR_COST_MODE", False)
-    ):
-        return
-    try:
-        from .hp_start_estimate import cost_skip_allowed, read_hp_start_estimate
-
-        ctx.wrapper._hp_cost_skip_allowed = cost_skip_allowed(
-            read_hp_start_estimate(
-                ctx.all_states or {}, getattr(ctx, "climate_mode", "heating")
-            ),
-            float(config.CYCLE_INTERVAL_MINUTES) * 4,
-        )
-    except Exception as exc:
-        logging.warning("HP cost-mode hint unavailable: %s", exc)
-
-
 def _attach_hp_learning_weight(ctx: CycleContext) -> None:
     """Feature ``hp_run_weight`` for HP learning (opt-in, sensor required)."""
     if not (
@@ -358,7 +335,6 @@ def step_dynamic_trajectory(ctx: CycleContext) -> None:
 
     _attach_hp_start_window(ctx)
     _attach_hp_learning_weight(ctx)
-    _attach_hp_cost_skip_hint(ctx)
 
     # Suppress price in forecast trajectory mode (cost mode works together
     # with forecast scaling and is therefore not suppressed)
@@ -552,10 +528,18 @@ def _calm_conditions(ctx: CycleContext) -> bool:
                 float(last_target), float(target),
             )
             return False
+        # Judge demand against the price/PV adjusted target the optimizer
+        # solved for (same as the surplus check); the raw target above is
+        # only used to detect user target changes.
+        demand_target = float(target)
+        if isinstance(ctx.metadata, dict):
+            demand_target = float(
+                ctx.metadata.get("target_temp_adjusted", demand_target)
+            )
         trend = (ctx.features_dict or {}).get("indoor_temp_delta_60m")
         return not has_heat_demand(
             float(indoor),
-            float(target),
+            demand_target,
             trend,
             float(getattr(config, "OUTLET_DEMAND_DEFICIT_K", 0.3)),
             float(getattr(config, "OUTLET_DEMAND_TREND_K_PER_H", 0.1)),

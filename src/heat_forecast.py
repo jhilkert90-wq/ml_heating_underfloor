@@ -3248,7 +3248,10 @@ class HeatForecastEngine:
         hourly_prices = []
         if config.ELECTRICITY_PRICE_ENABLED or config.PRICE_COST_MODE_ENABLED:
             try:
-                from .price_optimizer import PriceOptimizer
+                from .price_optimizer import (
+                    PriceOptimizer,
+                    get_hp_power_tracker,
+                )
 
                 if self._price_optimizer is None:
                     self._price_optimizer = PriceOptimizer()
@@ -3316,7 +3319,9 @@ class HeatForecastEngine:
                         try:
                             cost = optimizer.compute_cost_target_offset(
                                 list(pv_electrical[index:]),
-                                float(config.HP_EXPECTED_POWER_FALLBACK_KW)
+                                # real "now": pruning with a future slot
+                                # time would drop the measured samples
+                                get_hp_power_tracker().expected_power_kw()
                                 + max(
                                     0.0,
                                     float(
