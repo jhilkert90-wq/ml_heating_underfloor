@@ -28,6 +28,7 @@ def _patches(**extra):
         PRICE_BAND_DOWN_C=0.2,
         PRICE_COST_PV_TARGET_OFFSET_K=0.5,
         PRICE_COST_LOOKAHEAD_HOURS=24,
+        PRICE_COST_PRICE_LOOKAHEAD_HOURS=0,  # legacy tests: look-ahead off
         PRICE_COST_MIN_SPREAD_EUR_KWH=0.02,
     )
     base.update(extra)
@@ -71,6 +72,62 @@ class TestCostOffset:
             0.5 * (0.5 - 0.3) / 0.7
         )
         assert full["pv_offset"] == pytest.approx(0.5)
+
+    def test_price_lookahead_banks_heat_before_price_rise(self):
+        # 22:00 now = 0.27, next 3 h 0.40/0.45/0.45 -> weighted near mean
+        # (3*0.40+2*0.45+1*0.45)/6 = 0.425, delta +0.155 of spread
+        prices = [0.27] * 48
+        prices[23:26] = [0.40, 0.45, 0.45]
+        prices[22] = 0.27
+        opt = _optimizer(prices)
+        with _patches(PRICE_COST_PRICE_LOOKAHEAD_HOURS=3):
+            res = opt.compute_cost_target_offset([0.0] * 24, 1.5, NOW)
+        assert res["lookahead_delta_eur_kwh"] == pytest.approx(0.155)
+        assert res["lookahead_up_offset"] > 0.0
+        assert res["offset"] >= res["lookahead_up_offset"]
+        assert res["offset_source"] in {"price_lookahead", "cheap_grid"}
+        with _patches(PRICE_COST_PRICE_LOOKAHEAD_HOURS=0):
+            off = opt.compute_cost_target_offset([0.0] * 24, 1.5, NOW)
+        assert off["lookahead_up_offset"] == 0.0
+
+    def test_price_lookahead_normal_price_before_rise_preheats(self):
+        # now mid price, spike ahead: legacy 24 h logic gives no pre-heat
+        prices = [0.30] * 48
+        prices[3] = 0.15  # keep a low minimum in the window
+        prices[23:26] = [0.45, 0.45, 0.45]
+        opt = _optimizer(prices)
+        with _patches(PRICE_COST_PRICE_LOOKAHEAD_HOURS=0):
+            legacy = opt.compute_cost_target_offset([0.0] * 24, 1.5, NOW)
+        with _patches(PRICE_COST_PRICE_LOOKAHEAD_HOURS=3):
+            res = opt.compute_cost_target_offset([0.0] * 24, 1.5, NOW)
+        assert legacy["lookahead_up_offset"] == 0.0
+        assert res["lookahead_up_offset"] > 0.0
+        assert res["offset"] >= legacy["offset"]
+
+    def test_price_lookahead_defers_before_price_fall(self):
+        prices = [0.40] * 48
+        prices[23:26] = [0.20, 0.20, 0.20]
+        opt = _optimizer(prices)
+        with _patches(PRICE_COST_PRICE_LOOKAHEAD_HOURS=3):
+            res = opt.compute_cost_target_offset([0.0] * 24, 1.5, NOW)
+        assert res["lookahead_down_offset"] < 0.0
+        assert res["lookahead_down_offset"] >= -0.2 - 1e-9
+        assert res["offset"] <= 0.0
+
+    def test_price_lookahead_dead_band_and_positive_wins(self):
+        flat = _optimizer([0.30 + (0.005 if h % 2 else 0.0) for h in range(48)])
+        with _patches(PRICE_COST_PRICE_LOOKAHEAD_HOURS=3):
+            res = flat.compute_cost_target_offset([0.0] * 24, 1.5, NOW)
+        assert res["lookahead_up_offset"] == 0.0
+        assert res["lookahead_down_offset"] == 0.0
+        # PV still wins over a smaller look-ahead offset
+        opt = _optimizer([0.25] * 48)
+        with _patches(
+            PRICE_COST_PRICE_LOOKAHEAD_HOURS=3,
+            PRICE_COST_MIN_SPREAD_EUR_KWH=0.0,
+        ):
+            res = opt.compute_cost_target_offset([1000.0] * 24, 1.0, NOW)
+        assert res["offset_source"] == "pv"
 
     def test_pv_forecast_enters_upward_offset(self):
         opt = _optimizer([0.25] * 48)

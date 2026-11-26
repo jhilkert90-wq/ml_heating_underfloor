@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- `price_cost_price_lookahead_hours` (default 3, 0 = off): cost-mode price look-ahead. Compares the grid price now with the weighted mean of the next hours; a coming rise banks heat (upward offset, `max` with cheap/PV), a coming fall defers heating (downward offset, `min` with the expensive setback). Dead band = `price_cost_min_spread_eur_kwh`; the 24 h cheap/expensive logic is unchanged. New diagnostics on `sensor.ml_heating_cost_offset`: `lookahead_up_offset_k`, `lookahead_down_offset_k`, `lookahead_delta_eur_kwh`; sources `price_lookahead` / `price_lookahead_defer`.
 - `price_cost_pv_lookahead_hours` (default 3): the cost-mode PV target offset now averages the PV coverage over the current hour and the PV forecast (1 = old behaviour, current hour only). Anticipates sun and damps cloud-induced jumps. `cost_pv_share_now` (overshoot-skip condition) stays current-hour only.
 
 ### Changed

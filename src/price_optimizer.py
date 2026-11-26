@@ -339,7 +339,10 @@ class PriceOptimizer:
         contributing at 30 percent load coverage (averaged over the current
         hour and ``PRICE_COST_PV_LOOKAHEAD_HOURS`` forecast hours) and scales linearly to
         ``PRICE_COST_PV_TARGET_OFFSET_K`` at full coverage. Positive
-        components are combined with ``max`` rather than added. Expensive-hour
+        components (cheap grid, PV, price look-ahead over the next
+        ``PRICE_COST_PRICE_LOOKAHEAD_HOURS`` hours) are combined with ``max``
+        rather than added; the look-ahead deferral competes with the
+        expensive-hour setback via ``min``. Expensive-hour
         setback continues to use the PV-adjusted effective price.
         """
         lookahead = max(
@@ -429,16 +432,48 @@ class PriceOptimizer:
                 -band_down * (p_now - p_ref) / (p_max - p_ref)
             )
 
-        positive_offset = max(cheap_offset, pv_offset)
-        offset = (
-            positive_offset
-            if positive_offset > 0.0
-            else negative_grid_offset
+        # Price look-ahead: the slab delays the room response by hours, so
+        # heat should be banked shortly before the grid price rises and
+        # deferred when it is about to fall. Compare the price now with the
+        # weighted mean of the next hours (weights N..1), scaled like the
+        # 24 h bands by the window spread.
+        look_n = max(
+            0, int(getattr(config, "PRICE_COST_PRICE_LOOKAHEAD_HOURS", 3))
         )
-        if pv_offset >= cheap_offset and pv_offset > 0.0:
+        near_hours = grid[1 : 1 + look_n]
+        look_delta = 0.0
+        look_near_mean = g_now
+        lookahead_up = 0.0
+        lookahead_down = 0.0
+        if near_hours and g_max - g_min >= max(min_spread, 1e-9):
+            weights = list(range(len(near_hours), 0, -1))
+            look_near_mean = sum(
+                w * g for w, g in zip(weights, near_hours)
+            ) / sum(weights)
+            look_delta = look_near_mean - g_now
+            look_scale = min(1.0, abs(look_delta) / (g_max - g_min))
+            dead_band = max(min_spread, 1e-9)
+            if look_delta >= dead_band:
+                lookahead_up = (
+                    max(0.0, float(getattr(config, "PRICE_BAND_UP_C", 0.5)))
+                    * look_scale
+                )
+            elif look_delta <= -dead_band:
+                lookahead_down = -band_down * look_scale
+
+        positive_offset = max(cheap_offset, pv_offset, lookahead_up)
+        negative_offset = min(negative_grid_offset, lookahead_down)
+        offset = (
+            positive_offset if positive_offset > 0.0 else negative_offset
+        )
+        if pv_offset >= max(cheap_offset, lookahead_up) and pv_offset > 0.0:
             offset_source = "pv"
+        elif lookahead_up > cheap_offset and lookahead_up > 0.0:
+            offset_source = "price_lookahead"
         elif cheap_offset > 0.0:
             offset_source = "cheap_grid"
+        elif lookahead_down < negative_grid_offset:
+            offset_source = "price_lookahead_defer"
         elif negative_grid_offset < 0.0:
             offset_source = "expensive_grid"
         else:
@@ -449,6 +484,10 @@ class PriceOptimizer:
             "cheap_offset": cheap_offset,
             "pv_offset": pv_offset,
             "negative_grid_offset": negative_grid_offset,
+            "lookahead_up_offset": lookahead_up,
+            "lookahead_down_offset": lookahead_down,
+            "lookahead_delta_eur_kwh": look_delta,
+            "lookahead_near_mean": look_near_mean,
             "cheap_scale": cheap_scale,
             "pv_scale": pv_scale,
             "offset_source": offset_source,

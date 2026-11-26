@@ -447,6 +447,11 @@ PRICE_COST_HOUSEHOLD_POWER_OFFSET_KW: float = float(
 PRICE_COST_PV_TARGET_OFFSET_K: float = float(
     os.getenv("PRICE_COST_PV_TARGET_OFFSET_K", "0.5")
 )
+# Hours of grid price look-ahead for the cost-mode offset (0 = off). Banks
+# heat before a price rise / defers before a fall (slab phase shift).
+PRICE_COST_PRICE_LOOKAHEAD_HOURS: int = int(
+    os.getenv("PRICE_COST_PRICE_LOOKAHEAD_HOURS", "3")
+)
 # Number of hours (current hour + forecast) over which the PV coverage share
 # is averaged for the upward PV target offset. 1 = current hour only.
 PRICE_COST_PV_LOOKAHEAD_HOURS: int = int(

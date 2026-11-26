@@ -877,6 +877,15 @@ class HAClient:
                 "negative_grid_offset_k": cost_info.get(
                     "negative_grid_offset", 0.0
                 ),
+                "lookahead_up_offset_k": cost_info.get(
+                    "lookahead_up_offset", 0.0
+                ),
+                "lookahead_down_offset_k": cost_info.get(
+                    "lookahead_down_offset", 0.0
+                ),
+                "lookahead_delta_eur_kwh": cost_info.get(
+                    "lookahead_delta_eur_kwh", 0.0
+                ),
                 "offset_source": cost_info.get("offset_source", "neutral"),
                 "pv_scale": cost_info.get("pv_scale", 0.0),
                 "cheap_scale": cost_info.get("cheap_scale", 0.0),
