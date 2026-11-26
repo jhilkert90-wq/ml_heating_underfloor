@@ -246,10 +246,13 @@ def _attach_cost_offset(ctx: CycleContext, optimizer) -> None:
         ctx.price_data["cost_info"] = result
         logging.info(
             "💰 Cost mode components: cheap=%+.2fK PV=%+.2fK "
-            "negative=%+.2fK final=%+.2fK source=%s",
+            "negative=%+.2fK look-ahead=%+.2fK/%+.2fK "
+            "final=%+.2fK source=%s",
             result["cheap_offset"],
             result["pv_offset"],
             result["negative_grid_offset"],
+            result["lookahead_up_offset"],
+            result["lookahead_down_offset"],
             result["offset"],
             result["offset_source"],
         )

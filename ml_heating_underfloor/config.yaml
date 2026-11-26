@@ -702,6 +702,8 @@ options:
   price_cost_pv_target_offset_k: 0.5
   # Hours (now + PV forecast) averaged for the PV target offset; 1 = now only
   price_cost_pv_lookahead_hours: 3
+  # Grid price look-ahead hours for the cost offset (0 = off)
+  price_cost_price_lookahead_hours: 3
   # Look-ahead window (hours) for the effective price comparison
   price_cost_lookahead_hours: 24
   # Minimum spread (EUR/kWh) between cheapest and dearest hour for any shift
@@ -1235,6 +1237,7 @@ schema:
   price_band_down_c: "float(0.0,2.0)"
   price_cost_pv_target_offset_k: "float(0,1.5)"
   price_cost_pv_lookahead_hours: "int(1,12)"
+  price_cost_price_lookahead_hours: "int(0,12)"
   price_cost_lookahead_hours: "int(2,48)"
   price_cost_min_spread_eur_kwh: "float(0.0,0.5)"
   price_cost_max_overshoot_k: "float(0.0,5.0)"
